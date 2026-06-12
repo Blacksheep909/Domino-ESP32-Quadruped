@@ -2,6 +2,8 @@
 
 Custom ESP32 firmware and system notes for Domino, a scratch-built carbon-frame 3-DoF quadruped robot. This project sits at the intersection of CAD, embedded firmware, RC control, power electronics, servo calibration, and robotics simulation.
 
+> Work in progress: Domino is an active prototype, not a finished kit. The firmware, safety limits, CAD notes, wiring, and calibration process are still being validated on real hardware.
+
 The public project name is Domino. Internally, this build started as the `V10` / `TY90` iteration. `V10` reflects the number of design passes this robot went through, while `CRSF` is the radio-control link used by the firmware.
 
 ![Domino quadruped robot build](docs/images/domino-master.jpg)
@@ -195,3 +197,7 @@ This project builds on lessons from my earlier SpotMicro ESP32 fork:
 - [Blacksheep909/SpotMicroESP32-Nitro-Fork](https://github.com/Blacksheep909/SpotMicroESP32-Nitro-Fork)
 
 The earlier fork is closer to an instructional build log. Domino is more of an engineering snapshot: the firmware and mechanical design are being shaped into a custom platform that can support future gait and simulation work.
+
+## Credits
+
+Domino's mechanical direction is derived from the ESP32 quadruped robot design by [Tazer Technical](https://www.youtube.com/@TazerTechnical). Thanks to Tazer Technical for publishing the design ideas and build material that helped shape this project.

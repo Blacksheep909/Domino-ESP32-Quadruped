@@ -7,7 +7,7 @@ constexpr uint8_t CRSF_ADDR_FC = 0xC8;
 constexpr uint8_t CRSF_TYPE_RC_CHANNELS = 0x16;
 constexpr int CRSF_MAX_LEN = 64;
 constexpr float CH_FILTER_ALPHA = 0.25f;
-constexpr uint32_t CRSF_TIMEOUT_MS = 250;
+constexpr uint32_t CRSF_TIMEOUT_MS = 1000;
 
 uint16_t chRaw[16] = {0};
 int chUs[16] = {1500};
@@ -15,6 +15,7 @@ float chFilt1[16] = {0.0f};
 float chFilt2[16] = {0.0f};
 uint32_t lastCrsfMs = 0;
 uint32_t lastPrintMs = 0;
+bool hasCrsfFrame = false;
 
 uint8_t crc8DvbS2(const uint8_t *buf, int len) {
   uint8_t crc = 0;
@@ -33,15 +34,21 @@ int crsfToUs(uint16_t value) {
   return 1000 + ((static_cast<int32_t>(value) - 172) * 1000L) / 1639L;
 }
 
-void unpackChannels11(const uint8_t *payload, uint16_t *out) {
-  uint32_t bit = 0;
+void unpackChannels11(const uint8_t *payload, uint8_t payloadLen, uint16_t *out) {
   for (int i = 0; i < 16; ++i) {
-    const int byteIndex = bit >> 3;
-    const uint32_t window = static_cast<uint32_t>(payload[byteIndex]) |
-                            (static_cast<uint32_t>(payload[byteIndex + 1]) << 8) |
-                            (static_cast<uint32_t>(payload[byteIndex + 2]) << 16);
-    out[i] = (window >> (bit & 7)) & 0x07FF;
-    bit += 11;
+    uint16_t value = 0;
+    const uint32_t channelBitStart = static_cast<uint32_t>(i) * 11U;
+    for (uint8_t bit = 0; bit < 11; ++bit) {
+      const uint32_t srcBit = channelBitStart + bit;
+      const uint8_t byteIndex = srcBit >> 3;
+      if (byteIndex >= payloadLen) {
+        break;
+      }
+      if ((payload[byteIndex] & (1U << (srcBit & 7))) != 0) {
+        value |= (1U << bit);
+      }
+    }
+    out[i] = value;
   }
 }
 
@@ -98,7 +105,7 @@ void updateCrsf(uint32_t now) {
 
   while (readCrsfFrame(type, payload, payloadLen)) {
     if (type == CRSF_TYPE_RC_CHANNELS && payloadLen == 22) {
-      unpackChannels11(payload, chRaw);
+      unpackChannels11(payload, payloadLen, chRaw);
       for (int i = 0; i < 16; ++i) {
         const int sample = crsfToUs(chRaw[i]);
         chFilt1[i] += (sample - chFilt1[i]) * CH_FILTER_ALPHA;
@@ -106,12 +113,13 @@ void updateCrsf(uint32_t now) {
         chUs[i] = static_cast<int>(chFilt2[i] + 0.5f);
       }
       lastCrsfMs = now;
+      hasCrsfFrame = true;
     }
   }
 }
 
 bool crsfLinkAlive(uint32_t now) {
-  return (now - lastCrsfMs) < CRSF_TIMEOUT_MS;
+  return hasCrsfFrame && ((now - lastCrsfMs) < CRSF_TIMEOUT_MS);
 }
 
 void setup() {
@@ -123,7 +131,8 @@ void setup() {
     chFilt1[i] = 1500.0f;
     chFilt2[i] = 1500.0f;
   }
-  lastCrsfMs = millis();
+  lastCrsfMs = 0;
+  hasCrsfFrame = false;
 
   Serial.println("ESP32 CRSF reader ready.");
 }

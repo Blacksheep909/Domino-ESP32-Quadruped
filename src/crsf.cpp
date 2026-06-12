@@ -11,6 +11,9 @@ unsigned long lastCrsfMs = 0;
 
 namespace {
 
+bool hasReceivedCrsfFrame = false;
+uint32_t acceptedCrsfFrameCount = 0;
+
 uint8_t crc8_dvb_s2_buf(const uint8_t* buf, int len) {
   uint8_t crc = 0;
   for (int i = 0; i < len; ++i) {
@@ -29,15 +32,21 @@ inline int crsfToUs(uint16_t v) {
   return 1000 + ((int32_t)(v - 172) * 1000L) / 1639L;
 }
 
-void unpackChannels11(const uint8_t* p, uint16_t* out16) {
-  uint32_t bit = 0;
+void unpackChannels11(const uint8_t* p, uint8_t payloadLen, uint16_t* out16) {
   for (int i = 0; i < 16; ++i) {
-    int bi = bit >> 3;
-    uint32_t w = (uint32_t)p[bi] |
-                 ((uint32_t)p[bi + 1] << 8) |
-                 ((uint32_t)p[bi + 2] << 16);
-    out16[i] = (w >> (bit & 7)) & 0x07FF;
-    bit += 11;
+    uint16_t value = 0;
+    const uint32_t channelBitStart = static_cast<uint32_t>(i) * 11U;
+    for (uint8_t bit = 0; bit < 11; ++bit) {
+      const uint32_t srcBit = channelBitStart + bit;
+      const uint8_t byteIndex = srcBit >> 3;
+      if (byteIndex >= payloadLen) {
+        break;
+      }
+      if ((p[byteIndex] & (1U << (srcBit & 7))) != 0) {
+        value |= (1U << bit);
+      }
+    }
+    out16[i] = value;
   }
 }
 
@@ -91,17 +100,19 @@ void initCrsfState() {
     ch_us_filt[i] = 1500.0f;
     ch_us_filtered_2nd[i] = 1500.0f;
   }
-  lastCrsfMs = millis();
+  lastCrsfMs = 0;
+  hasReceivedCrsfFrame = false;
+  acceptedCrsfFrameCount = 0;
 }
 
 void processCrsfFrames(unsigned long now) {
   uint8_t type = 0;
-  uint8_t payload[CRSF_MAX_LEN];
+  uint8_t payload[CRSF_MAX_LEN] = {0};
   uint8_t plen = 0;
 
   while (readCrsfFrame(type, payload, plen)) {
     if (type == CRSF_TYPE_RC_CHANNELS && plen == 22) {
-      unpackChannels11(payload, ch_raw);
+      unpackChannels11(payload, plen, ch_raw);
       for (int i = 0; i < 16; ++i) {
         int sample = crsfToUs(ch_raw[i]);
         float prev1 = ch_us_filt[i];
@@ -113,10 +124,20 @@ void processCrsfFrames(unsigned long now) {
         ch_us[i] = static_cast<int>(next2 + 0.5f);
       }
       lastCrsfMs = now;
+      hasReceivedCrsfFrame = true;
+      ++acceptedCrsfFrameCount;
     }
   }
 }
 
 bool crsfLinkAlive(unsigned long now) {
-  return (now - lastCrsfMs) < CRSF_TIMEOUT_MS;
+  return hasReceivedCrsfFrame && ((now - lastCrsfMs) < CRSF_TIMEOUT_MS);
+}
+
+bool crsfHasReceivedFrame() {
+  return hasReceivedCrsfFrame;
+}
+
+uint32_t crsfAcceptedFrameCount() {
+  return acceptedCrsfFrameCount;
 }

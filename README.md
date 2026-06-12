@@ -1,79 +1,108 @@
 # V10_CRSF_TY90
 
-ESP32 firmware for a custom 3-DoF quadruped robot platform. This version focuses on clean leg kinematics, RC control over CRSF/ExpressLRS, safe stand/stow behavior, body tilt control, ride-height presets, and early IMU-assisted balance experiments.
+Custom ESP32 firmware and system notes for a scratch-built 3-DoF quadruped robot. This project sits at the intersection of CAD, embedded firmware, RC control, power electronics, servo calibration, and robotics simulation.
+
+The `V10` name reflects the number of iterations this build went through. `CRSF` is the radio-control link used by the firmware. `TY90` is the build nickname.
 
 ![V10 quadruped robot build](docs/images/robot-dog-v10-build.jpg)
 
-## Project Status
+## Why This Project Exists
 
-This is a work-in-progress robotics firmware project, prepared here as a portfolio snapshot. The current code is centered on reliable low-level control and pose handling rather than a finished walking gait.
+My earlier robot dog work started from a SpotMicro ESP32 fork. That was useful because it gave me a working reference for servo-driven quadruped control, custom PCB layout, and hobby-radio control. V10 is the next step: a custom mechanical platform with a cleaner firmware architecture and a more deliberate body/electronics layout.
+
+The project is not just "code for a robot." It is a full stack hardware project:
+
+- CAD-designed body and leg linkages.
+- 3D-printed structural parts and carbon rod/tube members.
+- A central electronics cage that carries the PCB, battery wiring, receiver, regulator, and servo harnesses.
+- ESP32 firmware using PlatformIO and Arduino.
+- CRSF/ExpressLRS receiver input with failsafe behavior.
+- Inverse kinematics for four 3-DoF legs.
+- Isaac Sim / USD export experiments to explore simulation before hardware testing.
+
+## What Makes It Interesting
+
+The main challenge is that the robot is mechanically simple in appearance but awkward in all the useful ways: multiple servos, mirrored geometry, heavy wiring, uncertain trim offsets, flexible printed parts, and a leg mechanism that behaves like a closed-chain/four-bar linkage rather than a clean open-chain robot arm.
+
+That forced the firmware to be explicit about geometry, coordinate frames, servo direction signs, and safe state transitions. The code is written so that future work, especially walking gaits, can build on a stable low-level model rather than repeatedly re-solving servo mapping problems.
+
+![CAD side view](docs/images/cad-full-side.png)
+
+## Current Status
 
 Implemented:
 
 - ESP32 DevKit firmware using PlatformIO and Arduino.
-- PCA9685-based PWM output for 12 servos across four 3-DoF legs.
+- PCA9685 PWM output for 12 servos across four legs.
 - Per-leg inverse kinematics for hip, upper leg, and lower linkage angles.
 - CRSF/ExpressLRS receiver input with switch debouncing and link-loss handling.
-- Stand, stow, body tilt, and balance modes.
+- Stand, stow, body tilt, and experimental balance modes.
 - Three ride-height presets selected from an RC switch.
 - MPU6050 IMU sampling with filtered accelerometer and gyroscope state.
 - Debug logging for mode transitions, RC link state, body pose, and balance behavior.
 
 Still in progress:
 
-- Full gait generation and walking trajectory control.
-- More robust balance tuning on hardware.
-- Cleaner calibration tooling for servo trims and horn alignment.
-- Better project-level documentation for the mechanical CAD and wiring.
+- Full walking gait generation.
+- More robust dynamic balance tuning.
+- Better calibration tooling for servo trims and horn alignment.
+- Cleaner CAD and simulation documentation.
+- More polished build photos, wiring diagrams, and short demo clips.
 
-## Hardware
+## Mechanical Design
 
-Core electronics:
+Each leg has three actuated degrees of freedom:
 
-- ESP32 DevKit board.
-- PCA9685 servo driver.
-- 12x 270-degree servos, three per leg.
-- MPU6050 IMU.
-- ExpressLRS / CRSF receiver.
-- External high-current servo power supply.
+- Hip abduction/adduction.
+- Upper leg pitch.
+- Lower linkage / knee motion.
 
-Robot layout:
+The body uses a long central cage layout rather than a dense square chassis. The goal was to keep the wiring and electronics accessible while giving the leg modules enough spacing to move without immediately colliding with the body.
 
-- Four legs, each with hip abduction/adduction plus two pitch-axis joints.
-- Custom printed body and linkage parts.
-- Carbon tube / rod style leg members.
-- CAD-derived hip spacing and leg dimensions baked into the kinematic model.
+The center section is effectively an electronics spine: printed end plates and cross braces hold the body rails, while the PCB, receiver, regulator, battery wiring, and servo harnesses sit inside the protected middle bay. It is easier to service than burying the electronics under a shell, and it makes the robot's iteration history visible.
 
-## Control Modes
+## Electronics
 
-- `BODY_STOW`: curls the legs toward the body for a compact safe state.
-- `BODY_STAND`: moves into a neutral standing pose and holds body height.
-- `BODY_TILT`: maps RC stick input into body roll, pitch, and yaw while feet remain in a nominal stand layout.
-- `BODY_BALANCE`: uses IMU roll/pitch estimates to apply per-leg Z offsets for early active balancing.
+The electronics are based on the PCB architecture from my earlier SpotMicro ESP32 Nitro fork. That board was designed to reduce wiring mess and make the servo/power layout repeatable:
 
-The firmware is designed to fail safe: if the CRSF link is lost for long enough, the command path drops back toward stow behavior.
+- ESP32 DevKit as the main controller.
+- PCA9685 servo driver for multi-servo PWM output.
+- External regulator / BEC path for servo power.
+- CRSF/receiver wiring.
+- Sensor and utility headers.
+- Space for buzzer/relay/current/voltage-related modules used during earlier experiments.
 
-## Repository Layout
+![PCB render](docs/images/nitro-pcb-render.png)
 
-```text
-.
-|-- platformio.ini          PlatformIO build configuration
-|-- src/
-|   |-- main.cpp            State machine, body pose model, RC mode handling
-|   |-- crsf.cpp/.h         CRSF frame parsing and channel state
-|   |-- ik.cpp/.h           Single-leg inverse kinematics
-|   |-- imu.cpp/.h          MPU6050 sampling and filtering
-|   `-- leg_controller.*    Servo mapping, trims, and per-leg wrappers
-|-- lib/Ramp/               Local ramp/interpolation dependency
-|-- docs/
-|   |-- control-notes.md    Kinematics, frames, and calibration notes
-|   `-- images/             Portfolio images
-`-- include/, test/         Standard PlatformIO project folders
-```
+![Assembled PCB](docs/images/assembled-pcb.jpg)
+
+The V10 chassis reuses this electronics approach but changes the mechanical packaging around it. More detail is in [docs/electronics.md](docs/electronics.md).
+
+## Firmware Architecture
+
+The firmware separates the problem into small pieces:
+
+- `src/crsf.cpp`: CRSF frame parsing and RC channel state.
+- `src/ik.cpp`: single-leg inverse kinematics.
+- `src/leg_controller.cpp`: servo channel mapping, direction signs, and trim offsets.
+- `src/imu.cpp`: MPU6050 reading and filtering.
+- `src/main.cpp`: state machine, body pose math, ride height, tilt, balance, and failsafe behavior.
+
+The most important design choice is that high-level behaviors generate foot/body pose targets, then feed them through the same IK and servo mapping path. That keeps stand, stow, tilt, and future gaits consistent.
+
+See [docs/control-notes.md](docs/control-notes.md) for the coordinate frames, servo channels, and calibration details.
+
+## Simulation Work
+
+I also tried bringing the CAD into Isaac Sim. The project folder contains USD exports generated from the robot CAD, including separate part files for rods, pivots, servo hubs, arms, and body plates.
+
+The hard part was the leg mechanism. The physical linkage is closer to a closed-chain/four-bar mechanism, while many robot simulation and URDF-style workflows prefer tree-structured articulated bodies. That means a literal CAD import does not automatically produce a controllable robot model with the same constraints as the real linkage.
+
+That was still useful: it exposed the gap between "CAD looks correct" and "simulation has the right joints, constraints, inertia, and actuation model." More detail is in [docs/simulation-notes.md](docs/simulation-notes.md).
 
 ## Build
 
-Open the project folder in VS Code with the PlatformIO extension installed, or build from a terminal:
+Open this folder in VS Code with the PlatformIO extension installed, or build from a terminal:
 
 ```powershell
 pio run
@@ -91,17 +120,25 @@ Open the serial monitor at 115200 baud:
 pio device monitor
 ```
 
-## Calibration Notes
+## Repository Layout
 
-Servo trims live in `src/leg_controller.h`. The intended workflow is:
-
-1. Power the robot safely on a stand so the legs can move freely.
-2. Center the servos mechanically as close as possible.
-3. Enter stand mode with tilt disabled and RC sticks centered.
-4. Adjust per-servo trim values until the robot is symmetric and level.
-5. Re-test stand, stow, tilt, and balance modes after every trim pass.
-
-Large trim values usually mean a servo horn should be re-clocked mechanically before relying on code offsets.
+```text
+.
+|-- platformio.ini          PlatformIO build configuration
+|-- src/
+|   |-- main.cpp            State machine, body pose model, RC mode handling
+|   |-- crsf.cpp/.h         CRSF frame parsing and channel state
+|   |-- ik.cpp/.h           Single-leg inverse kinematics
+|   |-- imu.cpp/.h          MPU6050 sampling and filtering
+|   `-- leg_controller.*    Servo mapping, trims, and per-leg wrappers
+|-- lib/Ramp/               Local ramp/interpolation dependency
+|-- docs/
+|   |-- control-notes.md    Kinematics, frames, and calibration notes
+|   |-- electronics.md      PCB and electronics cage notes
+|   |-- simulation-notes.md Isaac Sim / USD import notes
+|   `-- images/             Portfolio images
+`-- include/, test/         Standard PlatformIO project folders
+```
 
 ## Related Work
 
@@ -109,5 +146,5 @@ This project builds on lessons from my earlier SpotMicro ESP32 fork:
 
 - [Blacksheep909/SpotMicroESP32-Nitro-Fork](https://github.com/Blacksheep909/SpotMicroESP32-Nitro-Fork)
 
-Unlike the SpotMicro fork, this V10 project is organized around a newer custom mechanical platform and a cleaner firmware structure for CRSF input, body pose control, and future gait experiments.
+The earlier fork is closer to an instructional build log. V10 is more of an engineering snapshot: the firmware and mechanical design are being shaped into a custom platform that can support future gait and simulation work.
 

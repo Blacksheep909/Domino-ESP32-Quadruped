@@ -20,7 +20,7 @@ The project is not just "code for a robot." It is a full stack hardware project:
 - Inverse kinematics for four 3-DoF legs.
 - Isaac Sim / USD export experiments to explore simulation before hardware testing.
 
-## What Makes It Interesting
+## Mechanical Build and Composite Structure Information
 
 The main challenge is that the robot is mechanically simple in appearance but awkward in all the useful ways: multiple servos, mirrored geometry, heavy wiring, uncertain trim offsets, flexible printed parts, a high-speed CRSF serial receiver stream, and a leg mechanism that behaves like a closed-chain/four-bar linkage rather than a clean open-chain robot arm.
 

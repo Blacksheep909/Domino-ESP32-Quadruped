@@ -50,7 +50,7 @@ Still in progress:
 - Full walking gait generation.
 - More robust dynamic balance tuning.
 - Better calibration tooling for servo trims and horn alignment.
-- Cleaner CAD and simulation documentation.
+- More measured drawings and build-ready print/export notes.
 - Wiring diagrams and short demo clips.
 
 ## Start Here If You Want To Build One
@@ -58,10 +58,11 @@ Still in progress:
 This repository is written as both a portfolio project and a build reference. If you are trying to reproduce or adapt the robot, read these in order:
 
 1. [docs/hardware-checklist.md](docs/hardware-checklist.md) - parts, tools, and decisions to make before printing or wiring anything.
-2. [docs/build-guide.md](docs/build-guide.md) - mechanical, electronics, firmware, and first-power-up sequence.
-3. [docs/calibration-guide.md](docs/calibration-guide.md) - servo centering, trim values, and safe stand/stow testing.
-4. [docs/troubleshooting.md](docs/troubleshooting.md) - common failures and what to check first.
-5. [docs/control-notes.md](docs/control-notes.md) - deeper coordinate frames, IK, and servo mapping.
+2. [docs/cad-design.md](docs/cad-design.md) - CAD exports, composite cage design, leg modules, and simulation constraints.
+3. [docs/build-guide.md](docs/build-guide.md) - mechanical, electronics, firmware, and first-power-up sequence.
+4. [docs/calibration-guide.md](docs/calibration-guide.md) - servo centering, trim values, and safe stand/stow testing.
+5. [docs/troubleshooting.md](docs/troubleshooting.md) - common failures and what to check first.
+6. [docs/control-notes.md](docs/control-notes.md) - deeper coordinate frames, IK, and servo mapping.
 
 The most important rule is to test in layers: receiver first, then one servo, then one leg, then all legs on a stand, then body modes. Do not jump straight from flashing firmware to putting the robot on the floor.
 
@@ -78,6 +79,8 @@ The body uses a long central cage layout rather than a dense square chassis. The
 The center section is effectively an electronics spine: printed end plates and cross braces hold the body rails, while the PCB, receiver, regulator, battery wiring, and servo harnesses sit inside the protected middle bay. It is easier to service than burying the electronics under a shell, and it makes the robot's iteration history visible.
 
 ![Domino top-down electronics cage](docs/images/domino-electronics-cage.jpg)
+
+The current neutral CAD exports are included under [cad/step](cad/step). The main design write-up is [docs/cad-design.md](docs/cad-design.md), which covers the STEP files, modular leg design, electronics cage, firmware geometry assumptions, and the Isaac Sim / URDF export limitations.
 
 ## Electronics
 
@@ -167,6 +170,8 @@ pio device monitor
 
 ```text
 .
+|-- cad/
+|   `-- step/                STEP exports for assembly, body, and leg modules
 |-- platformio.ini          PlatformIO build configuration
 |-- src/
 |   |-- main.cpp            State machine, body pose model, RC mode handling
@@ -179,6 +184,7 @@ pio device monitor
 |   `-- crsf-esp32-reader   Standalone CRSF parser demo
 |-- docs/
 |   |-- build-guide.md      Step-by-step build and bring-up sequence
+|   |-- cad-design.md       CAD exports and mechanical design notes
 |   |-- calibration-guide.md Servo centering and trim workflow
 |   |-- control-notes.md    Kinematics, frames, and calibration notes
 |   |-- crsf.md             CRSF/ExpressLRS parser and migration notes

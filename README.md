@@ -88,6 +88,8 @@ The electronics are based on the PCB architecture from my earlier SpotMicro ESP3
 - Sensor and utility headers.
 - Space for buzzer/relay/current/voltage-related modules used during earlier experiments.
 
+The PCB itself has not been redesigned for Domino. The CRSF/ExpressLRS receiver change is a small, practical modification: route receiver power, ground, and the receiver TX line into the ESP32 serial input used by the firmware, then mount the receiver inside the electronics cage.
+
 ![PCB render](docs/images/nitro-pcb-render.png)
 
 ![Assembled PCB](docs/images/assembled-pcb.jpg)

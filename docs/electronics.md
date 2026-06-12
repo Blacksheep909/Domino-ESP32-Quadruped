@@ -14,7 +14,9 @@ Main components:
 - MPU6050 IMU.
 - Servo harnesses for twelve 270-degree servos.
 
-The PCB was originally designed for the earlier SpotMicro build, then reused as the basis for Domino's electronics layout. It keeps the wiring strategy consistent across robot versions.
+The PCB was originally designed for the earlier SpotMicro build, then reused unchanged as the basis for Domino's electronics layout. It keeps the wiring strategy consistent across robot versions.
+
+The board has not been redesigned specifically for CRSF. That upgrade is intentionally easy to add: the receiver only needs suitable power, common ground, and its TX signal routed to the ESP32 serial RX pin used by the firmware. The receiver can then be mounted inside the central electronics cage without changing the core PCB.
 
 ![PCB render](images/nitro-pcb-render.png)
 

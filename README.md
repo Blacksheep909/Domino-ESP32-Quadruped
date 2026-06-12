@@ -49,6 +49,18 @@ Still in progress:
 - Cleaner CAD and simulation documentation.
 - More polished build photos, wiring diagrams, and short demo clips.
 
+## Start Here If You Want To Build One
+
+This repository is written as both a portfolio project and a build reference. If you are trying to reproduce or adapt the robot, read these in order:
+
+1. [docs/hardware-checklist.md](docs/hardware-checklist.md) - parts, tools, and decisions to make before printing or wiring anything.
+2. [docs/build-guide.md](docs/build-guide.md) - mechanical, electronics, firmware, and first-power-up sequence.
+3. [docs/calibration-guide.md](docs/calibration-guide.md) - servo centering, trim values, and safe stand/stow testing.
+4. [docs/troubleshooting.md](docs/troubleshooting.md) - common failures and what to check first.
+5. [docs/control-notes.md](docs/control-notes.md) - deeper coordinate frames, IK, and servo mapping.
+
+The most important rule is to test in layers: receiver first, then one servo, then one leg, then all legs on a stand, then body modes. Do not jump straight from flashing firmware to putting the robot on the floor.
+
 ## Mechanical Design
 
 Each leg has three actuated degrees of freedom:
@@ -119,6 +131,12 @@ That was still useful: it exposed the gap between "CAD looks correct" and "simul
 
 ## Build
 
+Install:
+
+- [VS Code](https://code.visualstudio.com/)
+- PlatformIO IDE extension for VS Code
+- Git, if you want to clone instead of downloading the repository
+
 Open this folder in VS Code with the PlatformIO extension installed, or build from a terminal:
 
 ```powershell
@@ -152,10 +170,14 @@ pio device monitor
 |-- examples/
 |   `-- crsf-esp32-reader   Standalone CRSF parser demo
 |-- docs/
+|   |-- build-guide.md      Step-by-step build and bring-up sequence
+|   |-- calibration-guide.md Servo centering and trim workflow
 |   |-- control-notes.md    Kinematics, frames, and calibration notes
 |   |-- crsf.md             CRSF/ExpressLRS parser and migration notes
 |   |-- electronics.md      PCB and electronics cage notes
+|   |-- hardware-checklist.md Parts, tools, and pre-build checks
 |   |-- simulation-notes.md Isaac Sim / USD import notes
+|   |-- troubleshooting.md  Bring-up and debugging checklist
 |   `-- images/             Portfolio images
 `-- include/, test/         Standard PlatformIO project folders
 ```

@@ -1,8 +1,8 @@
-# V10_CRSF_TY90
+# CarbonQuadruped-ESP32
 
-Custom ESP32 firmware and system notes for a scratch-built 3-DoF quadruped robot. This project sits at the intersection of CAD, embedded firmware, RC control, power electronics, servo calibration, and robotics simulation.
+Custom ESP32 firmware and system notes for a scratch-built carbon-frame 3-DoF quadruped robot. This project sits at the intersection of CAD, embedded firmware, RC control, power electronics, servo calibration, and robotics simulation.
 
-The `V10` name reflects the number of iterations this build went through. `CRSF` is the radio-control link used by the firmware. `TY90` is the build nickname.
+Internally, this build is the `V10` / `TY90` iteration. `V10` reflects the number of design passes this robot went through, while `CRSF` is the radio-control link used by the firmware.
 
 ![V10 quadruped robot build](docs/images/robot-dog-v10-build.jpg)
 

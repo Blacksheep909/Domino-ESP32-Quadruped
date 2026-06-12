@@ -1,14 +1,14 @@
-# CarbonQuadruped-ESP32
+# Domino
 
-Custom ESP32 firmware and system notes for a scratch-built carbon-frame 3-DoF quadruped robot. This project sits at the intersection of CAD, embedded firmware, RC control, power electronics, servo calibration, and robotics simulation.
+Custom ESP32 firmware and system notes for Domino, a scratch-built carbon-frame 3-DoF quadruped robot. This project sits at the intersection of CAD, embedded firmware, RC control, power electronics, servo calibration, and robotics simulation.
 
-Internally, this build is the `V10` / `TY90` iteration. `V10` reflects the number of design passes this robot went through, while `CRSF` is the radio-control link used by the firmware.
+The public project name is Domino. Internally, this build started as the `V10` / `TY90` iteration. `V10` reflects the number of design passes this robot went through, while `CRSF` is the radio-control link used by the firmware.
 
-![V10 quadruped robot build](docs/images/robot-dog-v10-build.jpg)
+![Domino quadruped robot build](docs/images/domino-master.jpg)
 
 ## Why This Project Exists
 
-My earlier robot dog work started from a SpotMicro ESP32 fork. That was useful because it gave me a working reference for servo-driven quadruped control, custom PCB layout, and hobby-radio control. V10 is the next step: a custom mechanical platform with a cleaner firmware architecture, a more deliberate body/electronics layout, and a major radio-link upgrade from iBUS-style receiver code to custom CRSF/ExpressLRS parsing on the ESP32.
+My earlier robot dog work started from a SpotMicro ESP32 fork. That was useful because it gave me a working reference for servo-driven quadruped control, custom PCB layout, and hobby-radio control. Domino is the next step: a custom mechanical platform with a cleaner firmware architecture, a more deliberate body/electronics layout, and a major radio-link upgrade from iBUS-style receiver code to custom CRSF/ExpressLRS parsing on the ESP32.
 
 The project is not just "code for a robot." It is a full stack hardware project:
 
@@ -25,6 +25,8 @@ The project is not just "code for a robot." It is a full stack hardware project:
 The main challenge is that the robot is mechanically simple in appearance but awkward in all the useful ways: multiple servos, mirrored geometry, heavy wiring, uncertain trim offsets, flexible printed parts, a high-speed CRSF serial receiver stream, and a leg mechanism that behaves like a closed-chain/four-bar linkage rather than a clean open-chain robot arm.
 
 That forced the firmware to be explicit about geometry, coordinate frames, servo direction signs, and safe state transitions. The code is written so that future work, especially walking gaits, can build on a stable low-level model rather than repeatedly re-solving servo mapping problems.
+
+![Domino side linkage view](docs/images/domino-linkage-side.jpg)
 
 ![CAD side view](docs/images/cad-full-side.png)
 
@@ -47,7 +49,7 @@ Still in progress:
 - More robust dynamic balance tuning.
 - Better calibration tooling for servo trims and horn alignment.
 - Cleaner CAD and simulation documentation.
-- More polished build photos, wiring diagrams, and short demo clips.
+- Wiring diagrams and short demo clips.
 
 ## Start Here If You Want To Build One
 
@@ -73,6 +75,8 @@ The body uses a long central cage layout rather than a dense square chassis. The
 
 The center section is effectively an electronics spine: printed end plates and cross braces hold the body rails, while the PCB, receiver, regulator, battery wiring, and servo harnesses sit inside the protected middle bay. It is easier to service than burying the electronics under a shell, and it makes the robot's iteration history visible.
 
+![Domino top-down electronics cage](docs/images/domino-electronics-cage.jpg)
+
 ## Electronics
 
 The electronics are based on the PCB architecture from my earlier SpotMicro ESP32 Nitro fork. That board was designed to reduce wiring mess and make the servo/power layout repeatable:
@@ -88,7 +92,7 @@ The electronics are based on the PCB architecture from my earlier SpotMicro ESP3
 
 ![Assembled PCB](docs/images/assembled-pcb.jpg)
 
-The V10 chassis reuses this electronics approach but changes the mechanical packaging around it. More detail is in [docs/electronics.md](docs/electronics.md).
+The Domino chassis reuses this electronics approach but changes the mechanical packaging around it. More detail is in [docs/electronics.md](docs/electronics.md).
 
 ## CRSF / ExpressLRS Radio Link
 
@@ -188,4 +192,4 @@ This project builds on lessons from my earlier SpotMicro ESP32 fork:
 
 - [Blacksheep909/SpotMicroESP32-Nitro-Fork](https://github.com/Blacksheep909/SpotMicroESP32-Nitro-Fork)
 
-The earlier fork is closer to an instructional build log. V10 is more of an engineering snapshot: the firmware and mechanical design are being shaped into a custom platform that can support future gait and simulation work.
+The earlier fork is closer to an instructional build log. Domino is more of an engineering snapshot: the firmware and mechanical design are being shaped into a custom platform that can support future gait and simulation work.

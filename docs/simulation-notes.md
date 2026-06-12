@@ -36,4 +36,3 @@ Best next simulation path:
 5. Only then scale to all four legs and the body.
 
 That approach is less literal than importing every CAD mate, but it is more likely to produce a controllable Isaac Sim robot.
-

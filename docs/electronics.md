@@ -1,6 +1,6 @@
 # Electronics Notes
 
-The V10 robot uses the same electronics direction as the earlier SpotMicro ESP32 Nitro project: reduce wiring uncertainty by putting the major control and power interfaces onto a repeatable board, then mount that board inside a serviceable center bay.
+Domino uses the same electronics direction as the earlier SpotMicro ESP32 Nitro project: reduce wiring uncertainty by putting the major control and power interfaces onto a repeatable board, then mount that board inside a serviceable center bay.
 
 ## System Blocks
 
@@ -14,13 +14,13 @@ Main components:
 - MPU6050 IMU.
 - Servo harnesses for twelve 270-degree servos.
 
-The PCB was originally designed for the earlier SpotMicro build, then reused as the basis for the V10 electronics layout. It keeps the wiring strategy consistent across robot versions.
+The PCB was originally designed for the earlier SpotMicro build, then reused as the basis for Domino's electronics layout. It keeps the wiring strategy consistent across robot versions.
 
 ![PCB render](images/nitro-pcb-render.png)
 
 ## Electronics Cage
 
-The V10 body is built around a central electronics cage rather than a fully enclosed decorative shell.
+The Domino body is built around a central electronics cage rather than a fully enclosed decorative shell.
 
 Design intent:
 
@@ -32,7 +32,7 @@ Design intent:
 
 This is one of the more useful mechanical lessons from the build: the electronics packaging matters as much as the leg geometry. A quadruped with twelve servos becomes a wiring project very quickly, so the center bay is designed as a functional part of the robot rather than an afterthought.
 
-![Electronics bay from earlier build](images/electronics-bay-v1.jpg)
+![Domino electronics cage](images/domino-electronics-cage.jpg)
 
 ## Power And Servo Control
 
@@ -53,5 +53,4 @@ The older SpotMicro ESP32 Nitro fork is still useful because it documents the pa
 - The PCB gathered the ESP32, PCA9685, power distribution, and sensor/utility connections.
 - The build exposed the practical problem of packaging electronics inside a moving robot without making maintenance painful.
 
-V10 keeps that electronics architecture but moves the mechanics to a custom body and leg system.
-
+Domino keeps that electronics architecture but moves the mechanics to a custom body and leg system.

@@ -1,6 +1,6 @@
 # CRSF / ExpressLRS Notes
 
-Moving the robot from simpler iBUS-style receiver handling to CRSF/ExpressLRS was one of the major firmware goals for V10.
+Moving the robot from simpler iBUS-style receiver handling to CRSF/ExpressLRS was one of the major firmware goals for Domino.
 
 The reason is practical: ExpressLRS and CRSF are common in modern hobby RC hardware, have low latency, and expose a richer serial protocol than older receiver approaches. The cost is that the ESP32 firmware has to parse the receiver stream properly before any robot control code can trust it.
 
@@ -71,4 +71,3 @@ It is probably worth uploading the CRSF code separately once it has a little mor
 - A note about tested receiver/radio hardware.
 
 For now, keeping the standalone example inside this repo is useful because it shows the CRSF work in context: this was not an isolated toy parser, it was built to solve a real robot control problem.
-

@@ -1,4 +1,4 @@
-# Domino
+# Domino ESP32 Composite Quadruped
 
 Custom ESP32 firmware and system notes for Domino, a scratch-built carbon-frame 3-DoF quadruped robot. This project sits at the intersection of CAD, embedded firmware, RC control, power electronics, servo calibration, and robotics simulation.
 

@@ -2,7 +2,8 @@
 
 #include <Adafruit_PWMServoDriver.h>
 
-// Per-leg trim values (degrees). Keep existing FR trims; others start at 0 for now.
+// Per-leg trim values (degrees). These are calibration offsets for the current
+// Domino mechanism and should be adjusted only after testing one servo/leg at a time.
 static constexpr float FR_HIP_TRIM_DEG = -45.0f;  // CH3
 static constexpr float FR_UPPER_TRIM_DEG = -20.0f;  // CH4
 static constexpr float FR_LOWER_TRIM_DEG = -38.0f;  // CH15

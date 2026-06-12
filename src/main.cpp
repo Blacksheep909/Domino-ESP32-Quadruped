@@ -122,6 +122,8 @@ constexpr uint32_t kLinkLossStowDelayMs = 1000;
 constexpr uint32_t kSwitchDebounceDefaultMs = 200;  // Baseline debounce for SA/SD switches.
 constexpr uint32_t kStandCommandHoldMs = 250;        // Additional guard before moving legs when stand toggles.
 constexpr uint32_t kTiltToggleDebounceMs = 300;      // Hold tilt candidate before entering/exiting tilt.
+constexpr bool kDebugLoggingEnabled = false;
+constexpr bool kBalanceDebugLoggingEnabled = false;
 
 // Ride height configuration (stand-only, 3 presets driven by SB).
 // "High" is the default neutral stand height; "Medium" and "Low"
@@ -222,6 +224,10 @@ void logDebugState(uint32_t now,
                    bool tiltCandidateRaw,
                    bool tiltCandidateFiltered,
                    bool tiltActive) {
+  if (!kDebugLoggingEnabled) {
+    return;
+  }
+
   static uint32_t lastLogMs = 0;
   static bool firstLog = true;
   constexpr uint32_t kLogIntervalMs = 100;
@@ -326,7 +332,7 @@ bool applySwitchDebounce(bool currentState,
 
 // Forward declarations for switch handling helpers used in the menu layer.
 bool updateStandCommand(bool standActive, uint32_t now);
-bool updateSdCommand(bool sdActive, bool linkAlive, uint32_t now);
+bool updateSdCommand(bool sdActive, bool controlsEnabled, uint32_t now);
 
 RideHeightPreset detectRideHeightPresetFromSbUs(int sbValueUs) {
   if (sbValueUs <= SB_UPPER_POS_MAX_US) {
@@ -364,14 +370,15 @@ struct MenuInputs {
 MenuInputs readMenuInputs(uint32_t now, uint32_t* lastLinkAliveMs, bool* failsafeState) {
   MenuInputs inputs{};
 
-  const bool linkAlive = crsfLinkAlive(now);
-  if (linkAlive) {
+  const bool linkAliveNow = crsfLinkAlive(now);
+  const bool hasReceivedFrame = crsfHasReceivedFrame();
+  if (linkAliveNow) {
     *lastLinkAliveMs = now;
   }
-  inputs.haveLink = (*lastLinkAliveMs != 0);
+  inputs.haveLink = linkAliveNow;
 
   const bool nextFailsafeState =
-      !inputs.haveLink || ((now - *lastLinkAliveMs) > kLinkLossStowDelayMs);
+      !hasReceivedFrame || (!linkAliveNow && ((now - *lastLinkAliveMs) > kLinkLossStowDelayMs));
   if (nextFailsafeState != *failsafeState) {
     *failsafeState = nextFailsafeState;
     Serial.printf("CRSF failsafe %s (last=%lu now=%lu)\n",
@@ -389,8 +396,9 @@ MenuInputs readMenuInputs(uint32_t now, uint32_t* lastLinkAliveMs, bool* failsaf
   }
   inputs.standRequested = saStandCommand && !inputs.failsafeActive;
 
-  // Tilt enable from SD (keep existing debouncing / link gating).
-  const bool nextSdCommand = updateSdCommand(sdCommandActive, linkAlive, now);
+  // Tilt enable from SD. Keep it latched through short CRSF gaps; only force it
+  // low when the longer failsafe state is actually active.
+  const bool nextSdCommand = updateSdCommand(sdCommandActive, !inputs.failsafeActive, now);
   if (nextSdCommand != sdCommandActive) {
     sdCommandActive = nextSdCommand;
     Serial.printf("SD=%d -> sdDown=%d\n", ch_us[SD_CH_INDEX], sdCommandActive ? 1 : 0);
@@ -557,9 +565,9 @@ bool updateStandCommand(bool standActive, uint32_t now) {
   return applySwitchDebounce(standActive, desiredState, now, &saDebounce, kSwitchDebounceDefaultMs);
 }
 
-bool updateSdCommand(bool sdActive, bool linkAlive, uint32_t now) {
+bool updateSdCommand(bool sdActive, bool controlsEnabled, uint32_t now) {
   static SwitchDebounceState sdDebounce;
-  if (!linkAlive) {
+  if (!controlsEnabled) {
     sdDebounce.initialized = false;
     return false;
   }
@@ -661,6 +669,8 @@ void loop() {
 
   // 1) Read current RC "menu inputs" (switches, link status).
   const MenuInputs inputs = readMenuInputs(now, &lastLinkAliveMs, &failsafeActive);
+  menuState.linkAlive = inputs.haveLink;
+  menuState.failsafeActive = inputs.failsafeActive;
 
   // 2) Update the high-level body mode (stow / stand / tilt) with existing
   //    debouncing semantics, but represented as a single menuState.mode.
@@ -866,7 +876,7 @@ void loop() {
           // Periodic balance-mode debug log for offline analysis.
           static uint32_t lastBalanceLogMs = 0;
           constexpr uint32_t kBalanceLogIntervalMs = 50;
-          if ((now - lastBalanceLogMs) >= kBalanceLogIntervalMs) {
+          if (kBalanceDebugLoggingEnabled && (now - lastBalanceLogMs) >= kBalanceLogIntervalMs) {
             lastBalanceLogMs = now;
             Serial.printf(
                 "BAL t=%lu rollMeas=%.2f pitchMeas=%.2f refRoll=%.2f refPitch=%.2f "

@@ -9,7 +9,7 @@ constexpr float CH_FILTER_ALPHA = 0.25f;
 constexpr uint8_t CRSF_ADDR_FC = 0xC8;
 constexpr uint8_t CRSF_TYPE_RC_CHANNELS = 0x16;
 constexpr int CRSF_MAX_LEN = 64;
-constexpr uint32_t CRSF_TIMEOUT_MS = 250;
+constexpr uint32_t CRSF_TIMEOUT_MS = 1000;
 
 constexpr int SA_CH_INDEX = 4;
 constexpr int SA_ON_THRESHOLD_US = 1600;
@@ -27,3 +27,5 @@ extern unsigned long lastCrsfMs;
 void initCrsfState();
 void processCrsfFrames(unsigned long now);
 bool crsfLinkAlive(unsigned long now);
+bool crsfHasReceivedFrame();
+uint32_t crsfAcceptedFrameCount();

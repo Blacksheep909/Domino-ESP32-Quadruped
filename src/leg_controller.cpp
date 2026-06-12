@@ -10,8 +10,47 @@ constexpr float kServoCenterDeg = 135.0f;
 constexpr float kMinPulseUs = 500.0f;
 constexpr float kMaxPulseUs = 2500.0f;
 constexpr float kMaxAngleDeg = 270.0f;
+constexpr uint8_t kPcaChannelCount = 16;
+
+struct ServoAngleLimit {
+  float minDeg;
+  float maxDeg;
+};
+
+// Per-channel hard safety limits. These were seeded from the current
+// stow/stand/tilt/balance pose envelope plus margin, so a bad mode transition
+// cannot command the full 0-270 degree electrical range on startup or during
+// operation. Tighten these during calibration once each joint's true mechanical
+// limits are known.
+constexpr ServoAngleLimit kServoAngleLimits[kPcaChannelCount] = {
+    {87.0f, 156.0f},   // CH0  FL hip
+    {109.0f, 254.0f},  // CH1  FL upper
+    {29.0f, 171.0f},   // CH2  FL lower
+    {64.0f, 133.0f},   // CH3  FR hip
+    {0.0f, 141.0f},    // CH4  FR upper
+    {0.0f, 270.0f},    // CH5  unused
+    {0.0f, 270.0f},    // CH6  unused
+    {96.0f, 234.0f},   // CH7  BL upper
+    {23.0f, 155.0f},   // CH8  BL lower
+    {74.0f, 143.0f},   // CH9  BR hip
+    {0.0f, 134.0f},    // CH10 BR upper
+    {80.0f, 212.0f},   // CH11 BR lower
+    {0.0f, 270.0f},    // CH12 unused
+    {0.0f, 270.0f},    // CH13 unused
+    {77.0f, 146.0f},   // CH14 BL hip
+    {71.0f, 213.0f},   // CH15 FR lower
+};
 
 float clamp270(float angle) { return constrain(angle, 0.0f, kMaxAngleDeg); }
+
+float applyServoSafetyLimit(uint8_t channel, float angleDegrees) {
+  const float clamped = clamp270(angleDegrees);
+  if (channel >= kPcaChannelCount) {
+    return clamped;
+  }
+  const ServoAngleLimit &limit = kServoAngleLimits[channel];
+  return constrain(clamped, limit.minDeg, limit.maxDeg);
+}
 
 uint16_t angleToPulse(float angleDegrees) {
   const float clamped = clamp270(angleDegrees);
@@ -21,7 +60,7 @@ uint16_t angleToPulse(float angleDegrees) {
 }
 
 void write270(Adafruit_PWMServoDriver &driver, uint8_t channel, float angleDegrees) {
-  driver.writeMicroseconds(channel, angleToPulse(angleDegrees));
+  driver.writeMicroseconds(channel, angleToPulse(applyServoSafetyLimit(channel, angleDegrees)));
 }
 
 // Leg channel assignments:
@@ -94,9 +133,9 @@ void moveLeg(const LegConfig &leg, Adafruit_PWMServoDriver &driver, float x, flo
   float theta3 = 0.0f;
   IK(x, y, z, &theta1, &theta2, &theta3);
 
-  const float hipAngle = clamp270(kServoCenterDeg + leg.hipTrimDeg + static_cast<float>(leg.hipDir) * theta1);
-  const float upperAngle = clamp270(kServoCenterDeg + leg.upperTrimDeg + static_cast<float>(leg.upperDir) * theta2);
-  const float lowerAngle = clamp270(kServoCenterDeg + leg.lowerTrimDeg + static_cast<float>(leg.lowerDir) * theta3);
+  const float hipAngle = kServoCenterDeg + leg.hipTrimDeg + static_cast<float>(leg.hipDir) * theta1;
+  const float upperAngle = kServoCenterDeg + leg.upperTrimDeg + static_cast<float>(leg.upperDir) * theta2;
+  const float lowerAngle = kServoCenterDeg + leg.lowerTrimDeg + static_cast<float>(leg.lowerDir) * theta3;
 
   write270(driver, leg.hipChannel, hipAngle);
   write270(driver, leg.upperChannel, upperAngle);

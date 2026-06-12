@@ -6,7 +6,7 @@ The public project name is Domino. Internally, this build started as the `V10` /
 
 ![Domino quadruped robot build](docs/images/domino-master.jpg)
 
-## Why This Project Exists
+## Project Details
 
 My earlier robot dog work started from a SpotMicro ESP32 fork. That was useful because it gave me a working reference for servo-driven quadruped control, custom PCB layout, and hobby-radio control. Domino is the next step: a custom mechanical platform with a cleaner firmware architecture, a more deliberate body/electronics layout, and a major radio-link upgrade from iBUS-style receiver code to custom CRSF/ExpressLRS parsing on the ESP32.
 

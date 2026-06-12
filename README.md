@@ -8,7 +8,7 @@ The `V10` name reflects the number of iterations this build went through. `CRSF`
 
 ## Why This Project Exists
 
-My earlier robot dog work started from a SpotMicro ESP32 fork. That was useful because it gave me a working reference for servo-driven quadruped control, custom PCB layout, and hobby-radio control. V10 is the next step: a custom mechanical platform with a cleaner firmware architecture and a more deliberate body/electronics layout.
+My earlier robot dog work started from a SpotMicro ESP32 fork. That was useful because it gave me a working reference for servo-driven quadruped control, custom PCB layout, and hobby-radio control. V10 is the next step: a custom mechanical platform with a cleaner firmware architecture, a more deliberate body/electronics layout, and a major radio-link upgrade from iBUS-style receiver code to custom CRSF/ExpressLRS parsing on the ESP32.
 
 The project is not just "code for a robot." It is a full stack hardware project:
 
@@ -16,13 +16,13 @@ The project is not just "code for a robot." It is a full stack hardware project:
 - 3D-printed structural parts and carbon rod/tube members.
 - A central electronics cage that carries the PCB, battery wiring, receiver, regulator, and servo harnesses.
 - ESP32 firmware using PlatformIO and Arduino.
-- CRSF/ExpressLRS receiver input with failsafe behavior.
+- Custom CRSF/ExpressLRS receiver input with failsafe behavior.
 - Inverse kinematics for four 3-DoF legs.
 - Isaac Sim / USD export experiments to explore simulation before hardware testing.
 
 ## What Makes It Interesting
 
-The main challenge is that the robot is mechanically simple in appearance but awkward in all the useful ways: multiple servos, mirrored geometry, heavy wiring, uncertain trim offsets, flexible printed parts, and a leg mechanism that behaves like a closed-chain/four-bar linkage rather than a clean open-chain robot arm.
+The main challenge is that the robot is mechanically simple in appearance but awkward in all the useful ways: multiple servos, mirrored geometry, heavy wiring, uncertain trim offsets, flexible printed parts, a high-speed CRSF serial receiver stream, and a leg mechanism that behaves like a closed-chain/four-bar linkage rather than a clean open-chain robot arm.
 
 That forced the firmware to be explicit about geometry, coordinate frames, servo direction signs, and safe state transitions. The code is written so that future work, especially walking gaits, can build on a stable low-level model rather than repeatedly re-solving servo mapping problems.
 
@@ -35,7 +35,7 @@ Implemented:
 - ESP32 DevKit firmware using PlatformIO and Arduino.
 - PCA9685 PWM output for 12 servos across four legs.
 - Per-leg inverse kinematics for hip, upper leg, and lower linkage angles.
-- CRSF/ExpressLRS receiver input with switch debouncing and link-loss handling.
+- Custom CRSF/ExpressLRS receiver parser with channel unpacking, filtering, switch debouncing, and link-loss handling.
 - Stand, stow, body tilt, and experimental balance modes.
 - Three ride-height presets selected from an RC switch.
 - MPU6050 IMU sampling with filtered accelerometer and gyroscope state.
@@ -78,6 +78,22 @@ The electronics are based on the PCB architecture from my earlier SpotMicro ESP3
 
 The V10 chassis reuses this electronics approach but changes the mechanical packaging around it. More detail is in [docs/electronics.md](docs/electronics.md).
 
+## CRSF / ExpressLRS Radio Link
+
+One of the big goals of this version was moving away from simpler iBUS-style receiver handling and onto CRSF. CRSF is faster and more common in modern ExpressLRS setups, but it also means the firmware has to parse packed frames correctly instead of relying on a basic hobby-servo pulse style interface.
+
+The custom ESP32 CRSF code handles:
+
+- `Serial2` at 420000 baud.
+- CRSF frame synchronization and length validation.
+- DVB-S2 CRC8 validation.
+- Packed 11-bit channel decoding for 16 RC channels.
+- Conversion into 1000-2000 us style channel values.
+- First- and second-order filtering before the control loop consumes stick/switch state.
+- Link timeout detection for failsafe behavior.
+
+That receiver layer is important enough that this repo includes both the robot integration in `src/crsf.*` and a standalone extraction in [examples/crsf-esp32-reader](examples/crsf-esp32-reader). It could become its own small repository later if the goal is to present it as a reusable ESP32 CRSF reader.
+
 ## Firmware Architecture
 
 The firmware separates the problem into small pieces:
@@ -90,6 +106,7 @@ The firmware separates the problem into small pieces:
 
 The most important design choice is that high-level behaviors generate foot/body pose targets, then feed them through the same IK and servo mapping path. That keeps stand, stow, tilt, and future gaits consistent.
 
+See [docs/crsf.md](docs/crsf.md) for the receiver migration notes and parser details.
 See [docs/control-notes.md](docs/control-notes.md) for the coordinate frames, servo channels, and calibration details.
 
 ## Simulation Work
@@ -132,8 +149,11 @@ pio device monitor
 |   |-- imu.cpp/.h          MPU6050 sampling and filtering
 |   `-- leg_controller.*    Servo mapping, trims, and per-leg wrappers
 |-- lib/Ramp/               Local ramp/interpolation dependency
+|-- examples/
+|   `-- crsf-esp32-reader   Standalone CRSF parser demo
 |-- docs/
 |   |-- control-notes.md    Kinematics, frames, and calibration notes
+|   |-- crsf.md             CRSF/ExpressLRS parser and migration notes
 |   |-- electronics.md      PCB and electronics cage notes
 |   |-- simulation-notes.md Isaac Sim / USD import notes
 |   `-- images/             Portfolio images
@@ -147,4 +167,3 @@ This project builds on lessons from my earlier SpotMicro ESP32 fork:
 - [Blacksheep909/SpotMicroESP32-Nitro-Fork](https://github.com/Blacksheep909/SpotMicroESP32-Nitro-Fork)
 
 The earlier fork is closer to an instructional build log. V10 is more of an engineering snapshot: the firmware and mechanical design are being shaped into a custom platform that can support future gait and simulation work.
-

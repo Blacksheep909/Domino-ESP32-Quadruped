@@ -44,7 +44,7 @@ This is the practical shopping / preparation list for anyone trying to build som
 - Which servo channels are assigned to each leg.
 - Whether your servo horns can be mounted close to the 135-degree electrical midpoint.
 - Whether your regulator can handle stall current from multiple servos.
-- Whether you are copying the V10 mechanics directly or adapting the firmware to your own body geometry.
+- Whether you are copying Domino's mechanics directly or adapting the firmware to your own body geometry.
 
 ## Safety Notes
 
@@ -58,4 +58,3 @@ Servos can draw high current and move suddenly. Bring the system up in layers:
 6. Power all legs with the robot lifted safely.
 
 Do not hold the robot by a moving linkage while testing stand/stow transitions.
-

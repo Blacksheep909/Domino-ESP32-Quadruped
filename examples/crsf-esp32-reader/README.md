@@ -2,7 +2,7 @@
 
 Standalone PlatformIO example for reading CRSF / ExpressLRS RC channel frames on an ESP32.
 
-This is extracted from the V10 quadruped firmware so the receiver work can be understood without the robot state machine, inverse kinematics, or servo control code around it.
+This is extracted from the Domino quadruped firmware so the receiver work can be understood without the robot state machine, inverse kinematics, or servo control code around it.
 
 ## Hardware
 
@@ -26,4 +26,3 @@ pio device monitor
 ```
 
 Serial monitor speed is 115200 baud.
-

@@ -4,17 +4,13 @@ This project includes exploratory work toward bringing the CAD model into Isaac 
 
 ## CAD Export Trail
 
-The local machine has USD exports from the robot CAD under folders named like:
+The local machine has Domino CAD, URDF, and USD exports under:
 
 ```text
-C:\Users\charl\Documents\Domino_URDF_Parts_Combined_Final.step_01
-C:\Users\charl\Documents\Domino_URDF_Parts_Combined_Final.step_02
-C:\Users\charl\Documents\Domino_URDF_Parts_Combined_Final.step_03
-C:\Users\charl\Documents\Domino_URDF_Parts_Combined_Final.step_04
-C:\Users\charl\Documents\Domino_URDF_Parts_Combined_Final.step_05
+C:\Users\charl\Downloads\Domino_URDF_Parts
 ```
 
-The exports include a base USD file plus separate part files for rods, pivots, servo hubs, servo arms, body plates, and linkage parts.
+The exports include STEP/OBJ/FBX assembly files, USD files for Isaac Sim experiments, and a generated URDF package with mesh files. The URDF export is useful documentation, but it is not automatically a faithful simulation model for Domino's linkage.
 
 ## Main Issue
 
@@ -41,4 +37,3 @@ Best next simulation path:
 5. Only then scale to all four legs and the body.
 
 That approach is less literal than importing every CAD mate, but it is more likely to produce a controllable Isaac Sim robot.
-

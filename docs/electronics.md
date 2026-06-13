@@ -18,8 +18,6 @@ The first Domino prototype reused the earlier SpotMicro PCB unchanged as the bas
 
 On the original board, the CRSF upgrade was intentionally easy to add: the receiver only needed suitable power, common ground, and its TX signal routed to the ESP32 serial RX pin used by the firmware. The receiver could then be mounted inside the central electronics cage without changing the core PCB.
 
-![PCB render](images/nitro-pcb-render.png)
-
 ## Electronics Cage
 
 The Domino body is built around a central electronics cage rather than a fully enclosed decorative shell.
@@ -66,5 +64,9 @@ Domino now also includes a dedicated PCB manufacturing package:
 This board revision is very similar in concept to the SpotMicro ESP32 Nitro quadruped PCB: it keeps the ESP32/PCA9685 controller direction, gives the servo and receiver wiring a repeatable home, and keeps the robot easier to service than a loose harness.
 
 The Domino V1.1B update is a more polished and optimized version of that direction. It adds extra headers for cleaner bring-up and expansion wiring, improves the board presentation and connector layout, and resolves several practical bugs and wiring problems exposed by the older board during robot testing.
+
+![Domino PCB V1.1B layout view](images/domino-pcb-v1.1b-layout.png)
+
+![Domino PCB V1.1B render](images/domino-pcb-v1.1b-render.png)
 
 The PCB is still part of a work-in-progress hardware stack. Before ordering or assembling it, inspect the Gerbers, confirm the connector pinout against the current firmware wiring, and bring the board up one subsystem at a time.

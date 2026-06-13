@@ -26,9 +26,9 @@ The Domino V1.1B board moves that idea forward:
 
 The goal is still serviceability. Domino has twelve servos, a CRSF/ExpressLRS receiver, sensor wiring, and external servo power, so the PCB should reduce wiring uncertainty rather than hide what the robot is doing.
 
-![Domino PCB V1.1B layout view](../../../docs/images/domino-pcb-v1.1b-layout.png)
+![Domino PCB V1.1B layout view](../../../docs/images/domino-pcb-1.png)
 
-![Domino PCB V1.1B render](../../../docs/images/domino-pcb-v1.1b-render.png)
+![Domino PCB V1.1B render](../../../docs/images/domino-pcb-2.png)
 
 ## Bring-Up Notes
 

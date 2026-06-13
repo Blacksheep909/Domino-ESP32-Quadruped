@@ -45,15 +45,13 @@ Still in progress:
 
 ## Where To Start
 
-If you are evaluating the project technically, start here:
+If you are looking to build the project start here:
 
 1. [docs/control-notes.md](docs/control-notes.md) - coordinate frames, IK constants, servo mapping, and mode flow.
 2. [docs/crsf.md](docs/crsf.md) - CRSF/ExpressLRS parser and receiver migration notes.
 3. [docs/cad-design.md](docs/cad-design.md) - mechanical structure, STEP exports, composite cage, and simulation limitations.
 4. [docs/electronics.md](docs/electronics.md) - electronics architecture, PCB evolution, and power/control notes.
 5. [hardware/pcb/domino-quadruped-pcb-v1.1b](hardware/pcb/domino-quadruped-pcb-v1.1b) - Domino PCB V1.1B Gerber package.
-
-If you are trying to reproduce the robot, treat the repo as a reference design rather than a finished kit. The current [docs/build-guide.md](docs/build-guide.md) and [docs/hardware-checklist.md](docs/hardware-checklist.md) are bring-up notes only; they deliberately call out what is still missing.
 
 ## Mechanical Design
 

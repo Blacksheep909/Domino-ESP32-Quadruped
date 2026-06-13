@@ -14,9 +14,9 @@ Main components:
 - MPU6050 IMU.
 - Servo harnesses for twelve 270-degree servos.
 
-The PCB was originally designed for the earlier SpotMicro build, then reused unchanged as the basis for Domino's electronics layout. It keeps the wiring strategy consistent across robot versions.
+The first Domino prototype reused the earlier SpotMicro PCB unchanged as the basis for its electronics layout. That kept the wiring strategy consistent across robot versions.
 
-The board has not been redesigned specifically for CRSF. That upgrade is intentionally easy to add: the receiver only needs suitable power, common ground, and its TX signal routed to the ESP32 serial RX pin used by the firmware. The receiver can then be mounted inside the central electronics cage without changing the core PCB.
+On the original board, the CRSF upgrade was intentionally easy to add: the receiver only needed suitable power, common ground, and its TX signal routed to the ESP32 serial RX pin used by the firmware. The receiver could then be mounted inside the central electronics cage without changing the core PCB.
 
 ![PCB render](images/nitro-pcb-render.png)
 
@@ -56,3 +56,15 @@ The older SpotMicro ESP32 Nitro fork is still useful because it documents the pa
 - The build exposed the practical problem of packaging electronics inside a moving robot without making maintenance painful.
 
 Domino keeps that electronics architecture but moves the mechanics to a custom body and leg system.
+
+## Domino PCB V1.1B
+
+Domino now also includes a dedicated PCB manufacturing package:
+
+- [hardware/pcb/domino-quadruped-pcb-v1.1b](../hardware/pcb/domino-quadruped-pcb-v1.1b)
+
+This board revision is very similar in concept to the SpotMicro ESP32 Nitro quadruped PCB: it keeps the ESP32/PCA9685 controller direction, gives the servo and receiver wiring a repeatable home, and keeps the robot easier to service than a loose harness.
+
+The Domino V1.1B update is a more polished and optimized version of that direction. It adds extra headers for cleaner bring-up and expansion wiring, improves the board presentation and connector layout, and resolves several practical bugs and wiring problems exposed by the older board during robot testing.
+
+The PCB is still part of a work-in-progress hardware stack. Before ordering or assembling it, inspect the Gerbers, confirm the connector pinout against the current firmware wiring, and bring the board up one subsystem at a time.

@@ -1,8 +1,8 @@
 # CAD And Mechanical Design
 
-Domino is a prototype ESP32 quadruped built around a carbon-and-printed composite structure, modular 3-DoF legs, and a serviceable central electronics cage. The CAD is included because the mechanical design is a major part of the project: the firmware, wiring layout, servo calibration, and simulation experiments all depend on the geometry being understandable.
+Domino is built around a carbon-and-printed composite structure, modular 3-DoF legs, and a serviceable central electronics cage. The CAD files are included because the mechanical design is a major part of the project: firmware geometry, servo calibration, electronics packaging, and simulation work all depend on the physical layout.
 
-> Work in progress: these CAD exports are documentation and prototype reference files. They are useful for inspection and adaptation, but they still need builder-side checks for servo fit, fastener fit, clearances, print tolerances, and safe joint travel.
+> Work in progress: these CAD exports are prototype reference files. They are suitable for inspection, measurement, and adaptation, but they are not yet a complete manufacturing package. Servo fit, fastener sizes, rod lengths, print tolerances, and safe joint travel still need builder-side validation.
 
 ## Included STEP Exports
 
@@ -19,73 +19,61 @@ The STEP files live under [`cad/step`](../cad/step).
 | [`cad/step/parts/BL.step`](../cad/step/parts/BL.step) | Back-left leg module. |
 | [`cad/step/parts/BR.step`](../cad/step/parts/BR.step) | Back-right leg module. |
 
-The combined final file is the easiest place to start. The individual leg files are more useful once you are checking clearances, servo horn orientation, mirrored geometry, or adapting the robot to different servos.
+Start with the combined final file to inspect the whole robot. Use the individual body and leg files when checking mirrored geometry, servo orientation, linkage clearance, and packaging changes.
 
 ## Design Intent
 
-Domino's mechanical direction is to keep the robot visually and physically honest: the structure, electronics, wiring, and linkage work are visible rather than hidden inside a decorative shell. That makes it easier to debug and easier to explain as a portfolio project.
+The design leaves the structure, electronics, wiring, and linkages visible and serviceable. That makes the robot easier to debug and makes the engineering decisions readable in photos, CAD views, and code review.
 
-The body is built as an electronics spine. Printed side plates, cross braces, and carbon members create a protected middle bay for the PCB, ESP32, CRSF receiver, regulator, battery wiring, and servo harnesses. This is deliberately more serviceable than a sealed body, because twelve servos and a radio receiver create enough wiring that access becomes part of the mechanical design.
+The body acts as an electronics spine. Printed plates and braces locate the electronics bay and leg modules, while carbon members carry longer span loads without making the body bulky.
 
 ![Domino electronics cage](images/domino-electronics-cage.jpg)
 
-The leg modules are designed as repeated corner units. Each leg provides:
+Each leg module provides:
 
 - Hip abduction/adduction.
-- Upper leg pitch.
+- Upper-leg pitch.
 - Lower linkage / knee motion.
 
-The lower mechanism behaves closer to a closed-chain or four-bar linkage than a simple serial robot arm. That helps the physical packaging, but it also means the CAD, firmware, and simulation model cannot be treated as three independent things. The firmware needs the effective leg geometry, the CAD needs enough clearance for the linkage to move without binding, and simulation needs either a constrained closed-loop model or a simplified open-chain approximation.
+The lower mechanism is closer to a closed-chain/four-bar linkage than a simple serial arm. That affects the whole project: the CAD must provide clearance, the firmware must use the effective leg geometry, and simulation must either approximate or explicitly constrain the closed loop.
 
 ![Domino side linkage view](images/domino-linkage-side.jpg)
 
 ## Composite Cage Structure
 
-The central chassis can be thought of as a composite cage: printed structural nodes and plates locate the electronics and pivots, while carbon rods/tubes carry longer span loads and keep the body stiff without making it bulky. The practical advantages are:
+The central chassis can be treated as a composite cage:
 
-- The electronics remain visible and reachable.
-- Servo leads can be routed through the middle rather than around the outside.
-- The receiver can be mounted inside the protected bay after the CRSF conversion.
-- The body stays narrow enough that leg motion, not chassis width, defines the robot's movement envelope.
-- Parts can be iterated independently: legs, body plates, electronics mounts, and carbon members do not all need to change at once.
+- Printed parts define mounting surfaces, pivots, and electronics placement.
+- Carbon rods/tubes provide stiffness across longer spans.
+- The PCB, receiver, regulator, and servo harnessing remain accessible.
+- Leg motion remains the dominant packaging constraint rather than body width.
+- Body, leg, electronics, and carbon-member changes can be iterated separately.
 
-That modularity is the main reason the repo includes separate body and corner-leg STEP files instead of only one monolithic assembly.
+This modularity is why the repo includes separate body and corner-leg STEP files instead of only a single monolithic assembly.
 
 ## Firmware Relationship
 
-The CAD is not just cosmetic. Changes to leg length, servo horn clocking, pivot location, or body width can affect:
+CAD changes can affect firmware behavior. Changes to link length, servo horn clocking, pivot location, or body width may require updates to:
 
 - IK reachability in [`src/ik.cpp`](../src/ik.cpp).
-- Servo channel direction and trim values in [`src/leg_controller.cpp`](../src/leg_controller.cpp).
-- Per-servo safety limits used to keep the robot away from hard mechanical stops.
+- Servo direction and trim values in [`src/leg_controller.cpp`](../src/leg_controller.cpp).
+- Per-servo safety limits.
 - Stand, stow, ride-height, and tilt poses in [`src/main.cpp`](../src/main.cpp).
 
-If you modify the CAD, re-run the bring-up sequence from [calibration-guide.md](calibration-guide.md). Do not assume the existing trim values or safety limits still protect the mechanism after a geometry change.
+After a mechanical change, repeat the bring-up and calibration process. Do not assume the existing trim values or safety limits still protect the mechanism.
 
 ## Simulation And URDF Notes
 
-The current STEP exports came from the same CAD export trail used for the URDF and Isaac Sim experiments. USD/USDZ exports are included under [`simulation/usd`](../simulation/usd). The useful lesson from that work is that a model can import visually while still not being a physically correct robot model.
+The current STEP exports came from the same CAD export trail used for the URDF and Isaac Sim experiments. USD/USDZ exports are included under [`simulation/usd`](../simulation/usd).
 
-URDF-style robots are normally tree-structured. Domino's lower leg linkage is closer to a closed chain, so the exported model needs extra thought before it becomes a controllable simulation:
+The visual CAD import is useful, but it is not automatically a physically correct simulation. URDF-style robots are usually tree-structured, while Domino's lower leg linkage behaves more like a closed chain.
 
-- Use STEP or mesh exports for visual geometry.
-- Build a simplified joint hierarchy for control.
-- Match the simplified joint limits to real CAD clearances.
-- Treat decorative or duplicate linkage pieces as visual geometry unless the simulator supports the needed constraints.
-- Validate one leg before scaling to the full quadruped.
+A useful simulation path is:
+
+1. Validate one simplified leg first.
+2. Match joint axes and limits to the CAD.
+3. Add rods and linkage members as visual geometry where needed.
+4. Add closed-chain constraints only if the simulator workflow supports them cleanly.
+5. Scale to the full quadruped after one leg is controllable.
 
 More detail is in [simulation-notes.md](simulation-notes.md).
-
-## Practical CAD Checklist
-
-Before printing or machining from these files:
-
-1. Open the combined final STEP and inspect the full assembly.
-2. Check each leg module for servo horn clearance through the expected motion range.
-3. Confirm rod, pivot, bearing, screw, and insert sizes against the hardware you actually have.
-4. Print or prototype one leg first.
-5. Center the servos mechanically before relying on software trim.
-6. Keep the robot lifted for first stand/stow tests.
-7. Update firmware safety limits if the mechanical stops or useful servo ranges change.
-
-Domino is a good base to learn from, but it is not a finished kit. Treat the CAD as a prototype design package and validate each mechanical assumption before letting all twelve servos move at once.

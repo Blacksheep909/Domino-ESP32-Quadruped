@@ -1,16 +1,16 @@
-# Build Guide
+# Build And Bring-Up Notes
 
-This guide is intentionally written as a bring-up path, not just a list of parts. The goal is to avoid the common failure mode where the whole robot is assembled before any one subsystem has been proven.
+> Work in progress: this is not a complete assembly manual. It is a cautious bring-up sequence for the firmware and major hardware subsystems. The repo still needs a measured BOM, fastener list, wiring diagram, print settings, rod lengths, and annotated assembly photos before it should be treated as a full public build guide.
 
-## 1. Prepare The Firmware Environment
+## 1. Firmware Environment
 
 Install:
 
 - VS Code.
 - PlatformIO IDE extension.
-- Git, if cloning from GitHub.
+- Git, if cloning the repository.
 
-Clone or download the repo, then build:
+Build from the repository root:
 
 ```powershell
 pio run
@@ -18,7 +18,7 @@ pio run
 
 Expected result: PlatformIO builds the `esp32dev` environment without errors.
 
-## 2. Confirm ESP32 Upload
+## 2. ESP32 Upload
 
 Connect the ESP32 by USB and upload:
 
@@ -34,80 +34,80 @@ pio device monitor
 
 Expected result: boot/debug logs appear at 115200 baud.
 
-## 3. Confirm CRSF / ExpressLRS Input
+## 3. CRSF / ExpressLRS Receiver Check
 
-Before connecting all servos, verify the receiver path.
+Verify the radio link before connecting servos.
 
 Recommended:
 
 - Use the standalone CRSF reader repo first: [ESP32_CRSF_Reader](https://github.com/Blacksheep909/ESP32_CRSF_Reader)
-- Confirm channels move in serial output.
+- Confirm decoded channels move in the serial output.
 - Confirm switch positions match the expected channel indexes.
 
 Robot firmware expects:
 
 - `Serial2` CRSF input.
-- RX pin 16.
-- TX pin 17.
-- CRSF baud 420000.
+- ESP32 RX pin 16.
+- ESP32 TX pin 17.
+- CRSF baud rate of 420000.
 
-## 4. Wire Servo Power Carefully
+## 4. Servo Power Check
 
-The ESP32 should not power the servos. Use a suitable external regulator / BEC and common ground.
+The ESP32 must not power the servos. Use an external regulator or BEC sized for the selected servos.
 
 Check:
 
-- ESP32 ground connected to servo power ground.
-- PCA9685 ground connected to the same ground.
-- Receiver ground connected to the same ground.
-- Servo power voltage matches the servos.
-- No servo rail short before plugging in the battery.
+- ESP32 ground is connected to servo power ground.
+- PCA9685 ground is connected to the same ground.
+- Receiver ground is connected to the same ground.
+- Servo voltage matches the selected servos.
+- The servo rail has no short before battery power is connected.
 
-## 5. Test One Servo
+## 5. One-Servo Test
 
 Before attaching linkages:
 
 1. Power one servo.
-2. Confirm it can move through the expected range.
-3. Confirm 135 degrees is close to mechanical center.
-4. Re-clock the horn if it is far away from neutral.
+2. Command the servo to the expected midpoint.
+3. Confirm the horn can be mounted close to mechanical neutral.
+4. Confirm the servo does not bind at the intended limits.
 
-Do not compensate for a badly mounted horn entirely in software if it can be fixed mechanically.
+Do not use large software trims to hide a badly mounted horn.
 
-## 6. Build One Leg
+## 6. One-Leg Test
 
-Assemble one leg and test it on the bench.
+The repo does not yet contain a complete mechanical assembly manual, so the first meaningful hardware test should be one leg on the bench.
 
 Check:
 
 - Linkage moves freely.
-- Rod ends do not bind.
-- Servo horns do not hit printed parts.
-- The leg can reach neutral without forcing the servo.
-- The leg can stow without a hard mechanical stop.
+- Rod ends and pivots do not bind.
+- Servo horns clear printed parts.
+- The leg can reach neutral without forcing a servo.
+- The leg can stow without hitting a hard stop.
 
-## 7. Assemble All Four Legs On A Stand
+## 7. Full Robot On A Stand
 
-Mount the body and all legs, but keep the robot lifted so the legs are not supporting weight.
+Only connect all twelve servos once the receiver, one servo, and one leg have been tested.
 
-First tests:
+First full-system tests:
 
 - Boot with servo power off.
-- Confirm CRSF link alive.
+- Confirm CRSF link status.
 - Turn servo power on.
 - Test stow.
 - Test stand.
 - Test ride-height presets.
-- Test tilt only after stand is stable.
+- Test tilt only after stand mode is stable.
 
-## 8. First Floor Test
+## 8. Floor Testing
 
-Only place the robot on the floor after:
+The robot should only be placed on the floor after:
 
-- All legs move symmetrically on the stand.
+- All legs move symmetrically on a stand.
 - Stand/stow transitions are predictable.
 - Link-loss behavior is understood.
 - Servo trims are close.
+- The power system does not brown out under load.
 
 Start with short tests and keep power easy to disconnect.
-

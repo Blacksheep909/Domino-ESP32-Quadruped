@@ -64,7 +64,7 @@ If you modify the CAD, re-run the bring-up sequence from [calibration-guide.md](
 
 ## Simulation And URDF Notes
 
-The current STEP exports came from the same CAD export trail used for the URDF and Isaac Sim experiments. The useful lesson from that work is that a model can import visually while still not being a physically correct robot model.
+The current STEP exports came from the same CAD export trail used for the URDF and Isaac Sim experiments. USD/USDZ exports are included under [`simulation/usd`](../simulation/usd). The useful lesson from that work is that a model can import visually while still not being a physically correct robot model.
 
 URDF-style robots are normally tree-structured. Domino's lower leg linkage is closer to a closed chain, so the exported model needs extra thought before it becomes a controllable simulation:
 

@@ -138,7 +138,7 @@ I also tried bringing the CAD into Isaac Sim. The project folder contains USD ex
 
 The hard part was the leg mechanism. The physical linkage is closer to a closed-chain/four-bar mechanism, while many robot simulation and URDF-style workflows prefer tree-structured articulated bodies. That means a literal CAD import does not automatically produce a controllable robot model with the same constraints as the real linkage.
 
-That was still useful: it exposed the gap between "CAD looks correct" and "simulation has the right joints, constraints, inertia, and actuation model." More detail is in [docs/simulation-notes.md](docs/simulation-notes.md).
+That was still useful: it exposed the gap between "CAD looks correct" and "simulation has the right joints, constraints, inertia, and actuation model." The USD/USDZ exports are included under [simulation/usd](simulation/usd), and more detail is in [docs/simulation-notes.md](docs/simulation-notes.md).
 
 ## Build
 
@@ -172,6 +172,8 @@ pio device monitor
 .
 |-- cad/
 |   `-- step/                STEP exports for assembly, body, and leg modules
+|-- simulation/
+|   `-- usd/                 USD/USDZ exports for Isaac Sim experiments
 |-- platformio.ini          PlatformIO build configuration
 |-- src/
 |   |-- main.cpp            State machine, body pose model, RC mode handling

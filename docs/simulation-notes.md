@@ -2,14 +2,22 @@
 
 This project includes exploratory work toward bringing the CAD model into Isaac Sim.
 
-## CAD exports
+## CAD Export Trail
 
-CAD exports include assembly geometry, USD assets, and generated URDF mesh
-packages. Export paths are selected during CAD export and should be referenced
-relative to the project rather than through a contributor's home directory.
+The repo now includes the main neutral CAD and simulation exports:
 
-The exported joint hierarchy is a starting point; it does not automatically
-reproduce the robot's closed-chain linkage constraints.
+```text
+cad/step/
+simulation/usd/
+```
+
+The checked-in exports include STEP files for CAD inspection and USD/USDZ files for Isaac Sim experiments. Earlier URDF export work was useful documentation, but it is not automatically a faithful simulation model for Domino's linkage.
+
+Included USD-family exports:
+
+- [`simulation/usd/Domino_Isaac_SIM.usd`](../simulation/usd/Domino_Isaac_SIM.usd)
+- [`simulation/usd/Domino_Quadruped.usd`](../simulation/usd/Domino_Quadruped.usd)
+- [`simulation/usd/Domino_USD_Parts_Combined_Final.usdz`](../simulation/usd/Domino_USD_Parts_Combined_Final.usdz)
 
 ## Main Issue
 

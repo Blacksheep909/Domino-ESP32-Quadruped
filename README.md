@@ -4,7 +4,7 @@ Custom ESP32 firmware and system notes for Domino, a scratch-built carbon-frame 
 
 > Work in progress: Domino is an active prototype, not a finished kit. The firmware, safety limits, CAD notes, wiring, and calibration process are still being validated on real hardware.
 
-The public project name is Domino. Internally, this build started as the `V10` / `TY90` iteration. `V10` reflects the number of design passes this robot went through, while `CRSF` is the radio-control link used by the firmware.
+The public project name is Domino. Internally, this build started as the `V10`. `V10` reflects the number of design passes this robot went through, while `CRSF` is the radio-control link used by the firmware.
 
 ![Domino quadruped robot build](docs/images/domino-master.jpg)
 

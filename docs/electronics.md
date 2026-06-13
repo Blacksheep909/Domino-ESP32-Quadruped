@@ -65,8 +65,8 @@ This board revision is very similar in concept to the SpotMicro ESP32 Nitro quad
 
 The Domino V1.1B update is a more polished and optimized version of that direction. It adds extra headers for cleaner bring-up and expansion wiring, improves the board presentation and connector layout, and resolves several practical bugs and wiring problems exposed by the older board during robot testing.
 
-![Domino PCB V1.1B layout view](images/domino-pcb-v1.1b-layout.png)
+![Domino PCB V1.1B layout view](images/domino-pcb-1.png)
 
-![Domino PCB V1.1B render](images/domino-pcb-v1.1b-render.png)
+![Domino PCB V1.1B render](images/domino-pcb-2.png)
 
 The PCB is still part of a work-in-progress hardware stack. Before ordering or assembling it, inspect the Gerbers, confirm the connector pinout against the current firmware wiring, and bring the board up one subsystem at a time.

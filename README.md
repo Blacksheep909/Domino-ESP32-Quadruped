@@ -103,9 +103,9 @@ The repo now includes a new Domino PCB manufacturing package under [hardware/pcb
 
 This board is very similar in concept to the SpotMicro ESP32 Nitro quadruped PCB, but it pushes the design further for Domino: extra headers, cleaner expansion and bring-up wiring, a more polished layout/silkscreen direction, and fixes for practical issues found in the older board. The goal is still the same: make the ESP32, PCA9685 servo output, receiver wiring, sensors, and power/control connections more repeatable inside the robot instead of relying on a fragile loose harness.
 
-![Domino PCB V1.1B layout view](docs/images/domino-pcb-v1.1b-layout.png)
+![Domino PCB V1.1B layout view](docs/images/domino-pcb-1.png)
 
-![Domino PCB V1.1B render](docs/images/domino-pcb-v1.1b-render.png)
+![Domino PCB V1.1B render](docs/images/domino-pcb-2.png)
 
 It should still be treated as a prototype PCB. Inspect the Gerbers, confirm the pinout against the firmware, and bring it up one subsystem at a time before connecting all twelve servos.
 

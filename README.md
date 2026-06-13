@@ -1,178 +1,143 @@
 # Domino ESP32 Composite Quadruped
 
-Custom ESP32 firmware and system notes for Domino, a scratch-built carbon-frame 3-DoF quadruped robot. This project sits at the intersection of CAD, embedded firmware, RC control, power electronics, servo calibration, and robotics simulation.
+Domino is a prototype ESP32 quadruped robot built around a carbon-and-printed composite chassis, a custom 3-DoF leg mechanism, CRSF/ExpressLRS radio control, PCA9685 servo output, and CAD-to-simulation experiments.
 
-> Work in progress: Domino is an active prototype, not a finished kit. The firmware, safety limits, CAD notes, wiring, and calibration process are still being validated on real hardware.
-
-The public project name is Domino. Internally, this build started as the `V10`. `V10` reflects the number of design passes this robot went through, while `CRSF` is the radio-control link used by the firmware.
+> Work in progress: Domino is an active engineering prototype, not a finished kit. The firmware, CAD exports, PCB package, calibration notes, and simulation files are included as a project record and technical reference. The repo does not yet contain a complete step-by-step build manual, measured BOM, wiring diagram, or validated production assembly process.
 
 ![Domino quadruped robot build](docs/images/domino-master.jpg)
 
-## Project Details
+## Why This Project Matters
 
-My earlier robot dog work started from a SpotMicro ESP32 fork. That was useful because it gave me a working reference for servo-driven quadruped control, custom PCB layout, and hobby-radio control. Domino is the next step: a custom mechanical platform with a cleaner firmware architecture, a more deliberate body/electronics layout, and a major radio-link upgrade from iBUS-style receiver code to custom CRSF/ExpressLRS parsing on the ESP32.
+Domino is the successor to my earlier SpotMicro ESP32 Nitro work. The earlier project gave me a working base for servo-driven quadruped control, PCB packaging, and RC-controlled robot bring-up. Domino moves beyond that reference design into a more custom platform:
 
-The project is not just "code for a robot." It is a full stack hardware project:
+- A scratch-built mechanical layout using carbon members and 3D-printed structural parts.
+- A serviceable electronics cage rather than a sealed body shell.
+- Per-leg inverse kinematics for a custom 3-DoF mechanism.
+- A move from iBUS-style receiver handling to custom CRSF/ExpressLRS parsing on the ESP32.
+- A new Domino PCB manufacturing package based on lessons from the older SpotMicro Nitro board.
+- CAD, STEP, USD, and Isaac Sim export work documenting the mechanical and simulation path.
 
-- CAD-designed body and leg linkages.
-- 3D-printed structural parts and carbon rod/tube members.
-- A central electronics cage that carries the PCB, battery wiring, receiver, regulator, and servo harnesses.
-- ESP32 firmware using PlatformIO and Arduino.
-- Custom CRSF/ExpressLRS receiver input with failsafe behavior.
-- Inverse kinematics for four 3-DoF legs.
-- Isaac Sim / USD export experiments to explore simulation before hardware testing.
-
-## Mechanical Build and Composite Structure Information
-
-The main challenge is that the robot is mechanically simple in appearance but awkward in all the useful ways: multiple servos, mirrored geometry, heavy wiring, uncertain trim offsets, flexible printed parts, a high-speed CRSF serial receiver stream, and a leg mechanism that behaves like a closed-chain/four-bar linkage rather than a clean open-chain robot arm.
-
-That forced the firmware to be explicit about geometry, coordinate frames, servo direction signs, and safe state transitions. The code is written so that future work, especially walking gaits, can build on a stable low-level model rather than repeatedly re-solving servo mapping problems.
-
-![Domino side linkage view](docs/images/domino-linkage-side.jpg)
-
-![CAD side view](docs/images/cad-full-side.png)
+As a portfolio project, Domino demonstrates mechanical design, embedded firmware, RC protocol work, power distribution, servo safety, calibration, and simulation constraints in one prototype hardware stack.
 
 ## Current Status
 
-Implemented:
+Implemented or documented:
 
 - ESP32 DevKit firmware using PlatformIO and Arduino.
-- PCA9685 PWM output for 12 servos across four legs.
-- Per-leg inverse kinematics for hip, upper leg, and lower linkage angles.
-- Custom CRSF/ExpressLRS receiver parser with channel unpacking, filtering, switch debouncing, and link-loss handling.
-- Stand, stow, body tilt, and experimental balance modes.
-- Three ride-height presets selected from an RC switch.
-- MPU6050 IMU sampling with filtered accelerometer and gyroscope state.
-- Debug logging for mode transitions, RC link state, body pose, and balance behavior.
+- PCA9685 output for twelve servos across four legs.
+- CAD-derived inverse kinematics for hip, upper-leg, and lower-linkage angles.
+- Custom CRSF/ExpressLRS receiver parser with packed-channel decoding, filtering, switch debouncing, and link-loss handling.
+- Stand, stow, body tilt, ride-height preset, and experimental balance modes.
+- MPU6050 IMU sampling and filtered roll/pitch state.
+- Per-servo safety limits to reduce the chance of driving the mechanism into hard stops.
+- STEP exports for assembly, body, and leg inspection.
+- USD/USDZ exports from the Isaac Sim exploration path.
+- Domino PCB V1.1B Gerber package and PCB screenshots.
 
 Still in progress:
 
 - Full walking gait generation.
-- More robust dynamic balance tuning.
-- Better calibration tooling for servo trims and horn alignment.
-- More measured drawings and build-ready print/export notes.
-- Wiring diagrams and short demo clips.
+- Dynamic balance tuning.
+- A complete measured BOM.
+- Wiring diagrams and annotated cable-routing photos.
+- Printed-part orientation, fastener, bearing, insert, and rod-length documentation.
+- A validated start-to-finish public build manual.
 
-## Start Here If You Want To Build One
+## Where To Start
 
-This repository is written as both a portfolio project and a build reference. If you are trying to reproduce or adapt the robot, read these in order:
+If you are evaluating the project technically, start here:
 
-1. [docs/hardware-checklist.md](docs/hardware-checklist.md) - parts, tools, and decisions to make before printing or wiring anything.
-2. [docs/cad-design.md](docs/cad-design.md) - CAD exports, composite cage design, leg modules, and simulation constraints.
-3. [docs/build-guide.md](docs/build-guide.md) - mechanical, electronics, firmware, and first-power-up sequence.
-4. [docs/calibration-guide.md](docs/calibration-guide.md) - servo centering, trim values, and safe stand/stow testing.
-5. [docs/troubleshooting.md](docs/troubleshooting.md) - common failures and what to check first.
-6. [docs/control-notes.md](docs/control-notes.md) - deeper coordinate frames, IK, and servo mapping.
+1. [docs/control-notes.md](docs/control-notes.md) - coordinate frames, IK constants, servo mapping, and mode flow.
+2. [docs/crsf.md](docs/crsf.md) - CRSF/ExpressLRS parser and receiver migration notes.
+3. [docs/cad-design.md](docs/cad-design.md) - mechanical structure, STEP exports, composite cage, and simulation limitations.
+4. [docs/electronics.md](docs/electronics.md) - electronics architecture, PCB evolution, and power/control notes.
+5. [hardware/pcb/domino-quadruped-pcb-v1.1b](hardware/pcb/domino-quadruped-pcb-v1.1b) - Domino PCB V1.1B Gerber package.
 
-The most important rule is to test in layers: receiver first, then one servo, then one leg, then all legs on a stand, then body modes. Do not jump straight from flashing firmware to putting the robot on the floor.
+If you are trying to reproduce the robot, treat the repo as a reference design rather than a finished kit. The current [docs/build-guide.md](docs/build-guide.md) and [docs/hardware-checklist.md](docs/hardware-checklist.md) are bring-up notes only; they deliberately call out what is still missing.
 
 ## Mechanical Design
 
 Each leg has three actuated degrees of freedom:
 
 - Hip abduction/adduction.
-- Upper leg pitch.
+- Upper-leg pitch.
 - Lower linkage / knee motion.
 
-The body uses a long central cage layout rather than a dense square chassis. The goal was to keep the wiring and electronics accessible while giving the leg modules enough spacing to move without immediately colliding with the body.
+The body uses a long central cage instead of a compact square chassis. This keeps wiring, receiver placement, PCB access, and servo harness routing serviceable while giving the leg modules room to move.
 
-The center section is effectively an electronics spine: printed end plates and cross braces hold the body rails, while the PCB, receiver, regulator, battery wiring, and servo harnesses sit inside the protected middle bay. It is easier to service than burying the electronics under a shell, and it makes the robot's iteration history visible.
+The lower leg behaves more like a closed-chain/four-bar mechanism than a simple open-chain robot arm. That creates useful packaging options, but it also makes firmware and simulation more demanding: servo mapping, linkage clearances, safe joint limits, and CAD-derived IK constants all need to agree.
 
-![Domino top-down electronics cage](docs/images/domino-electronics-cage.jpg)
+![Domino side linkage view](docs/images/domino-linkage-side.jpg)
 
-The current neutral CAD exports are included under [cad/step](cad/step). The main design write-up is [docs/cad-design.md](docs/cad-design.md), which covers the STEP files, modular leg design, electronics cage, firmware geometry assumptions, and the Isaac Sim / URDF export limitations.
+![CAD side view](docs/images/cad-full-side.png)
+
+The neutral CAD exports are included under [cad/step](cad/step). The mechanical write-up is in [docs/cad-design.md](docs/cad-design.md).
 
 ## Electronics
 
-The electronics are based on the PCB architecture from my earlier SpotMicro ESP32 Nitro fork. That board was designed to reduce wiring mess and make the servo/power layout repeatable:
+Domino began by reusing the electronics architecture from my SpotMicro ESP32 Nitro fork: ESP32 control, PCA9685 servo output, external servo power, receiver wiring, sensor headers, and utility connections gathered into a serviceable board layout.
 
-- ESP32 DevKit as the main controller.
-- PCA9685 servo driver for multi-servo PWM output.
-- External regulator / BEC path for servo power.
-- CRSF/receiver wiring.
-- Sensor and utility headers.
-- Space for buzzer/relay/current/voltage-related modules used during earlier experiments.
+The first Domino prototype reused the older PCB directly. Moving to CRSF/ExpressLRS did not require a full board redesign: the receiver needed suitable power, common ground, and its TX signal routed into the ESP32 serial input used by the firmware.
 
-The original Domino prototype reused that older PCB unchanged. The CRSF/ExpressLRS receiver change was a small, practical modification: route receiver power, ground, and the receiver TX line into the ESP32 serial input used by the firmware, then mount the receiver inside the electronics cage.
-
-The Domino chassis reuses this electronics approach but changes the mechanical packaging around it. The newer Domino PCB V1.1B package below documents the next board revision. More detail is in [docs/electronics.md](docs/electronics.md).
-
-## Domino PCB V1.1B
-
-The repo now includes a new Domino PCB manufacturing package under [hardware/pcb/domino-quadruped-pcb-v1.1b](hardware/pcb/domino-quadruped-pcb-v1.1b).
-
-This board is very similar in concept to the SpotMicro ESP32 Nitro quadruped PCB, but it pushes the design further for Domino: extra headers, cleaner expansion and bring-up wiring, a more polished layout/silkscreen direction, and fixes for practical issues found in the older board. The goal is still the same: make the ESP32, PCA9685 servo output, receiver wiring, sensors, and power/control connections more repeatable inside the robot instead of relying on a fragile loose harness.
+The newer Domino PCB V1.1B is a dedicated board package for this platform. It follows the same ESP32/PCA9685 quadruped-control concept, but adds extra headers, improves connector layout and silkscreen presentation, and addresses practical issues found while using the older board.
 
 ![Domino PCB V1.1B layout view](docs/images/domino-pcb-1.png)
 
 ![Domino PCB V1.1B render](docs/images/domino-pcb-2.png)
 
-It should still be treated as a prototype PCB. Inspect the Gerbers, confirm the pinout against the firmware, and bring it up one subsystem at a time before connecting all twelve servos.
-
-## CRSF / ExpressLRS Radio Link
-
-One of the big goals of this version was moving away from simpler iBUS-style receiver handling and onto CRSF. CRSF is faster and more common in modern ExpressLRS setups, but it also means the firmware has to parse packed frames correctly instead of relying on a basic hobby-servo pulse style interface.
-
-The custom ESP32 CRSF code handles:
-
-- `Serial2` at 420000 baud.
-- CRSF frame synchronization and length validation.
-- DVB-S2 CRC8 validation.
-- Packed 11-bit channel decoding for 16 RC channels.
-- Conversion into 1000-2000 us style channel values.
-- First- and second-order filtering before the control loop consumes stick/switch state.
-- Link timeout detection for failsafe behavior.
-
-That receiver layer is important enough that this repo includes both the robot integration in `src/crsf.*` and a standalone extraction in [examples/crsf-esp32-reader](examples/crsf-esp32-reader). It could become its own small repository later if the goal is to present it as a reusable ESP32 CRSF reader.
+More detail is in [docs/electronics.md](docs/electronics.md).
 
 ## Firmware Architecture
 
-The firmware separates the problem into small pieces:
+The firmware is split by responsibility:
 
-- `src/crsf.cpp`: CRSF frame parsing and RC channel state.
-- `src/ik.cpp`: single-leg inverse kinematics.
-- `src/leg_controller.cpp`: servo channel mapping, direction signs, and trim offsets.
-- `src/imu.cpp`: MPU6050 reading and filtering.
-- `src/main.cpp`: state machine, body pose math, ride height, tilt, balance, and failsafe behavior.
+- `src/crsf.cpp` / `src/crsf.h`: CRSF frame parsing, channel unpacking, filtering, and link-health state.
+- `src/ik.cpp` / `src/ik.h`: CAD-derived single-leg inverse kinematics.
+- `src/leg_controller.cpp` / `src/leg_controller.h`: PCA9685 channel mapping, direction signs, trims, and servo limit enforcement.
+- `src/imu.cpp` / `src/imu.h`: MPU6050 initialization, sampling, and filtered orientation state.
+- `src/main.cpp`: high-level state machine, body pose model, ride height, tilt mode, balance experiment, and failsafe behavior.
 
-The most important design choice is that high-level behaviors generate foot/body pose targets, then feed them through the same IK and servo mapping path. That keeps stand, stow, tilt, and future gaits consistent.
+High-level behavior generates body/foot pose targets, then passes them through the same IK and servo mapping path. That keeps stand, stow, tilt, balance, and future gait work tied to one low-level geometry model.
 
-See [docs/crsf.md](docs/crsf.md) for the receiver migration notes and parser details.
-See [docs/control-notes.md](docs/control-notes.md) for the coordinate frames, servo channels, and calibration details.
+## CRSF / ExpressLRS Radio Link
 
-## Simulation Work
+One major goal of Domino was replacing simpler iBUS-style receiver handling with CRSF. CRSF is common in ExpressLRS systems and gives the robot a fast serial RC link, but it also requires correct frame synchronization, CRC validation, packed-channel decoding, filtering, and failsafe behavior.
 
-I also tried bringing the CAD into Isaac Sim. The project folder contains USD exports generated from the robot CAD, including separate part files for rods, pivots, servo hubs, arms, and body plates.
+The robot repo includes the integrated parser in `src/crsf.*` and a small example under [examples/crsf-esp32-reader](examples/crsf-esp32-reader). The reusable extraction now lives in its own repo:
 
-The hard part was the leg mechanism. The physical linkage is closer to a closed-chain/four-bar mechanism, while many robot simulation and URDF-style workflows prefer tree-structured articulated bodies. That means a literal CAD import does not automatically produce a controllable robot model with the same constraints as the real linkage.
+- [Blacksheep909/ESP32_CRSF_Reader](https://github.com/Blacksheep909/ESP32_CRSF_Reader)
 
-That was still useful: it exposed the gap between "CAD looks correct" and "simulation has the right joints, constraints, inertia, and actuation model." The USD/USDZ exports are included under [simulation/usd](simulation/usd), and more detail is in [docs/simulation-notes.md](docs/simulation-notes.md).
+## CAD And Simulation Exports
 
-## Build
+The repo includes:
 
-Install:
+- STEP files under [cad/step](cad/step).
+- USD/USDZ exports under [simulation/usd](simulation/usd).
+- CAD and simulation notes in [docs/cad-design.md](docs/cad-design.md) and [docs/simulation-notes.md](docs/simulation-notes.md).
 
-- [VS Code](https://code.visualstudio.com/)
-- PlatformIO IDE extension for VS Code
-- Git, if you want to clone instead of downloading the repository
+The simulation work is exploratory. The visual model can be imported, but the real leg mechanism is closer to a closed-chain linkage than a URDF-friendly tree. A controllable simulation will need a simplified joint model or explicit constraints rather than a blind CAD import.
 
-Open this folder in VS Code with the PlatformIO extension installed, or build from a terminal:
+## Build And Bring-Up Status
+
+The firmware can be built with PlatformIO:
 
 ```powershell
 pio run
 ```
 
-Upload to the ESP32:
+Upload to an ESP32 DevKit:
 
 ```powershell
 pio run -t upload
 ```
 
-Open the serial monitor at 115200 baud:
+Open the serial monitor:
 
 ```powershell
 pio device monitor
 ```
+
+Hardware bring-up should be done in layers: receiver first, then one servo, then one leg, then all legs on a stand. The current docs do not yet contain enough measured hardware detail to recommend building the full robot directly from the repo.
 
 ## Repository Layout
 
@@ -185,27 +150,13 @@ pio device monitor
 |-- simulation/
 |   `-- usd/                 USD/USDZ exports for Isaac Sim experiments
 |-- platformio.ini          PlatformIO build configuration
-|-- src/
-|   |-- main.cpp            State machine, body pose model, RC mode handling
-|   |-- crsf.cpp/.h         CRSF frame parsing and channel state
-|   |-- ik.cpp/.h           Single-leg inverse kinematics
-|   |-- imu.cpp/.h          MPU6050 sampling and filtering
-|   `-- leg_controller.*    Servo mapping, trims, and per-leg wrappers
-|-- lib/Ramp/               Local ramp/interpolation dependency
+|-- src/                    Robot firmware
 |-- examples/
 |   `-- crsf-esp32-reader   Standalone CRSF parser demo
-|-- docs/
-|   |-- build-guide.md      Step-by-step build and bring-up sequence
-|   |-- cad-design.md       CAD exports and mechanical design notes
-|   |-- calibration-guide.md Servo centering and trim workflow
-|   |-- control-notes.md    Kinematics, frames, and calibration notes
-|   |-- crsf.md             CRSF/ExpressLRS parser and migration notes
-|   |-- electronics.md      PCB and electronics cage notes
-|   |-- hardware-checklist.md Parts, tools, and pre-build checks
-|   |-- simulation-notes.md Isaac Sim / USD import notes
-|   |-- troubleshooting.md  Bring-up and debugging checklist
-|   `-- images/             Portfolio images
-`-- include/, test/         Standard PlatformIO project folders
+|-- docs/                   Design, calibration, electronics, and simulation notes
+|-- include/                Project include directory
+|-- lib/                    Project-local libraries
+`-- test/                   Future firmware tests
 ```
 
 ## Related Work
@@ -214,7 +165,7 @@ This project builds on lessons from my earlier SpotMicro ESP32 fork:
 
 - [Blacksheep909/SpotMicroESP32-Nitro-Fork](https://github.com/Blacksheep909/SpotMicroESP32-Nitro-Fork)
 
-The earlier fork is closer to an instructional build log. Domino is more of an engineering snapshot: the firmware and mechanical design are being shaped into a custom platform that can support future gait and simulation work.
+The earlier fork is closer to an instructional build log. Domino is a custom engineering snapshot: the firmware, CAD, PCB work, and simulation experiments are being shaped into a cleaner quadruped platform.
 
 ## Credits
 

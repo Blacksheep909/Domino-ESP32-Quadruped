@@ -95,10 +95,6 @@ The electronics are based on the PCB architecture from my earlier SpotMicro ESP3
 
 The original Domino prototype reused that older PCB unchanged. The CRSF/ExpressLRS receiver change was a small, practical modification: route receiver power, ground, and the receiver TX line into the ESP32 serial input used by the firmware, then mount the receiver inside the electronics cage.
 
-![PCB render](docs/images/nitro-pcb-render.png)
-
-![Assembled PCB](docs/images/assembled-pcb.jpg)
-
 The Domino chassis reuses this electronics approach but changes the mechanical packaging around it. The newer Domino PCB V1.1B package below documents the next board revision. More detail is in [docs/electronics.md](docs/electronics.md).
 
 ## Domino PCB V1.1B
@@ -106,6 +102,10 @@ The Domino chassis reuses this electronics approach but changes the mechanical p
 The repo now includes a new Domino PCB manufacturing package under [hardware/pcb/domino-quadruped-pcb-v1.1b](hardware/pcb/domino-quadruped-pcb-v1.1b).
 
 This board is very similar in concept to the SpotMicro ESP32 Nitro quadruped PCB, but it pushes the design further for Domino: extra headers, cleaner expansion and bring-up wiring, a more polished layout/silkscreen direction, and fixes for practical issues found in the older board. The goal is still the same: make the ESP32, PCA9685 servo output, receiver wiring, sensors, and power/control connections more repeatable inside the robot instead of relying on a fragile loose harness.
+
+![Domino PCB V1.1B layout view](docs/images/domino-pcb-v1.1b-layout.png)
+
+![Domino PCB V1.1B render](docs/images/domino-pcb-v1.1b-render.png)
 
 It should still be treated as a prototype PCB. Inspect the Gerbers, confirm the pinout against the firmware, and bring it up one subsystem at a time before connecting all twelve servos.
 

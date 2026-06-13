@@ -4,13 +4,20 @@ This project includes exploratory work toward bringing the CAD model into Isaac 
 
 ## CAD Export Trail
 
-The local machine has Domino CAD, URDF, and USD exports under:
+The repo now includes the main neutral CAD and simulation exports:
 
 ```text
-C:\Users\charl\Downloads\Domino_URDF_Parts
+cad/step/
+simulation/usd/
 ```
 
-The exports include STEP/OBJ/FBX assembly files, USD files for Isaac Sim experiments, and a generated URDF package with mesh files. The URDF export is useful documentation, but it is not automatically a faithful simulation model for Domino's linkage.
+The checked-in exports include STEP files for CAD inspection and USD/USDZ files for Isaac Sim experiments. Earlier URDF export work was useful documentation, but it is not automatically a faithful simulation model for Domino's linkage.
+
+Included USD-family exports:
+
+- [`simulation/usd/Domino_Isaac_SIM.usd`](../simulation/usd/Domino_Isaac_SIM.usd)
+- [`simulation/usd/Domino_Quadruped.usd`](../simulation/usd/Domino_Quadruped.usd)
+- [`simulation/usd/Domino_USD_Parts_Combined_Final.usdz`](../simulation/usd/Domino_USD_Parts_Combined_Final.usdz)
 
 ## Main Issue
 

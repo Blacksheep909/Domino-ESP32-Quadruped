@@ -1,0 +1,677 @@
+﻿{
+    "Source":  "simulation/urdf/generated/Domino_URDF_Parts_Combined_Final_description/urdf/Domino_URDF_Parts_Combined_Final.urdf",
+    "Assumptions":  [
+                        "URDF joint origin rpy values are zero in this export, so pivot positions are accumulated by translation only.",
+                        "Repeated child link names are treated as loop-closure evidence; this script reports closure pivot agreement rather than creating an Isaac articulation."
+                    ],
+    "NonZeroJointOriginRpyCount":  0,
+    "LinkFrameSources":  {
+                             "DOM_P__15__1":  "Revolute 45",
+                             "DOM_P__2__1":  "Revolute 33",
+                             "base_link":  "root",
+                             "DOM_P__27__1":  "Revolute 54",
+                             "DOM_P__14__1":  "Revolute 35",
+                             "DOM_P__19__1":  "Revolute 57",
+                             "DOM_P__1__1":  "Revolute 25",
+                             "DOM_P__24__1":  "Revolute 42",
+                             "DOM_P__6__1":  "Revolute 58",
+                             "DOM_P__17__1":  "Revolute 56",
+                             "DOM_P__8__1":  "Revolute 55",
+                             "DOM_P__13__1":  "Revolute 46",
+                             "DOM_P__3__1":  "Revolute 51",
+                             "DOM_P__18__1":  "Revolute 48",
+                             "DOM_P__10__1":  "Revolute 36",
+                             "DOM_P__20__1":  "Revolute 53",
+                             "DOM_P_1":  "Revolute 43",
+                             "DOM_P__26__1":  "Revolute 21",
+                             "DOM_P__25__1":  "Revolute 3",
+                             "DOM_P__16__1":  "Revolute 47",
+                             "DOM_P__7__1":  "Revolute 44",
+                             "DOM_P__4__1":  "Revolute 1",
+                             "DOM_P__9__1":  "Revolute 50",
+                             "DOM_P__23__1":  "Revolute 37",
+                             "DOM_P__21__1":  "Revolute 4",
+                             "DOM_P__22__1":  "Revolute 27",
+                             "DOM_P__12__1":  "Revolute 2",
+                             "DOM_P__5__1":  "Revolute 59",
+                             "DOM_P__11__1":  "Revolute 23"
+                         },
+    "Clusters":  [
+                     {
+                         "Id":  "dom_p_4_1_lower_triangle",
+                         "HipLink":  "DOM_P__4__1",
+                         "Description":  "One lower-linkage loop on the DOM_P__4__1 leg. This is the first CAD-derived one-joint Isaac target.",
+                         "HipFrameWorldM":  [
+                                                0.2665,
+                                                0,
+                                                0.0105
+                                            ],
+                         "Pivots":  [
+                                        {
+                                            "Joint":  "Revolute 59",
+                                            "Type":  "revolute",
+                                            "Parent":  "DOM_P__4__1",
+                                            "Child":  "DOM_P__5__1",
+                                            "Axis":  [
+                                                         0,
+                                                         -1,
+                                                         0
+                                                     ],
+                                            "LimitLower":  -2.094395,
+                                            "LimitUpper":  0,
+                                            "PivotWorldM":  [
+                                                                0.323,
+                                                                -0.028,
+                                                                -0.0105
+                                                            ],
+                                            "PivotRelativeToHipM":  [
+                                                                        0.056499999999999995,
+                                                                        -0.028,
+                                                                        -0.021
+                                                                    ],
+                                            "PivotRelativeXZToHipM":  [
+                                                                          0.056499999999999995,
+                                                                          -0.021
+                                                                      ]
+                                        },
+                                        {
+                                            "Joint":  "Revolute 43",
+                                            "Type":  "continuous",
+                                            "Parent":  "DOM_P__5__1",
+                                            "Child":  "DOM_P_1",
+                                            "Axis":  [
+                                                         0,
+                                                         1,
+                                                         0
+                                                     ],
+                                            "LimitLower":  null,
+                                            "LimitUpper":  null,
+                                            "PivotWorldM":  [
+                                                                0.323,
+                                                                -0.036000000000000004,
+                                                                -0.0105
+                                                            ],
+                                            "PivotRelativeToHipM":  [
+                                                                        0.056499999999999995,
+                                                                        -0.036000000000000004,
+                                                                        -0.021
+                                                                    ],
+                                            "PivotRelativeXZToHipM":  [
+                                                                          0.056499999999999995,
+                                                                          -0.021
+                                                                      ]
+                                        },
+                                        {
+                                            "Joint":  "Revolute 33",
+                                            "Type":  "continuous",
+                                            "Parent":  "DOM_P_1",
+                                            "Child":  "DOM_P__2__1",
+                                            "Axis":  [
+                                                         0,
+                                                         -1,
+                                                         0
+                                                     ],
+                                            "LimitLower":  null,
+                                            "LimitUpper":  null,
+                                            "PivotWorldM":  [
+                                                                0.294708,
+                                                                -0.035600000000000007,
+                                                                0.017777
+                                                            ],
+                                            "PivotRelativeToHipM":  [
+                                                                        0.028208000000000011,
+                                                                        -0.035600000000000007,
+                                                                        0.0072770000000000005
+                                                                    ],
+                                            "PivotRelativeXZToHipM":  [
+                                                                          0.028208000000000011,
+                                                                          0.0072770000000000005
+                                                                      ]
+                                        },
+                                        {
+                                            "Joint":  "Revolute 26",
+                                            "Type":  "continuous",
+                                            "Parent":  "DOM_P__2__1",
+                                            "Child":  "DOM_P__1__1",
+                                            "Axis":  [
+                                                         0,
+                                                         1,
+                                                         0
+                                                     ],
+                                            "LimitLower":  null,
+                                            "LimitUpper":  null,
+                                            "PivotWorldM":  [
+                                                                0.18202400000000002,
+                                                                -0.048100000000000004,
+                                                                -0.095615
+                                                            ],
+                                            "PivotRelativeToHipM":  [
+                                                                        -0.084476,
+                                                                        -0.048100000000000004,
+                                                                        -0.106115
+                                                                    ],
+                                            "PivotRelativeXZToHipM":  [
+                                                                          -0.084476,
+                                                                          -0.106115
+                                                                      ]
+                                        },
+                                        {
+                                            "Joint":  "Revolute 25",
+                                            "Type":  "continuous",
+                                            "Parent":  "DOM_P__5__1",
+                                            "Child":  "DOM_P__1__1",
+                                            "Axis":  [
+                                                         0,
+                                                         1,
+                                                         0
+                                                     ],
+                                            "LimitLower":  null,
+                                            "LimitUpper":  null,
+                                            "PivotWorldM":  [
+                                                                0.18202400000000002,
+                                                                -0.048100000000000004,
+                                                                -0.095614999999999992
+                                                            ],
+                                            "PivotRelativeToHipM":  [
+                                                                        -0.084476,
+                                                                        -0.048100000000000004,
+                                                                        -0.10611499999999999
+                                                                    ],
+                                            "PivotRelativeXZToHipM":  [
+                                                                          -0.084476,
+                                                                          -0.10611499999999999
+                                                                      ]
+                                        }
+                                    ],
+                         "ClosureChecks":  [
+                                               {
+                                                   "JointA":  "Revolute 25",
+                                                   "JointB":  "Revolute 26",
+                                                   "DistanceM":  1.3877787807814457E-17,
+                                                   "MidpointWorldM":  [
+                                                                          0.18202400000000002,
+                                                                          -0.048100000000000004,
+                                                                          -0.095615
+                                                                      ]
+                                               }
+                                           ]
+                     },
+                     {
+                         "Id":  "dom_p_4_1_upper_loop",
+                         "HipLink":  "DOM_P__4__1",
+                         "Description":  "Upper/lower leg loop that shares the DOM_P__4__1 leg pitch pivots.",
+                         "HipFrameWorldM":  [
+                                                0.2665,
+                                                0,
+                                                0.0105
+                                            ],
+                         "Pivots":  [
+                                        {
+                                            "Joint":  "Revolute 58",
+                                            "Type":  "revolute",
+                                            "Parent":  "DOM_P__4__1",
+                                            "Child":  "DOM_P__6__1",
+                                            "Axis":  [
+                                                         0,
+                                                         -1,
+                                                         0
+                                                     ],
+                                            "LimitLower":  -0.523599,
+                                            "LimitUpper":  1.047198,
+                                            "PivotWorldM":  [
+                                                                0.34700000000000003,
+                                                                -0.028,
+                                                                0.0105
+                                                            ],
+                                            "PivotRelativeToHipM":  [
+                                                                        0.080500000000000016,
+                                                                        -0.028,
+                                                                        0
+                                                                    ],
+                                            "PivotRelativeXZToHipM":  [
+                                                                          0.080500000000000016,
+                                                                          0
+                                                                      ]
+                                        },
+                                        {
+                                            "Joint":  "Revolute 59",
+                                            "Type":  "revolute",
+                                            "Parent":  "DOM_P__4__1",
+                                            "Child":  "DOM_P__5__1",
+                                            "Axis":  [
+                                                         0,
+                                                         -1,
+                                                         0
+                                                     ],
+                                            "LimitLower":  -2.094395,
+                                            "LimitUpper":  0,
+                                            "PivotWorldM":  [
+                                                                0.323,
+                                                                -0.028,
+                                                                -0.0105
+                                                            ],
+                                            "PivotRelativeToHipM":  [
+                                                                        0.056499999999999995,
+                                                                        -0.028,
+                                                                        -0.021
+                                                                    ],
+                                            "PivotRelativeXZToHipM":  [
+                                                                          0.056499999999999995,
+                                                                          -0.021
+                                                                      ]
+                                        },
+                                        {
+                                            "Joint":  "Revolute 43",
+                                            "Type":  "continuous",
+                                            "Parent":  "DOM_P__5__1",
+                                            "Child":  "DOM_P_1",
+                                            "Axis":  [
+                                                         0,
+                                                         1,
+                                                         0
+                                                     ],
+                                            "LimitLower":  null,
+                                            "LimitUpper":  null,
+                                            "PivotWorldM":  [
+                                                                0.323,
+                                                                -0.036000000000000004,
+                                                                -0.0105
+                                                            ],
+                                            "PivotRelativeToHipM":  [
+                                                                        0.056499999999999995,
+                                                                        -0.036000000000000004,
+                                                                        -0.021
+                                                                    ],
+                                            "PivotRelativeXZToHipM":  [
+                                                                          0.056499999999999995,
+                                                                          -0.021
+                                                                      ]
+                                        },
+                                        {
+                                            "Joint":  "Revolute 32",
+                                            "Type":  "continuous",
+                                            "Parent":  "DOM_P_1",
+                                            "Child":  "DOM_P__3__1",
+                                            "Axis":  [
+                                                         0,
+                                                         -1,
+                                                         0
+                                                     ],
+                                            "LimitLower":  null,
+                                            "LimitUpper":  null,
+                                            "PivotWorldM":  [
+                                                                0.33664700000000003,
+                                                                -0.035600000000000007,
+                                                                0.049137
+                                                            ],
+                                            "PivotRelativeToHipM":  [
+                                                                        0.070147000000000015,
+                                                                        -0.035600000000000007,
+                                                                        0.038637
+                                                                    ],
+                                            "PivotRelativeXZToHipM":  [
+                                                                          0.070147000000000015,
+                                                                          0.038637
+                                                                      ]
+                                        },
+                                        {
+                                            "Joint":  "Revolute 51",
+                                            "Type":  "continuous",
+                                            "Parent":  "DOM_P__6__1",
+                                            "Child":  "DOM_P__3__1",
+                                            "Axis":  [
+                                                         0,
+                                                         1,
+                                                         0
+                                                     ],
+                                            "LimitLower":  null,
+                                            "LimitUpper":  null,
+                                            "PivotWorldM":  [
+                                                                0.33664700000000003,
+                                                                -0.0356,
+                                                                0.049137
+                                                            ],
+                                            "PivotRelativeToHipM":  [
+                                                                        0.070147000000000015,
+                                                                        -0.0356,
+                                                                        0.038637
+                                                                    ],
+                                            "PivotRelativeXZToHipM":  [
+                                                                          0.070147000000000015,
+                                                                          0.038637
+                                                                      ]
+                                        }
+                                    ],
+                         "ClosureChecks":  [
+                                               {
+                                                   "JointA":  "Revolute 32",
+                                                   "JointB":  "Revolute 51",
+                                                   "DistanceM":  6.9388939039072284E-18,
+                                                   "MidpointWorldM":  [
+                                                                          0.33664700000000003,
+                                                                          -0.035600000000000007,
+                                                                          0.049137
+                                                                      ]
+                                               }
+                                           ]
+                     },
+                     {
+                         "Id":  "dom_p_12_1_lower_triangle",
+                         "HipLink":  "DOM_P__12__1",
+                         "Description":  "Mirrored lower-linkage loop on the DOM_P__12__1 leg.",
+                         "HipFrameWorldM":  [
+                                                0.2665,
+                                                0.12475,
+                                                0.0105
+                                            ],
+                         "Pivots":  [
+                                        {
+                                            "Joint":  "Revolute 46",
+                                            "Type":  "revolute",
+                                            "Parent":  "DOM_P__12__1",
+                                            "Child":  "DOM_P__13__1",
+                                            "Axis":  [
+                                                         0,
+                                                         -1,
+                                                         0
+                                                     ],
+                                            "LimitLower":  -2.094395,
+                                            "LimitUpper":  0,
+                                            "PivotWorldM":  [
+                                                                0.323,
+                                                                0.15275,
+                                                                -0.0105
+                                                            ],
+                                            "PivotRelativeToHipM":  [
+                                                                        0.056499999999999995,
+                                                                        0.027999999999999997,
+                                                                        -0.021
+                                                                    ],
+                                            "PivotRelativeXZToHipM":  [
+                                                                          0.056499999999999995,
+                                                                          -0.021
+                                                                      ]
+                                        },
+                                        {
+                                            "Joint":  "Revolute 44",
+                                            "Type":  "continuous",
+                                            "Parent":  "DOM_P__13__1",
+                                            "Child":  "DOM_P__7__1",
+                                            "Axis":  [
+                                                         0,
+                                                         1,
+                                                         0
+                                                     ],
+                                            "LimitLower":  null,
+                                            "LimitUpper":  null,
+                                            "PivotWorldM":  [
+                                                                0.323,
+                                                                0.16075,
+                                                                -0.0105
+                                                            ],
+                                            "PivotRelativeToHipM":  [
+                                                                        0.056499999999999995,
+                                                                        0.036000000000000004,
+                                                                        -0.021
+                                                                    ],
+                                            "PivotRelativeXZToHipM":  [
+                                                                          0.056499999999999995,
+                                                                          -0.021
+                                                                      ]
+                                        },
+                                        {
+                                            "Joint":  "Revolute 36",
+                                            "Type":  "continuous",
+                                            "Parent":  "DOM_P__7__1",
+                                            "Child":  "DOM_P__10__1",
+                                            "Axis":  [
+                                                         0,
+                                                         -1,
+                                                         0
+                                                     ],
+                                            "LimitLower":  null,
+                                            "LimitUpper":  null,
+                                            "PivotWorldM":  [
+                                                                0.294708,
+                                                                0.16035,
+                                                                0.017777
+                                                            ],
+                                            "PivotRelativeToHipM":  [
+                                                                        0.028208000000000011,
+                                                                        0.035599999999999993,
+                                                                        0.0072770000000000005
+                                                                    ],
+                                            "PivotRelativeXZToHipM":  [
+                                                                          0.028208000000000011,
+                                                                          0.0072770000000000005
+                                                                      ]
+                                        },
+                                        {
+                                            "Joint":  "Revolute 24",
+                                            "Type":  "continuous",
+                                            "Parent":  "DOM_P__10__1",
+                                            "Child":  "DOM_P__11__1",
+                                            "Axis":  [
+                                                         0,
+                                                         1,
+                                                         0
+                                                     ],
+                                            "LimitLower":  null,
+                                            "LimitUpper":  null,
+                                            "PivotWorldM":  [
+                                                                0.18167000000000003,
+                                                                0.17285,
+                                                                -0.095261
+                                                            ],
+                                            "PivotRelativeToHipM":  [
+                                                                        -0.084829999999999989,
+                                                                        0.048100000000000004,
+                                                                        -0.105761
+                                                                    ],
+                                            "PivotRelativeXZToHipM":  [
+                                                                          -0.084829999999999989,
+                                                                          -0.105761
+                                                                      ]
+                                        },
+                                        {
+                                            "Joint":  "Revolute 23",
+                                            "Type":  "continuous",
+                                            "Parent":  "DOM_P__13__1",
+                                            "Child":  "DOM_P__11__1",
+                                            "Axis":  [
+                                                         0,
+                                                         1,
+                                                         0
+                                                     ],
+                                            "LimitLower":  null,
+                                            "LimitUpper":  null,
+                                            "PivotWorldM":  [
+                                                                0.18167,
+                                                                0.17285,
+                                                                -0.095261
+                                                            ],
+                                            "PivotRelativeToHipM":  [
+                                                                        -0.084830000000000017,
+                                                                        0.048100000000000004,
+                                                                        -0.105761
+                                                                    ],
+                                            "PivotRelativeXZToHipM":  [
+                                                                          -0.084830000000000017,
+                                                                          -0.105761
+                                                                      ]
+                                        }
+                                    ],
+                         "ClosureChecks":  [
+                                               {
+                                                   "JointA":  "Revolute 23",
+                                                   "JointB":  "Revolute 24",
+                                                   "DistanceM":  2.7755575615628914E-17,
+                                                   "MidpointWorldM":  [
+                                                                          0.18167,
+                                                                          0.17285,
+                                                                          -0.095261
+                                                                      ]
+                                               }
+                                           ]
+                     },
+                     {
+                         "Id":  "dom_p_21_1_lower_triangle",
+                         "HipLink":  "DOM_P__21__1",
+                         "Description":  "Mirrored lower-linkage loop on the DOM_P__21__1 leg.",
+                         "HipFrameWorldM":  [
+                                                -0.0685,
+                                                0,
+                                                0.0105
+                                            ],
+                         "Pivots":  [
+                                        {
+                                            "Joint":  "Revolute 48",
+                                            "Type":  "revolute",
+                                            "Parent":  "DOM_P__21__1",
+                                            "Child":  "DOM_P__18__1",
+                                            "Axis":  [
+                                                         0,
+                                                         -1,
+                                                         0
+                                                     ],
+                                            "LimitLower":  -0.523599,
+                                            "LimitUpper":  1.570796,
+                                            "PivotWorldM":  [
+                                                                -0.012000000000000004,
+                                                                -0.028,
+                                                                -0.0105
+                                                            ],
+                                            "PivotRelativeToHipM":  [
+                                                                        0.0565,
+                                                                        -0.028,
+                                                                        -0.021
+                                                                    ],
+                                            "PivotRelativeXZToHipM":  [
+                                                                          0.0565,
+                                                                          -0.021
+                                                                      ]
+                                        },
+                                        {
+                                            "Joint":  "Revolute 42",
+                                            "Type":  "continuous",
+                                            "Parent":  "DOM_P__18__1",
+                                            "Child":  "DOM_P__24__1",
+                                            "Axis":  [
+                                                         0,
+                                                         1,
+                                                         0
+                                                     ],
+                                            "LimitLower":  null,
+                                            "LimitUpper":  null,
+                                            "PivotWorldM":  [
+                                                                -0.012000000000000004,
+                                                                -0.036000000000000004,
+                                                                -0.0105
+                                                            ],
+                                            "PivotRelativeToHipM":  [
+                                                                        0.0565,
+                                                                        -0.036000000000000004,
+                                                                        -0.021
+                                                                    ],
+                                            "PivotRelativeXZToHipM":  [
+                                                                          0.0565,
+                                                                          -0.021
+                                                                      ]
+                                        },
+                                        {
+                                            "Joint":  "Revolute 37",
+                                            "Type":  "continuous",
+                                            "Parent":  "DOM_P__24__1",
+                                            "Child":  "DOM_P__23__1",
+                                            "Axis":  [
+                                                         0,
+                                                         -1,
+                                                         0
+                                                     ],
+                                            "LimitLower":  null,
+                                            "LimitUpper":  null,
+                                            "PivotWorldM":  [
+                                                                -0.040292000000000008,
+                                                                -0.035600000000000007,
+                                                                0.017777
+                                                            ],
+                                            "PivotRelativeToHipM":  [
+                                                                        0.028207999999999997,
+                                                                        -0.035600000000000007,
+                                                                        0.0072770000000000005
+                                                                    ],
+                                            "PivotRelativeXZToHipM":  [
+                                                                          0.028207999999999997,
+                                                                          0.0072770000000000005
+                                                                      ]
+                                        },
+                                        {
+                                            "Joint":  "Revolute 28",
+                                            "Type":  "continuous",
+                                            "Parent":  "DOM_P__23__1",
+                                            "Child":  "DOM_P__22__1",
+                                            "Axis":  [
+                                                         0,
+                                                         1,
+                                                         0
+                                                     ],
+                                            "LimitLower":  null,
+                                            "LimitUpper":  null,
+                                            "PivotWorldM":  [
+                                                                -0.152976,
+                                                                -0.048100000000000004,
+                                                                -0.095615
+                                                            ],
+                                            "PivotRelativeToHipM":  [
+                                                                        -0.084476,
+                                                                        -0.048100000000000004,
+                                                                        -0.106115
+                                                                    ],
+                                            "PivotRelativeXZToHipM":  [
+                                                                          -0.084476,
+                                                                          -0.106115
+                                                                      ]
+                                        },
+                                        {
+                                            "Joint":  "Revolute 27",
+                                            "Type":  "continuous",
+                                            "Parent":  "DOM_P__18__1",
+                                            "Child":  "DOM_P__22__1",
+                                            "Axis":  [
+                                                         0,
+                                                         1,
+                                                         0
+                                                     ],
+                                            "LimitLower":  null,
+                                            "LimitUpper":  null,
+                                            "PivotWorldM":  [
+                                                                -0.152976,
+                                                                -0.048100000000000004,
+                                                                -0.095614999999999992
+                                                            ],
+                                            "PivotRelativeToHipM":  [
+                                                                        -0.084476,
+                                                                        -0.048100000000000004,
+                                                                        -0.10611499999999999
+                                                                    ],
+                                            "PivotRelativeXZToHipM":  [
+                                                                          -0.084476,
+                                                                          -0.10611499999999999
+                                                                      ]
+                                        }
+                                    ],
+                         "ClosureChecks":  [
+                                               {
+                                                   "JointA":  "Revolute 27",
+                                                   "JointB":  "Revolute 28",
+                                                   "DistanceM":  1.3877787807814457E-17,
+                                                   "MidpointWorldM":  [
+                                                                          -0.152976,
+                                                                          -0.048100000000000004,
+                                                                          -0.095615
+                                                                      ]
+                                               }
+                                           ]
+                     }
+                 ]
+}

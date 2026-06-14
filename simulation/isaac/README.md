@@ -13,10 +13,12 @@ This folder is the working plan for turning Domino from CAD and firmware into a 
 | `analyze-domino-urdf.ps1` | Repeatable URDF topology validator. |
 | `run-domino-urdf-import.ps1` | Parameterized Isaac Lab URDF import smoke-test helper. |
 | `prototypes/one_leg/` | Clean three-joint one-leg prototype for the first stable Isaac articulation. |
+| `prototypes/pin_linkage/` | Minimal actuated four-bar / pin-joint constraint prototype. |
 | `reports/domino-urdf-topology.md` | Current topology report generated from the URDF export. |
 | `reports/domino-urdf-import-smoke-test.md` | Result of the first Isaac Lab raw import smoke test. |
 | `reports/domino-one-leg-import-smoke-test.md` | Result of the first clean one-leg import smoke test. |
 | `reports/domino-one-leg-runtime-sweep.md` | Result of the first clean one-leg Isaac Lab articulation sweep. |
+| `reports/domino-pin-linkage-runtime.md` | Result of the first actuated passive pin-linkage runtime test. |
 
 ## Current Finding
 
@@ -122,3 +124,5 @@ The next useful asset to validate is the clean one-leg USD generated from `proto
 Once the one-leg model behaves, duplicate it into a four-leg robot and wire the Isaac Lab action space to the same twelve-servo abstraction used by the firmware.
 
 Current runtime status: the simplified one-leg prototype imports, spawns as an Isaac Lab articulation, finds the three expected driven joints, and completes a headless joint sweep. The passive two-bar/four-bar linkage physics is still the next unresolved gate.
+
+Current linkage status: a generic one-actuator four-bar linkage now runs headlessly with passive pin joints and a loop-closing revolute constraint. The next unresolved gate is replacing the generic dimensions with Domino's real lower-leg pivot geometry.

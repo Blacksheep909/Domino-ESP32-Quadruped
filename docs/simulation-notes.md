@@ -25,6 +25,7 @@ Isaac bring-up notes and topology tooling:
 - [`simulation/isaac/analyze-domino-urdf.ps1`](../simulation/isaac/analyze-domino-urdf.ps1)
 - [`simulation/isaac/run-domino-urdf-import.ps1`](../simulation/isaac/run-domino-urdf-import.ps1)
 - [`simulation/isaac/prototypes/one_leg`](../simulation/isaac/prototypes/one_leg)
+- [`simulation/isaac/prototypes/pin_linkage`](../simulation/isaac/prototypes/pin_linkage)
 - [`simulation/isaac/reports/domino-urdf-topology.md`](../simulation/isaac/reports/domino-urdf-topology.md)
 - [`simulation/isaac/reports/domino-urdf-import-smoke-test.md`](../simulation/isaac/reports/domino-urdf-import-smoke-test.md)
 
@@ -63,3 +64,5 @@ For training, the first Isaac Lab model should expose the twelve real driven joi
 A first simplified one-leg URDF and Isaac Lab config template now live under [`simulation/isaac/prototypes/one_leg`](../simulation/isaac/prototypes/one_leg). This is the intended starting point for validating axes, limits, reset behavior, and actuator gains before rebuilding the complete quadruped.
 
 That simplified one-leg model now imports and completes a headless Isaac Lab joint sweep. The next unresolved simulation problem is the passive two-bar/four-bar linkage physics: add passive revolute pins and a loop-closing constraint only after the driven model stays stable.
+
+A generic one-actuator four-bar linkage prototype has now passed in Isaac/PhysX with passive pins and a loop-closing revolute constraint. The next step is to replace that generic linkage with Domino's actual CAD pivot positions and compare it against the simplified effective lower-linkage joint.

@@ -61,3 +61,5 @@ That path is less literal than importing every CAD mate, but it is more likely t
 For training, the first Isaac Lab model should expose the twelve real driven joints as the policy action space. Passive linkage pins should either be visual-only or added later as passive constraints once the simplified model can stand, reset, and sweep joints without instability.
 
 A first simplified one-leg URDF and Isaac Lab config template now live under [`simulation/isaac/prototypes/one_leg`](../simulation/isaac/prototypes/one_leg). This is the intended starting point for validating axes, limits, reset behavior, and actuator gains before rebuilding the complete quadruped.
+
+That simplified one-leg model now imports and completes a headless Isaac Lab joint sweep. The next unresolved simulation problem is the passive two-bar/four-bar linkage physics: add passive revolute pins and a loop-closing constraint only after the driven model stays stable.

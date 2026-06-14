@@ -8,6 +8,8 @@ This folder contains USD-family exports from the Domino CAD-to-Isaac-Sim explora
 
 | Path | Purpose |
 | --- | --- |
+| `isaac/` | Isaac Sim / Isaac Lab bring-up notes, URDF topology report, and validation tooling. |
+| `urdf/generated/` | Generated URDF package from the CAD export. This is reference material, not a final training articulation. |
 | `usd/Domino_Isaac_SIM.usd` | Lightweight Isaac Sim-oriented USD scene/export. |
 | `usd/Domino_Quadruped.usd` | Domino quadruped USD export. |
 | `usd/Domino_USD_Parts_Combined_Final.usdz` | Packaged combined USDZ export from the CAD-to-simulation trail. |
@@ -15,7 +17,8 @@ This folder contains USD-family exports from the Domino CAD-to-Isaac-Sim explora
 ## Notes
 
 - The visual geometry is useful.
-- The joint hierarchy, physics properties, inertia, and actuation model still need dedicated simulation work.
+- The generated URDF currently contains duplicate link names and loop-style child reuse, so it should not be treated as a finished Isaac articulation.
+- The joint hierarchy, physics properties, inertia, collisions, and actuation model still need dedicated simulation work.
 - The closed-chain/four-bar leg linkage is the main reason a direct CAD import is not enough.
 
 More context is in [../docs/simulation-notes.md](../docs/simulation-notes.md).

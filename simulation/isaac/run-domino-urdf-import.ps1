@@ -4,6 +4,7 @@ param(
     [string]$UrdfPath,
     [string]$OutputUsd,
     [switch]$AcceptEula,
+    [switch]$FixBase,
     [switch]$NoMergeJoints
 )
 
@@ -64,6 +65,10 @@ $args = @(
 
 if (-not $NoMergeJoints) {
     $args += "--merge-joints"
+}
+
+if ($FixBase) {
+    $args += "--fix-base"
 }
 
 Write-Host "Running Isaac Lab URDF import smoke test..."

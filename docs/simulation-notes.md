@@ -8,6 +8,8 @@ The repo includes the main CAD and simulation exports:
 
 ```text
 cad/step/
+simulation/isaac/
+simulation/urdf/generated/
 simulation/usd/
 ```
 
@@ -17,11 +19,19 @@ USD-family exports:
 - [`simulation/usd/Domino_Quadruped.usd`](../simulation/usd/Domino_Quadruped.usd)
 - [`simulation/usd/Domino_USD_Parts_Combined_Final.usdz`](../simulation/usd/Domino_USD_Parts_Combined_Final.usdz)
 
+Isaac bring-up notes and topology tooling:
+
+- [`simulation/isaac/README.md`](../simulation/isaac/README.md)
+- [`simulation/isaac/analyze-domino-urdf.ps1`](../simulation/isaac/analyze-domino-urdf.ps1)
+- [`simulation/isaac/reports/domino-urdf-topology.md`](../simulation/isaac/reports/domino-urdf-topology.md)
+
 ## Main Limitation
 
 The real leg design behaves like a closed-chain/four-bar linkage. That is mechanically useful, but it is awkward for many robotics simulation workflows.
 
 URDF-style robot descriptions usually represent a tree of links and joints. A closed loop must be approximated, constrained separately, or rewritten into an equivalent controllable model.
+
+The current generated URDF is also not a clean tree export. The topology report shows duplicate link names and child links with multiple incoming joints, so a direct importer may either fail or build a model that does not match the physical linkage.
 
 A direct CAD export can therefore look correct while still failing to behave like the physical robot:
 
@@ -42,3 +52,5 @@ The next useful simulation milestone is not a full robot import. It is one valid
 5. Expand to four legs only after the one-leg model is controllable.
 
 That path is less literal than importing every CAD mate, but it is more likely to produce a useful simulation.
+
+For training, the first Isaac Lab model should expose the twelve real driven joints as the policy action space. Passive linkage pins should either be visual-only or added later as passive constraints once the simplified model can stand, reset, and sweep joints without instability.

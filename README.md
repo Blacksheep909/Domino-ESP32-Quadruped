@@ -111,6 +111,7 @@ The repo includes:
 
 - STEP files under [cad/step](cad/step).
 - USD/USDZ exports under [simulation/usd](simulation/usd).
+- URDF reference export, Isaac topology report, and simulation bring-up notes under [simulation/isaac](simulation/isaac).
 - CAD and simulation notes in [docs/cad-design.md](docs/cad-design.md) and [docs/simulation-notes.md](docs/simulation-notes.md).
 
 The simulation work is exploratory. The visual model can be imported, but the real leg mechanism is closer to a closed-chain linkage than a URDF-friendly tree. A controllable simulation will need a simplified joint model or explicit constraints rather than a blind CAD import.
@@ -146,6 +147,8 @@ Hardware bring-up should be done in layers: receiver first, then one servo, then
 |-- hardware/
 |   `-- pcb/                 Domino PCB Gerber package and notes
 |-- simulation/
+|   |-- isaac/               Isaac Sim / Isaac Lab bring-up notes and URDF topology tooling
+|   |-- urdf/generated/      Generated URDF reference export
 |   `-- usd/                 USD/USDZ exports for Isaac Sim experiments
 |-- platformio.ini          PlatformIO build configuration
 |-- src/                    Robot firmware

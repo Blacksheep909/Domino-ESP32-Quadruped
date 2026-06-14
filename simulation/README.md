@@ -19,6 +19,7 @@ This folder contains USD-family exports from the Domino CAD-to-Isaac-Sim explora
 - The visual geometry is useful.
 - The generated URDF currently contains duplicate link names and loop-style child reuse, so it should not be treated as a finished Isaac articulation.
 - A raw Isaac Lab URDF import smoke test has passed, but only as an import/build-artifact check. It is not a validated robot physics model.
+- A clean one-leg prototype is included under `isaac/prototypes/one_leg` for the first controlled articulation tests.
 - The joint hierarchy, physics properties, inertia, collisions, and actuation model still need dedicated simulation work.
 - The closed-chain/four-bar leg linkage is the main reason a direct CAD import is not enough.
 

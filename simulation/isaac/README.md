@@ -125,6 +125,19 @@ Run the CAD-derived one-joint lower-linkage test:
   --save-usd <output-folder>/domino_lower_triangle.usd
 ```
 
+Run the CAD-derived one-joint upper-linkage test:
+
+```powershell
+<isaac-python> simulation/isaac/prototypes/pin_linkage/run_pin_linkage.py `
+  --headless `
+  --geometry domino-upper-loop `
+  --steps 600 `
+  --drive-amplitude-deg 5 `
+  --drive-frequency-hz 0.4 `
+  --report-path <output-folder>/domino_upper_loop_report.json `
+  --save-usd <output-folder>/domino_upper_loop.usd
+```
+
 ## Isaac Runtime Notes
 
 NVIDIA's current Isaac Lab import workflow recommends converting robot assets into USD and then writing an asset configuration for spawning and training. The Isaac Lab docs also call out useful URDF import settings such as fixed base selection, fixed-joint merging, joint drive configuration, and setting joint target type to `none` during import when you want to configure drives later. See:
@@ -147,4 +160,4 @@ Once the one-leg model behaves, duplicate it into a four-leg robot and wire the 
 
 Current runtime status: the simplified one-leg prototype imports, spawns as an Isaac Lab articulation, finds the three expected driven joints, and completes a headless joint sweep.
 
-Current linkage status: a generic one-actuator four-bar linkage and the first CAD-derived Domino lower-linkage loop both run headlessly with passive pin joints and a loop-closing revolute constraint. The next unresolved gate is adding the second loop around `Revolute 58` / `Revolute 32` / `Revolute 51`, then merging the constrained lower-linkage behavior into the clean one-leg asset.
+Current linkage status: a generic one-actuator four-bar linkage, the CAD-derived lower triangle, and the CAD-derived upper loop all run headlessly with passive pin joints and loop-closing revolute constraints. The next unresolved gate is combining those isolated loops into one constrained one-leg mechanism, then merging that behavior into the clean one-leg asset.

@@ -25,7 +25,7 @@ parser.add_argument("--report-path", default="", help="Optional JSON report outp
 parser.add_argument("--save-usd", default="", help="Optional path to save the generated USD stage.")
 parser.add_argument(
     "--geometry",
-    choices=("generic-four-bar", "domino-lower-triangle"),
+    choices=("generic-four-bar", "domino-lower-triangle", "domino-upper-loop"),
     default="generic-four-bar",
     help="Linkage geometry to author into the Isaac stage.",
 )
@@ -248,6 +248,7 @@ def build_generic_four_bar(stage):
     return {
         "geometry": "generic-four-bar",
         "drive": drive,
+        "drive_joint_name": "drive_crank_pin",
         "drive_center_deg": -55.0,
         "points": {
             "O": pivot_o.tolist(),
@@ -356,6 +357,7 @@ def build_domino_lower_triangle(stage):
     return {
         "geometry": "domino-lower-triangle",
         "drive": drive,
+        "drive_joint_name": "drive_revolute_59",
         "drive_center_deg": -15.0,
         "points": {name: point.tolist() for name, point in points.items()},
         "bodies": {
@@ -375,7 +377,123 @@ def build_domino_lower_triangle(stage):
     }
 
 
+def build_domino_upper_loop(stage):
+    root = "/World/DominoUpperLoop"
+    UsdGeom.Xform.Define(stage, root)
+
+    # CAD-derived pivots from simulation/isaac/reports/domino-linkage-pivots.md.
+    # This isolates the second DOM_P__4__1 loop:
+    # R58 driven, R43 held by the lower input at rest, R32 passive, R51 closure.
+    points = {
+        "drive_revolute_58": np.array([0.347000, -0.028000, 0.010500], dtype=np.float64),
+        "lower_input_revolute_59": np.array([0.323000, -0.028000, -0.010500], dtype=np.float64),
+        "passive_revolute_43": np.array([0.323000, -0.036000, -0.010500], dtype=np.float64),
+        "passive_revolute_32": np.array([0.336647, -0.035600, 0.049137], dtype=np.float64),
+        "closure_revolute_51": np.array([0.336647, -0.035600, 0.049137], dtype=np.float64),
+    }
+
+    ground = create_body_from_points(
+        stage,
+        root,
+        "ground_hip_reference",
+        [points["drive_revolute_58"], points["lower_input_revolute_59"]],
+        width=0.014,
+        mass=1.0,
+        kinematic=True,
+    )
+    lower_reference = create_body_from_points(
+        stage,
+        root,
+        "held_lower_input_dom_p_5_1",
+        [points["lower_input_revolute_59"], points["passive_revolute_43"]],
+        width=0.010,
+        mass=0.08,
+        kinematic=True,
+    )
+    upper_driver = create_body_from_points(
+        stage,
+        root,
+        "upper_driver_dom_p_6_1",
+        [points["drive_revolute_58"], points["closure_revolute_51"]],
+        width=0.010,
+        mass=0.06,
+    )
+    coupler = create_body_from_points(
+        stage,
+        root,
+        "coupler_dom_p_1",
+        [points["passive_revolute_43"], points["passive_revolute_32"]],
+        width=0.008,
+        mass=0.04,
+    )
+    closure_link = create_body_from_points(
+        stage,
+        root,
+        "closure_dom_p_3_1",
+        [points["passive_revolute_32"], points["closure_revolute_51"]],
+        width=0.008,
+        mass=0.02,
+    )
+
+    drive_joint = create_pin_joint(
+        stage,
+        f"{root}/joints/drive_revolute_58",
+        ground,
+        upper_driver,
+        points["drive_revolute_58"],
+        lower_deg=-30.0,
+        upper_deg=60.0,
+    )
+    create_pin_joint(
+        stage,
+        f"{root}/joints/passive_revolute_43",
+        lower_reference,
+        coupler,
+        points["passive_revolute_43"],
+    )
+    create_pin_joint(
+        stage,
+        f"{root}/joints/passive_revolute_32",
+        coupler,
+        closure_link,
+        points["passive_revolute_32"],
+    )
+    create_pin_joint(
+        stage,
+        f"{root}/joints/loop_closure_revolute_51",
+        upper_driver,
+        closure_link,
+        points["closure_revolute_51"],
+    )
+    drive = apply_angular_drive(drive_joint, stiffness=2.0, damping=0.35, max_force=0.8, target_deg=0.0)
+
+    return {
+        "geometry": "domino-upper-loop",
+        "drive": drive,
+        "drive_joint_name": "drive_revolute_58",
+        "drive_center_deg": 0.0,
+        "points": {name: point.tolist() for name, point in points.items()},
+        "bodies": {
+            "ground": ground,
+            "lower_reference": lower_reference,
+            "upper_driver": upper_driver,
+            "coupler": coupler,
+            "closure_link": closure_link,
+        },
+        "loop_checks": [
+            {
+                "name": "revolute_51_closure",
+                "body_a": "upper_driver",
+                "body_b": "closure_link",
+                "pivot": points["closure_revolute_51"].tolist(),
+            }
+        ],
+    }
+
+
 def build_linkage(stage):
+    if args_cli.geometry == "domino-upper-loop":
+        return build_domino_upper_loop(stage)
     if args_cli.geometry == "domino-lower-triangle":
         return build_domino_lower_triangle(stage)
     return build_generic_four_bar(stage)
@@ -471,7 +589,7 @@ def main():
         "physics_dt": sim_dt,
         "linkage_points_m": linkage["points"],
         "drive": {
-            "joint": "drive_revolute_59" if linkage["geometry"] == "domino-lower-triangle" else "drive_crank_pin",
+            "joint": linkage["drive_joint_name"],
             "target_center_deg": initial_target,
             "target_amplitude_deg": args_cli.drive_amplitude_deg,
             "frequency_hz": args_cli.drive_frequency_hz,

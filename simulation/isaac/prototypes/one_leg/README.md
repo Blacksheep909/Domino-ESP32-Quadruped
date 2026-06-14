@@ -40,12 +40,31 @@ powershell -ExecutionPolicy Bypass -File simulation/isaac/run-domino-urdf-import
   -IsaacLabRoot <path-to-IsaacLab> `
   -IsaacPython <path-to-isaac-python> `
   -OutputUsd <output-folder>/domino_one_leg_clean.usd `
+  -FixBase `
   -AcceptEula
 ```
 
 Then point `DOMINO_ONE_LEG_USD` at the generated USD before using `domino_one_leg_cfg.py` inside an Isaac Lab script.
 
 Import status: this prototype has passed a first Isaac Lab URDF-to-USD smoke test. See [`../../reports/domino-one-leg-import-smoke-test.md`](../../reports/domino-one-leg-import-smoke-test.md).
+
+## Runtime Sweep
+
+After importing the fixed-base USD, run the articulation sweep:
+
+```powershell
+<isaac-python> simulation/isaac/prototypes/one_leg/run_one_leg_sweep.py `
+  --usd-path <output-folder>/domino_one_leg_clean.usd `
+  --headless `
+  --steps 600 `
+  --report-path <output-folder>/domino_one_leg_sweep_report.json
+```
+
+This spawns the imported one-leg USD as an Isaac Lab `Articulation`, verifies the three expected joint names, applies sinusoidal joint-position targets inside the soft limits, and fails on non-finite joint or root state.
+
+The script force-exits after writing the report by default because `SimulationApp.close()` can hang on some Windows Isaac Sim installs. Use `--graceful-close` only when debugging shutdown behavior.
+
+Runtime status: the simplified fixed-base leg has passed a headless Isaac Lab articulation sweep. See [`../../reports/domino-one-leg-runtime-sweep.md`](../../reports/domino-one-leg-runtime-sweep.md).
 
 ## Next Checks
 

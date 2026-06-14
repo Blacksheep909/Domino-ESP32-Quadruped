@@ -16,6 +16,7 @@ This folder is the working plan for turning Domino from CAD and firmware into a 
 | `reports/domino-urdf-topology.md` | Current topology report generated from the URDF export. |
 | `reports/domino-urdf-import-smoke-test.md` | Result of the first Isaac Lab raw import smoke test. |
 | `reports/domino-one-leg-import-smoke-test.md` | Result of the first clean one-leg import smoke test. |
+| `reports/domino-one-leg-runtime-sweep.md` | Result of the first clean one-leg Isaac Lab articulation sweep. |
 
 ## Current Finding
 
@@ -96,6 +97,7 @@ powershell -ExecutionPolicy Bypass -File simulation/isaac/run-domino-urdf-import
   -IsaacLabRoot <path-to-IsaacLab> `
   -IsaacPython <path-to-isaac-python> `
   -OutputUsd <output-folder>/domino_one_leg_clean.usd `
+  -FixBase `
   -AcceptEula
 ```
 
@@ -118,3 +120,5 @@ The next useful asset to validate is the clean one-leg USD generated from `proto
 - A small Isaac Lab script that can reset the leg and sweep each joint through safe limits.
 
 Once the one-leg model behaves, duplicate it into a four-leg robot and wire the Isaac Lab action space to the same twelve-servo abstraction used by the firmware.
+
+Current runtime status: the simplified one-leg prototype imports, spawns as an Isaac Lab articulation, finds the three expected driven joints, and completes a headless joint sweep. The passive two-bar/four-bar linkage physics is still the next unresolved gate.

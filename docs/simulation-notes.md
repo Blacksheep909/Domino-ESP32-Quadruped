@@ -23,7 +23,9 @@ Isaac bring-up notes and topology tooling:
 
 - [`simulation/isaac/README.md`](../simulation/isaac/README.md)
 - [`simulation/isaac/analyze-domino-urdf.ps1`](../simulation/isaac/analyze-domino-urdf.ps1)
+- [`simulation/isaac/run-domino-urdf-import.ps1`](../simulation/isaac/run-domino-urdf-import.ps1)
 - [`simulation/isaac/reports/domino-urdf-topology.md`](../simulation/isaac/reports/domino-urdf-topology.md)
+- [`simulation/isaac/reports/domino-urdf-import-smoke-test.md`](../simulation/isaac/reports/domino-urdf-import-smoke-test.md)
 
 ## Main Limitation
 
@@ -32,6 +34,8 @@ The real leg design behaves like a closed-chain/four-bar linkage. That is mechan
 URDF-style robot descriptions usually represent a tree of links and joints. A closed loop must be approximated, constrained separately, or rewritten into an equivalent controllable model.
 
 The current generated URDF is also not a clean tree export. The topology report shows duplicate link names and child links with multiple incoming joints, so a direct importer may either fail or build a model that does not match the physical linkage.
+
+A raw Isaac Lab import smoke test has now completed successfully for USD generation. That is a useful checkpoint: the URDF package and meshes can be consumed by Isaac tooling. It is still not a physics validation, and the generated asset should not be used as the final training model without rewriting the articulation structure.
 
 A direct CAD export can therefore look correct while still failing to behave like the physical robot:
 

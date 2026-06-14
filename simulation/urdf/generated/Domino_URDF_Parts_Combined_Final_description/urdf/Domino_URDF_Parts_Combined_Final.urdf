@@ -1,0 +1,1047 @@
+<?xml version="1.0" ?>
+<robot name="Domino_URDF_Parts_Combined_Final" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+<xacro:include filename="$(find Domino_URDF_Parts_Combined_Final_description)/urdf/materials.xacro" />
+<xacro:include filename="$(find Domino_URDF_Parts_Combined_Final_description)/urdf/Domino_URDF_Parts_Combined_Final.trans" />
+<xacro:include filename="$(find Domino_URDF_Parts_Combined_Final_description)/urdf/Domino_URDF_Parts_Combined_Final.gazebo" />
+<link name="base_link">
+  <inertial>
+    <origin xyz="0.14856120774759393 0.06239677394943456 0.023318847547303782" rpy="0 0 0"/>
+    <mass value="0.7155118554945111"/>
+    <inertia ixx="0.001159" iyy="0.015719" izz="0.0163" ixy="-0.0" iyz="0.0" ixz="-1e-06"/>
+  </inertial>
+  <visual>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/base_link.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/base_link.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__4__1">
+  <inertial>
+    <origin xyz="0.05679679538601379 -0.0012103126419644571 -0.009674473377076822" rpy="0 0 0"/>
+    <mass value="0.1429952732247311"/>
+    <inertia ixx="4.8e-05" iyy="0.000124" izz="0.000102" ixy="2e-06" iyz="-1e-06" ixz="0.0"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.2665 0.0 -0.0105" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__4__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.2665 0.0 -0.0105" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__4__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__12__1">
+  <inertial>
+    <origin xyz="0.056796795425555435 0.0012101506310661647 -0.009674524381084966" rpy="0 0 0"/>
+    <mass value="1.0589744403837964"/>
+    <inertia ixx="0.000355" iyy="0.000916" izz="0.000756" ixy="-1.6e-05" iyz="4e-06" ixz="1e-06"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.2665 -0.12475 -0.0105" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__12__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.2665 -0.12475 -0.0105" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__12__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__25__1">
+  <inertial>
+    <origin xyz="0.05679679542555556 0.0012101506330771394 -0.009674524380833162" rpy="0 0 0"/>
+    <mass value="1.0589744403837964"/>
+    <inertia ixx="0.000355" iyy="0.000916" izz="0.000756" ixy="-1.6e-05" iyz="4e-06" ixz="1e-06"/>
+  </inertial>
+  <visual>
+    <origin xyz="0.0685 -0.12475 -0.0105" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__25__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="0.0685 -0.12475 -0.0105" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__25__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__21__1">
+  <inertial>
+    <origin xyz="0.056796795386013815 -0.0012103126419644632 -0.009674473377076855" rpy="0 0 0"/>
+    <mass value="0.14299527322473102"/>
+    <inertia ixx="4.8e-05" iyy="0.000124" izz="0.000102" ixy="2e-06" iyz="-1e-06" ixz="0.0"/>
+  </inertial>
+  <visual>
+    <origin xyz="0.0685 0.0 -0.0105" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__21__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="0.0685 0.0 -0.0105" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__21__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__26__1">
+  <inertial>
+    <origin xyz="0.015274542170011854 -0.009984257156343074 -0.037607872962854186" rpy="0 0 0"/>
+    <mass value="0.03688863473540494"/>
+    <inertia ixx="0.000116" iyy="0.00021" izz="9.8e-05" ixy="0.0" iyz="-0.0" ixz="0.000102"/>
+  </inertial>
+  <visual>
+    <origin xyz="0.125038 -0.17285 0.123538" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__26__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="0.125038 -0.17285 0.123538" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__26__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__26__1">
+  <inertial>
+    <origin xyz="0.04356654217001184 -0.009984257156343074 -0.06588487296285418" rpy="0 0 0"/>
+    <mass value="0.03688863473540494"/>
+    <inertia ixx="0.000116" iyy="0.00021" izz="9.8e-05" ixy="0.0" iyz="-0.0" ixz="0.000102"/>
+  </inertial>
+  <visual>
+    <origin xyz="0.15333 -0.17285 0.095261" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__26__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="0.15333 -0.17285 0.095261" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__26__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__11__1">
+  <inertial>
+    <origin xyz="0.015274543416450792 -0.009984257452096051 -0.037607873696373514" rpy="0 0 0"/>
+    <mass value="0.2731846905705949"/>
+    <inertia ixx="0.000858" iyy="0.001554" izz="0.000727" ixy="0.0" iyz="-0.0" ixz="0.000756"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.209962 -0.17285 0.123538" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__11__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.209962 -0.17285 0.123538" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__11__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__11__1">
+  <inertial>
+    <origin xyz="0.043566543416450804 -0.009984257452096051 -0.06588487369637351" rpy="0 0 0"/>
+    <mass value="0.2731846905705949"/>
+    <inertia ixx="0.000858" iyy="0.001554" izz="0.000727" ixy="0.0" iyz="-0.0" ixz="0.000756"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.18167 -0.17285 0.095261" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__11__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.18167 -0.17285 0.095261" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__11__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__1__1">
+  <inertial>
+    <origin xyz="0.01527509182743994 0.009984094680941781 -0.03760737245640572" rpy="0 0 0"/>
+    <mass value="0.03688863764460535"/>
+    <inertia ixx="0.000116" iyy="0.00021" izz="9.8e-05" ixy="-0.0" iyz="0.0" ixz="0.000102"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.210315 0.0481 0.123892" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__1__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.210315 0.0481 0.123892" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__1__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__1__1">
+  <inertial>
+    <origin xyz="0.04356609182743995 0.009984094680941781 -0.06588437245640572" rpy="0 0 0"/>
+    <mass value="0.03688863764460535"/>
+    <inertia ixx="0.000116" iyy="0.00021" izz="9.8e-05" ixy="-0.0" iyz="0.0" ixz="0.000102"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.182024 0.0481 0.095615" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__1__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.182024 0.0481 0.095615" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__1__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__22__1">
+  <inertial>
+    <origin xyz="0.015275093076129731 0.009984094979680676 -0.03760737312035617" rpy="0 0 0"/>
+    <mass value="0.27318471141287565"/>
+    <inertia ixx="0.000858" iyy="0.001554" izz="0.000727" ixy="-0.0" iyz="0.0" ixz="0.000756"/>
+  </inertial>
+  <visual>
+    <origin xyz="0.124685 0.0481 0.123892" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__22__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="0.124685 0.0481 0.123892" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__22__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__22__1">
+  <inertial>
+    <origin xyz="0.04356609307612973 0.009984094979680676 -0.06588437312035617" rpy="0 0 0"/>
+    <mass value="0.27318471141287565"/>
+    <inertia ixx="0.000858" iyy="0.001554" izz="0.000727" ixy="-0.0" iyz="0.0" ixz="0.000756"/>
+  </inertial>
+  <visual>
+    <origin xyz="0.152976 0.0481 0.095615" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__22__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="0.152976 0.0481 0.095615" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__22__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__9__1">
+  <inertial>
+    <origin xyz="0.008578344250809833 0.002699842149748305 0.014419030881783479" rpy="0 0 0"/>
+    <mass value="0.030735560817088444"/>
+    <inertia ixx="3e-06" iyy="5e-06" izz="3e-06" ixy="0.0" iyz="0.0" ixz="-2e-06"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.312637 -0.16035 -0.028134" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__9__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.312637 -0.16035 -0.028134" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__9__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__20__1">
+  <inertial>
+    <origin xyz="0.008578344250808653 -0.0026999959861596506 0.014419082181979181" rpy="0 0 0"/>
+    <mass value="0.030735560817086015"/>
+    <inertia ixx="3e-06" iyy="5e-06" izz="3e-06" ixy="0.0" iyz="0.0" ixz="-2e-06"/>
+  </inertial>
+  <visual>
+    <origin xyz="0.022363 0.0356 -0.028134" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__20__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="0.022363 0.0356 -0.028134" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__20__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__3__1">
+  <inertial>
+    <origin xyz="0.008578344251303216 -0.002699995987860117 0.01441908218168323" rpy="0 0 0"/>
+    <mass value="0.00415027954982308"/>
+    <inertia ixx="0.0" iyy="1e-06" izz="0.0" ixy="0.0" iyz="0.0" ixz="-0.0"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.312637 0.0356 -0.028134" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__3__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.312637 0.0356 -0.028134" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__3__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__2__1">
+  <inertial>
+    <origin xyz="-0.05699200092583817 -0.0025135742766102948 -0.05597431034511038" rpy="0 0 0"/>
+    <mass value="0.018118458443496094"/>
+    <inertia ixx="3.4e-05" iyy="6.7e-05" izz="3.3e-05" ixy="0.0" iyz="0.0" ixz="-3.3e-05"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.294708 0.0356 -0.017777" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__2__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.294708 0.0356 -0.017777" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__2__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__27__1">
+  <inertial>
+    <origin xyz="0.008578344250329472 0.002699842147237619 0.014419030881879763" rpy="0 0 0"/>
+    <mass value="0.030735560817088444"/>
+    <inertia ixx="3e-06" iyy="5e-06" izz="3e-06" ixy="0.0" iyz="0.0" ixz="-2e-06"/>
+  </inertial>
+  <visual>
+    <origin xyz="0.022363 -0.16035 -0.028134" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__27__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="0.022363 -0.16035 -0.028134" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__27__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__14__1">
+  <inertial>
+    <origin xyz="-0.05745625929387061 0.0025133473443408882 -0.05594771946197852" rpy="0 0 0"/>
+    <mass value="0.13482242074278022"/>
+    <inertia ixx="0.00025" iyy="0.000496" izz="0.00025" ixy="-0.0" iyz="-0.0" ixz="-0.000246"/>
+  </inertial>
+  <visual>
+    <origin xyz="0.040292 -0.16035 -0.017777" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__14__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="0.040292 -0.16035 -0.017777" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__14__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__10__1">
+  <inertial>
+    <origin xyz="-0.05745626621056521 0.0025133476403480515 -0.05594772611694027" rpy="0 0 0"/>
+    <mass value="0.13482240097591308"/>
+    <inertia ixx="0.00025" iyy="0.000496" izz="0.00025" ixy="-0.0" iyz="-0.0" ixz="-0.000246"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.294708 -0.16035 -0.017777" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__10__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.294708 -0.16035 -0.017777" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__10__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__23__1">
+  <inertial>
+    <origin xyz="-0.05699200092675811 -0.0025135742682761975 -0.05597431034449193" rpy="0 0 0"/>
+    <mass value="0.13417914979381765"/>
+    <inertia ixx="0.000251" iyy="0.000493" izz="0.000247" ixy="0.0" iyz="0.0" ixz="-0.000244"/>
+  </inertial>
+  <visual>
+    <origin xyz="0.040292 0.0356 -0.017777" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__23__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="0.040292 0.0356 -0.017777" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__23__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__24__1">
+  <inertial>
+    <origin xyz="-0.010113751558777695 -0.002170212193509255 0.02439194513450161" rpy="0 0 0"/>
+    <mass value="0.023801743990232167"/>
+    <inertia ixx="3e-06" iyy="5e-06" izz="2e-06" ixy="0.0" iyz="-0.0" ixz="2e-06"/>
+  </inertial>
+  <visual>
+    <origin xyz="0.012 0.036 0.0105" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__24__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="0.012 0.036 0.0105" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__24__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P_1">
+  <inertial>
+    <origin xyz="-0.010113751558044282 -0.002170212194497201 0.024391945134040565" rpy="0 0 0"/>
+    <mass value="0.0032139934560058724"/>
+    <inertia ixx="0.0" iyy="1e-06" izz="0.0" ixy="0.0" iyz="-0.0" ixz="0.0"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.323 0.036 0.0105" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.323 0.036 0.0105" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__7__1">
+  <inertial>
+    <origin xyz="-0.01011375155877775 0.0021700503294173057 0.02439189383430529" rpy="0 0 0"/>
+    <mass value="0.023801743990231907"/>
+    <inertia ixx="3e-06" iyy="5e-06" izz="2e-06" ixy="-0.0" iyz="0.0" ixz="2e-06"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.323 -0.16075 0.0105" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__7__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.323 -0.16075 0.0105" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__7__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__15__1">
+  <inertial>
+    <origin xyz="-0.010113751559476018 0.0021700503280896177 0.024391893834440393" rpy="0 0 0"/>
+    <mass value="0.023801743990231907"/>
+    <inertia ixx="3e-06" iyy="5e-06" izz="2e-06" ixy="-0.0" iyz="0.0" ixz="2e-06"/>
+  </inertial>
+  <visual>
+    <origin xyz="0.012 -0.16075 0.0105" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__15__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="0.012 -0.16075 0.0105" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__15__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__13__1">
+  <inertial>
+    <origin xyz="-0.0519296829917969 0.007845642231020855 -0.05240835746329827" rpy="0 0 0"/>
+    <mass value="0.18748688638643818"/>
+    <inertia ixx="0.000287" iyy="0.000563" izz="0.000285" ixy="1.1e-05" iyz="1.3e-05" ixz="-0.000276"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.323 -0.15275 0.0105" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__13__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.323 -0.15275 0.0105" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__13__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__16__1">
+  <inertial>
+    <origin xyz="-0.05192968372141919 0.007845642235236205 -0.052408358073971796" rpy="0 0 0"/>
+    <mass value="0.18748688342087833"/>
+    <inertia ixx="0.000287" iyy="0.000563" izz="0.000285" ixy="1.1e-05" iyz="1.3e-05" ixz="-0.000276"/>
+  </inertial>
+  <visual>
+    <origin xyz="0.012 -0.15275 0.0105" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__16__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="0.012 -0.15275 0.0105" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__16__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__18__1">
+  <inertial>
+    <origin xyz="-0.051678366528590425 -0.007838078074975528 -0.0523084075398201" rpy="0 0 0"/>
+    <mass value="0.025229421664480965"/>
+    <inertia ixx="3.9e-05" iyy="7.6e-05" izz="3.8e-05" ixy="-1e-06" iyz="-2e-06" ixz="-3.7e-05"/>
+  </inertial>
+  <visual>
+    <origin xyz="0.012 0.028 0.0105" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__18__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="0.012 0.028 0.0105" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__18__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__9__1">
+  <inertial>
+    <origin xyz="-0.015431655749190143 0.002699842149748305 -0.006583969118216522" rpy="0 0 0"/>
+    <mass value="0.030735560817088444"/>
+    <inertia ixx="3e-06" iyy="5e-06" izz="3e-06" ixy="0.0" iyz="0.0" ixz="-2e-06"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.336647 -0.16035 -0.049137" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__9__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.336647 -0.16035 -0.049137" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__9__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__3__1">
+  <inertial>
+    <origin xyz="-0.01543165574869676 -0.002699995987860117 -0.00658391781831677" rpy="0 0 0"/>
+    <mass value="0.00415027954982308"/>
+    <inertia ixx="0.0" iyy="1e-06" izz="0.0" ixy="0.0" iyz="0.0" ixz="-0.0"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.336647 0.0356 -0.049137" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__3__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.336647 0.0356 -0.049137" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__3__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__20__1">
+  <inertial>
+    <origin xyz="-0.015431655749191347 -0.0026999959861596506 -0.006583917818020819" rpy="0 0 0"/>
+    <mass value="0.030735560817086015"/>
+    <inertia ixx="3e-06" iyy="5e-06" izz="3e-06" ixy="0.0" iyz="0.0" ixz="-2e-06"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.001647 0.0356 -0.049137" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__20__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.001647 0.0356 -0.049137" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__20__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__27__1">
+  <inertial>
+    <origin xyz="-0.01543165574967053 0.002699842147237619 -0.006583969118120238" rpy="0 0 0"/>
+    <mass value="0.030735560817088444"/>
+    <inertia ixx="3e-06" iyy="5e-06" izz="3e-06" ixy="0.0" iyz="0.0" ixz="-2e-06"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.001647 -0.16035 -0.049137" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__27__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.001647 -0.16035 -0.049137" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__27__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__8__1">
+  <inertial>
+    <origin xyz="-0.0030420458058770805 0.005235035996396159 0.011353018206322197" rpy="0 0 0"/>
+    <mass value="0.05057127407496477"/>
+    <inertia ixx="8e-06" iyy="8e-06" izz="2e-06" ixy="0.0" iyz="-1e-06" ixz="2e-06"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.347 -0.15275 -0.0105" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__8__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.347 -0.15275 -0.0105" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__8__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__17__1">
+  <inertial>
+    <origin xyz="-0.0030420458058772262 0.00523503599639516 0.011353018206322162" rpy="0 0 0"/>
+    <mass value="0.050571274074964714"/>
+    <inertia ixx="8e-06" iyy="8e-06" izz="2e-06" ixy="0.0" iyz="-1e-06" ixz="2e-06"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.012 -0.15275 -0.0105" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__17__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.012 -0.15275 -0.0105" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__17__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__19__1">
+  <inertial>
+    <origin xyz="-0.003042045805877103 -0.005235197860487813 0.01135306950651852" rpy="0 0 0"/>
+    <mass value="0.05057127407496457"/>
+    <inertia ixx="8e-06" iyy="8e-06" izz="2e-06" ixy="-0.0" iyz="1e-06" ixz="2e-06"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.012 0.028 -0.0105" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__19__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.012 0.028 -0.0105" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__19__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__6__1">
+  <inertial>
+    <origin xyz="-0.0030420458058024735 -0.005235197860620992 0.011353069506524009" rpy="0 0 0"/>
+    <mass value="0.006828732550249332"/>
+    <inertia ixx="1e-06" iyy="1e-06" izz="0.0" ixy="-0.0" iyz="0.0" ixz="0.0"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.347 0.028 -0.0105" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__6__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.347 0.028 -0.0105" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__6__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="DOM_P__5__1">
+  <inertial>
+    <origin xyz="-0.051678367787295065 -0.007838078084361152 -0.05230840845031149" rpy="0 0 0"/>
+    <mass value="0.025229420464179933"/>
+    <inertia ixx="3.9e-05" iyy="7.6e-05" izz="3.8e-05" ixy="-1e-06" iyz="-2e-06" ixz="-3.7e-05"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.323 0.028 0.0105" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__5__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.323 0.028 0.0105" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="package://Domino_URDF_Parts_Combined_Final_description/meshes/DOM_P__5__1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<joint name="Revolute 1" type="revolute">
+  <origin xyz="0.2665 0.0 0.0105" rpy="0 0 0"/>
+  <parent link="base_link"/>
+  <child link="DOM_P__4__1"/>
+  <axis xyz="-1.0 -0.0 0.0"/>
+  <limit upper="0.523599" lower="-0.523599" effort="100" velocity="100"/>
+</joint>
+
+<joint name="Revolute 2" type="revolute">
+  <origin xyz="0.2665 0.12475 0.0105" rpy="0 0 0"/>
+  <parent link="base_link"/>
+  <child link="DOM_P__12__1"/>
+  <axis xyz="1.0 0.0 0.0"/>
+  <limit upper="0.523599" lower="-0.523599" effort="100" velocity="100"/>
+</joint>
+
+<joint name="Revolute 3" type="revolute">
+  <origin xyz="-0.0685 0.12475 0.0105" rpy="0 0 0"/>
+  <parent link="base_link"/>
+  <child link="DOM_P__25__1"/>
+  <axis xyz="1.0 0.0 0.0"/>
+  <limit upper="0.523599" lower="-0.523599" effort="100" velocity="100"/>
+</joint>
+
+<joint name="Revolute 4" type="revolute">
+  <origin xyz="-0.0685 0.0 0.0105" rpy="0 0 0"/>
+  <parent link="base_link"/>
+  <child link="DOM_P__21__1"/>
+  <axis xyz="-1.0 -0.0 0.0"/>
+  <limit upper="0.523599" lower="-0.523599" effort="100" velocity="100"/>
+</joint>
+
+<joint name="Revolute 21" type="continuous">
+  <origin xyz="-0.14133 0.0201 -0.084761" rpy="0 0 0"/>
+  <parent link="DOM_P__16__1"/>
+  <child link="DOM_P__26__1"/>
+  <axis xyz="-0.0 1.0 0.0"/>
+</joint>
+
+<joint name="Revolute 22" type="continuous">
+  <origin xyz="-0.113038 0.0125 -0.113038" rpy="0 0 0"/>
+  <parent link="DOM_P__14__1"/>
+  <child link="DOM_P__26__1"/>
+  <axis xyz="-0.0 1.0 0.0"/>
+</joint>
+
+<joint name="Revolute 23" type="continuous">
+  <origin xyz="-0.14133 0.0201 -0.084761" rpy="0 0 0"/>
+  <parent link="DOM_P__13__1"/>
+  <child link="DOM_P__11__1"/>
+  <axis xyz="0.0 1.0 0.0"/>
+</joint>
+
+<joint name="Revolute 24" type="continuous">
+  <origin xyz="-0.113038 0.0125 -0.113038" rpy="0 0 0"/>
+  <parent link="DOM_P__10__1"/>
+  <child link="DOM_P__11__1"/>
+  <axis xyz="0.0 1.0 0.0"/>
+</joint>
+
+<joint name="Revolute 25" type="continuous">
+  <origin xyz="-0.140976 -0.0201 -0.085115" rpy="0 0 0"/>
+  <parent link="DOM_P__5__1"/>
+  <child link="DOM_P__1__1"/>
+  <axis xyz="-0.0 1.0 0.0"/>
+</joint>
+
+<joint name="Revolute 26" type="continuous">
+  <origin xyz="-0.112684 -0.0125 -0.113392" rpy="0 0 0"/>
+  <parent link="DOM_P__2__1"/>
+  <child link="DOM_P__1__1"/>
+  <axis xyz="-0.0 1.0 -0.0"/>
+</joint>
+
+<joint name="Revolute 27" type="continuous">
+  <origin xyz="-0.140976 -0.0201 -0.085115" rpy="0 0 0"/>
+  <parent link="DOM_P__18__1"/>
+  <child link="DOM_P__22__1"/>
+  <axis xyz="-0.0 1.0 -0.0"/>
+</joint>
+
+<joint name="Revolute 28" type="continuous">
+  <origin xyz="-0.112684 -0.0125 -0.113392" rpy="0 0 0"/>
+  <parent link="DOM_P__23__1"/>
+  <child link="DOM_P__22__1"/>
+  <axis xyz="-0.0 1.0 -0.0"/>
+</joint>
+
+<joint name="Revolute 29" type="continuous">
+  <origin xyz="0.013647 -0.0004 0.059637" rpy="0 0 0"/>
+  <parent link="DOM_P__7__1"/>
+  <child link="DOM_P__9__1"/>
+  <axis xyz="-0.0 -1.0 -0.0"/>
+</joint>
+
+<joint name="Revolute 31" type="continuous">
+  <origin xyz="0.013647 0.0004 0.059637" rpy="0 0 0"/>
+  <parent link="DOM_P__24__1"/>
+  <child link="DOM_P__20__1"/>
+  <axis xyz="0.0 -1.0 -0.0"/>
+</joint>
+
+<joint name="Revolute 32" type="continuous">
+  <origin xyz="0.013647 0.0004 0.059637" rpy="0 0 0"/>
+  <parent link="DOM_P_1"/>
+  <child link="DOM_P__3__1"/>
+  <axis xyz="0.0 -1.0 0.0"/>
+</joint>
+
+<joint name="Revolute 33" type="continuous">
+  <origin xyz="-0.028292 0.0004 0.028277" rpy="0 0 0"/>
+  <parent link="DOM_P_1"/>
+  <child link="DOM_P__2__1"/>
+  <axis xyz="0.0 -1.0 0.0"/>
+</joint>
+
+<joint name="Revolute 34" type="continuous">
+  <origin xyz="0.013647 -0.0004 0.059637" rpy="0 0 0"/>
+  <parent link="DOM_P__15__1"/>
+  <child link="DOM_P__27__1"/>
+  <axis xyz="0.0 -1.0 0.0"/>
+</joint>
+
+<joint name="Revolute 35" type="continuous">
+  <origin xyz="-0.028292 -0.0004 0.028277" rpy="0 0 0"/>
+  <parent link="DOM_P__15__1"/>
+  <child link="DOM_P__14__1"/>
+  <axis xyz="0.0 -1.0 0.0"/>
+</joint>
+
+<joint name="Revolute 36" type="continuous">
+  <origin xyz="-0.028292 -0.0004 0.028277" rpy="0 0 0"/>
+  <parent link="DOM_P__7__1"/>
+  <child link="DOM_P__10__1"/>
+  <axis xyz="-0.0 -1.0 -0.0"/>
+</joint>
+
+<joint name="Revolute 37" type="continuous">
+  <origin xyz="-0.028292 0.0004 0.028277" rpy="0 0 0"/>
+  <parent link="DOM_P__24__1"/>
+  <child link="DOM_P__23__1"/>
+  <axis xyz="0.0 -1.0 -0.0"/>
+</joint>
+
+<joint name="Revolute 42" type="continuous">
+  <origin xyz="0.0 -0.008 0.0" rpy="0 0 0"/>
+  <parent link="DOM_P__18__1"/>
+  <child link="DOM_P__24__1"/>
+  <axis xyz="-0.0 1.0 0.0"/>
+</joint>
+
+<joint name="Revolute 43" type="continuous">
+  <origin xyz="0.0 -0.008 0.0" rpy="0 0 0"/>
+  <parent link="DOM_P__5__1"/>
+  <child link="DOM_P_1"/>
+  <axis xyz="-0.0 1.0 0.0"/>
+</joint>
+
+<joint name="Revolute 44" type="continuous">
+  <origin xyz="0.0 0.008 0.0" rpy="0 0 0"/>
+  <parent link="DOM_P__13__1"/>
+  <child link="DOM_P__7__1"/>
+  <axis xyz="0.0 1.0 0.0"/>
+</joint>
+
+<joint name="Revolute 45" type="continuous">
+  <origin xyz="0.0 0.008 0.0" rpy="0 0 0"/>
+  <parent link="DOM_P__16__1"/>
+  <child link="DOM_P__15__1"/>
+  <axis xyz="0.0 -1.0 -0.0"/>
+</joint>
+
+<joint name="Revolute 46" type="revolute">
+  <origin xyz="0.0565 0.028 -0.021" rpy="0 0 0"/>
+  <parent link="DOM_P__12__1"/>
+  <child link="DOM_P__13__1"/>
+  <axis xyz="-0.0 -1.0 0.0"/>
+  <limit upper="0.0" lower="-2.094395" effort="100" velocity="100"/>
+</joint>
+
+<joint name="Revolute 47" type="continuous">
+  <origin xyz="0.0565 0.028 -0.021" rpy="0 0 0"/>
+  <parent link="DOM_P__25__1"/>
+  <child link="DOM_P__16__1"/>
+  <axis xyz="-0.0 1.0 0.0"/>
+</joint>
+
+<joint name="Revolute 48" type="revolute">
+  <origin xyz="0.0565 -0.028 -0.021" rpy="0 0 0"/>
+  <parent link="DOM_P__21__1"/>
+  <child link="DOM_P__18__1"/>
+  <axis xyz="0.0 -1.0 0.0"/>
+  <limit upper="1.570796" lower="-0.523599" effort="100" velocity="100"/>
+</joint>
+
+<joint name="Revolute 50" type="continuous">
+  <origin xyz="-0.010353 0.0076 0.038637" rpy="0 0 0"/>
+  <parent link="DOM_P__8__1"/>
+  <child link="DOM_P__9__1"/>
+  <axis xyz="-0.0 1.0 0.0"/>
+</joint>
+
+<joint name="Revolute 51" type="continuous">
+  <origin xyz="-0.010353 -0.0076 0.038637" rpy="0 0 0"/>
+  <parent link="DOM_P__6__1"/>
+  <child link="DOM_P__3__1"/>
+  <axis xyz="-0.0 1.0 -0.0"/>
+</joint>
+
+<joint name="Revolute 53" type="continuous">
+  <origin xyz="-0.010353 -0.0076 0.038637" rpy="0 0 0"/>
+  <parent link="DOM_P__19__1"/>
+  <child link="DOM_P__20__1"/>
+  <axis xyz="-0.0 1.0 0.0"/>
+</joint>
+
+<joint name="Revolute 54" type="continuous">
+  <origin xyz="-0.010353 0.0076 0.038637" rpy="0 0 0"/>
+  <parent link="DOM_P__17__1"/>
+  <child link="DOM_P__27__1"/>
+  <axis xyz="-0.0 1.0 -0.0"/>
+</joint>
+
+<joint name="Revolute 55" type="revolute">
+  <origin xyz="0.0805 0.028 0.0" rpy="0 0 0"/>
+  <parent link="DOM_P__12__1"/>
+  <child link="DOM_P__8__1"/>
+  <axis xyz="0.0 -1.0 0.0"/>
+  <limit upper="1.047198" lower="-0.523599" effort="100" velocity="100"/>
+</joint>
+
+<joint name="Revolute 56" type="revolute">
+  <origin xyz="0.0805 0.028 0.0" rpy="0 0 0"/>
+  <parent link="DOM_P__25__1"/>
+  <child link="DOM_P__17__1"/>
+  <axis xyz="0.0 -1.0 -0.0"/>
+  <limit upper="1.047198" lower="-0.523599" effort="100" velocity="100"/>
+</joint>
+
+<joint name="Revolute 57" type="revolute">
+  <origin xyz="0.0805 -0.028 0.0" rpy="0 0 0"/>
+  <parent link="DOM_P__21__1"/>
+  <child link="DOM_P__19__1"/>
+  <axis xyz="0.0 -1.0 -0.0"/>
+  <limit upper="1.047198" lower="-0.523599" effort="100" velocity="100"/>
+</joint>
+
+<joint name="Revolute 58" type="revolute">
+  <origin xyz="0.0805 -0.028 0.0" rpy="0 0 0"/>
+  <parent link="DOM_P__4__1"/>
+  <child link="DOM_P__6__1"/>
+  <axis xyz="0.0 -1.0 -0.0"/>
+  <limit upper="1.047198" lower="-0.523599" effort="100" velocity="100"/>
+</joint>
+
+<joint name="Revolute 59" type="revolute">
+  <origin xyz="0.0565 -0.028 -0.021" rpy="0 0 0"/>
+  <parent link="DOM_P__4__1"/>
+  <child link="DOM_P__5__1"/>
+  <axis xyz="0.0 -1.0 0.0"/>
+  <limit upper="0.0" lower="-2.094395" effort="100" velocity="100"/>
+</joint>
+
+</robot>

@@ -23,6 +23,18 @@ parser = argparse.ArgumentParser(description="Run a minimal actuated pin-linkage
 parser.add_argument("--steps", type=int, default=240, help="Number of physics steps to run.")
 parser.add_argument("--report-path", default="", help="Optional JSON report output path.")
 parser.add_argument("--save-usd", default="", help="Optional path to save the generated USD stage.")
+parser.add_argument(
+    "--geometry",
+    choices=("generic-four-bar", "domino-lower-triangle"),
+    default="generic-four-bar",
+    help="Linkage geometry to author into the Isaac stage.",
+)
+parser.add_argument(
+    "--drive-center-deg",
+    type=float,
+    default=None,
+    help="Driven joint target center. Defaults are geometry-specific.",
+)
 parser.add_argument("--drive-amplitude-deg", type=float, default=12.0, help="Driven crank target amplitude.")
 parser.add_argument("--drive-frequency-hz", type=float, default=0.6, help="Driven crank target frequency.")
 parser.add_argument(
@@ -77,7 +89,11 @@ def bar_angle_deg(start: np.ndarray, end: np.ndarray) -> float:
 
 
 def local_endpoint(point: np.ndarray, center: np.ndarray) -> Gf.Vec3f:
-    return Gf.Vec3f(float(point[0] - center[0]), 0.0, float(point[1] - center[1]))
+    point = np.asarray(point, dtype=np.float64)
+    center = np.asarray(center, dtype=np.float64)
+    if point.shape[0] == 2:
+        return Gf.Vec3f(float(point[0] - center[0]), 0.0, float(point[1] - center[1]))
+    return Gf.Vec3f(float(point[0] - center[0]), float(point[1] - center[1]), float(point[2] - center[2]))
 
 
 def apply_rigid_body(prim, mass: float, kinematic: bool = False):
@@ -114,6 +130,37 @@ def create_bar(stage, root: str, name: str, start: np.ndarray, end: np.ndarray, 
         "start": start,
         "end": end,
         "length": length,
+    }
+
+
+def create_body_from_points(
+    stage,
+    root: str,
+    name: str,
+    points: list[np.ndarray],
+    width: float,
+    mass: float,
+    kinematic=False,
+):
+    point_array = np.vstack([np.asarray(point, dtype=np.float64) for point in points])
+    center = point_array.mean(axis=0)
+    extents = point_array.max(axis=0) - point_array.min(axis=0)
+    visual_scale = np.maximum(extents, np.array([width, width, width], dtype=np.float64))
+
+    body_path = f"{root}/{name}"
+    body = UsdGeom.Xform.Define(stage, body_path)
+    UsdGeom.XformCommonAPI(body).SetTranslate(Gf.Vec3d(float(center[0]), float(center[1]), float(center[2])))
+    apply_rigid_body(body.GetPrim(), mass=mass, kinematic=kinematic)
+
+    visual = UsdGeom.Cube.Define(stage, f"{body_path}/visual")
+    visual.CreateSizeAttr(1.0)
+    UsdGeom.XformCommonAPI(visual).SetScale(
+        Gf.Vec3f(float(visual_scale[0]), float(visual_scale[1]), float(visual_scale[2]))
+    )
+    return {
+        "path": Sdf.Path(body_path),
+        "center": center,
+        "points": point_array,
     }
 
 
@@ -170,7 +217,7 @@ def world_endpoint(view: SingleRigidPrim, local_point: Gf.Vec3f) -> np.ndarray:
     return position.astype(np.float64) + rotation @ local
 
 
-def build_linkage(stage):
+def build_generic_four_bar(stage):
     root = "/World/PinLinkage"
     UsdGeom.Xform.Define(stage, root)
 
@@ -199,7 +246,9 @@ def build_linkage(stage):
     drive = apply_angular_drive(drive_joint, stiffness=8.0, damping=0.8, max_force=2.0, target_deg=-55.0)
 
     return {
+        "geometry": "generic-four-bar",
         "drive": drive,
+        "drive_center_deg": -55.0,
         "points": {
             "O": pivot_o.tolist(),
             "B": pivot_b.tolist(),
@@ -212,7 +261,124 @@ def build_linkage(stage):
             "coupler": coupler,
             "rocker": rocker,
         },
+        "loop_checks": [
+            {
+                "name": "loop_closure_pin",
+                "body_a": "coupler",
+                "body_b": "rocker",
+                "pivot": pivot_c.tolist(),
+            }
+        ],
     }
+
+
+def build_domino_lower_triangle(stage):
+    root = "/World/DominoLowerTriangle"
+    UsdGeom.Xform.Define(stage, root)
+
+    # CAD-derived pivots from simulation/isaac/reports/domino-linkage-pivots.md.
+    # This loop uses one driven input pin and three passive pins:
+    # R59 -> R43 -> R33 -> R26/R25.
+    points = {
+        "drive_revolute_59": np.array([0.323000, -0.028000, -0.010500], dtype=np.float64),
+        "passive_revolute_43": np.array([0.323000, -0.036000, -0.010500], dtype=np.float64),
+        "passive_revolute_33": np.array([0.294708, -0.035600, 0.017777], dtype=np.float64),
+        "closure_revolute_25_26": np.array([0.182024, -0.048100, -0.095615], dtype=np.float64),
+        "upper_reference_revolute_58": np.array([0.347000, -0.028000, 0.010500], dtype=np.float64),
+    }
+
+    ground = create_body_from_points(
+        stage,
+        root,
+        "ground_hip_reference",
+        [points["drive_revolute_59"], points["upper_reference_revolute_58"]],
+        width=0.014,
+        mass=1.0,
+        kinematic=True,
+    )
+    lower_driver = create_body_from_points(
+        stage,
+        root,
+        "lower_driver_dom_p_5_1",
+        [points["drive_revolute_59"], points["passive_revolute_43"], points["closure_revolute_25_26"]],
+        width=0.010,
+        mass=0.08,
+    )
+    coupler = create_body_from_points(
+        stage,
+        root,
+        "coupler_dom_p_1",
+        [points["passive_revolute_43"], points["passive_revolute_33"]],
+        width=0.008,
+        mass=0.04,
+    )
+    diagonal = create_body_from_points(
+        stage,
+        root,
+        "diagonal_dom_p_2_1",
+        [points["passive_revolute_33"], points["closure_revolute_25_26"]],
+        width=0.008,
+        mass=0.04,
+    )
+
+    drive_joint = create_pin_joint(
+        stage,
+        f"{root}/joints/drive_revolute_59",
+        ground,
+        lower_driver,
+        points["drive_revolute_59"],
+        lower_deg=-120.0,
+        upper_deg=0.0,
+    )
+    create_pin_joint(
+        stage,
+        f"{root}/joints/passive_revolute_43",
+        lower_driver,
+        coupler,
+        points["passive_revolute_43"],
+    )
+    create_pin_joint(
+        stage,
+        f"{root}/joints/passive_revolute_33",
+        coupler,
+        diagonal,
+        points["passive_revolute_33"],
+    )
+    create_pin_joint(
+        stage,
+        f"{root}/joints/loop_closure_revolute_25_26",
+        lower_driver,
+        diagonal,
+        points["closure_revolute_25_26"],
+    )
+    drive = apply_angular_drive(drive_joint, stiffness=3.0, damping=0.45, max_force=1.0, target_deg=-15.0)
+
+    return {
+        "geometry": "domino-lower-triangle",
+        "drive": drive,
+        "drive_center_deg": -15.0,
+        "points": {name: point.tolist() for name, point in points.items()},
+        "bodies": {
+            "ground": ground,
+            "lower_driver": lower_driver,
+            "coupler": coupler,
+            "diagonal": diagonal,
+        },
+        "loop_checks": [
+            {
+                "name": "revolute_25_26_closure",
+                "body_a": "lower_driver",
+                "body_b": "diagonal",
+                "pivot": points["closure_revolute_25_26"].tolist(),
+            }
+        ],
+    }
+
+
+def build_linkage(stage):
+    if args_cli.geometry == "domino-lower-triangle":
+        return build_domino_lower_triangle(stage)
+    return build_generic_four_bar(stage)
 
 
 def to_numpy(value) -> np.ndarray:
@@ -257,9 +423,9 @@ def main():
     drive_attr = linkage["drive"].GetTargetPositionAttr()
     sim_dt = sim.get_physics_dt()
     max_linear_speed = 0.0
-    max_loop_error = 0.0
+    max_loop_errors = {check["name"]: 0.0 for check in linkage["loop_checks"]}
     min_finite = True
-    initial_target = -55.0
+    initial_target = float(args_cli.drive_center_deg if args_cli.drive_center_deg is not None else linkage["drive_center_deg"])
 
     for step in range(args_cli.steps):
         time_s = step * sim_dt
@@ -280,10 +446,15 @@ def main():
             min_finite = False
             break
 
-        coupler_c = world_endpoint(views["coupler"], local_endpoint(np.array(linkage["bodies"]["coupler"]["end"]), linkage["bodies"]["coupler"]["center"]))
-        rocker_c = world_endpoint(views["rocker"], local_endpoint(np.array(linkage["bodies"]["rocker"]["end"]), linkage["bodies"]["rocker"]["center"]))
-        loop_error = float(np.linalg.norm(coupler_c - rocker_c))
-        max_loop_error = max(max_loop_error, loop_error)
+        for check in linkage["loop_checks"]:
+            pivot = np.array(check["pivot"], dtype=np.float64)
+            body_a = linkage["bodies"][check["body_a"]]
+            body_b = linkage["bodies"][check["body_b"]]
+            world_a = world_endpoint(views[check["body_a"]], local_endpoint(pivot, body_a["center"]))
+            world_b = world_endpoint(views[check["body_b"]], local_endpoint(pivot, body_b["center"]))
+            loop_error = float(np.linalg.norm(world_a - world_b))
+            max_loop_errors[check["name"]] = max(max_loop_errors[check["name"]], loop_error)
+
         max_linear_speed = max(
             max_linear_speed, max(float(np.linalg.norm(to_numpy(view.get_linear_velocity()))) for view in views.values())
         )
@@ -295,16 +466,18 @@ def main():
 
     report = {
         "status": "passed" if min_finite else "failed",
+        "geometry": linkage["geometry"],
         "steps": step + 1,
         "physics_dt": sim_dt,
-        "linkage_points_xz_m": linkage["points"],
+        "linkage_points_m": linkage["points"],
         "drive": {
-            "joint": "drive_crank_pin",
+            "joint": "drive_revolute_59" if linkage["geometry"] == "domino-lower-triangle" else "drive_crank_pin",
             "target_center_deg": initial_target,
             "target_amplitude_deg": args_cli.drive_amplitude_deg,
             "frequency_hz": args_cli.drive_frequency_hz,
         },
-        "max_loop_closure_error_m": round(max_loop_error, 8),
+        "max_loop_closure_error_m": round(max(max_loop_errors.values()), 8),
+        "loop_closure_errors_m": {name: round(value, 8) for name, value in max_loop_errors.items()},
         "max_body_linear_speed_m_s": round(max_linear_speed, 6),
         "final_poses": final_poses,
     }

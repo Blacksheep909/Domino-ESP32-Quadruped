@@ -5,27 +5,52 @@ This prototype is the next physics gate after the simplified one-leg articulatio
 The goal is to prove that a small closed linkage can run in Isaac/PhysX with:
 
 - One actuated revolute input pin.
-- Passive revolute pins for the coupler and rocker.
+- Passive revolute pins for the other linkage members.
 - A loop-closing revolute pin.
 - No contacts or gravity in the first pass.
 
-This is intentionally smaller than the Domino leg. It is a controlled four-bar test used to find stable solver settings before adding the real CAD geometry and leg-specific proportions.
+This is intentionally smaller than the full Domino leg. It started as a controlled generic four-bar test, then gained a CAD-derived one-joint Domino lower-linkage mode.
 
 ## Runtime Test
 
-Run with the Isaac Lab Python environment:
+Run the generic linkage with the Isaac Lab Python environment:
 
 ```powershell
 <isaac-python> simulation/isaac/prototypes/pin_linkage/run_pin_linkage.py `
   --headless `
+  --geometry generic-four-bar `
   --steps 240 `
   --report-path <output-folder>/pin_linkage_report.json
 ```
 
-The script authors the linkage directly into the current Isaac stage, applies a sinusoidal target to the driven crank joint, steps physics, and reports body state plus loop-closure drift.
+Run the CAD-derived Domino lower-linkage loop:
 
-Runtime status: the generic linkage has passed a 600-step headless Isaac/PhysX run. See [`../../reports/domino-pin-linkage-runtime.md`](../../reports/domino-pin-linkage-runtime.md).
+```powershell
+<isaac-python> simulation/isaac/prototypes/pin_linkage/run_pin_linkage.py `
+  --headless `
+  --geometry domino-lower-triangle `
+  --steps 600 `
+  --drive-amplitude-deg 8 `
+  --drive-frequency-hz 0.4 `
+  --report-path <output-folder>/domino_lower_triangle_report.json `
+  --save-usd <output-folder>/domino_lower_triangle.usd
+```
+
+The script authors the linkage directly into the current Isaac stage, applies a sinusoidal target to the driven input joint, steps physics, and reports body state plus loop-closure drift.
+
+Runtime status: the generic linkage and the first CAD-derived Domino lower-linkage loop have both passed headless Isaac/PhysX runs. See [`../../reports/domino-pin-linkage-runtime.md`](../../reports/domino-pin-linkage-runtime.md).
+
+## CAD-Derived Mode
+
+The `domino-lower-triangle` mode uses pivots extracted by [`../../analyze-domino-linkage-pivots.ps1`](../../analyze-domino-linkage-pivots.ps1). The first validated loop is:
+
+| Role | URDF joint |
+| --- | --- |
+| Driven input | `Revolute 59` |
+| Passive stack pin | `Revolute 43` |
+| Passive coupler pin | `Revolute 33` |
+| Loop closure | `Revolute 25` / `Revolute 26` |
 
 ## What Passing Means
 
-Passing means the pin-joint concept can run without non-finite state or obvious constraint explosion. It does **not** mean the Domino lower leg is finished. The next step after this is to replace the generic four-bar dimensions with Domino linkage pivots from CAD, then compare the effective lower-linkage motion against the simplified one-leg model.
+Passing means the one-actuator passive-pin concept can run without non-finite state or obvious constraint explosion. It does **not** mean the Domino lower leg is finished. The next step is to add the second linkage loop, compare the constrained output motion against the simplified one-leg model, and only then merge it into a full one-leg Domino asset.

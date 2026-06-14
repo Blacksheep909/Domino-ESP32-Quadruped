@@ -11,14 +11,17 @@ This folder is the working plan for turning Domino from CAD and firmware into a 
 | `../usd/` | Existing USD/USDZ visual exports from the CAD-to-Isaac exploration. |
 | `../urdf/generated/Domino_URDF_Parts_Combined_Final_description/` | Generated URDF package copied from the CAD export for reference and analysis. |
 | `analyze-domino-urdf.ps1` | Repeatable URDF topology validator. |
+| `analyze-domino-linkage-pivots.ps1` | Extracts named linkage pivot coordinates from the generated URDF for CAD-derived pin-joint tests. |
 | `run-domino-urdf-import.ps1` | Parameterized Isaac Lab URDF import smoke-test helper. |
 | `prototypes/one_leg/` | Clean three-joint one-leg prototype for the first stable Isaac articulation. |
-| `prototypes/pin_linkage/` | Minimal actuated four-bar / pin-joint constraint prototype. |
+| `prototypes/pin_linkage/` | Minimal actuated pin-joint constraint prototype with generic and CAD-derived Domino linkage modes. |
 | `reports/domino-urdf-topology.md` | Current topology report generated from the URDF export. |
+| `reports/domino-linkage-pivots.md` | CAD-derived pivot report for the first lower-linkage loops. |
+| `reports/domino-linkage-pivots.json` | Machine-readable pivot extraction output. |
 | `reports/domino-urdf-import-smoke-test.md` | Result of the first Isaac Lab raw import smoke test. |
 | `reports/domino-one-leg-import-smoke-test.md` | Result of the first clean one-leg import smoke test. |
 | `reports/domino-one-leg-runtime-sweep.md` | Result of the first clean one-leg Isaac Lab articulation sweep. |
-| `reports/domino-pin-linkage-runtime.md` | Result of the first actuated passive pin-linkage runtime test. |
+| `reports/domino-pin-linkage-runtime.md` | Results of the generic and CAD-derived actuated passive pin-linkage runtime tests. |
 
 ## Current Finding
 
@@ -103,6 +106,25 @@ powershell -ExecutionPolicy Bypass -File simulation/isaac/run-domino-urdf-import
   -AcceptEula
 ```
 
+Extract CAD linkage pivots from the generated URDF:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File simulation/isaac/analyze-domino-linkage-pivots.ps1
+```
+
+Run the CAD-derived one-joint lower-linkage test:
+
+```powershell
+<isaac-python> simulation/isaac/prototypes/pin_linkage/run_pin_linkage.py `
+  --headless `
+  --geometry domino-lower-triangle `
+  --steps 600 `
+  --drive-amplitude-deg 8 `
+  --drive-frequency-hz 0.4 `
+  --report-path <output-folder>/domino_lower_triangle_report.json `
+  --save-usd <output-folder>/domino_lower_triangle.usd
+```
+
 ## Isaac Runtime Notes
 
 NVIDIA's current Isaac Lab import workflow recommends converting robot assets into USD and then writing an asset configuration for spawning and training. The Isaac Lab docs also call out useful URDF import settings such as fixed base selection, fixed-joint merging, joint drive configuration, and setting joint target type to `none` during import when you want to configure drives later. See:
@@ -123,6 +145,6 @@ The next useful asset to validate is the clean one-leg USD generated from `proto
 
 Once the one-leg model behaves, duplicate it into a four-leg robot and wire the Isaac Lab action space to the same twelve-servo abstraction used by the firmware.
 
-Current runtime status: the simplified one-leg prototype imports, spawns as an Isaac Lab articulation, finds the three expected driven joints, and completes a headless joint sweep. The passive two-bar/four-bar linkage physics is still the next unresolved gate.
+Current runtime status: the simplified one-leg prototype imports, spawns as an Isaac Lab articulation, finds the three expected driven joints, and completes a headless joint sweep.
 
-Current linkage status: a generic one-actuator four-bar linkage now runs headlessly with passive pin joints and a loop-closing revolute constraint. The next unresolved gate is replacing the generic dimensions with Domino's real lower-leg pivot geometry.
+Current linkage status: a generic one-actuator four-bar linkage and the first CAD-derived Domino lower-linkage loop both run headlessly with passive pin joints and a loop-closing revolute constraint. The next unresolved gate is adding the second loop around `Revolute 58` / `Revolute 32` / `Revolute 51`, then merging the constrained lower-linkage behavior into the clean one-leg asset.

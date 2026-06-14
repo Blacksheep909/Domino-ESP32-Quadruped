@@ -12,8 +12,10 @@ This folder is the working plan for turning Domino from CAD and firmware into a 
 | `../urdf/generated/Domino_URDF_Parts_Combined_Final_description/` | Generated URDF package copied from the CAD export for reference and analysis. |
 | `analyze-domino-urdf.ps1` | Repeatable URDF topology validator. |
 | `run-domino-urdf-import.ps1` | Parameterized Isaac Lab URDF import smoke-test helper. |
+| `prototypes/one_leg/` | Clean three-joint one-leg prototype for the first stable Isaac articulation. |
 | `reports/domino-urdf-topology.md` | Current topology report generated from the URDF export. |
 | `reports/domino-urdf-import-smoke-test.md` | Result of the first Isaac Lab raw import smoke test. |
+| `reports/domino-one-leg-import-smoke-test.md` | Result of the first clean one-leg import smoke test. |
 
 ## Current Finding
 
@@ -86,6 +88,17 @@ powershell -ExecutionPolicy Bypass -File simulation/isaac/run-domino-urdf-import
 
 The helper deliberately takes Isaac paths as arguments or environment variables. Do not hard-code personal workstation paths into this repository.
 
+Run the clean one-leg prototype through the same importer:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File simulation/isaac/run-domino-urdf-import.ps1 `
+  -UrdfPath simulation/isaac/prototypes/one_leg/domino_one_leg_clean.urdf `
+  -IsaacLabRoot <path-to-IsaacLab> `
+  -IsaacPython <path-to-isaac-python> `
+  -OutputUsd <output-folder>/domino_one_leg_clean.usd `
+  -AcceptEula
+```
+
 ## Isaac Runtime Notes
 
 NVIDIA's current Isaac Lab import workflow recommends converting robot assets into USD and then writing an asset configuration for spawning and training. The Isaac Lab docs also call out useful URDF import settings such as fixed base selection, fixed-joint merging, joint drive configuration, and setting joint target type to `none` during import when you want to configure drives later. See:
@@ -96,7 +109,7 @@ NVIDIA's current Isaac Lab import workflow recommends converting robot assets in
 
 ## Immediate Next Milestone
 
-The next useful asset to create is not the full robot. It is a clean one-leg USD with:
+The next useful asset to validate is the clean one-leg USD generated from `prototypes/one_leg/domino_one_leg_clean.urdf`, with:
 
 - Three driven joints with readable names.
 - Simplified collision bodies.

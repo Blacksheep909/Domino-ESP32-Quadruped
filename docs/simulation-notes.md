@@ -24,6 +24,7 @@ Isaac bring-up notes and topology tooling:
 - [`simulation/isaac/README.md`](../simulation/isaac/README.md)
 - [`simulation/isaac/analyze-domino-urdf.ps1`](../simulation/isaac/analyze-domino-urdf.ps1)
 - [`simulation/isaac/run-domino-urdf-import.ps1`](../simulation/isaac/run-domino-urdf-import.ps1)
+- [`simulation/isaac/prototypes/one_leg`](../simulation/isaac/prototypes/one_leg)
 - [`simulation/isaac/reports/domino-urdf-topology.md`](../simulation/isaac/reports/domino-urdf-topology.md)
 - [`simulation/isaac/reports/domino-urdf-import-smoke-test.md`](../simulation/isaac/reports/domino-urdf-import-smoke-test.md)
 
@@ -58,3 +59,5 @@ The next useful simulation milestone is not a full robot import. It is one valid
 That path is less literal than importing every CAD mate, but it is more likely to produce a useful simulation.
 
 For training, the first Isaac Lab model should expose the twelve real driven joints as the policy action space. Passive linkage pins should either be visual-only or added later as passive constraints once the simplified model can stand, reset, and sweep joints without instability.
+
+A first simplified one-leg URDF and Isaac Lab config template now live under [`simulation/isaac/prototypes/one_leg`](../simulation/isaac/prototypes/one_leg). This is the intended starting point for validating axes, limits, reset behavior, and actuator gains before rebuilding the complete quadruped.

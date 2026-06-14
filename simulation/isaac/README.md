@@ -11,7 +11,9 @@ This folder is the working plan for turning Domino from CAD and firmware into a 
 | `../usd/` | Existing USD/USDZ visual exports from the CAD-to-Isaac exploration. |
 | `../urdf/generated/Domino_URDF_Parts_Combined_Final_description/` | Generated URDF package copied from the CAD export for reference and analysis. |
 | `analyze-domino-urdf.ps1` | Repeatable URDF topology validator. |
+| `run-domino-urdf-import.ps1` | Parameterized Isaac Lab URDF import smoke-test helper. |
 | `reports/domino-urdf-topology.md` | Current topology report generated from the URDF export. |
+| `reports/domino-urdf-import-smoke-test.md` | Result of the first Isaac Lab raw import smoke test. |
 
 ## Current Finding
 
@@ -71,6 +73,18 @@ Run it against another exported URDF:
 ```powershell
 powershell -ExecutionPolicy Bypass -File simulation/isaac/analyze-domino-urdf.ps1 -UrdfPath path\to\robot.urdf
 ```
+
+Run a raw Isaac Lab import smoke test:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File simulation/isaac/run-domino-urdf-import.ps1 `
+  -IsaacLabRoot <path-to-IsaacLab> `
+  -IsaacPython <path-to-isaac-python> `
+  -OutputUsd <output-folder>/domino_raw_import.usd `
+  -AcceptEula
+```
+
+The helper deliberately takes Isaac paths as arguments or environment variables. Do not hard-code personal workstation paths into this repository.
 
 ## Isaac Runtime Notes
 

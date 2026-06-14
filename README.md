@@ -32,6 +32,7 @@ Implemented or documented:
 - Per-servo safety limits to reduce the chance of driving the mechanism into hard stops.
 - STEP exports for assembly, body, and leg inspection.
 - USD/USDZ exports from the Isaac Sim exploration path.
+- Raw Isaac Lab URDF import smoke test documented for the generated CAD export.
 - Domino PCB V1.1B Gerber package and PCB screenshots.
 
 Still in progress:

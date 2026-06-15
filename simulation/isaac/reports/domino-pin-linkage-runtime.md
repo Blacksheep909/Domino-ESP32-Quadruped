@@ -120,15 +120,17 @@ This combines four CAD-derived pitch-linkage modules into one fixed-base Isaac s
 
 | Metric | Result |
 | --- | ---: |
-| Physics steps | `600` |
+| Stability smoke-test steps | `600` |
+| Independent calibration steps | `3200` |
 | Physics dt | `0.005 s` |
 | Lower drive amplitude | `1 deg` |
 | Upper drive amplitude | `1 deg` |
 | Drive frequency | `0.15 Hz` |
 | Max loop-closure error | `0.00001217 m` |
 | Max body linear speed | `0.039359 m/s` |
+| Independent calibration matrix rank | `9 / 9` |
 
-All eight CAD loop closures stayed bounded in one scene. `Revolute 47` on `DOM_P__25__1` is treated as a lower drive for this smoke test because its pivot mirrors the lower drive locations on the other legs, but the CAD URDF currently labels it as `continuous`; that needs a final design decision before policy training. See `reports/domino-four-leg-linkage-runtime.md`.
+All eight CAD loop closures stayed bounded in one scene. A separate independent drive sweep moved one pitch drive at a time and produced a full-rank local calibration fit for the eight pitch inputs. `Revolute 47` on `DOM_P__25__1` is treated as a lower drive for this smoke test because its pivot mirrors the lower drive locations on the other legs, but the CAD URDF currently labels it as `continuous`; that needs a final design decision before policy training. See `reports/domino-four-leg-linkage-runtime.md`.
 
 ## Why This Matters
 
@@ -138,8 +140,9 @@ This proves six useful pieces of the Domino simulation path:
 2. The real exported Domino lower-linkage pivots can be used in a one-actuator loop without the loop exploding.
 3. The second exported linkage loop can also be constrained in isolation.
 4. Both loops can run together as one simplified two-drive leg mechanism.
-5. Over a conservative small-angle sweep, the two driven inputs produce repeatable measured output proxies that can be fitted with a local linear calibration.
+5. Over a conservative small-angle sweep, the two driven one-leg inputs produce repeatable measured output proxies that can be fitted with a local linear calibration.
 6. The four CAD-derived pitch-linkage modules can run together in one fixed-base Isaac scene without immediate constraint explosion.
+7. One-drive-at-a-time all-leg sweeps can produce a full-rank local calibration fit for all eight pitch drives.
 
 That is the missing physics ingredient between the simplified one-leg articulation and a more faithful Domino leg.
 
@@ -151,9 +154,8 @@ The CAD-derived tests use real pivot positions, but simplified rigid bodies, no 
 
 ## Next Work
 
-1. Validate each all-leg pitch drive with independent one-input sweeps.
-2. Compare the calibrated combined-leg output against the simplified `lower_linkage` joint used in `prototypes/one_leg`.
-3. Replace the body-pitch proxy with a cleaner output coordinate for policy use.
-4. Merge the stable constrained pitch-linkage behavior with hip ab/ad articulation.
-5. Reintroduce gravity, simple collisions, and joint hard-stop checks.
-6. Wire the result to the twelve-servo Isaac Lab action space.
+1. Compare the calibrated all-leg proxy outputs against the simplified `lower_linkage` joint used in `prototypes/one_leg`.
+2. Replace the body-pitch proxy with a cleaner output coordinate for policy use.
+3. Merge the stable constrained pitch-linkage behavior with hip ab/ad articulation.
+4. Reintroduce gravity, simple collisions, and joint hard-stop checks.
+5. Wire the result to the twelve-servo Isaac Lab action space.

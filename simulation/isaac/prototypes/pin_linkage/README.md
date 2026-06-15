@@ -53,7 +53,7 @@ The script authors the linkage directly into the current Isaac stage, applies si
 
 Runtime status: the generic linkage, the CAD-derived lower triangle, the CAD-derived upper loop, the combined CAD-derived one-leg mechanism, and a four-leg CAD-derived pitch-linkage scene have all passed headless Isaac/PhysX runs. See [`../../reports/domino-pin-linkage-runtime.md`](../../reports/domino-pin-linkage-runtime.md) and [`../../reports/domino-four-leg-linkage-runtime.md`](../../reports/domino-four-leg-linkage-runtime.md).
 
-Motion-characterization status: the combined mechanism is stable and now has a first local linear calibration fit from drive targets to measured linkage-output proxies. That fit is useful engineering data, but it is not yet the final policy action/state mapping. See [`../../reports/domino-combined-linkage-characterization.md`](../../reports/domino-combined-linkage-characterization.md).
+Motion-characterization status: the combined one-leg mechanism is stable and has a first local linear calibration fit from drive targets to measured linkage-output proxies. The all-leg scene also has an independent one-drive-at-a-time calibration sweep that gives a full-rank local fit for all eight pitch drives. These fits are useful engineering data, but they are not yet the final policy action/state mapping. See [`../../reports/domino-combined-linkage-characterization.md`](../../reports/domino-combined-linkage-characterization.md) and [`../../reports/domino-four-leg-linkage-runtime.md`](../../reports/domino-four-leg-linkage-runtime.md).
 
 Run the combined CAD-derived one-leg mechanism:
 
@@ -85,6 +85,25 @@ Run the all-leg CAD-derived pitch-linkage scene:
   --secondary-drive-frequency-hz 0.15 `
   --report-path <output-folder>/domino_four_combined_legs_report.json `
   --save-usd <output-folder>/domino_four_combined_legs.usd
+```
+
+Run the all-leg independent drive calibration sweep:
+
+```powershell
+<isaac-python> simulation/isaac/prototypes/pin_linkage/run_pin_linkage.py `
+  --headless `
+  --geometry domino-four-combined-legs `
+  --drive-schedule independent `
+  --steps 3200 `
+  --independent-segment-steps 400 `
+  --independent-settle-steps 80 `
+  --fit-start-step 0 `
+  --drive-amplitude-deg 1 `
+  --secondary-drive-amplitude-deg 1 `
+  --drive-frequency-hz 0.15 `
+  --secondary-drive-frequency-hz 0.15 `
+  --report-path <output-folder>/domino_four_independent_calibration_report.json `
+  --save-usd <output-folder>/domino_four_independent_calibration.usd
 ```
 
 ## CAD-Derived Modes
@@ -128,8 +147,14 @@ All-leg scene:
 | `dom_p_25_1` | `Revolute 47` | `Revolute 56` | `Revolute 21` / `Revolute 22` | `Revolute 34` / `Revolute 54` |
 | `dom_p_21_1` | `Revolute 48` | `Revolute 57` | `Revolute 27` / `Revolute 28` | `Revolute 31` / `Revolute 53` |
 
+## Drive Schedules
+
+`--drive-schedule phased-sine` is the default smoke test. All drives move together with phase offsets, which is useful for constraint stability but not enough for independent calibration because the input matrix is rank deficient.
+
+`--drive-schedule independent` moves one drive at a time while the other drives hold their centre positions. Use this mode when fitting the local relationship between the commanded pitch drives and measured output proxies.
+
 ## What Passing Means
 
-Passing means the isolated one-actuator passive-pin loops, a simplified two-drive combined leg, and a fixed-base all-leg pitch-linkage scene can run without non-finite state or obvious constraint explosion. The calibration fit means the combined one-leg case has a repeatable local relationship between commanded drive targets and measured linkage-output proxies over the tested range.
+Passing means the isolated one-actuator passive-pin loops, a simplified two-drive combined leg, and a fixed-base all-leg pitch-linkage scene can run without non-finite state or obvious constraint explosion. The calibration fits mean the combined one-leg case and the all-leg independent sweep have repeatable local relationships between commanded drive targets and measured linkage-output proxies over the tested range.
 
-It does **not** mean the Domino robot is finished. The next step is to run independent drive sweeps for the all-leg scene, compare the fitted proxy outputs against the simplified one-leg model, merge the pitch linkage behavior with hip ab/ad articulation, then build the Isaac Lab training environment.
+It does **not** mean the Domino robot is finished. The next step is to compare the fitted proxy outputs against the simplified one-leg model, merge the pitch linkage behavior with hip ab/ad articulation, reintroduce gravity and contacts carefully, then build the Isaac Lab training environment.

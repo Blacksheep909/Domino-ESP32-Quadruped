@@ -33,6 +33,7 @@ parser.add_argument(
         "domino-combined-leg",
         "domino-four-combined-legs",
         "domino-four-12-actuators",
+        "domino-four-12-fixed-body",
     ),
     default="generic-four-bar",
     help="Linkage geometry to author into the Isaac stage.",
@@ -1067,7 +1068,13 @@ def joint_key(leg_id: str, joint_name: str) -> str:
     return f"{leg_id}_{joint_name.lower().replace(' ', '_')}"
 
 
-def build_domino_combined_leg_instance(stage, root: str, spec: dict, include_shoulder: bool = False) -> dict:
+def build_domino_combined_leg_instance(
+    stage,
+    root: str,
+    spec: dict,
+    include_shoulder: bool = False,
+    shared_base: dict | None = None,
+) -> dict:
     leg_root = f"{root}/{spec['id']}"
     UsdGeom.Xform.Define(stage, leg_root)
     points = {name: np.array(value, dtype=np.float64) for name, value in spec["points"].items()}
@@ -1086,16 +1093,20 @@ def build_domino_combined_leg_instance(stage, root: str, spec: dict, include_sho
     ground_points = [points["upper_drive"], points["lower_drive"]]
     if include_shoulder:
         ground_points = [points["hip_origin"], points["upper_drive"], points["lower_drive"]]
-        base_anchor = create_body_from_points(
-            stage,
-            leg_root,
-            "base_anchor",
-            [points["hip_origin"]],
-            width=0.018,
-            mass=1.0,
-            kinematic=True,
-        )
-        bodies[base_anchor_key] = base_anchor
+        if shared_base is not None:
+            base_anchor_key = shared_base["key"]
+            base_anchor = shared_base["body"]
+        else:
+            base_anchor = create_body_from_points(
+                stage,
+                leg_root,
+                "base_anchor",
+                [points["hip_origin"]],
+                width=0.018,
+                mass=1.0,
+                kinematic=True,
+            )
+            bodies[base_anchor_key] = base_anchor
 
     ground = create_body_from_points(
         stage,
@@ -1149,7 +1160,7 @@ def build_domino_combined_leg_instance(stage, root: str, spec: dict, include_sho
         shoulder_joint = create_pin_joint(
             stage,
             f"{leg_root}/joints/{shoulder_joint_name}",
-            bodies[base_anchor_key],
+            base_anchor,
             ground,
             points["hip_origin"],
             lower_deg=shoulder_limit_deg[0],
@@ -1337,8 +1348,13 @@ def build_domino_combined_leg_instance(stage, root: str, spec: dict, include_sho
     }
 
 
-def build_domino_four_combined_legs(stage, include_shoulders: bool = False):
-    root = "/World/DominoFour12Actuators" if include_shoulders else "/World/DominoFourCombinedLegs"
+def build_domino_four_combined_legs(stage, include_shoulders: bool = False, shared_body: bool = False):
+    if shared_body:
+        root = "/World/DominoFour12FixedBody"
+    elif include_shoulders:
+        root = "/World/DominoFour12Actuators"
+    else:
+        root = "/World/DominoFourCombinedLegs"
     UsdGeom.Xform.Define(stage, root)
 
     points = {}
@@ -1351,9 +1367,32 @@ def build_domino_four_combined_legs(stage, include_shoulders: bool = False):
     drive_angle_pairs = {}
     pivot_tracks = []
     legs = []
+    shared_base = None
+    if shared_body:
+        hip_points = [
+            np.array(spec["points"]["hip_origin"], dtype=np.float64)
+            for spec in DOMINO_FOUR_COMBINED_LEG_SPECS
+        ]
+        body_reference = create_body_from_points(
+            stage,
+            root,
+            "body_reference",
+            hip_points,
+            width=0.030,
+            mass=1.2,
+            kinematic=True,
+        )
+        shared_base = {"key": "body_reference", "body": body_reference}
+        bodies[shared_base["key"]] = body_reference
 
     for spec in DOMINO_FOUR_COMBINED_LEG_SPECS:
-        leg = build_domino_combined_leg_instance(stage, root, spec, include_shoulder=include_shoulders)
+        leg = build_domino_combined_leg_instance(
+            stage,
+            root,
+            spec,
+            include_shoulder=include_shoulders,
+            shared_base=shared_base,
+        )
         points.update(leg["points"])
         bodies.update(leg["bodies"])
         drives.extend(leg["drives"])
@@ -1366,7 +1405,13 @@ def build_domino_four_combined_legs(stage, include_shoulders: bool = False):
         legs.append(leg["leg"])
 
     return {
-        "geometry": "domino-four-12-actuators" if include_shoulders else "domino-four-combined-legs",
+        "geometry": (
+            "domino-four-12-fixed-body"
+            if shared_body
+            else "domino-four-12-actuators"
+            if include_shoulders
+            else "domino-four-combined-legs"
+        ),
         "drive": drives[0]["drive"],
         "drive_joint_name": drives[0]["joint"],
         "drive_center_deg": drives[0]["center_deg"],
@@ -1386,6 +1431,8 @@ def build_domino_four_combined_legs(stage, include_shoulders: bool = False):
 
 
 def build_linkage(stage):
+    if args_cli.geometry == "domino-four-12-fixed-body":
+        return build_domino_four_combined_legs(stage, include_shoulders=True, shared_body=True)
     if args_cli.geometry == "domino-four-12-actuators":
         return build_domino_four_combined_legs(stage, include_shoulders=True)
     if args_cli.geometry == "domino-four-combined-legs":

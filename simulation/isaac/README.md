@@ -24,6 +24,7 @@ This folder is the working plan for turning Domino from CAD and firmware into a 
 | `reports/domino-pin-linkage-runtime.md` | Results of the generic and CAD-derived actuated passive pin-linkage runtime tests. |
 | `reports/domino-combined-linkage-characterization.md` | Motion characterization for the combined two-drive CAD-derived one-leg linkage. |
 | `reports/domino-four-leg-linkage-runtime.md` | First all-leg CAD-derived pitch-linkage Isaac/PhysX smoke test. |
+| `reports/domino-12-actuator-runtime.md` | First fixed-base all-leg scene exposing the full twelve-actuator Domino command layout. |
 
 ## Current Finding
 
@@ -191,6 +192,45 @@ Run the all-leg independent drive calibration sweep:
   --save-usd <output-folder>/domino_four_independent_calibration.usd
 ```
 
+Run the fixed-base twelve-actuator scene:
+
+```powershell
+<isaac-python> simulation/isaac/prototypes/pin_linkage/run_pin_linkage.py `
+  --headless `
+  --geometry domino-four-12-actuators `
+  --steps 600 `
+  --fit-start-step 60 `
+  --drive-amplitude-deg 1 `
+  --secondary-drive-amplitude-deg 1 `
+  --shoulder-drive-amplitude-deg 1 `
+  --drive-frequency-hz 0.15 `
+  --secondary-drive-frequency-hz 0.15 `
+  --shoulder-drive-frequency-hz 0.15 `
+  --report-path <output-folder>/domino_four_12_actuators_report.json `
+  --no-print-report
+```
+
+Run the fixed-base twelve-actuator independent calibration sweep:
+
+```powershell
+<isaac-python> simulation/isaac/prototypes/pin_linkage/run_pin_linkage.py `
+  --headless `
+  --geometry domino-four-12-actuators `
+  --drive-schedule independent `
+  --steps 2400 `
+  --independent-segment-steps 200 `
+  --independent-settle-steps 40 `
+  --fit-start-step 0 `
+  --drive-amplitude-deg 1 `
+  --secondary-drive-amplitude-deg 1 `
+  --shoulder-drive-amplitude-deg 1 `
+  --drive-frequency-hz 0.25 `
+  --secondary-drive-frequency-hz 0.25 `
+  --shoulder-drive-frequency-hz 0.25 `
+  --report-path <output-folder>/domino_four_12_actuators_independent_report.json `
+  --no-print-report
+```
+
 ## Isaac Runtime Notes
 
 NVIDIA's current Isaac Lab import workflow recommends converting robot assets into USD and then writing an asset configuration for spawning and training. The Isaac Lab docs also call out useful URDF import settings such as fixed base selection, fixed-joint merging, joint drive configuration, and setting joint target type to `none` during import when you want to configure drives later. See:
@@ -214,4 +254,4 @@ That should be validated fixed-base first, then with gravity and simple contacts
 
 Current runtime status: the simplified one-leg prototype imports, spawns as an Isaac Lab articulation, finds the three expected driven joints, and completes a headless joint sweep.
 
-Current linkage status: a generic one-actuator four-bar linkage, the CAD-derived lower triangle, the CAD-derived upper loop, a combined two-drive one-leg linkage, and an all-leg four-module pitch-linkage scene all run headlessly with passive pin joints and loop-closing revolute constraints. The four-leg scene validates eight CAD-derived pitch drives and eight loop closures together. A separate independent one-drive-at-a-time calibration sweep now gives a full-rank local fit for all eight pitch drives. This is still fixed-base, no-contact, no-gravity, and not a policy-training robot yet. The next unresolved gate is merging the pitch linkage pattern with hip ab/ad articulation, then reintroducing gravity, contacts, hard stops, and the Isaac Lab training environment.
+Current linkage status: a generic one-actuator four-bar linkage, the CAD-derived lower triangle, the CAD-derived upper loop, a combined two-drive one-leg linkage, and an all-leg four-module pitch-linkage scene all run headlessly with passive pin joints and loop-closing revolute constraints. The four-leg scene validates eight CAD-derived pitch drives and eight loop closures together. A separate fixed-base `domino-four-12-actuators` mode adds the four shoulder hip ab/ad drives, giving the intended twelve actuator channels: shoulder, lower linkage, and upper pitch for each leg. Its independent sweep gives a full-rank `13 / 13` local fit. This is still fixed-base, no-contact, no-gravity, and not a policy-training robot yet. The next unresolved gate is converting the fixed-base twelve-actuator scene into a clean Isaac Lab robot with a resettable base, contacts, hard stops, and the training environment.

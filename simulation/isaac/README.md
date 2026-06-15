@@ -145,7 +145,8 @@ Run the combined two-drive one-leg linkage test:
 <isaac-python> simulation/isaac/prototypes/pin_linkage/run_pin_linkage.py `
   --headless `
   --geometry domino-combined-leg `
-  --steps 600 `
+  --steps 1000 `
+  --fit-start-step 60 `
   --drive-amplitude-deg 2 `
   --secondary-drive-amplitude-deg 2 `
   --drive-frequency-hz 0.2 `
@@ -176,4 +177,4 @@ Once the one-leg model behaves, duplicate it into a four-leg robot and wire the 
 
 Current runtime status: the simplified one-leg prototype imports, spawns as an Isaac Lab articulation, finds the three expected driven joints, and completes a headless joint sweep.
 
-Current linkage status: a generic one-actuator four-bar linkage, the CAD-derived lower triangle, the CAD-derived upper loop, and a combined two-drive one-leg linkage all run headlessly with passive pin joints and loop-closing revolute constraints. The combined linkage is stable, but the first characterization pass shows the lower drive target is not yet calibrated to the effective body/output angle. The next unresolved gate is fitting that mapping against the clean one-leg abstraction, then merging the calibrated behavior into the clean one-leg asset.
+Current linkage status: a generic one-actuator four-bar linkage, the CAD-derived lower triangle, the CAD-derived upper loop, and a combined two-drive one-leg linkage all run headlessly with passive pin joints and loop-closing revolute constraints. The combined linkage is stable and now has a first local linear calibration fit from two commanded drive targets to measured linkage-output proxies. The next unresolved gate is validating that fit with one-input sweeps, comparing it against the clean one-leg abstraction, replacing body-pitch proxy measurements with a policy-ready output coordinate, then merging the calibrated behavior into the clean one-leg asset.

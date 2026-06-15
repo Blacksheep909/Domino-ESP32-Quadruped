@@ -105,7 +105,7 @@ This combines the lower triangle and upper loop into one simplified DOM_P__4__1 
 
 The combined leg did not produce non-finite body poses or velocities. This is the first pass where the two CAD-derived linkage loops share the same coupler and run together under two driven inputs.
 
-A separate characterization pass records target ranges, actual body pitch ranges, relative linkage angles, tracked pivot motion, and drive tracking error. See `reports/domino-combined-linkage-characterization.md`.
+A separate 1000-step characterization pass records target ranges, actual body pitch ranges, relative linkage angles, tracked pivot motion, drive tracking error, and a local linear calibration fit from drive targets to measured linkage-output proxies. See `reports/domino-combined-linkage-characterization.md`.
 
 ## Why This Matters
 
@@ -115,6 +115,7 @@ This proves four useful pieces of the Domino simulation path:
 2. The real exported Domino lower-linkage pivots can be used in a one-actuator loop without the loop exploding.
 3. The second exported linkage loop can also be constrained in isolation.
 4. Both loops can run together as one simplified two-drive leg mechanism.
+5. Over a conservative small-angle sweep, the two driven inputs produce repeatable measured output proxies that can be fitted with a local linear calibration.
 
 That is the missing physics ingredient between the simplified one-leg articulation and a more faithful Domino leg.
 
@@ -122,12 +123,13 @@ That is the missing physics ingredient between the simplified one-leg articulati
 
 This is still not the finished Domino leg.
 
-The CAD-derived tests use real pivot positions, but simplified rigid bodies, no mesh collisions, no gravity, and conservative drive settings. They prove the isolated one-joint loops and a simplified combined leg can be constrained; they do **not** yet prove the full leg with contacts, CAD mesh masses, servo gains, hard stops, calibrated drive-to-output mapping, or all four legs is stable.
+The CAD-derived tests use real pivot positions, but simplified rigid bodies, no mesh collisions, no gravity, and conservative drive settings. They prove the isolated one-joint loops and a simplified combined leg can be constrained. The current calibration fit is based on body-pitch proxy measurements, so it does **not** yet prove the full leg with contacts, CAD mesh masses, servo gains, hard stops, policy-ready drive-to-output mapping, or all four legs is stable.
 
 ## Next Work
 
-1. Fit rest offsets and effective output-angle mapping for the constrained combined leg.
+1. Validate the linear fit with one-input lower and upper sweeps.
 2. Compare the calibrated combined-leg output against the simplified `lower_linkage` joint used in `prototypes/one_leg`.
-3. Merge the stable constrained linkage behavior into the clean one-leg model.
-4. Reintroduce gravity, simple collisions, and joint hard-stop checks.
-5. Duplicate the pattern to all four legs and wire it to the twelve-servo action space.
+3. Replace the body-pitch proxy with a cleaner output coordinate for policy use.
+4. Merge the stable constrained linkage behavior into the clean one-leg model.
+5. Reintroduce gravity, simple collisions, and joint hard-stop checks.
+6. Duplicate the pattern to all four legs and wire it to the twelve-servo action space.

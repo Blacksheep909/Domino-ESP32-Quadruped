@@ -105,6 +105,8 @@ This combines the lower triangle and upper loop into one simplified DOM_P__4__1 
 
 The combined leg did not produce non-finite body poses or velocities. This is the first pass where the two CAD-derived linkage loops share the same coupler and run together under two driven inputs.
 
+A separate characterization pass records target ranges, actual body pitch ranges, relative linkage angles, tracked pivot motion, and drive tracking error. See `reports/domino-combined-linkage-characterization.md`.
+
 ## Why This Matters
 
 This proves four useful pieces of the Domino simulation path:
@@ -120,11 +122,12 @@ That is the missing physics ingredient between the simplified one-leg articulati
 
 This is still not the finished Domino leg.
 
-The CAD-derived tests use real pivot positions, but simplified rigid bodies, no mesh collisions, no gravity, and conservative drive settings. They prove the isolated one-joint loops and a simplified combined leg can be constrained; they do **not** yet prove the full leg with contacts, CAD mesh masses, servo gains, hard stops, or all four legs is stable.
+The CAD-derived tests use real pivot positions, but simplified rigid bodies, no mesh collisions, no gravity, and conservative drive settings. They prove the isolated one-joint loops and a simplified combined leg can be constrained; they do **not** yet prove the full leg with contacts, CAD mesh masses, servo gains, hard stops, calibrated drive-to-output mapping, or all four legs is stable.
 
 ## Next Work
 
-1. Compare the constrained combined-leg output against the simplified `lower_linkage` joint used in `prototypes/one_leg`.
-2. Merge the stable constrained linkage behavior into the clean one-leg model.
-3. Reintroduce gravity, simple collisions, and joint hard-stop checks.
-4. Duplicate the pattern to all four legs and wire it to the twelve-servo action space.
+1. Fit rest offsets and effective output-angle mapping for the constrained combined leg.
+2. Compare the calibrated combined-leg output against the simplified `lower_linkage` joint used in `prototypes/one_leg`.
+3. Merge the stable constrained linkage behavior into the clean one-leg model.
+4. Reintroduce gravity, simple collisions, and joint hard-stop checks.
+5. Duplicate the pattern to all four legs and wire it to the twelve-servo action space.

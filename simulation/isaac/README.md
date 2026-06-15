@@ -22,6 +22,7 @@ This folder is the working plan for turning Domino from CAD and firmware into a 
 | `reports/domino-one-leg-import-smoke-test.md` | Result of the first clean one-leg import smoke test. |
 | `reports/domino-one-leg-runtime-sweep.md` | Result of the first clean one-leg Isaac Lab articulation sweep. |
 | `reports/domino-pin-linkage-runtime.md` | Results of the generic and CAD-derived actuated passive pin-linkage runtime tests. |
+| `reports/domino-combined-linkage-characterization.md` | Motion characterization for the combined two-drive CAD-derived one-leg linkage. |
 
 ## Current Finding
 
@@ -175,4 +176,4 @@ Once the one-leg model behaves, duplicate it into a four-leg robot and wire the 
 
 Current runtime status: the simplified one-leg prototype imports, spawns as an Isaac Lab articulation, finds the three expected driven joints, and completes a headless joint sweep.
 
-Current linkage status: a generic one-actuator four-bar linkage, the CAD-derived lower triangle, the CAD-derived upper loop, and a combined two-drive one-leg linkage all run headlessly with passive pin joints and loop-closing revolute constraints. The next unresolved gate is comparing the combined linkage output against the clean one-leg abstraction, then merging that behavior into the clean one-leg asset.
+Current linkage status: a generic one-actuator four-bar linkage, the CAD-derived lower triangle, the CAD-derived upper loop, and a combined two-drive one-leg linkage all run headlessly with passive pin joints and loop-closing revolute constraints. The combined linkage is stable, but the first characterization pass shows the lower drive target is not yet calibrated to the effective body/output angle. The next unresolved gate is fitting that mapping against the clean one-leg abstraction, then merging the calibrated behavior into the clean one-leg asset.

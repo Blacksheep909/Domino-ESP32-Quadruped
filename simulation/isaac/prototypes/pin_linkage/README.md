@@ -49,9 +49,11 @@ Run the CAD-derived Domino upper linkage loop:
   --save-usd <output-folder>/domino_upper_loop.usd
 ```
 
-The script authors the linkage directly into the current Isaac stage, applies a sinusoidal target to the driven input joint, steps physics, and reports body state plus loop-closure drift.
+The script authors the linkage directly into the current Isaac stage, applies sinusoidal targets to the driven input joints, steps physics, and reports body state, loop-closure drift, drive target ranges, body pitch ranges, relative linkage angles, and tracked pivot motion.
 
 Runtime status: the generic linkage, the CAD-derived lower triangle, the CAD-derived upper loop, and the combined CAD-derived one-leg mechanism have all passed headless Isaac/PhysX runs. See [`../../reports/domino-pin-linkage-runtime.md`](../../reports/domino-pin-linkage-runtime.md).
+
+Motion-characterization status: the combined mechanism is stable, but its lower drive target is not yet calibrated to the effective body/output angle. See [`../../reports/domino-combined-linkage-characterization.md`](../../reports/domino-combined-linkage-characterization.md).
 
 Run the combined CAD-derived one-leg mechanism:
 
@@ -102,4 +104,4 @@ Combined leg:
 
 ## What Passing Means
 
-Passing means the isolated one-actuator passive-pin loops and a simplified two-drive combined leg can run without non-finite state or obvious constraint explosion. It does **not** mean the Domino lower leg is finished. The next step is to compare the constrained output motion against the simplified one-leg model, then merge the combined linkage behavior into a full one-leg Domino asset.
+Passing means the isolated one-actuator passive-pin loops and a simplified two-drive combined leg can run without non-finite state or obvious constraint explosion. It does **not** mean the Domino lower leg is finished. The next step is to calibrate rest offsets and effective output-angle mapping against the simplified one-leg model, then merge the combined linkage behavior into a full one-leg Domino asset.

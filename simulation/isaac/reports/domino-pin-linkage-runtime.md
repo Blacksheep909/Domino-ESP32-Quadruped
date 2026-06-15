@@ -4,7 +4,7 @@ This report records the Isaac/PhysX closed pin-linkage tests for Domino simulati
 
 ## Result
 
-Status: **passed for generic four-bar linkage physics, the CAD-derived Domino lower triangle, the CAD-derived Domino upper loop, a combined two-drive one-leg linkage, an all-leg four-module pitch-linkage scene, and a fixed-base twelve-actuator scene**.
+Status: **passed for generic four-bar linkage physics, the CAD-derived Domino lower triangle, the CAD-derived Domino upper loop, a combined two-drive one-leg linkage, an all-leg four-module pitch-linkage scene, a fixed-base twelve-actuator scene, and a shared fixed-body twelve-actuator scene**.
 
 The tests author small closed linkages directly into the Isaac stage using USD physics primitives:
 
@@ -157,9 +157,19 @@ This extends the fixed-base all-leg pitch-linkage scene with the four shoulder h
 
 The twelve-actuator independent sweep moved one actuator at a time and produced a full-rank local calibration matrix across the complete command layout. See `reports/domino-12-actuator-runtime.md`.
 
+The stronger follow-up mode, `domino-four-12-fixed-body`, attaches all four shoulder joints to a single shared kinematic body reference. Its independent sweep also passed:
+
+| Metric | Result |
+| --- | ---: |
+| Independent calibration steps | `1200` |
+| Independent calibration samples | `960` |
+| Independent calibration matrix rank | `13 / 13` |
+| Max loop-closure error | `0.00001425 m` |
+| Max body linear speed | `0.029793 m/s` |
+
 ## Why This Matters
 
-This proves eight useful pieces of the Domino simulation path:
+This proves nine useful pieces of the Domino simulation path:
 
 1. Isaac/PhysX can run the passive pin-joint pattern without immediate instability.
 2. The real exported Domino lower-linkage pivots can be used in a one-actuator loop without the loop exploding.
@@ -169,6 +179,7 @@ This proves eight useful pieces of the Domino simulation path:
 6. The four CAD-derived pitch-linkage modules can run together in one fixed-base Isaac scene without immediate constraint explosion.
 7. One-drive-at-a-time all-leg sweeps can produce a full-rank local calibration fit for all eight pitch drives.
 8. The four shoulder hip ab/ad actuators can be added to the same fixed-base scene, giving the intended twelve actuator channels without destabilizing the closed pitch linkages.
+9. The four shoulder joints can attach to one shared fixed body reference while preserving the twelve-actuator, full-rank independent sweep.
 
 That is the missing physics ingredient between the simplified one-leg articulation and a more faithful Domino leg.
 
@@ -176,12 +187,12 @@ That is the missing physics ingredient between the simplified one-leg articulati
 
 This is still not the finished Domino leg.
 
-The CAD-derived tests use real pivot positions, but simplified rigid bodies, no mesh collisions, no gravity, and conservative drive settings. They prove the isolated one-joint loops, a simplified combined leg, a fixed-base all-leg pitch-linkage scene, and a fixed-base twelve-actuator command layout can be constrained. The current calibration fit is based on body-angle proxy measurements, so it does **not** yet prove the full robot with a floating/resettable body, contacts, CAD mesh masses, servo gains, hard stops, policy-ready drive-to-output mapping, or training resets is stable.
+The CAD-derived tests use real pivot positions, but simplified rigid bodies, no mesh collisions, no gravity, and conservative drive settings. They prove the isolated one-joint loops, a simplified combined leg, a fixed-base all-leg pitch-linkage scene, a fixed-base twelve-actuator command layout, and a shared fixed-body twelve-actuator layout can be constrained. The current calibration fit is based on body-angle proxy measurements, so it does **not** yet prove the full robot with a floating/resettable body, contacts, CAD mesh masses, servo gains, hard stops, policy-ready drive-to-output mapping, or training resets is stable.
 
 ## Next Work
 
 1. Replace the body-angle proxy outputs with cleaner policy coordinates.
-2. Convert the fixed-base twelve-actuator scene into a clean Isaac Lab robot with a resettable base.
+2. Convert the shared fixed-body twelve-actuator scene into a clean Isaac Lab robot with a resettable base.
 3. Reintroduce gravity, simple collisions, and joint hard-stop checks.
 4. Wire the result to the twelve-servo Isaac Lab action space.
 5. Start with a reset/sweep task before policy rewards are added.

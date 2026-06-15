@@ -9,7 +9,7 @@ The goal is to prove that a small closed linkage can run in Isaac/PhysX with:
 - A loop-closing revolute pin.
 - No contacts or gravity in the first pass.
 
-This started as a controlled generic four-bar test, then gained CAD-derived one-joint, one-leg, all-leg pitch-linkage, and fixed-base twelve-actuator Domino linkage modes.
+This started as a controlled generic four-bar test, then gained CAD-derived one-joint, one-leg, all-leg pitch-linkage, fixed-base twelve-actuator, and shared-body twelve-actuator Domino linkage modes.
 
 ## Runtime Test
 
@@ -51,9 +51,9 @@ Run the CAD-derived Domino upper linkage loop:
 
 The script authors the linkage directly into the current Isaac stage, applies sinusoidal targets to the driven input joints, steps physics, and reports body state, loop-closure drift, drive target ranges, body pitch ranges, relative linkage angles, tracked pivot motion, and an optional local linear calibration fit.
 
-Runtime status: the generic linkage, the CAD-derived lower triangle, the CAD-derived upper loop, the combined CAD-derived one-leg mechanism, a four-leg CAD-derived pitch-linkage scene, and a fixed-base twelve-actuator scene have all passed headless Isaac/PhysX runs. See [`../../reports/domino-pin-linkage-runtime.md`](../../reports/domino-pin-linkage-runtime.md), [`../../reports/domino-four-leg-linkage-runtime.md`](../../reports/domino-four-leg-linkage-runtime.md), and [`../../reports/domino-12-actuator-runtime.md`](../../reports/domino-12-actuator-runtime.md).
+Runtime status: the generic linkage, the CAD-derived lower triangle, the CAD-derived upper loop, the combined CAD-derived one-leg mechanism, a four-leg CAD-derived pitch-linkage scene, a fixed-base twelve-actuator scene, and a shared fixed-body twelve-actuator scene have all passed headless Isaac/PhysX runs. See [`../../reports/domino-pin-linkage-runtime.md`](../../reports/domino-pin-linkage-runtime.md), [`../../reports/domino-four-leg-linkage-runtime.md`](../../reports/domino-four-leg-linkage-runtime.md), and [`../../reports/domino-12-actuator-runtime.md`](../../reports/domino-12-actuator-runtime.md).
 
-Motion-characterization status: the combined one-leg mechanism is stable and has a first local linear calibration fit from drive targets to measured linkage-output proxies. The all-leg pitch scene has an independent one-drive-at-a-time calibration sweep that gives a full-rank local fit for all eight pitch drives. The twelve-actuator scene adds the four shoulder hip ab/ad drives and gives a full-rank local fit across all twelve actuator inputs. These fits are useful engineering data, but they are not yet the final policy action/state mapping. See [`../../reports/domino-combined-linkage-characterization.md`](../../reports/domino-combined-linkage-characterization.md), [`../../reports/domino-four-leg-linkage-runtime.md`](../../reports/domino-four-leg-linkage-runtime.md), and [`../../reports/domino-12-actuator-runtime.md`](../../reports/domino-12-actuator-runtime.md).
+Motion-characterization status: the combined one-leg mechanism is stable and has a first local linear calibration fit from drive targets to measured linkage-output proxies. The all-leg pitch scene has an independent one-drive-at-a-time calibration sweep that gives a full-rank local fit for all eight pitch drives. The twelve-actuator scenes add the four shoulder hip ab/ad drives and give full-rank local fits across all twelve actuator inputs. The current strongest gate is `domino-four-12-fixed-body`, where all four shoulder joints attach to one shared kinematic body reference. These fits are useful engineering data, but they are not yet the final policy action/state mapping. See [`../../reports/domino-combined-linkage-characterization.md`](../../reports/domino-combined-linkage-characterization.md), [`../../reports/domino-four-leg-linkage-runtime.md`](../../reports/domino-four-leg-linkage-runtime.md), and [`../../reports/domino-12-actuator-runtime.md`](../../reports/domino-12-actuator-runtime.md).
 
 Run the combined CAD-derived one-leg mechanism:
 
@@ -145,9 +145,30 @@ Run the fixed-base twelve-actuator independent sweep:
   --no-print-report
 ```
 
+Run the shared-body fixed-base twelve-actuator independent sweep:
+
+```powershell
+<isaac-python> simulation/isaac/prototypes/pin_linkage/run_pin_linkage.py `
+  --headless `
+  --geometry domino-four-12-fixed-body `
+  --drive-schedule independent `
+  --steps 1200 `
+  --independent-segment-steps 100 `
+  --independent-settle-steps 20 `
+  --fit-start-step 0 `
+  --drive-amplitude-deg 1 `
+  --secondary-drive-amplitude-deg 1 `
+  --shoulder-drive-amplitude-deg 1 `
+  --drive-frequency-hz 0.5 `
+  --secondary-drive-frequency-hz 0.5 `
+  --shoulder-drive-frequency-hz 0.5 `
+  --report-path <output-folder>/domino_four_12_fixed_body_independent_report.json `
+  --no-print-report
+```
+
 ## CAD-Derived Modes
 
-The `domino-lower-triangle`, `domino-upper-loop`, `domino-combined-leg`, `domino-four-combined-legs`, and `domino-four-12-actuators` modes use pivots extracted by [`../../analyze-domino-linkage-pivots.ps1`](../../analyze-domino-linkage-pivots.ps1).
+The `domino-lower-triangle`, `domino-upper-loop`, `domino-combined-leg`, `domino-four-combined-legs`, `domino-four-12-actuators`, and `domino-four-12-fixed-body` modes use pivots extracted by [`../../analyze-domino-linkage-pivots.ps1`](../../analyze-domino-linkage-pivots.ps1).
 
 Lower triangle:
 
@@ -194,6 +215,6 @@ All-leg scene:
 
 ## What Passing Means
 
-Passing means the isolated one-actuator passive-pin loops, a simplified two-drive combined leg, a fixed-base all-leg pitch-linkage scene, and a fixed-base twelve-actuator scene can run without non-finite state or obvious constraint explosion. The calibration fits mean the combined one-leg case, the all-leg pitch independent sweep, and the twelve-actuator independent sweep have repeatable local relationships between commanded drive targets and measured linkage-output proxies over the tested range.
+Passing means the isolated one-actuator passive-pin loops, a simplified two-drive combined leg, a fixed-base all-leg pitch-linkage scene, a fixed-base twelve-actuator scene, and a shared fixed-body twelve-actuator scene can run without non-finite state or obvious constraint explosion. The calibration fits mean the combined one-leg case, the all-leg pitch independent sweep, and the twelve-actuator independent sweeps have repeatable local relationships between commanded drive targets and measured linkage-output proxies over the tested range.
 
-It does **not** mean the Domino robot is finished. The next step is to convert the fixed-base twelve-actuator scene into a clean Isaac Lab robot with a resettable base, gravity, contacts, hard stops, and a twelve-action training environment.
+It does **not** mean the Domino robot is finished. The next step is to convert the shared fixed-body twelve-actuator scene into a clean Isaac Lab robot with a resettable base, gravity, contacts, hard stops, and a twelve-action training environment.

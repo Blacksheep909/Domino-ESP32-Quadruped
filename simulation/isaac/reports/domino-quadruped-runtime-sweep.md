@@ -12,6 +12,8 @@ The generated clean quadruped URDF was imported to USD, spawned as an Isaac Lab 
 - Four lower linkage command actions.
 - Four upper pitch command actions.
 
+That is one shoulder actuator plus two pitch/linkage-drive actuators per leg, for 12 total policy channels.
+
 Local test summary:
 
 | Metric | Result |

@@ -25,7 +25,7 @@ parser.add_argument("--report-path", default="", help="Optional JSON report outp
 parser.add_argument("--save-usd", default="", help="Optional path to save the generated USD stage.")
 parser.add_argument(
     "--geometry",
-    choices=("generic-four-bar", "domino-lower-triangle", "domino-upper-loop"),
+    choices=("generic-four-bar", "domino-lower-triangle", "domino-upper-loop", "domino-combined-leg"),
     default="generic-four-bar",
     help="Linkage geometry to author into the Isaac stage.",
 )
@@ -37,6 +37,18 @@ parser.add_argument(
 )
 parser.add_argument("--drive-amplitude-deg", type=float, default=12.0, help="Driven crank target amplitude.")
 parser.add_argument("--drive-frequency-hz", type=float, default=0.6, help="Driven crank target frequency.")
+parser.add_argument(
+    "--secondary-drive-amplitude-deg",
+    type=float,
+    default=None,
+    help="Secondary driven joint amplitude for multi-drive geometries.",
+)
+parser.add_argument(
+    "--secondary-drive-frequency-hz",
+    type=float,
+    default=None,
+    help="Secondary driven joint frequency for multi-drive geometries.",
+)
 parser.add_argument(
     "--graceful-close",
     action="store_true",
@@ -199,6 +211,25 @@ def apply_angular_drive(joint, stiffness: float, damping: float, max_force: floa
     return drive
 
 
+def make_drive_spec(
+    joint: str,
+    drive,
+    center_deg: float,
+    amplitude_source: str = "primary",
+    frequency_source: str = "primary",
+    phase_deg: float = 0.0,
+):
+    return {
+        "joint": joint,
+        "drive": drive,
+        "center_deg": float(center_deg),
+        "amplitude_source": amplitude_source,
+        "frequency_source": frequency_source,
+        "phase_rad": math.radians(float(phase_deg)),
+        "phase_deg": float(phase_deg),
+    }
+
+
 def world_endpoint(view: SingleRigidPrim, local_point: Gf.Vec3f) -> np.ndarray:
     position, orientation = view.get_world_pose()
     position = to_numpy(position)
@@ -250,6 +281,7 @@ def build_generic_four_bar(stage):
         "drive": drive,
         "drive_joint_name": "drive_crank_pin",
         "drive_center_deg": -55.0,
+        "drives": [make_drive_spec("drive_crank_pin", drive, -55.0)],
         "points": {
             "O": pivot_o.tolist(),
             "B": pivot_b.tolist(),
@@ -359,6 +391,7 @@ def build_domino_lower_triangle(stage):
         "drive": drive,
         "drive_joint_name": "drive_revolute_59",
         "drive_center_deg": -15.0,
+        "drives": [make_drive_spec("drive_revolute_59", drive, -15.0)],
         "points": {name: point.tolist() for name, point in points.items()},
         "bodies": {
             "ground": ground,
@@ -426,14 +459,6 @@ def build_domino_upper_loop(stage):
         width=0.008,
         mass=0.04,
     )
-    closure_link = create_body_from_points(
-        stage,
-        root,
-        "closure_dom_p_3_1",
-        [points["passive_revolute_32"], points["closure_revolute_51"]],
-        width=0.008,
-        mass=0.02,
-    )
 
     drive_joint = create_pin_joint(
         stage,
@@ -453,17 +478,10 @@ def build_domino_upper_loop(stage):
     )
     create_pin_joint(
         stage,
-        f"{root}/joints/passive_revolute_32",
+        f"{root}/joints/loop_closure_revolute_32_51",
         coupler,
-        closure_link,
-        points["passive_revolute_32"],
-    )
-    create_pin_joint(
-        stage,
-        f"{root}/joints/loop_closure_revolute_51",
         upper_driver,
-        closure_link,
-        points["closure_revolute_51"],
+        points["passive_revolute_32"],
     )
     drive = apply_angular_drive(drive_joint, stiffness=2.0, damping=0.35, max_force=0.8, target_deg=0.0)
 
@@ -472,26 +490,180 @@ def build_domino_upper_loop(stage):
         "drive": drive,
         "drive_joint_name": "drive_revolute_58",
         "drive_center_deg": 0.0,
+        "drives": [make_drive_spec("drive_revolute_58", drive, 0.0)],
         "points": {name: point.tolist() for name, point in points.items()},
         "bodies": {
             "ground": ground,
             "lower_reference": lower_reference,
             "upper_driver": upper_driver,
             "coupler": coupler,
-            "closure_link": closure_link,
         },
         "loop_checks": [
             {
-                "name": "revolute_51_closure",
-                "body_a": "upper_driver",
-                "body_b": "closure_link",
+                "name": "revolute_32_51_closure",
+                "body_a": "coupler",
+                "body_b": "upper_driver",
                 "pivot": points["closure_revolute_51"].tolist(),
             }
         ],
     }
 
 
+def build_domino_combined_leg(stage):
+    root = "/World/DominoCombinedLeg"
+    UsdGeom.Xform.Define(stage, root)
+
+    # CAD-derived pivots from the DOM_P__4__1 leg cluster. This combines the
+    # lower triangle and upper loop so both driven pitch inputs share DOM_P_1.
+    points = {
+        "upper_drive_revolute_58": np.array([0.347000, -0.028000, 0.010500], dtype=np.float64),
+        "lower_drive_revolute_59": np.array([0.323000, -0.028000, -0.010500], dtype=np.float64),
+        "passive_revolute_43": np.array([0.323000, -0.036000, -0.010500], dtype=np.float64),
+        "passive_revolute_33": np.array([0.294708, -0.035600, 0.017777], dtype=np.float64),
+        "upper_passive_revolute_32": np.array([0.336647, -0.035600, 0.049137], dtype=np.float64),
+        "upper_closure_revolute_51": np.array([0.336647, -0.035600, 0.049137], dtype=np.float64),
+        "lower_closure_revolute_25_26": np.array([0.182024, -0.048100, -0.095615], dtype=np.float64),
+    }
+
+    ground = create_body_from_points(
+        stage,
+        root,
+        "ground_hip_reference",
+        [points["upper_drive_revolute_58"], points["lower_drive_revolute_59"]],
+        width=0.014,
+        mass=1.0,
+        kinematic=True,
+    )
+    lower_driver = create_body_from_points(
+        stage,
+        root,
+        "lower_driver_dom_p_5_1",
+        [points["lower_drive_revolute_59"], points["passive_revolute_43"], points["lower_closure_revolute_25_26"]],
+        width=0.010,
+        mass=0.08,
+    )
+    coupler = create_body_from_points(
+        stage,
+        root,
+        "shared_coupler_dom_p_1",
+        [points["passive_revolute_43"], points["passive_revolute_33"], points["upper_passive_revolute_32"]],
+        width=0.008,
+        mass=0.05,
+    )
+    lower_diagonal = create_body_from_points(
+        stage,
+        root,
+        "lower_diagonal_dom_p_2_1",
+        [points["passive_revolute_33"], points["lower_closure_revolute_25_26"]],
+        width=0.008,
+        mass=0.04,
+    )
+    upper_driver = create_body_from_points(
+        stage,
+        root,
+        "upper_driver_dom_p_6_1",
+        [points["upper_drive_revolute_58"], points["upper_closure_revolute_51"]],
+        width=0.010,
+        mass=0.06,
+    )
+
+    lower_drive_joint = create_pin_joint(
+        stage,
+        f"{root}/joints/lower_drive_revolute_59",
+        ground,
+        lower_driver,
+        points["lower_drive_revolute_59"],
+        lower_deg=-120.0,
+        upper_deg=0.0,
+    )
+    create_pin_joint(
+        stage,
+        f"{root}/joints/passive_revolute_43",
+        lower_driver,
+        coupler,
+        points["passive_revolute_43"],
+    )
+    create_pin_joint(
+        stage,
+        f"{root}/joints/passive_revolute_33",
+        coupler,
+        lower_diagonal,
+        points["passive_revolute_33"],
+    )
+    create_pin_joint(
+        stage,
+        f"{root}/joints/lower_loop_closure_revolute_25_26",
+        lower_driver,
+        lower_diagonal,
+        points["lower_closure_revolute_25_26"],
+    )
+
+    upper_drive_joint = create_pin_joint(
+        stage,
+        f"{root}/joints/upper_drive_revolute_58",
+        ground,
+        upper_driver,
+        points["upper_drive_revolute_58"],
+        lower_deg=-30.0,
+        upper_deg=60.0,
+    )
+    create_pin_joint(
+        stage,
+        f"{root}/joints/upper_loop_closure_revolute_32_51",
+        coupler,
+        upper_driver,
+        points["upper_passive_revolute_32"],
+    )
+
+    lower_drive = apply_angular_drive(
+        lower_drive_joint, stiffness=1.4, damping=0.35, max_force=0.7, target_deg=-15.0
+    )
+    upper_drive = apply_angular_drive(upper_drive_joint, stiffness=1.2, damping=0.30, max_force=0.6, target_deg=0.0)
+
+    return {
+        "geometry": "domino-combined-leg",
+        "drive": lower_drive,
+        "drive_joint_name": "lower_drive_revolute_59",
+        "drive_center_deg": -15.0,
+        "drives": [
+            make_drive_spec("lower_drive_revolute_59", lower_drive, -15.0, amplitude_source="primary"),
+            make_drive_spec(
+                "upper_drive_revolute_58",
+                upper_drive,
+                0.0,
+                amplitude_source="secondary",
+                frequency_source="secondary",
+                phase_deg=90.0,
+            ),
+        ],
+        "points": {name: point.tolist() for name, point in points.items()},
+        "bodies": {
+            "ground": ground,
+            "lower_driver": lower_driver,
+            "coupler": coupler,
+            "lower_diagonal": lower_diagonal,
+            "upper_driver": upper_driver,
+        },
+        "loop_checks": [
+            {
+                "name": "lower_revolute_25_26_closure",
+                "body_a": "lower_driver",
+                "body_b": "lower_diagonal",
+                "pivot": points["lower_closure_revolute_25_26"].tolist(),
+            },
+            {
+                "name": "upper_revolute_32_51_closure",
+                "body_a": "coupler",
+                "body_b": "upper_driver",
+                "pivot": points["upper_closure_revolute_51"].tolist(),
+            },
+        ],
+    }
+
+
 def build_linkage(stage):
+    if args_cli.geometry == "domino-combined-leg":
+        return build_domino_combined_leg(stage)
     if args_cli.geometry == "domino-upper-loop":
         return build_domino_upper_loop(stage)
     if args_cli.geometry == "domino-lower-triangle":
@@ -538,17 +710,33 @@ def main():
     for view in views.values():
         view.initialize()
 
-    drive_attr = linkage["drive"].GetTargetPositionAttr()
+    drive_specs = linkage.get("drives", [make_drive_spec(linkage["drive_joint_name"], linkage["drive"], linkage["drive_center_deg"])])
+    for spec in drive_specs:
+        spec["target_attr"] = spec["drive"].GetTargetPositionAttr()
     sim_dt = sim.get_physics_dt()
     max_linear_speed = 0.0
     max_loop_errors = {check["name"]: 0.0 for check in linkage["loop_checks"]}
     min_finite = True
-    initial_target = float(args_cli.drive_center_deg if args_cli.drive_center_deg is not None else linkage["drive_center_deg"])
+    primary_center = float(args_cli.drive_center_deg if args_cli.drive_center_deg is not None else linkage["drive_center_deg"])
+    secondary_amplitude = float(
+        args_cli.secondary_drive_amplitude_deg
+        if args_cli.secondary_drive_amplitude_deg is not None
+        else args_cli.drive_amplitude_deg
+    )
+    secondary_frequency = float(
+        args_cli.secondary_drive_frequency_hz
+        if args_cli.secondary_drive_frequency_hz is not None
+        else args_cli.drive_frequency_hz
+    )
 
     for step in range(args_cli.steps):
         time_s = step * sim_dt
-        target = initial_target + args_cli.drive_amplitude_deg * math.sin(2.0 * math.pi * args_cli.drive_frequency_hz * time_s)
-        drive_attr.Set(float(target))
+        for spec in drive_specs:
+            center = primary_center if spec["amplitude_source"] == "primary" else spec["center_deg"]
+            amplitude = args_cli.drive_amplitude_deg if spec["amplitude_source"] == "primary" else secondary_amplitude
+            frequency = args_cli.drive_frequency_hz if spec["frequency_source"] == "primary" else secondary_frequency
+            target = center + amplitude * math.sin((2.0 * math.pi * frequency * time_s) + spec["phase_rad"])
+            spec["target_attr"].Set(float(target))
 
         sim.step()
 
@@ -590,10 +778,24 @@ def main():
         "linkage_points_m": linkage["points"],
         "drive": {
             "joint": linkage["drive_joint_name"],
-            "target_center_deg": initial_target,
+            "target_center_deg": primary_center,
             "target_amplitude_deg": args_cli.drive_amplitude_deg,
             "frequency_hz": args_cli.drive_frequency_hz,
         },
+        "drives": [
+            {
+                "joint": spec["joint"],
+                "target_center_deg": primary_center if spec["amplitude_source"] == "primary" else spec["center_deg"],
+                "target_amplitude_deg": args_cli.drive_amplitude_deg
+                if spec["amplitude_source"] == "primary"
+                else secondary_amplitude,
+                "frequency_hz": args_cli.drive_frequency_hz
+                if spec["frequency_source"] == "primary"
+                else secondary_frequency,
+                "phase_deg": spec["phase_deg"],
+            }
+            for spec in drive_specs
+        ],
         "max_loop_closure_error_m": round(max(max_loop_errors.values()), 8),
         "loop_closure_errors_m": {name: round(value, 8) for name, value in max_loop_errors.items()},
         "max_body_linear_speed_m_s": round(max_linear_speed, 6),

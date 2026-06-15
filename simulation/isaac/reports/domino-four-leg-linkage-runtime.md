@@ -13,7 +13,9 @@ This is not the finished training robot. The test validates the CAD-derived pitc
 - Eight loop-closing pin constraints: one lower loop and one upper loop per leg.
 - Passive revolute pins between the driven links, couplers, and diagonal links.
 
-The hip ab/ad joints are not actuated in this test. The body and hip references are fixed/kinematic, gravity is disabled, mesh collisions are not enabled, and the motion uses conservative 1 degree sweeps.
+The hip ab/ad joints are not actuated in this eight-drive pitch-linkage test. The body and hip references are fixed/kinematic, gravity is disabled, mesh collisions are not enabled, and the motion uses conservative 1 degree sweeps.
+
+The next fixed-base step is recorded separately in [`domino-12-actuator-runtime.md`](domino-12-actuator-runtime.md). That mode adds the four shoulder hip ab/ad drives, so the scene exposes the full twelve actuator channels: shoulder, lower linkage, and upper pitch for each leg.
 
 ## Runtime Command Shape
 
@@ -137,6 +139,6 @@ These are still body-pitch proxy outputs, not final policy coordinates. The usef
 
 1. Decide how to handle `Revolute 47`: fix the CAD/URDF metadata if it is meant to be driven, or model it as passive if the physical design says otherwise.
 2. Replace body-pitch proxy outputs with cleaner policy coordinates for each linkage.
-3. Merge the stable all-leg pitch linkage pattern with a clean base and hip ab/ad articulation.
+3. Convert the fixed-base twelve-actuator scene into a clean base/body articulation.
 4. Reintroduce gravity, simple collisions, mass/inertia tuning, hard stops, and reset-safe joint defaults.
 5. Build the Isaac Lab environment around the twelve-servo action space before policy training.

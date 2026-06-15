@@ -4,7 +4,7 @@ This report records the Isaac/PhysX closed pin-linkage tests for Domino simulati
 
 ## Result
 
-Status: **passed for generic four-bar linkage physics, the CAD-derived Domino lower triangle, the CAD-derived Domino upper loop, a combined two-drive one-leg linkage, and an all-leg four-module pitch-linkage scene**.
+Status: **passed for generic four-bar linkage physics, the CAD-derived Domino lower triangle, the CAD-derived Domino upper loop, a combined two-drive one-leg linkage, an all-leg four-module pitch-linkage scene, and a fixed-base twelve-actuator scene**.
 
 The tests author small closed linkages directly into the Isaac stage using USD physics primitives:
 
@@ -132,9 +132,34 @@ This combines four CAD-derived pitch-linkage modules into one fixed-base Isaac s
 
 All eight CAD loop closures stayed bounded in one scene. A separate independent drive sweep moved one pitch drive at a time and produced a full-rank local calibration fit for the eight pitch inputs. `Revolute 47` on `DOM_P__25__1` is treated as a lower drive for this smoke test because its pivot mirrors the lower drive locations on the other legs, but the CAD URDF currently labels it as `continuous`; that needs a final design decision before policy training. See `reports/domino-four-leg-linkage-runtime.md`.
 
+## CAD-Derived Twelve-Actuator Summary
+
+This extends the fixed-base all-leg pitch-linkage scene with the four shoulder hip ab/ad drives from the CAD URDF. Each leg now exposes three commanded actuators: shoulder, lower linkage drive, and upper pitch drive.
+
+| Item | Value |
+| --- | --- |
+| Geometry mode | `domino-four-12-actuators` |
+| Driven actuator channels | `12` |
+| Shoulder hip ab/ad drives | `4` |
+| Lower linkage drives | `4` |
+| Upper pitch drives | `4` |
+| Loop closure checks | `8` |
+| Source pivot report | `reports/domino-linkage-pivots.md` |
+
+| Metric | Result |
+| --- | ---: |
+| Phased-sine smoke-test steps | `600` |
+| Independent calibration steps | `2400` |
+| Independent calibration samples | `1920` |
+| Independent calibration matrix rank | `13 / 13` |
+| Max loop-closure error | `0.00001427 m` |
+| Max body linear speed | `0.029792 m/s` |
+
+The twelve-actuator independent sweep moved one actuator at a time and produced a full-rank local calibration matrix across the complete command layout. See `reports/domino-12-actuator-runtime.md`.
+
 ## Why This Matters
 
-This proves six useful pieces of the Domino simulation path:
+This proves eight useful pieces of the Domino simulation path:
 
 1. Isaac/PhysX can run the passive pin-joint pattern without immediate instability.
 2. The real exported Domino lower-linkage pivots can be used in a one-actuator loop without the loop exploding.
@@ -143,6 +168,7 @@ This proves six useful pieces of the Domino simulation path:
 5. Over a conservative small-angle sweep, the two driven one-leg inputs produce repeatable measured output proxies that can be fitted with a local linear calibration.
 6. The four CAD-derived pitch-linkage modules can run together in one fixed-base Isaac scene without immediate constraint explosion.
 7. One-drive-at-a-time all-leg sweeps can produce a full-rank local calibration fit for all eight pitch drives.
+8. The four shoulder hip ab/ad actuators can be added to the same fixed-base scene, giving the intended twelve actuator channels without destabilizing the closed pitch linkages.
 
 That is the missing physics ingredient between the simplified one-leg articulation and a more faithful Domino leg.
 
@@ -150,12 +176,12 @@ That is the missing physics ingredient between the simplified one-leg articulati
 
 This is still not the finished Domino leg.
 
-The CAD-derived tests use real pivot positions, but simplified rigid bodies, no mesh collisions, no gravity, and conservative drive settings. They prove the isolated one-joint loops, a simplified combined leg, and a fixed-base all-leg pitch-linkage scene can be constrained. The current calibration fit is based on body-pitch proxy measurements, so it does **not** yet prove the full robot with hip ab/ad articulation, contacts, CAD mesh masses, servo gains, hard stops, policy-ready drive-to-output mapping, or training resets is stable.
+The CAD-derived tests use real pivot positions, but simplified rigid bodies, no mesh collisions, no gravity, and conservative drive settings. They prove the isolated one-joint loops, a simplified combined leg, a fixed-base all-leg pitch-linkage scene, and a fixed-base twelve-actuator command layout can be constrained. The current calibration fit is based on body-angle proxy measurements, so it does **not** yet prove the full robot with a floating/resettable body, contacts, CAD mesh masses, servo gains, hard stops, policy-ready drive-to-output mapping, or training resets is stable.
 
 ## Next Work
 
-1. Compare the calibrated all-leg proxy outputs against the simplified `lower_linkage` joint used in `prototypes/one_leg`.
-2. Replace the body-pitch proxy with a cleaner output coordinate for policy use.
-3. Merge the stable constrained pitch-linkage behavior with hip ab/ad articulation.
-4. Reintroduce gravity, simple collisions, and joint hard-stop checks.
-5. Wire the result to the twelve-servo Isaac Lab action space.
+1. Replace the body-angle proxy outputs with cleaner policy coordinates.
+2. Convert the fixed-base twelve-actuator scene into a clean Isaac Lab robot with a resettable base.
+3. Reintroduce gravity, simple collisions, and joint hard-stop checks.
+4. Wire the result to the twelve-servo Isaac Lab action space.
+5. Start with a reset/sweep task before policy rewards are added.

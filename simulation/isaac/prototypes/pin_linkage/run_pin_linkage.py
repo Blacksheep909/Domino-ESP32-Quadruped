@@ -23,6 +23,7 @@ parser = argparse.ArgumentParser(description="Run a minimal actuated pin-linkage
 parser.add_argument("--steps", type=int, default=240, help="Number of physics steps to run.")
 parser.add_argument("--report-path", default="", help="Optional JSON report output path.")
 parser.add_argument("--save-usd", default="", help="Optional path to save the generated USD stage.")
+parser.add_argument("--no-print-report", action="store_true", help="Write the JSON report without printing it to stdout.")
 parser.add_argument(
     "--geometry",
     choices=(
@@ -31,6 +32,7 @@ parser.add_argument(
         "domino-upper-loop",
         "domino-combined-leg",
         "domino-four-combined-legs",
+        "domino-four-12-actuators",
     ),
     default="generic-four-bar",
     help="Linkage geometry to author into the Isaac stage.",
@@ -60,6 +62,18 @@ parser.add_argument(
     type=float,
     default=None,
     help="Secondary driven joint frequency for multi-drive geometries.",
+)
+parser.add_argument(
+    "--shoulder-drive-amplitude-deg",
+    type=float,
+    default=None,
+    help="Shoulder hip ab/ad target amplitude for twelve-actuator Domino geometries.",
+)
+parser.add_argument(
+    "--shoulder-drive-frequency-hz",
+    type=float,
+    default=None,
+    help="Shoulder hip ab/ad target frequency for twelve-actuator Domino geometries.",
 )
 parser.add_argument(
     "--drive-schedule",
@@ -214,6 +228,7 @@ def create_pin_joint(
     pivot: np.ndarray,
     lower_deg: float | None = None,
     upper_deg: float | None = None,
+    axis: str = "Y",
 ):
     joint = UsdPhysics.RevoluteJoint.Define(stage, path)
     joint.CreateBody0Rel().SetTargets([body0["path"]])
@@ -222,7 +237,7 @@ def create_pin_joint(
     joint.CreateLocalPos1Attr().Set(local_endpoint(pivot, body1["center"]))
     joint.CreateLocalRot0Attr().Set(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
     joint.CreateLocalRot1Attr().Set(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
-    joint.CreateAxisAttr("Y")
+    joint.CreateAxisAttr(axis)
     if lower_deg is not None:
         joint.CreateLowerLimitAttr(float(lower_deg))
     if upper_deg is not None:
@@ -248,6 +263,8 @@ def make_drive_spec(
     amplitude_source: str = "primary",
     frequency_source: str = "primary",
     phase_deg: float = 0.0,
+    role: str = "drive",
+    axis: str = "Y",
 ):
     return {
         "joint": joint,
@@ -257,33 +274,54 @@ def make_drive_spec(
         "frequency_source": frequency_source,
         "phase_rad": math.radians(float(phase_deg)),
         "phase_deg": float(phase_deg),
+        "role": role,
+        "axis": axis,
     }
 
 
-def drive_center_deg(spec: dict, primary_center: float) -> float:
-    return float(primary_center if spec["amplitude_source"] == "primary" else spec["center_deg"])
+def drive_center_deg(spec: dict, primary_center_override: float | None) -> float:
+    if spec["amplitude_source"] == "primary" and primary_center_override is not None:
+        return float(primary_center_override)
+    return float(spec["center_deg"])
 
 
-def drive_amplitude_deg(spec: dict, primary_amplitude: float, secondary_amplitude: float) -> float:
-    return float(primary_amplitude if spec["amplitude_source"] == "primary" else secondary_amplitude)
+def drive_amplitude_deg(
+    spec: dict,
+    primary_amplitude: float,
+    secondary_amplitude: float,
+    shoulder_amplitude: float,
+) -> float:
+    source = spec["amplitude_source"]
+    if source == "primary":
+        return float(primary_amplitude)
+    if source == "shoulder":
+        return float(shoulder_amplitude)
+    return float(secondary_amplitude)
 
 
-def drive_frequency_hz(spec: dict, primary_frequency: float, secondary_frequency: float) -> float:
-    return float(primary_frequency if spec["frequency_source"] == "primary" else secondary_frequency)
+def drive_frequency_hz(spec: dict, primary_frequency: float, secondary_frequency: float, shoulder_frequency: float) -> float:
+    source = spec["frequency_source"]
+    if source == "primary":
+        return float(primary_frequency)
+    if source == "shoulder":
+        return float(shoulder_frequency)
+    return float(secondary_frequency)
 
 
 def drive_target_deg(
     spec: dict,
     time_s: float,
-    primary_center: float,
+    primary_center: float | None,
     primary_amplitude: float,
     primary_frequency: float,
     secondary_amplitude: float,
     secondary_frequency: float,
+    shoulder_amplitude: float,
+    shoulder_frequency: float,
 ) -> float:
     center = drive_center_deg(spec, primary_center)
-    amplitude = drive_amplitude_deg(spec, primary_amplitude, secondary_amplitude)
-    frequency = drive_frequency_hz(spec, primary_frequency, secondary_frequency)
+    amplitude = drive_amplitude_deg(spec, primary_amplitude, secondary_amplitude, shoulder_amplitude)
+    frequency = drive_frequency_hz(spec, primary_frequency, secondary_frequency, shoulder_frequency)
     return center + amplitude * math.sin((2.0 * math.pi * frequency * time_s) + spec["phase_rad"])
 
 
@@ -292,17 +330,19 @@ def independent_drive_target_deg(
     drive_index: int,
     active_drive_index: int,
     segment_time_s: float,
-    primary_center: float,
+    primary_center: float | None,
     primary_amplitude: float,
     primary_frequency: float,
     secondary_amplitude: float,
     secondary_frequency: float,
+    shoulder_amplitude: float,
+    shoulder_frequency: float,
 ) -> float:
     center = drive_center_deg(spec, primary_center)
     if drive_index != active_drive_index:
         return center
-    amplitude = drive_amplitude_deg(spec, primary_amplitude, secondary_amplitude)
-    frequency = drive_frequency_hz(spec, primary_frequency, secondary_frequency)
+    amplitude = drive_amplitude_deg(spec, primary_amplitude, secondary_amplitude, shoulder_amplitude)
+    frequency = drive_frequency_hz(spec, primary_frequency, secondary_frequency, shoulder_frequency)
     return center + amplitude * math.sin(2.0 * math.pi * frequency * segment_time_s)
 
 
@@ -330,6 +370,14 @@ def quat_wxyz_to_pitch_y_deg(orientation) -> float:
     sin_pitch = 2.0 * ((w * y) - (z * x))
     sin_pitch = max(-1.0, min(1.0, sin_pitch))
     return math.degrees(math.asin(sin_pitch))
+
+
+def quat_wxyz_to_roll_x_deg(orientation) -> float:
+    orientation = to_numpy(orientation)
+    w, x, y, z = [float(v) for v in orientation]
+    sin_roll = 2.0 * ((w * x) + (y * z))
+    cos_roll = 1.0 - 2.0 * ((x * x) + (y * y))
+    return math.degrees(math.atan2(sin_roll, cos_roll))
 
 
 def empty_scalar_stats():
@@ -903,6 +951,10 @@ DOMINO_FOUR_COMBINED_LEG_SPECS = [
     {
         "id": "dom_p_4_1",
         "hip_link": "DOM_P__4__1",
+        "shoulder_joint": "Revolute 1",
+        "shoulder_axis": "-X",
+        "shoulder_limit_deg": (-30.0, 30.0),
+        "shoulder_center_deg": 0.0,
         "lower_drive_joint": "Revolute 59",
         "upper_drive_joint": "Revolute 58",
         "lower_passive_joint": "Revolute 43",
@@ -914,6 +966,7 @@ DOMINO_FOUR_COMBINED_LEG_SPECS = [
         "upper_drive_center_deg": 0.0,
         "phase_deg": 0.0,
         "points": {
+            "hip_origin": (0.266500, 0.000000, 0.010500),
             "upper_drive": (0.347000, -0.028000, 0.010500),
             "lower_drive": (0.323000, -0.028000, -0.010500),
             "lower_passive": (0.323000, -0.036000, -0.010500),
@@ -925,6 +978,10 @@ DOMINO_FOUR_COMBINED_LEG_SPECS = [
     {
         "id": "dom_p_12_1",
         "hip_link": "DOM_P__12__1",
+        "shoulder_joint": "Revolute 2",
+        "shoulder_axis": "X",
+        "shoulder_limit_deg": (-30.0, 30.0),
+        "shoulder_center_deg": 0.0,
         "lower_drive_joint": "Revolute 46",
         "upper_drive_joint": "Revolute 55",
         "lower_passive_joint": "Revolute 44",
@@ -936,6 +993,7 @@ DOMINO_FOUR_COMBINED_LEG_SPECS = [
         "upper_drive_center_deg": 0.0,
         "phase_deg": 90.0,
         "points": {
+            "hip_origin": (0.266500, 0.124750, 0.010500),
             "upper_drive": (0.347000, 0.152750, 0.010500),
             "lower_drive": (0.323000, 0.152750, -0.010500),
             "lower_passive": (0.323000, 0.160750, -0.010500),
@@ -947,6 +1005,10 @@ DOMINO_FOUR_COMBINED_LEG_SPECS = [
     {
         "id": "dom_p_25_1",
         "hip_link": "DOM_P__25__1",
+        "shoulder_joint": "Revolute 3",
+        "shoulder_axis": "X",
+        "shoulder_limit_deg": (-30.0, 30.0),
+        "shoulder_center_deg": 0.0,
         "lower_drive_joint": "Revolute 47",
         "upper_drive_joint": "Revolute 56",
         "lower_passive_joint": "Revolute 45",
@@ -962,6 +1024,7 @@ DOMINO_FOUR_COMBINED_LEG_SPECS = [
             "This smoke test drives it with the same conservative lower-input range used for the other lower linkages.",
         ],
         "points": {
+            "hip_origin": (-0.068500, 0.124750, 0.010500),
             "upper_drive": (0.012000, 0.152750, 0.010500),
             "lower_drive": (-0.012000, 0.152750, -0.010500),
             "lower_passive": (-0.012000, 0.160750, -0.010500),
@@ -973,6 +1036,10 @@ DOMINO_FOUR_COMBINED_LEG_SPECS = [
     {
         "id": "dom_p_21_1",
         "hip_link": "DOM_P__21__1",
+        "shoulder_joint": "Revolute 4",
+        "shoulder_axis": "-X",
+        "shoulder_limit_deg": (-30.0, 30.0),
+        "shoulder_center_deg": 0.0,
         "lower_drive_joint": "Revolute 48",
         "upper_drive_joint": "Revolute 57",
         "lower_passive_joint": "Revolute 42",
@@ -984,6 +1051,7 @@ DOMINO_FOUR_COMBINED_LEG_SPECS = [
         "upper_drive_center_deg": 0.0,
         "phase_deg": 270.0,
         "points": {
+            "hip_origin": (-0.068500, 0.000000, 0.010500),
             "upper_drive": (0.012000, -0.028000, 0.010500),
             "lower_drive": (-0.012000, -0.028000, -0.010500),
             "lower_passive": (-0.012000, -0.036000, -0.010500),
@@ -999,26 +1067,44 @@ def joint_key(leg_id: str, joint_name: str) -> str:
     return f"{leg_id}_{joint_name.lower().replace(' ', '_')}"
 
 
-def build_domino_combined_leg_instance(stage, root: str, spec: dict) -> dict:
+def build_domino_combined_leg_instance(stage, root: str, spec: dict, include_shoulder: bool = False) -> dict:
     leg_root = f"{root}/{spec['id']}"
     UsdGeom.Xform.Define(stage, leg_root)
     points = {name: np.array(value, dtype=np.float64) for name, value in spec["points"].items()}
     prefix = spec["id"]
 
+    base_anchor_key = f"{prefix}_base_anchor"
     ground_key = f"{prefix}_ground"
     lower_driver_key = f"{prefix}_lower_driver"
     coupler_key = f"{prefix}_coupler"
     lower_diagonal_key = f"{prefix}_lower_diagonal"
     upper_driver_key = f"{prefix}_upper_driver"
 
+    bodies = {}
+    drives = []
+    drive_angle_pairs = {}
+    ground_points = [points["upper_drive"], points["lower_drive"]]
+    if include_shoulder:
+        ground_points = [points["hip_origin"], points["upper_drive"], points["lower_drive"]]
+        base_anchor = create_body_from_points(
+            stage,
+            leg_root,
+            "base_anchor",
+            [points["hip_origin"]],
+            width=0.018,
+            mass=1.0,
+            kinematic=True,
+        )
+        bodies[base_anchor_key] = base_anchor
+
     ground = create_body_from_points(
         stage,
         leg_root,
-        "ground_hip_reference",
-        [points["upper_drive"], points["lower_drive"]],
+        "hip_carriage" if include_shoulder else "ground_hip_reference",
+        ground_points,
         width=0.014,
-        mass=1.0,
-        kinematic=True,
+        mass=0.12 if include_shoulder else 1.0,
+        kinematic=not include_shoulder,
     )
     lower_driver = create_body_from_points(
         stage,
@@ -1056,6 +1142,44 @@ def build_domino_combined_leg_instance(stage, root: str, spec: dict) -> dict:
     lower_joint_name = joint_key(prefix, spec["lower_drive_joint"])
     upper_joint_name = joint_key(prefix, spec["upper_drive_joint"])
     lower_limit_deg = spec["lower_drive_limit_deg"]
+
+    if include_shoulder:
+        shoulder_joint_name = joint_key(prefix, spec["shoulder_joint"])
+        shoulder_limit_deg = spec["shoulder_limit_deg"]
+        shoulder_joint = create_pin_joint(
+            stage,
+            f"{leg_root}/joints/{shoulder_joint_name}",
+            bodies[base_anchor_key],
+            ground,
+            points["hip_origin"],
+            lower_deg=shoulder_limit_deg[0],
+            upper_deg=shoulder_limit_deg[1],
+            axis="X",
+        )
+        shoulder_drive = apply_angular_drive(
+            shoulder_joint,
+            stiffness=1.4,
+            damping=0.35,
+            max_force=0.75,
+            target_deg=spec["shoulder_center_deg"],
+        )
+        drives.append(
+            make_drive_spec(
+                shoulder_joint_name,
+                shoulder_drive,
+                spec["shoulder_center_deg"],
+                amplitude_source="shoulder",
+                frequency_source="shoulder",
+                phase_deg=spec["phase_deg"],
+                role="shoulder_ab_ad",
+                axis="X",
+            )
+        )
+        drive_angle_pairs[shoulder_joint_name] = {
+            "body_a": ground_key,
+            "body_b": base_anchor_key,
+            "axis": "roll_x",
+        }
 
     lower_drive_joint = create_pin_joint(
         stage,
@@ -1119,26 +1243,16 @@ def build_domino_combined_leg_instance(stage, root: str, spec: dict) -> dict:
         max_force=0.55,
         target_deg=spec["upper_drive_center_deg"],
     )
-
-    lower_loop_name = f"{prefix}_lower_loop_closure_{spec['lower_closure_joints'][0].replace(' ', '_')}_{spec['lower_closure_joints'][1].replace(' ', '_')}"
-    upper_loop_name = f"{prefix}_upper_loop_closure_{spec['upper_closure_joints'][0].replace(' ', '_')}_{spec['upper_closure_joints'][1].replace(' ', '_')}"
-
-    return {
-        "points": {f"{prefix}_{name}": point.tolist() for name, point in points.items()},
-        "bodies": {
-            ground_key: ground,
-            lower_driver_key: lower_driver,
-            coupler_key: coupler,
-            lower_diagonal_key: lower_diagonal,
-            upper_driver_key: upper_driver,
-        },
-        "drives": [
+    drives.extend(
+        [
             make_drive_spec(
                 lower_joint_name,
                 lower_drive,
                 spec["lower_drive_center_deg"],
                 amplitude_source="primary",
                 phase_deg=spec["phase_deg"],
+                role="lower_linkage_drive",
+                axis="Y",
             ),
             make_drive_spec(
                 upper_joint_name,
@@ -1147,8 +1261,34 @@ def build_domino_combined_leg_instance(stage, root: str, spec: dict) -> dict:
                 amplitude_source="secondary",
                 frequency_source="secondary",
                 phase_deg=spec["phase_deg"] + 90.0,
+                role="upper_pitch_drive",
+                axis="Y",
             ),
-        ],
+        ]
+    )
+    drive_angle_pairs.update(
+        {
+            lower_joint_name: {"body_a": lower_driver_key, "body_b": ground_key, "axis": "pitch_y"},
+            upper_joint_name: {"body_a": upper_driver_key, "body_b": ground_key, "axis": "pitch_y"},
+        }
+    )
+
+    lower_loop_name = f"{prefix}_lower_loop_closure_{spec['lower_closure_joints'][0].replace(' ', '_')}_{spec['lower_closure_joints'][1].replace(' ', '_')}"
+    upper_loop_name = f"{prefix}_upper_loop_closure_{spec['upper_closure_joints'][0].replace(' ', '_')}_{spec['upper_closure_joints'][1].replace(' ', '_')}"
+    bodies.update(
+        {
+            ground_key: ground,
+            lower_driver_key: lower_driver,
+            coupler_key: coupler,
+            lower_diagonal_key: lower_diagonal,
+            upper_driver_key: upper_driver,
+        }
+    )
+
+    return {
+        "points": {f"{prefix}_{name}": point.tolist() for name, point in points.items()},
+        "bodies": bodies,
+        "drives": drives,
         "loop_checks": [
             {
                 "name": lower_loop_name,
@@ -1165,6 +1305,7 @@ def build_domino_combined_leg_instance(stage, root: str, spec: dict) -> dict:
         ],
         "characterization": {
             "pitch_bodies": [ground_key, lower_driver_key, coupler_key, lower_diagonal_key, upper_driver_key],
+            "roll_bodies": [base_anchor_key, ground_key] if include_shoulder else [],
             "relative_pitch_pairs": [
                 {"name": f"{prefix}_lower_driver_to_ground", "body_a": lower_driver_key, "body_b": ground_key},
                 {"name": f"{prefix}_upper_driver_to_ground", "body_a": upper_driver_key, "body_b": ground_key},
@@ -1176,10 +1317,7 @@ def build_domino_combined_leg_instance(stage, root: str, spec: dict) -> dict:
                 },
                 {"name": f"{prefix}_upper_driver_to_coupler", "body_a": upper_driver_key, "body_b": coupler_key},
             ],
-            "drive_angle_pairs": {
-                lower_joint_name: {"body_a": lower_driver_key, "body_b": ground_key},
-                upper_joint_name: {"body_a": upper_driver_key, "body_b": ground_key},
-            },
+            "drive_angle_pairs": drive_angle_pairs,
             "pivot_tracks": [
                 {"name": f"{prefix}_lower_closure", "body": lower_driver_key, "pivot": points["lower_closure"].tolist()},
                 {"name": f"{prefix}_upper_closure", "body": upper_driver_key, "pivot": points["upper_closure"].tolist()},
@@ -1188,6 +1326,8 @@ def build_domino_combined_leg_instance(stage, root: str, spec: dict) -> dict:
         "leg": {
             "id": spec["id"],
             "hip_link": spec["hip_link"],
+            "shoulder_joint": spec["shoulder_joint"] if include_shoulder else None,
+            "shoulder_axis": spec["shoulder_axis"] if include_shoulder else None,
             "lower_drive_joint": spec["lower_drive_joint"],
             "upper_drive_joint": spec["upper_drive_joint"],
             "lower_closure_joints": list(spec["lower_closure_joints"]),
@@ -1197,8 +1337,8 @@ def build_domino_combined_leg_instance(stage, root: str, spec: dict) -> dict:
     }
 
 
-def build_domino_four_combined_legs(stage):
-    root = "/World/DominoFourCombinedLegs"
+def build_domino_four_combined_legs(stage, include_shoulders: bool = False):
+    root = "/World/DominoFour12Actuators" if include_shoulders else "/World/DominoFourCombinedLegs"
     UsdGeom.Xform.Define(stage, root)
 
     points = {}
@@ -1206,25 +1346,27 @@ def build_domino_four_combined_legs(stage):
     drives = []
     loop_checks = []
     pitch_bodies = []
+    roll_bodies = []
     relative_pitch_pairs = []
     drive_angle_pairs = {}
     pivot_tracks = []
     legs = []
 
     for spec in DOMINO_FOUR_COMBINED_LEG_SPECS:
-        leg = build_domino_combined_leg_instance(stage, root, spec)
+        leg = build_domino_combined_leg_instance(stage, root, spec, include_shoulder=include_shoulders)
         points.update(leg["points"])
         bodies.update(leg["bodies"])
         drives.extend(leg["drives"])
         loop_checks.extend(leg["loop_checks"])
         pitch_bodies.extend(leg["characterization"]["pitch_bodies"])
+        roll_bodies.extend(leg["characterization"]["roll_bodies"])
         relative_pitch_pairs.extend(leg["characterization"]["relative_pitch_pairs"])
         drive_angle_pairs.update(leg["characterization"]["drive_angle_pairs"])
         pivot_tracks.extend(leg["characterization"]["pivot_tracks"])
         legs.append(leg["leg"])
 
     return {
-        "geometry": "domino-four-combined-legs",
+        "geometry": "domino-four-12-actuators" if include_shoulders else "domino-four-combined-legs",
         "drive": drives[0]["drive"],
         "drive_joint_name": drives[0]["joint"],
         "drive_center_deg": drives[0]["center_deg"],
@@ -1235,6 +1377,7 @@ def build_domino_four_combined_legs(stage):
         "legs": legs,
         "characterization": {
             "pitch_bodies": pitch_bodies,
+            "roll_bodies": roll_bodies,
             "relative_pitch_pairs": relative_pitch_pairs,
             "drive_angle_pairs": drive_angle_pairs,
             "pivot_tracks": pivot_tracks,
@@ -1243,6 +1386,8 @@ def build_domino_four_combined_legs(stage):
 
 
 def build_linkage(stage):
+    if args_cli.geometry == "domino-four-12-actuators":
+        return build_domino_four_combined_legs(stage, include_shoulders=True)
     if args_cli.geometry == "domino-four-combined-legs":
         return build_domino_four_combined_legs(stage)
     if args_cli.geometry == "domino-combined-leg":
@@ -1300,7 +1445,7 @@ def main():
     max_linear_speed = 0.0
     max_loop_errors = {check["name"]: 0.0 for check in linkage["loop_checks"]}
     min_finite = True
-    primary_center = float(args_cli.drive_center_deg if args_cli.drive_center_deg is not None else linkage["drive_center_deg"])
+    primary_center = float(args_cli.drive_center_deg) if args_cli.drive_center_deg is not None else None
     primary_amplitude = float(args_cli.drive_amplitude_deg)
     primary_frequency = float(args_cli.drive_frequency_hz)
     secondary_amplitude = float(
@@ -1313,11 +1458,24 @@ def main():
         if args_cli.secondary_drive_frequency_hz is not None
         else args_cli.drive_frequency_hz
     )
+    shoulder_amplitude = float(
+        args_cli.shoulder_drive_amplitude_deg
+        if args_cli.shoulder_drive_amplitude_deg is not None
+        else args_cli.drive_amplitude_deg
+    )
+    shoulder_frequency = float(
+        args_cli.shoulder_drive_frequency_hz
+        if args_cli.shoulder_drive_frequency_hz is not None
+        else args_cli.drive_frequency_hz
+    )
     independent_segment_steps = max(1, int(args_cli.independent_segment_steps))
     independent_settle_steps = max(0, min(int(args_cli.independent_settle_steps), independent_segment_steps - 1))
     characterization = linkage.get("characterization", {})
     body_pitch_stats = {
         name: empty_scalar_stats() for name in characterization.get("pitch_bodies", [])
+    }
+    body_roll_stats = {
+        name: empty_scalar_stats() for name in characterization.get("roll_bodies", [])
     }
     relative_pitch_stats = {
         pair["name"]: empty_scalar_stats() for pair in characterization.get("relative_pitch_pairs", [])
@@ -1350,6 +1508,8 @@ def main():
                     primary_frequency,
                     secondary_amplitude,
                     secondary_frequency,
+                    shoulder_amplitude,
+                    shoulder_frequency,
                 )
             else:
                 target = drive_target_deg(
@@ -1360,6 +1520,8 @@ def main():
                     primary_frequency,
                     secondary_amplitude,
                     secondary_frequency,
+                    shoulder_amplitude,
+                    shoulder_frequency,
                 )
             spec["target_attr"].Set(float(target))
             spec["current_target_deg"] = float(target)
@@ -1382,12 +1544,17 @@ def main():
             break
 
         pitch_values = {}
+        roll_values = {}
         relative_pitch_values = {}
         drive_angle_values = {}
         for body_name in characterization.get("pitch_bodies", []):
             pitch = quat_wxyz_to_pitch_y_deg(pose_cache[body_name]["orientation"])
             pitch_values[body_name] = pitch
             update_scalar_stats(body_pitch_stats[body_name], pitch)
+        for body_name in characterization.get("roll_bodies", []):
+            roll = quat_wxyz_to_roll_x_deg(pose_cache[body_name]["orientation"])
+            roll_values[body_name] = roll
+            update_scalar_stats(body_roll_stats[body_name], roll)
 
         for pair in characterization.get("relative_pitch_pairs", []):
             body_a = pair["body_a"]
@@ -1406,11 +1573,19 @@ def main():
                 continue
             body_a = pair["body_a"]
             body_b = pair["body_b"]
-            if body_a not in pitch_values:
-                pitch_values[body_a] = quat_wxyz_to_pitch_y_deg(pose_cache[body_a]["orientation"])
-            if body_b not in pitch_values:
-                pitch_values[body_b] = quat_wxyz_to_pitch_y_deg(pose_cache[body_b]["orientation"])
-            actual_deg = pitch_values[body_a] - pitch_values[body_b]
+            axis = pair.get("axis", "pitch_y")
+            if axis == "roll_x":
+                if body_a not in roll_values:
+                    roll_values[body_a] = quat_wxyz_to_roll_x_deg(pose_cache[body_a]["orientation"])
+                if body_b not in roll_values:
+                    roll_values[body_b] = quat_wxyz_to_roll_x_deg(pose_cache[body_b]["orientation"])
+                actual_deg = roll_values[body_a] - roll_values[body_b]
+            else:
+                if body_a not in pitch_values:
+                    pitch_values[body_a] = quat_wxyz_to_pitch_y_deg(pose_cache[body_a]["orientation"])
+                if body_b not in pitch_values:
+                    pitch_values[body_b] = quat_wxyz_to_pitch_y_deg(pose_cache[body_b]["orientation"])
+                actual_deg = pitch_values[body_a] - pitch_values[body_b]
             drive_angle_values[spec["joint"]] = actual_deg
             error_deg = actual_deg - spec["current_target_deg"]
             update_scalar_stats(drive_tracking_error_stats[spec["joint"]], error_deg)
@@ -1424,6 +1599,10 @@ def main():
             for body_name in characterization.get("pitch_bodies", []):
                 output_name = f"body_pitch_y_deg.{body_name}"
                 sample_outputs[output_name] = pitch_values[body_name]
+                calibration_output_names.add(output_name)
+            for body_name in characterization.get("roll_bodies", []):
+                output_name = f"body_roll_x_deg.{body_name}"
+                sample_outputs[output_name] = roll_values[body_name]
                 calibration_output_names.add(output_name)
             for pair in characterization.get("relative_pitch_pairs", []):
                 output_name = f"relative_pitch_y_deg.{pair['name']}"
@@ -1474,7 +1653,7 @@ def main():
         "linkage_points_m": linkage["points"],
         "drive": {
             "joint": linkage["drive_joint_name"],
-            "target_center_deg": primary_center,
+            "target_center_deg": drive_center_deg(drive_specs[0], primary_center),
             "target_amplitude_deg": primary_amplitude,
             "frequency_hz": primary_frequency,
         },
@@ -1488,9 +1667,21 @@ def main():
             {
                 "joint": spec["joint"],
                 "target_center_deg": drive_center_deg(spec, primary_center),
-                "target_amplitude_deg": drive_amplitude_deg(spec, primary_amplitude, secondary_amplitude),
-                "frequency_hz": drive_frequency_hz(spec, primary_frequency, secondary_frequency),
+                "target_amplitude_deg": drive_amplitude_deg(
+                    spec,
+                    primary_amplitude,
+                    secondary_amplitude,
+                    shoulder_amplitude,
+                ),
+                "frequency_hz": drive_frequency_hz(
+                    spec,
+                    primary_frequency,
+                    secondary_frequency,
+                    shoulder_frequency,
+                ),
                 "phase_deg": spec["phase_deg"],
+                "role": spec["role"],
+                "axis": spec["axis"],
             }
             for spec in drive_specs
         ],
@@ -1503,6 +1694,7 @@ def main():
                 name: rounded_scalar_stats(stats) for name, stats in drive_tracking_error_stats.items()
             },
             "body_pitch_y_deg": {name: rounded_scalar_stats(stats) for name, stats in body_pitch_stats.items()},
+            "body_roll_x_deg": {name: rounded_scalar_stats(stats) for name, stats in body_roll_stats.items()},
             "relative_pitch_y_deg": {
                 name: rounded_scalar_stats(stats) for name, stats in relative_pitch_stats.items()
             },
@@ -1522,7 +1714,8 @@ def main():
         report_path = Path(args_cli.report_path).expanduser().resolve()
         report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
-    print(json.dumps(report, indent=2), flush=True)
+    if not args_cli.no_print_report:
+        print(json.dumps(report, indent=2), flush=True)
     if report["status"] != "passed":
         raise RuntimeError("Pin-linkage test produced non-finite state.")
 

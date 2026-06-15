@@ -51,11 +51,26 @@ Run the CAD-derived Domino upper linkage loop:
 
 The script authors the linkage directly into the current Isaac stage, applies a sinusoidal target to the driven input joint, steps physics, and reports body state plus loop-closure drift.
 
-Runtime status: the generic linkage, the CAD-derived lower triangle, and the CAD-derived upper loop have all passed headless Isaac/PhysX runs. See [`../../reports/domino-pin-linkage-runtime.md`](../../reports/domino-pin-linkage-runtime.md).
+Runtime status: the generic linkage, the CAD-derived lower triangle, the CAD-derived upper loop, and the combined CAD-derived one-leg mechanism have all passed headless Isaac/PhysX runs. See [`../../reports/domino-pin-linkage-runtime.md`](../../reports/domino-pin-linkage-runtime.md).
+
+Run the combined CAD-derived one-leg mechanism:
+
+```powershell
+<isaac-python> simulation/isaac/prototypes/pin_linkage/run_pin_linkage.py `
+  --headless `
+  --geometry domino-combined-leg `
+  --steps 600 `
+  --drive-amplitude-deg 2 `
+  --secondary-drive-amplitude-deg 2 `
+  --drive-frequency-hz 0.2 `
+  --secondary-drive-frequency-hz 0.2 `
+  --report-path <output-folder>/domino_combined_leg_report.json `
+  --save-usd <output-folder>/domino_combined_leg.usd
+```
 
 ## CAD-Derived Modes
 
-The `domino-lower-triangle` and `domino-upper-loop` modes use pivots extracted by [`../../analyze-domino-linkage-pivots.ps1`](../../analyze-domino-linkage-pivots.ps1).
+The `domino-lower-triangle`, `domino-upper-loop`, and `domino-combined-leg` modes use pivots extracted by [`../../analyze-domino-linkage-pivots.ps1`](../../analyze-domino-linkage-pivots.ps1).
 
 Lower triangle:
 
@@ -75,6 +90,16 @@ Upper loop:
 | Passive coupler pin | `Revolute 32` |
 | Loop closure | `Revolute 51` |
 
+Combined leg:
+
+| Role | URDF joint |
+| --- | --- |
+| Lower driven input | `Revolute 59` |
+| Upper driven input | `Revolute 58` |
+| Shared coupler | `Revolute 43`, `Revolute 33`, `Revolute 32` |
+| Lower loop closure | `Revolute 25` / `Revolute 26` |
+| Upper loop closure | `Revolute 32` / `Revolute 51` direct closure |
+
 ## What Passing Means
 
-Passing means the isolated one-actuator passive-pin loops can run without non-finite state or obvious constraint explosion. It does **not** mean the Domino lower leg is finished. The next step is to combine both validated loops into a one-leg mechanism, compare the constrained output motion against the simplified one-leg model, and only then merge it into a full one-leg Domino asset.
+Passing means the isolated one-actuator passive-pin loops and a simplified two-drive combined leg can run without non-finite state or obvious constraint explosion. It does **not** mean the Domino lower leg is finished. The next step is to compare the constrained output motion against the simplified one-leg model, then merge the combined linkage behavior into a full one-leg Domino asset.

@@ -64,6 +64,60 @@ Hip link frame in world coordinates: 0.266500, 0.124750, 0.010500 m
 | --- | ---: | --- |
 | Revolute 23 / Revolute 24 | 0.000000000 | 0.181670, 0.172850, -0.095261 |
 
+## dom_p_12_1_upper_loop
+
+Mirrored upper/lower loop on the DOM_P__12__1 leg.
+
+Hip link frame in world coordinates: 0.266500, 0.124750, 0.010500 m
+
+| Joint | Type | Parent | Child | Axis | Limit rad | Pivot world xyz m | Pivot xz relative to hip m |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Revolute 55 | revolute | DOM_P__12__1 | DOM_P__8__1 | 0.000000, -1.000000, 0.000000 | -0.523599 to 1.047198 | 0.347000, 0.152750, 0.010500 | 0.080500, 0.000000 |
+| Revolute 46 | revolute | DOM_P__12__1 | DOM_P__13__1 | 0.000000, -1.000000, 0.000000 | -2.094395 to 0.000000 | 0.323000, 0.152750, -0.010500 | 0.056500, -0.021000 |
+| Revolute 44 | continuous | DOM_P__13__1 | DOM_P__7__1 | 0.000000, 1.000000, 0.000000 | - | 0.323000, 0.160750, -0.010500 | 0.056500, -0.021000 |
+| Revolute 29 | continuous | DOM_P__7__1 | DOM_P__9__1 | 0.000000, -1.000000, 0.000000 | - | 0.336647, 0.160350, 0.049137 | 0.070147, 0.038637 |
+| Revolute 50 | continuous | DOM_P__8__1 | DOM_P__9__1 | 0.000000, 1.000000, 0.000000 | - | 0.336647, 0.160350, 0.049137 | 0.070147, 0.038637 |
+
+| Closure joints | Distance m | Midpoint world xyz m |
+| --- | ---: | --- |
+| Revolute 29 / Revolute 50 | 0.000000000 | 0.336647, 0.160350, 0.049137 |
+
+## dom_p_25_1_lower_triangle
+
+Mirrored lower-linkage loop on the DOM_P__25__1 leg. The CAD export currently marks the lower input joint as continuous.
+
+Hip link frame in world coordinates: -0.068500, 0.124750, 0.010500 m
+
+| Joint | Type | Parent | Child | Axis | Limit rad | Pivot world xyz m | Pivot xz relative to hip m |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Revolute 47 | continuous | DOM_P__25__1 | DOM_P__16__1 | 0.000000, 1.000000, 0.000000 | - | -0.012000, 0.152750, -0.010500 | 0.056500, -0.021000 |
+| Revolute 45 | continuous | DOM_P__16__1 | DOM_P__15__1 | 0.000000, -1.000000, 0.000000 | - | -0.012000, 0.160750, -0.010500 | 0.056500, -0.021000 |
+| Revolute 35 | continuous | DOM_P__15__1 | DOM_P__14__1 | 0.000000, -1.000000, 0.000000 | - | -0.040292, 0.160350, 0.017777 | 0.028208, 0.007277 |
+| Revolute 22 | continuous | DOM_P__14__1 | DOM_P__26__1 | 0.000000, 1.000000, 0.000000 | - | -0.153330, 0.172850, -0.095261 | -0.084830, -0.105761 |
+| Revolute 21 | continuous | DOM_P__16__1 | DOM_P__26__1 | 0.000000, 1.000000, 0.000000 | - | -0.153330, 0.172850, -0.095261 | -0.084830, -0.105761 |
+
+| Closure joints | Distance m | Midpoint world xyz m |
+| --- | ---: | --- |
+| Revolute 21 / Revolute 22 | 0.000000000 | -0.153330, 0.172850, -0.095261 |
+
+## dom_p_25_1_upper_loop
+
+Mirrored upper/lower loop on the DOM_P__25__1 leg.
+
+Hip link frame in world coordinates: -0.068500, 0.124750, 0.010500 m
+
+| Joint | Type | Parent | Child | Axis | Limit rad | Pivot world xyz m | Pivot xz relative to hip m |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Revolute 56 | revolute | DOM_P__25__1 | DOM_P__17__1 | 0.000000, -1.000000, 0.000000 | -0.523599 to 1.047198 | 0.012000, 0.152750, 0.010500 | 0.080500, 0.000000 |
+| Revolute 47 | continuous | DOM_P__25__1 | DOM_P__16__1 | 0.000000, 1.000000, 0.000000 | - | -0.012000, 0.152750, -0.010500 | 0.056500, -0.021000 |
+| Revolute 45 | continuous | DOM_P__16__1 | DOM_P__15__1 | 0.000000, -1.000000, 0.000000 | - | -0.012000, 0.160750, -0.010500 | 0.056500, -0.021000 |
+| Revolute 34 | continuous | DOM_P__15__1 | DOM_P__27__1 | 0.000000, -1.000000, 0.000000 | - | 0.001647, 0.160350, 0.049137 | 0.070147, 0.038637 |
+| Revolute 54 | continuous | DOM_P__17__1 | DOM_P__27__1 | 0.000000, 1.000000, 0.000000 | - | 0.001647, 0.160350, 0.049137 | 0.070147, 0.038637 |
+
+| Closure joints | Distance m | Midpoint world xyz m |
+| --- | ---: | --- |
+| Revolute 34 / Revolute 54 | 0.000000000 | 0.001647, 0.160350, 0.049137 |
+
 ## dom_p_21_1_lower_triangle
 
 Mirrored lower-linkage loop on the DOM_P__21__1 leg.
@@ -81,4 +135,22 @@ Hip link frame in world coordinates: -0.068500, 0.000000, 0.010500 m
 | Closure joints | Distance m | Midpoint world xyz m |
 | --- | ---: | --- |
 | Revolute 27 / Revolute 28 | 0.000000000 | -0.152976, -0.048100, -0.095615 |
+
+## dom_p_21_1_upper_loop
+
+Mirrored upper/lower loop on the DOM_P__21__1 leg.
+
+Hip link frame in world coordinates: -0.068500, 0.000000, 0.010500 m
+
+| Joint | Type | Parent | Child | Axis | Limit rad | Pivot world xyz m | Pivot xz relative to hip m |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Revolute 57 | revolute | DOM_P__21__1 | DOM_P__19__1 | 0.000000, -1.000000, 0.000000 | -0.523599 to 1.047198 | 0.012000, -0.028000, 0.010500 | 0.080500, 0.000000 |
+| Revolute 48 | revolute | DOM_P__21__1 | DOM_P__18__1 | 0.000000, -1.000000, 0.000000 | -0.523599 to 1.570796 | -0.012000, -0.028000, -0.010500 | 0.056500, -0.021000 |
+| Revolute 42 | continuous | DOM_P__18__1 | DOM_P__24__1 | 0.000000, 1.000000, 0.000000 | - | -0.012000, -0.036000, -0.010500 | 0.056500, -0.021000 |
+| Revolute 31 | continuous | DOM_P__24__1 | DOM_P__20__1 | 0.000000, -1.000000, 0.000000 | - | 0.001647, -0.035600, 0.049137 | 0.070147, 0.038637 |
+| Revolute 53 | continuous | DOM_P__19__1 | DOM_P__20__1 | 0.000000, 1.000000, 0.000000 | - | 0.001647, -0.035600, 0.049137 | 0.070147, 0.038637 |
+
+| Closure joints | Distance m | Midpoint world xyz m |
+| --- | ---: | --- |
+| Revolute 31 / Revolute 53 | 0.000000000 | 0.001647, -0.035600, 0.049137 |
 

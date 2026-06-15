@@ -25,7 +25,13 @@ parser.add_argument("--report-path", default="", help="Optional JSON report outp
 parser.add_argument("--save-usd", default="", help="Optional path to save the generated USD stage.")
 parser.add_argument(
     "--geometry",
-    choices=("generic-four-bar", "domino-lower-triangle", "domino-upper-loop", "domino-combined-leg"),
+    choices=(
+        "generic-four-bar",
+        "domino-lower-triangle",
+        "domino-upper-loop",
+        "domino-combined-leg",
+        "domino-four-combined-legs",
+    ),
     default="generic-four-bar",
     help="Linkage geometry to author into the Isaac stage.",
 )
@@ -345,6 +351,7 @@ def fit_linear_calibration(samples: list[dict], input_names: list[str], output_n
         "sample_count": len(samples),
         "matrix_rank": rank,
         "input_count_with_intercept": len(input_names) + 1,
+        "rank_deficient": rank < len(input_names) + 1,
         "inputs": input_names,
         "outputs": results,
     }
@@ -828,7 +835,352 @@ def build_domino_combined_leg(stage):
     }
 
 
+DOMINO_FOUR_COMBINED_LEG_SPECS = [
+    {
+        "id": "dom_p_4_1",
+        "hip_link": "DOM_P__4__1",
+        "lower_drive_joint": "Revolute 59",
+        "upper_drive_joint": "Revolute 58",
+        "lower_passive_joint": "Revolute 43",
+        "lower_coupler_joint": "Revolute 33",
+        "lower_closure_joints": ("Revolute 25", "Revolute 26"),
+        "upper_closure_joints": ("Revolute 32", "Revolute 51"),
+        "lower_drive_limit_deg": (-120.0, 0.0),
+        "lower_drive_center_deg": -15.0,
+        "upper_drive_center_deg": 0.0,
+        "phase_deg": 0.0,
+        "points": {
+            "upper_drive": (0.347000, -0.028000, 0.010500),
+            "lower_drive": (0.323000, -0.028000, -0.010500),
+            "lower_passive": (0.323000, -0.036000, -0.010500),
+            "lower_coupler": (0.294708, -0.035600, 0.017777),
+            "upper_closure": (0.336647, -0.035600, 0.049137),
+            "lower_closure": (0.182024, -0.048100, -0.095615),
+        },
+    },
+    {
+        "id": "dom_p_12_1",
+        "hip_link": "DOM_P__12__1",
+        "lower_drive_joint": "Revolute 46",
+        "upper_drive_joint": "Revolute 55",
+        "lower_passive_joint": "Revolute 44",
+        "lower_coupler_joint": "Revolute 36",
+        "lower_closure_joints": ("Revolute 23", "Revolute 24"),
+        "upper_closure_joints": ("Revolute 29", "Revolute 50"),
+        "lower_drive_limit_deg": (-120.0, 0.0),
+        "lower_drive_center_deg": -15.0,
+        "upper_drive_center_deg": 0.0,
+        "phase_deg": 90.0,
+        "points": {
+            "upper_drive": (0.347000, 0.152750, 0.010500),
+            "lower_drive": (0.323000, 0.152750, -0.010500),
+            "lower_passive": (0.323000, 0.160750, -0.010500),
+            "lower_coupler": (0.294708, 0.160350, 0.017777),
+            "upper_closure": (0.336647, 0.160350, 0.049137),
+            "lower_closure": (0.181670, 0.172850, -0.095261),
+        },
+    },
+    {
+        "id": "dom_p_25_1",
+        "hip_link": "DOM_P__25__1",
+        "lower_drive_joint": "Revolute 47",
+        "upper_drive_joint": "Revolute 56",
+        "lower_passive_joint": "Revolute 45",
+        "lower_coupler_joint": "Revolute 35",
+        "lower_closure_joints": ("Revolute 21", "Revolute 22"),
+        "upper_closure_joints": ("Revolute 34", "Revolute 54"),
+        "lower_drive_limit_deg": (-120.0, 0.0),
+        "lower_drive_center_deg": -15.0,
+        "upper_drive_center_deg": 0.0,
+        "phase_deg": 180.0,
+        "notes": [
+            "The CAD URDF marks Revolute 47 as continuous even though its location mirrors the other lower drive pivots.",
+            "This smoke test drives it with the same conservative lower-input range used for the other lower linkages.",
+        ],
+        "points": {
+            "upper_drive": (0.012000, 0.152750, 0.010500),
+            "lower_drive": (-0.012000, 0.152750, -0.010500),
+            "lower_passive": (-0.012000, 0.160750, -0.010500),
+            "lower_coupler": (-0.040292, 0.160350, 0.017777),
+            "upper_closure": (0.001647, 0.160350, 0.049137),
+            "lower_closure": (-0.153330, 0.172850, -0.095261),
+        },
+    },
+    {
+        "id": "dom_p_21_1",
+        "hip_link": "DOM_P__21__1",
+        "lower_drive_joint": "Revolute 48",
+        "upper_drive_joint": "Revolute 57",
+        "lower_passive_joint": "Revolute 42",
+        "lower_coupler_joint": "Revolute 37",
+        "lower_closure_joints": ("Revolute 27", "Revolute 28"),
+        "upper_closure_joints": ("Revolute 31", "Revolute 53"),
+        "lower_drive_limit_deg": (-30.0, 90.0),
+        "lower_drive_center_deg": -15.0,
+        "upper_drive_center_deg": 0.0,
+        "phase_deg": 270.0,
+        "points": {
+            "upper_drive": (0.012000, -0.028000, 0.010500),
+            "lower_drive": (-0.012000, -0.028000, -0.010500),
+            "lower_passive": (-0.012000, -0.036000, -0.010500),
+            "lower_coupler": (-0.040292, -0.035600, 0.017777),
+            "upper_closure": (0.001647, -0.035600, 0.049137),
+            "lower_closure": (-0.152976, -0.048100, -0.095615),
+        },
+    },
+]
+
+
+def joint_key(leg_id: str, joint_name: str) -> str:
+    return f"{leg_id}_{joint_name.lower().replace(' ', '_')}"
+
+
+def build_domino_combined_leg_instance(stage, root: str, spec: dict) -> dict:
+    leg_root = f"{root}/{spec['id']}"
+    UsdGeom.Xform.Define(stage, leg_root)
+    points = {name: np.array(value, dtype=np.float64) for name, value in spec["points"].items()}
+    prefix = spec["id"]
+
+    ground_key = f"{prefix}_ground"
+    lower_driver_key = f"{prefix}_lower_driver"
+    coupler_key = f"{prefix}_coupler"
+    lower_diagonal_key = f"{prefix}_lower_diagonal"
+    upper_driver_key = f"{prefix}_upper_driver"
+
+    ground = create_body_from_points(
+        stage,
+        leg_root,
+        "ground_hip_reference",
+        [points["upper_drive"], points["lower_drive"]],
+        width=0.014,
+        mass=1.0,
+        kinematic=True,
+    )
+    lower_driver = create_body_from_points(
+        stage,
+        leg_root,
+        "lower_driver",
+        [points["lower_drive"], points["lower_passive"], points["lower_closure"]],
+        width=0.010,
+        mass=0.08,
+    )
+    coupler = create_body_from_points(
+        stage,
+        leg_root,
+        "shared_coupler",
+        [points["lower_passive"], points["lower_coupler"], points["upper_closure"]],
+        width=0.008,
+        mass=0.05,
+    )
+    lower_diagonal = create_body_from_points(
+        stage,
+        leg_root,
+        "lower_diagonal",
+        [points["lower_coupler"], points["lower_closure"]],
+        width=0.008,
+        mass=0.04,
+    )
+    upper_driver = create_body_from_points(
+        stage,
+        leg_root,
+        "upper_driver",
+        [points["upper_drive"], points["upper_closure"]],
+        width=0.010,
+        mass=0.06,
+    )
+
+    lower_joint_name = joint_key(prefix, spec["lower_drive_joint"])
+    upper_joint_name = joint_key(prefix, spec["upper_drive_joint"])
+    lower_limit_deg = spec["lower_drive_limit_deg"]
+
+    lower_drive_joint = create_pin_joint(
+        stage,
+        f"{leg_root}/joints/{lower_joint_name}",
+        ground,
+        lower_driver,
+        points["lower_drive"],
+        lower_deg=lower_limit_deg[0],
+        upper_deg=lower_limit_deg[1],
+    )
+    create_pin_joint(
+        stage,
+        f"{leg_root}/joints/{joint_key(prefix, spec['lower_passive_joint'])}",
+        lower_driver,
+        coupler,
+        points["lower_passive"],
+    )
+    create_pin_joint(
+        stage,
+        f"{leg_root}/joints/{joint_key(prefix, spec['lower_coupler_joint'])}",
+        coupler,
+        lower_diagonal,
+        points["lower_coupler"],
+    )
+    create_pin_joint(
+        stage,
+        f"{leg_root}/joints/{prefix}_lower_loop_closure",
+        lower_driver,
+        lower_diagonal,
+        points["lower_closure"],
+    )
+
+    upper_drive_joint = create_pin_joint(
+        stage,
+        f"{leg_root}/joints/{upper_joint_name}",
+        ground,
+        upper_driver,
+        points["upper_drive"],
+        lower_deg=-30.0,
+        upper_deg=60.0,
+    )
+    create_pin_joint(
+        stage,
+        f"{leg_root}/joints/{prefix}_upper_loop_closure",
+        coupler,
+        upper_driver,
+        points["upper_closure"],
+    )
+
+    lower_drive = apply_angular_drive(
+        lower_drive_joint,
+        stiffness=1.2,
+        damping=0.35,
+        max_force=0.65,
+        target_deg=spec["lower_drive_center_deg"],
+    )
+    upper_drive = apply_angular_drive(
+        upper_drive_joint,
+        stiffness=1.0,
+        damping=0.30,
+        max_force=0.55,
+        target_deg=spec["upper_drive_center_deg"],
+    )
+
+    lower_loop_name = f"{prefix}_lower_loop_closure_{spec['lower_closure_joints'][0].replace(' ', '_')}_{spec['lower_closure_joints'][1].replace(' ', '_')}"
+    upper_loop_name = f"{prefix}_upper_loop_closure_{spec['upper_closure_joints'][0].replace(' ', '_')}_{spec['upper_closure_joints'][1].replace(' ', '_')}"
+
+    return {
+        "points": {f"{prefix}_{name}": point.tolist() for name, point in points.items()},
+        "bodies": {
+            ground_key: ground,
+            lower_driver_key: lower_driver,
+            coupler_key: coupler,
+            lower_diagonal_key: lower_diagonal,
+            upper_driver_key: upper_driver,
+        },
+        "drives": [
+            make_drive_spec(
+                lower_joint_name,
+                lower_drive,
+                spec["lower_drive_center_deg"],
+                amplitude_source="primary",
+                phase_deg=spec["phase_deg"],
+            ),
+            make_drive_spec(
+                upper_joint_name,
+                upper_drive,
+                spec["upper_drive_center_deg"],
+                amplitude_source="secondary",
+                frequency_source="secondary",
+                phase_deg=spec["phase_deg"] + 90.0,
+            ),
+        ],
+        "loop_checks": [
+            {
+                "name": lower_loop_name,
+                "body_a": lower_driver_key,
+                "body_b": lower_diagonal_key,
+                "pivot": points["lower_closure"].tolist(),
+            },
+            {
+                "name": upper_loop_name,
+                "body_a": coupler_key,
+                "body_b": upper_driver_key,
+                "pivot": points["upper_closure"].tolist(),
+            },
+        ],
+        "characterization": {
+            "pitch_bodies": [ground_key, lower_driver_key, coupler_key, lower_diagonal_key, upper_driver_key],
+            "relative_pitch_pairs": [
+                {"name": f"{prefix}_lower_driver_to_ground", "body_a": lower_driver_key, "body_b": ground_key},
+                {"name": f"{prefix}_upper_driver_to_ground", "body_a": upper_driver_key, "body_b": ground_key},
+                {"name": f"{prefix}_coupler_to_ground", "body_a": coupler_key, "body_b": ground_key},
+                {
+                    "name": f"{prefix}_lower_diagonal_to_coupler",
+                    "body_a": lower_diagonal_key,
+                    "body_b": coupler_key,
+                },
+                {"name": f"{prefix}_upper_driver_to_coupler", "body_a": upper_driver_key, "body_b": coupler_key},
+            ],
+            "drive_angle_pairs": {
+                lower_joint_name: {"body_a": lower_driver_key, "body_b": ground_key},
+                upper_joint_name: {"body_a": upper_driver_key, "body_b": ground_key},
+            },
+            "pivot_tracks": [
+                {"name": f"{prefix}_lower_closure", "body": lower_driver_key, "pivot": points["lower_closure"].tolist()},
+                {"name": f"{prefix}_upper_closure", "body": upper_driver_key, "pivot": points["upper_closure"].tolist()},
+            ],
+        },
+        "leg": {
+            "id": spec["id"],
+            "hip_link": spec["hip_link"],
+            "lower_drive_joint": spec["lower_drive_joint"],
+            "upper_drive_joint": spec["upper_drive_joint"],
+            "lower_closure_joints": list(spec["lower_closure_joints"]),
+            "upper_closure_joints": list(spec["upper_closure_joints"]),
+            "notes": spec.get("notes", []),
+        },
+    }
+
+
+def build_domino_four_combined_legs(stage):
+    root = "/World/DominoFourCombinedLegs"
+    UsdGeom.Xform.Define(stage, root)
+
+    points = {}
+    bodies = {}
+    drives = []
+    loop_checks = []
+    pitch_bodies = []
+    relative_pitch_pairs = []
+    drive_angle_pairs = {}
+    pivot_tracks = []
+    legs = []
+
+    for spec in DOMINO_FOUR_COMBINED_LEG_SPECS:
+        leg = build_domino_combined_leg_instance(stage, root, spec)
+        points.update(leg["points"])
+        bodies.update(leg["bodies"])
+        drives.extend(leg["drives"])
+        loop_checks.extend(leg["loop_checks"])
+        pitch_bodies.extend(leg["characterization"]["pitch_bodies"])
+        relative_pitch_pairs.extend(leg["characterization"]["relative_pitch_pairs"])
+        drive_angle_pairs.update(leg["characterization"]["drive_angle_pairs"])
+        pivot_tracks.extend(leg["characterization"]["pivot_tracks"])
+        legs.append(leg["leg"])
+
+    return {
+        "geometry": "domino-four-combined-legs",
+        "drive": drives[0]["drive"],
+        "drive_joint_name": drives[0]["joint"],
+        "drive_center_deg": drives[0]["center_deg"],
+        "drives": drives,
+        "points": points,
+        "bodies": bodies,
+        "loop_checks": loop_checks,
+        "legs": legs,
+        "characterization": {
+            "pitch_bodies": pitch_bodies,
+            "relative_pitch_pairs": relative_pitch_pairs,
+            "drive_angle_pairs": drive_angle_pairs,
+            "pivot_tracks": pivot_tracks,
+        },
+    }
+
+
 def build_linkage(stage):
+    if args_cli.geometry == "domino-four-combined-legs":
+        return build_domino_four_combined_legs(stage)
     if args_cli.geometry == "domino-combined-leg":
         return build_domino_combined_leg(stage)
     if args_cli.geometry == "domino-upper-loop":
@@ -1065,6 +1417,8 @@ def main():
         },
         "final_poses": final_poses,
     }
+    if "legs" in linkage:
+        report["legs"] = linkage["legs"]
 
     if args_cli.report_path:
         report_path = Path(args_cli.report_path).expanduser().resolve()

@@ -164,11 +164,39 @@ $clusters = @(
         ClosurePairs = @([pscustomobject]@{ JointA = "Revolute 23"; JointB = "Revolute 24" })
     },
     [pscustomobject]@{
+        Id = "dom_p_12_1_upper_loop"
+        HipLink = "DOM_P__12__1"
+        Description = "Mirrored upper/lower loop on the DOM_P__12__1 leg."
+        Joints = @("Revolute 55", "Revolute 46", "Revolute 44", "Revolute 29", "Revolute 50")
+        ClosurePairs = @([pscustomobject]@{ JointA = "Revolute 29"; JointB = "Revolute 50" })
+    },
+    [pscustomobject]@{
+        Id = "dom_p_25_1_lower_triangle"
+        HipLink = "DOM_P__25__1"
+        Description = "Mirrored lower-linkage loop on the DOM_P__25__1 leg. The CAD export currently marks the lower input joint as continuous."
+        Joints = @("Revolute 47", "Revolute 45", "Revolute 35", "Revolute 22", "Revolute 21")
+        ClosurePairs = @([pscustomobject]@{ JointA = "Revolute 21"; JointB = "Revolute 22" })
+    },
+    [pscustomobject]@{
+        Id = "dom_p_25_1_upper_loop"
+        HipLink = "DOM_P__25__1"
+        Description = "Mirrored upper/lower loop on the DOM_P__25__1 leg."
+        Joints = @("Revolute 56", "Revolute 47", "Revolute 45", "Revolute 34", "Revolute 54")
+        ClosurePairs = @([pscustomobject]@{ JointA = "Revolute 34"; JointB = "Revolute 54" })
+    },
+    [pscustomobject]@{
         Id = "dom_p_21_1_lower_triangle"
         HipLink = "DOM_P__21__1"
         Description = "Mirrored lower-linkage loop on the DOM_P__21__1 leg."
         Joints = @("Revolute 48", "Revolute 42", "Revolute 37", "Revolute 28", "Revolute 27")
         ClosurePairs = @([pscustomobject]@{ JointA = "Revolute 27"; JointB = "Revolute 28" })
+    },
+    [pscustomobject]@{
+        Id = "dom_p_21_1_upper_loop"
+        HipLink = "DOM_P__21__1"
+        Description = "Mirrored upper/lower loop on the DOM_P__21__1 leg."
+        Joints = @("Revolute 57", "Revolute 48", "Revolute 42", "Revolute 31", "Revolute 53")
+        ClosurePairs = @([pscustomobject]@{ JointA = "Revolute 31"; JointB = "Revolute 53" })
     }
 )
 

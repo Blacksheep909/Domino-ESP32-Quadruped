@@ -95,6 +95,17 @@ parser.add_argument(
     help="Initial steps inside each independent segment to exclude from the linear calibration fit.",
 )
 parser.add_argument(
+    "--disable-drive-limit-checks",
+    action="store_true",
+    help="Do not fail when generated drive targets exceed modeled target limits.",
+)
+parser.add_argument(
+    "--drive-limit-tolerance-deg",
+    type=float,
+    default=1e-6,
+    help="Tolerance for modeled drive target limit checks.",
+)
+parser.add_argument(
     "--graceful-close",
     action="store_true",
     help="Call SimulationApp.close() before exit. Disabled by default because it can hang on some Windows setups.",
@@ -266,7 +277,12 @@ def make_drive_spec(
     phase_deg: float = 0.0,
     role: str = "drive",
     axis: str = "Y",
+    target_limit_deg: tuple[float, float] | None = None,
+    action_name: str | None = None,
 ):
+    target_limit = None
+    if target_limit_deg is not None:
+        target_limit = [float(target_limit_deg[0]), float(target_limit_deg[1])]
     return {
         "joint": joint,
         "drive": drive,
@@ -277,6 +293,8 @@ def make_drive_spec(
         "phase_deg": float(phase_deg),
         "role": role,
         "axis": axis,
+        "target_limit_deg": target_limit,
+        "action_name": action_name or joint,
     }
 
 
@@ -345,6 +363,18 @@ def independent_drive_target_deg(
     amplitude = drive_amplitude_deg(spec, primary_amplitude, secondary_amplitude, shoulder_amplitude)
     frequency = drive_frequency_hz(spec, primary_frequency, secondary_frequency, shoulder_frequency)
     return center + amplitude * math.sin(2.0 * math.pi * frequency * segment_time_s)
+
+
+def drive_limit_violation_deg(spec: dict, target_deg: float) -> float:
+    target_limit = spec.get("target_limit_deg")
+    if target_limit is None:
+        return 0.0
+    lower_deg, upper_deg = float(target_limit[0]), float(target_limit[1])
+    if target_deg < lower_deg:
+        return lower_deg - target_deg
+    if target_deg > upper_deg:
+        return target_deg - upper_deg
+    return 0.0
 
 
 def world_endpoint(view: SingleRigidPrim, local_point: Gf.Vec3f) -> np.ndarray:
@@ -503,7 +533,7 @@ def build_generic_four_bar(stage):
         "drive": drive,
         "drive_joint_name": "drive_crank_pin",
         "drive_center_deg": -55.0,
-        "drives": [make_drive_spec("drive_crank_pin", drive, -55.0)],
+        "drives": [make_drive_spec("drive_crank_pin", drive, -55.0, target_limit_deg=(-75.0, 15.0))],
         "points": {
             "O": pivot_o.tolist(),
             "B": pivot_b.tolist(),
@@ -623,7 +653,7 @@ def build_domino_lower_triangle(stage):
         "drive": drive,
         "drive_joint_name": "drive_revolute_59",
         "drive_center_deg": -15.0,
-        "drives": [make_drive_spec("drive_revolute_59", drive, -15.0)],
+        "drives": [make_drive_spec("drive_revolute_59", drive, -15.0, target_limit_deg=(-120.0, 0.0))],
         "points": {name: point.tolist() for name, point in points.items()},
         "bodies": {
             "ground": ground,
@@ -739,7 +769,7 @@ def build_domino_upper_loop(stage):
         "drive": drive,
         "drive_joint_name": "drive_revolute_58",
         "drive_center_deg": 0.0,
-        "drives": [make_drive_spec("drive_revolute_58", drive, 0.0)],
+        "drives": [make_drive_spec("drive_revolute_58", drive, 0.0, target_limit_deg=(-30.0, 60.0))],
         "points": {name: point.tolist() for name, point in points.items()},
         "bodies": {
             "ground": ground,
@@ -887,7 +917,13 @@ def build_domino_combined_leg(stage):
         "drive_joint_name": "lower_drive_revolute_59",
         "drive_center_deg": -15.0,
         "drives": [
-            make_drive_spec("lower_drive_revolute_59", lower_drive, -15.0, amplitude_source="primary"),
+            make_drive_spec(
+                "lower_drive_revolute_59",
+                lower_drive,
+                -15.0,
+                amplitude_source="primary",
+                target_limit_deg=(-120.0, 0.0),
+            ),
             make_drive_spec(
                 "upper_drive_revolute_58",
                 upper_drive,
@@ -895,6 +931,7 @@ def build_domino_combined_leg(stage):
                 amplitude_source="secondary",
                 frequency_source="secondary",
                 phase_deg=90.0,
+                target_limit_deg=(-30.0, 60.0),
             ),
         ],
         "points": {name: point.tolist() for name, point in points.items()},
@@ -1184,6 +1221,8 @@ def build_domino_combined_leg_instance(
                 phase_deg=spec["phase_deg"],
                 role="shoulder_ab_ad",
                 axis="X",
+                target_limit_deg=spec["shoulder_limit_deg"],
+                action_name=f"{prefix}_shoulder_ab_ad",
             )
         )
         drive_angle_pairs[shoulder_joint_name] = {
@@ -1264,6 +1303,8 @@ def build_domino_combined_leg_instance(
                 phase_deg=spec["phase_deg"],
                 role="lower_linkage_drive",
                 axis="Y",
+                target_limit_deg=spec["lower_drive_limit_deg"],
+                action_name=f"{prefix}_lower_linkage",
             ),
             make_drive_spec(
                 upper_joint_name,
@@ -1274,6 +1315,8 @@ def build_domino_combined_leg_instance(
                 phase_deg=spec["phase_deg"] + 90.0,
                 role="upper_pitch_drive",
                 axis="Y",
+                target_limit_deg=(-30.0, 60.0),
+                action_name=f"{prefix}_upper_pitch",
             ),
         ]
     )
@@ -1529,6 +1572,7 @@ def main():
     }
     drive_target_stats = {spec["joint"]: empty_scalar_stats() for spec in drive_specs}
     drive_tracking_error_stats = {spec["joint"]: empty_scalar_stats() for spec in drive_specs}
+    drive_limit_violation_stats = {spec["joint"]: empty_scalar_stats() for spec in drive_specs}
     pivot_track_stats = {
         track["name"]: empty_vector_stats() for track in characterization.get("pivot_tracks", [])
     }
@@ -1569,6 +1613,12 @@ def main():
                     secondary_frequency,
                     shoulder_amplitude,
                     shoulder_frequency,
+                )
+            limit_violation = drive_limit_violation_deg(spec, target)
+            update_scalar_stats(drive_limit_violation_stats[spec["joint"]], limit_violation)
+            if not args_cli.disable_drive_limit_checks and limit_violation > args_cli.drive_limit_tolerance_deg:
+                raise RuntimeError(
+                    f"Drive target for {spec['joint']} exceeded modeled limit by {limit_violation:.6f} deg."
                 )
             spec["target_attr"].Set(float(target))
             spec["current_target_deg"] = float(target)
@@ -1710,8 +1760,22 @@ def main():
             "independent_settle_steps": independent_settle_steps,
             "segments_per_full_cycle": len(drive_specs),
         },
+        "action_space": [
+            {
+                "index": index,
+                "name": spec["action_name"],
+                "joint": spec["joint"],
+                "role": spec["role"],
+                "axis": spec["axis"],
+                "target_center_deg": drive_center_deg(spec, primary_center),
+                "target_limit_deg": spec["target_limit_deg"],
+            }
+            for index, spec in enumerate(drive_specs)
+        ],
         "drives": [
             {
+                "action_index": index,
+                "action_name": spec["action_name"],
                 "joint": spec["joint"],
                 "target_center_deg": drive_center_deg(spec, primary_center),
                 "target_amplitude_deg": drive_amplitude_deg(
@@ -1729,8 +1793,9 @@ def main():
                 "phase_deg": spec["phase_deg"],
                 "role": spec["role"],
                 "axis": spec["axis"],
+                "target_limit_deg": spec["target_limit_deg"],
             }
-            for spec in drive_specs
+            for index, spec in enumerate(drive_specs)
         ],
         "max_loop_closure_error_m": round(max(max_loop_errors.values()), 8),
         "loop_closure_errors_m": {name: round(value, 8) for name, value in max_loop_errors.items()},
@@ -1739,6 +1804,9 @@ def main():
             "drive_target_deg": {name: rounded_scalar_stats(stats) for name, stats in drive_target_stats.items()},
             "drive_tracking_error_deg": {
                 name: rounded_scalar_stats(stats) for name, stats in drive_tracking_error_stats.items()
+            },
+            "drive_limit_violation_deg": {
+                name: rounded_scalar_stats(stats) for name, stats in drive_limit_violation_stats.items()
             },
             "body_pitch_y_deg": {name: rounded_scalar_stats(stats) for name, stats in body_pitch_stats.items()},
             "body_roll_x_deg": {name: rounded_scalar_stats(stats) for name, stats in body_roll_stats.items()},

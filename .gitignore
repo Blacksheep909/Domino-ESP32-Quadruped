@@ -21,3 +21,4 @@ __pycache__/
 env_isaaclab/
 IsaacLab/
 .isaacsim/
+simulation/isaac/out/

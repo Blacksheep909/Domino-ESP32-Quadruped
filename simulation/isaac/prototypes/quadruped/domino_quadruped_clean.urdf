@@ -1,0 +1,583 @@
+<?xml version="1.0" ?>
+<robot name="domino_quadruped_clean">
+  <material name="domino_carbon">
+    <color rgba="0.08 0.09 0.10 1.0"/>
+  </material>
+  <material name="domino_printed">
+    <color rgba="0.65 0.68 0.70 1.0"/>
+  </material>
+  <material name="domino_joint">
+    <color rgba="0.15 0.28 0.42 1.0"/>
+  </material>
+  <material name="domino_foot">
+    <color rgba="0.02 0.02 0.02 1.0"/>
+  </material>
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0"/>
+      <mass value="1.200000"/>
+      <inertia ixx="0.01000000" ixy="0" ixz="0" iyy="0.02000000" iyz="0" izz="0.02500000"/>
+    </inertial>
+    <visual>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.430000 0.205000 0.050000"/>
+      </geometry>
+      <material name="domino_carbon"/>
+    </visual>
+    <collision>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.430000 0.205000 0.050000"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="dom_p_4_1_hip_carriage">
+    <inertial>
+      <origin xyz="0.000000 0.000000 -0.010000" rpy="0 0 0"/>
+      <mass value="0.100000"/>
+      <inertia ixx="0.00040000" ixy="0" ixz="0" iyy="0.00040000" iyz="0" izz="0.00040000"/>
+    </inertial>
+    <visual>
+      <origin xyz="0.000000 0.000000 -0.010000" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.060000 0.055000 0.030000"/>
+      </geometry>
+      <material name="domino_joint"/>
+    </visual>
+    <collision>
+      <origin xyz="0.000000 0.000000 -0.010000" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.060000 0.055000 0.030000"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="dom_p_4_1_upper_link">
+    <inertial>
+      <origin xyz="0.000000 0.000000 -0.080000" rpy="0 0 0"/>
+      <mass value="0.120000"/>
+      <inertia ixx="0.00050000" ixy="0" ixz="0" iyy="0.00050000" iyz="0" izz="0.00008000"/>
+    </inertial>
+    <visual>
+      <origin xyz="0.000000 0.000000 -0.080000" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.012000" length="0.160000"/>
+      </geometry>
+      <material name="domino_printed"/>
+    </visual>
+    <visual>
+      <origin xyz="0.018000 0.000000 -0.080000" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.004000" length="0.145000"/>
+      </geometry>
+      <material name="domino_carbon"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.018000 0.000000 -0.080000" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.004000" length="0.145000"/>
+      </geometry>
+      <material name="domino_carbon"/>
+    </visual>
+    <collision>
+      <origin xyz="0.000000 0.000000 -0.080000" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.014000" length="0.160000"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="dom_p_4_1_lower_link">
+    <inertial>
+      <origin xyz="0.000000 0.000000 -0.076500" rpy="0 0 0"/>
+      <mass value="0.100000"/>
+      <inertia ixx="0.00040000" ixy="0" ixz="0" iyy="0.00040000" iyz="0" izz="0.00006000"/>
+    </inertial>
+    <visual>
+      <origin xyz="0.000000 0.000000 -0.076500" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.010000" length="0.153000"/>
+      </geometry>
+      <material name="domino_printed"/>
+    </visual>
+    <visual>
+      <origin xyz="0.016000 0.000000 -0.076500" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.003500" length="0.135000"/>
+      </geometry>
+      <material name="domino_carbon"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.016000 0.000000 -0.076500" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.003500" length="0.135000"/>
+      </geometry>
+      <material name="domino_carbon"/>
+    </visual>
+    <collision>
+      <origin xyz="0.000000 0.000000 -0.076500" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.012000" length="0.153000"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="dom_p_4_1_foot">
+    <inertial>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0"/>
+      <mass value="0.030000"/>
+      <inertia ixx="0.00004000" ixy="0" ixz="0" iyy="0.00004000" iyz="0" izz="0.00004000"/>
+    </inertial>
+    <visual>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="0.024000"/>
+      </geometry>
+      <material name="domino_foot"/>
+    </visual>
+    <collision>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="0.024000"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="dom_p_4_1_shoulder_ab_ad" type="revolute">
+    <origin xyz="0.167500 -0.062375 0.000000" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child link="dom_p_4_1_hip_carriage"/>
+    <axis xyz="-1.000000 0.000000 0.000000"/>
+    <limit lower="-0.523599" upper="0.523599" effort="8.0" velocity="6.0"/>
+    <dynamics damping="0.05" friction="0.0"/>
+  </joint>
+  <joint name="dom_p_4_1_upper_pitch" type="revolute">
+    <origin xyz="0.080500 -0.028000 0.000000" rpy="0 0 0"/>
+    <parent link="dom_p_4_1_hip_carriage"/>
+    <child link="dom_p_4_1_upper_link"/>
+    <axis xyz="0.000000 1.000000 0.000000"/>
+    <limit lower="-0.523599" upper="1.047198" effort="8.0" velocity="6.0"/>
+    <dynamics damping="0.05" friction="0.0"/>
+  </joint>
+  <joint name="dom_p_4_1_lower_linkage" type="revolute">
+    <origin xyz="0.000000 0.000000 -0.160000" rpy="0 0 0"/>
+    <parent link="dom_p_4_1_upper_link"/>
+    <child link="dom_p_4_1_lower_link"/>
+    <axis xyz="0.000000 1.000000 0.000000"/>
+    <limit lower="-2.094395" upper="0.000000" effort="8.0" velocity="6.0"/>
+    <dynamics damping="0.05" friction="0.0"/>
+  </joint>
+  <joint name="dom_p_4_1_foot_fixed" type="fixed">
+    <origin xyz="0.000000 0.000000 -0.153000" rpy="0 0 0"/>
+    <parent link="dom_p_4_1_lower_link"/>
+    <child link="dom_p_4_1_foot"/>
+  </joint>
+  <link name="dom_p_12_1_hip_carriage">
+    <inertial>
+      <origin xyz="0.000000 0.000000 -0.010000" rpy="0 0 0"/>
+      <mass value="0.100000"/>
+      <inertia ixx="0.00040000" ixy="0" ixz="0" iyy="0.00040000" iyz="0" izz="0.00040000"/>
+    </inertial>
+    <visual>
+      <origin xyz="0.000000 0.000000 -0.010000" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.060000 0.055000 0.030000"/>
+      </geometry>
+      <material name="domino_joint"/>
+    </visual>
+    <collision>
+      <origin xyz="0.000000 0.000000 -0.010000" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.060000 0.055000 0.030000"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="dom_p_12_1_upper_link">
+    <inertial>
+      <origin xyz="0.000000 0.000000 -0.080000" rpy="0 0 0"/>
+      <mass value="0.120000"/>
+      <inertia ixx="0.00050000" ixy="0" ixz="0" iyy="0.00050000" iyz="0" izz="0.00008000"/>
+    </inertial>
+    <visual>
+      <origin xyz="0.000000 0.000000 -0.080000" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.012000" length="0.160000"/>
+      </geometry>
+      <material name="domino_printed"/>
+    </visual>
+    <visual>
+      <origin xyz="0.018000 0.000000 -0.080000" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.004000" length="0.145000"/>
+      </geometry>
+      <material name="domino_carbon"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.018000 0.000000 -0.080000" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.004000" length="0.145000"/>
+      </geometry>
+      <material name="domino_carbon"/>
+    </visual>
+    <collision>
+      <origin xyz="0.000000 0.000000 -0.080000" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.014000" length="0.160000"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="dom_p_12_1_lower_link">
+    <inertial>
+      <origin xyz="0.000000 0.000000 -0.076500" rpy="0 0 0"/>
+      <mass value="0.100000"/>
+      <inertia ixx="0.00040000" ixy="0" ixz="0" iyy="0.00040000" iyz="0" izz="0.00006000"/>
+    </inertial>
+    <visual>
+      <origin xyz="0.000000 0.000000 -0.076500" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.010000" length="0.153000"/>
+      </geometry>
+      <material name="domino_printed"/>
+    </visual>
+    <visual>
+      <origin xyz="0.016000 0.000000 -0.076500" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.003500" length="0.135000"/>
+      </geometry>
+      <material name="domino_carbon"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.016000 0.000000 -0.076500" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.003500" length="0.135000"/>
+      </geometry>
+      <material name="domino_carbon"/>
+    </visual>
+    <collision>
+      <origin xyz="0.000000 0.000000 -0.076500" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.012000" length="0.153000"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="dom_p_12_1_foot">
+    <inertial>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0"/>
+      <mass value="0.030000"/>
+      <inertia ixx="0.00004000" ixy="0" ixz="0" iyy="0.00004000" iyz="0" izz="0.00004000"/>
+    </inertial>
+    <visual>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="0.024000"/>
+      </geometry>
+      <material name="domino_foot"/>
+    </visual>
+    <collision>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="0.024000"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="dom_p_12_1_shoulder_ab_ad" type="revolute">
+    <origin xyz="0.167500 0.062375 0.000000" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child link="dom_p_12_1_hip_carriage"/>
+    <axis xyz="1.000000 0.000000 0.000000"/>
+    <limit lower="-0.523599" upper="0.523599" effort="8.0" velocity="6.0"/>
+    <dynamics damping="0.05" friction="0.0"/>
+  </joint>
+  <joint name="dom_p_12_1_upper_pitch" type="revolute">
+    <origin xyz="0.080500 0.028000 0.000000" rpy="0 0 0"/>
+    <parent link="dom_p_12_1_hip_carriage"/>
+    <child link="dom_p_12_1_upper_link"/>
+    <axis xyz="0.000000 1.000000 0.000000"/>
+    <limit lower="-0.523599" upper="1.047198" effort="8.0" velocity="6.0"/>
+    <dynamics damping="0.05" friction="0.0"/>
+  </joint>
+  <joint name="dom_p_12_1_lower_linkage" type="revolute">
+    <origin xyz="0.000000 0.000000 -0.160000" rpy="0 0 0"/>
+    <parent link="dom_p_12_1_upper_link"/>
+    <child link="dom_p_12_1_lower_link"/>
+    <axis xyz="0.000000 1.000000 0.000000"/>
+    <limit lower="-2.094395" upper="0.000000" effort="8.0" velocity="6.0"/>
+    <dynamics damping="0.05" friction="0.0"/>
+  </joint>
+  <joint name="dom_p_12_1_foot_fixed" type="fixed">
+    <origin xyz="0.000000 0.000000 -0.153000" rpy="0 0 0"/>
+    <parent link="dom_p_12_1_lower_link"/>
+    <child link="dom_p_12_1_foot"/>
+  </joint>
+  <link name="dom_p_25_1_hip_carriage">
+    <inertial>
+      <origin xyz="0.000000 0.000000 -0.010000" rpy="0 0 0"/>
+      <mass value="0.100000"/>
+      <inertia ixx="0.00040000" ixy="0" ixz="0" iyy="0.00040000" iyz="0" izz="0.00040000"/>
+    </inertial>
+    <visual>
+      <origin xyz="0.000000 0.000000 -0.010000" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.060000 0.055000 0.030000"/>
+      </geometry>
+      <material name="domino_joint"/>
+    </visual>
+    <collision>
+      <origin xyz="0.000000 0.000000 -0.010000" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.060000 0.055000 0.030000"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="dom_p_25_1_upper_link">
+    <inertial>
+      <origin xyz="0.000000 0.000000 -0.080000" rpy="0 0 0"/>
+      <mass value="0.120000"/>
+      <inertia ixx="0.00050000" ixy="0" ixz="0" iyy="0.00050000" iyz="0" izz="0.00008000"/>
+    </inertial>
+    <visual>
+      <origin xyz="0.000000 0.000000 -0.080000" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.012000" length="0.160000"/>
+      </geometry>
+      <material name="domino_printed"/>
+    </visual>
+    <visual>
+      <origin xyz="0.018000 0.000000 -0.080000" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.004000" length="0.145000"/>
+      </geometry>
+      <material name="domino_carbon"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.018000 0.000000 -0.080000" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.004000" length="0.145000"/>
+      </geometry>
+      <material name="domino_carbon"/>
+    </visual>
+    <collision>
+      <origin xyz="0.000000 0.000000 -0.080000" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.014000" length="0.160000"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="dom_p_25_1_lower_link">
+    <inertial>
+      <origin xyz="0.000000 0.000000 -0.076500" rpy="0 0 0"/>
+      <mass value="0.100000"/>
+      <inertia ixx="0.00040000" ixy="0" ixz="0" iyy="0.00040000" iyz="0" izz="0.00006000"/>
+    </inertial>
+    <visual>
+      <origin xyz="0.000000 0.000000 -0.076500" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.010000" length="0.153000"/>
+      </geometry>
+      <material name="domino_printed"/>
+    </visual>
+    <visual>
+      <origin xyz="0.016000 0.000000 -0.076500" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.003500" length="0.135000"/>
+      </geometry>
+      <material name="domino_carbon"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.016000 0.000000 -0.076500" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.003500" length="0.135000"/>
+      </geometry>
+      <material name="domino_carbon"/>
+    </visual>
+    <collision>
+      <origin xyz="0.000000 0.000000 -0.076500" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.012000" length="0.153000"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="dom_p_25_1_foot">
+    <inertial>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0"/>
+      <mass value="0.030000"/>
+      <inertia ixx="0.00004000" ixy="0" ixz="0" iyy="0.00004000" iyz="0" izz="0.00004000"/>
+    </inertial>
+    <visual>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="0.024000"/>
+      </geometry>
+      <material name="domino_foot"/>
+    </visual>
+    <collision>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="0.024000"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="dom_p_25_1_shoulder_ab_ad" type="revolute">
+    <origin xyz="-0.167500 0.062375 0.000000" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child link="dom_p_25_1_hip_carriage"/>
+    <axis xyz="1.000000 0.000000 0.000000"/>
+    <limit lower="-0.523599" upper="0.523599" effort="8.0" velocity="6.0"/>
+    <dynamics damping="0.05" friction="0.0"/>
+  </joint>
+  <joint name="dom_p_25_1_upper_pitch" type="revolute">
+    <origin xyz="0.080500 0.028000 0.000000" rpy="0 0 0"/>
+    <parent link="dom_p_25_1_hip_carriage"/>
+    <child link="dom_p_25_1_upper_link"/>
+    <axis xyz="0.000000 1.000000 0.000000"/>
+    <limit lower="-0.523599" upper="1.047198" effort="8.0" velocity="6.0"/>
+    <dynamics damping="0.05" friction="0.0"/>
+  </joint>
+  <joint name="dom_p_25_1_lower_linkage" type="revolute">
+    <origin xyz="0.000000 0.000000 -0.160000" rpy="0 0 0"/>
+    <parent link="dom_p_25_1_upper_link"/>
+    <child link="dom_p_25_1_lower_link"/>
+    <axis xyz="0.000000 1.000000 0.000000"/>
+    <limit lower="-2.094395" upper="0.000000" effort="8.0" velocity="6.0"/>
+    <dynamics damping="0.05" friction="0.0"/>
+  </joint>
+  <joint name="dom_p_25_1_foot_fixed" type="fixed">
+    <origin xyz="0.000000 0.000000 -0.153000" rpy="0 0 0"/>
+    <parent link="dom_p_25_1_lower_link"/>
+    <child link="dom_p_25_1_foot"/>
+  </joint>
+  <link name="dom_p_21_1_hip_carriage">
+    <inertial>
+      <origin xyz="0.000000 0.000000 -0.010000" rpy="0 0 0"/>
+      <mass value="0.100000"/>
+      <inertia ixx="0.00040000" ixy="0" ixz="0" iyy="0.00040000" iyz="0" izz="0.00040000"/>
+    </inertial>
+    <visual>
+      <origin xyz="0.000000 0.000000 -0.010000" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.060000 0.055000 0.030000"/>
+      </geometry>
+      <material name="domino_joint"/>
+    </visual>
+    <collision>
+      <origin xyz="0.000000 0.000000 -0.010000" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.060000 0.055000 0.030000"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="dom_p_21_1_upper_link">
+    <inertial>
+      <origin xyz="0.000000 0.000000 -0.080000" rpy="0 0 0"/>
+      <mass value="0.120000"/>
+      <inertia ixx="0.00050000" ixy="0" ixz="0" iyy="0.00050000" iyz="0" izz="0.00008000"/>
+    </inertial>
+    <visual>
+      <origin xyz="0.000000 0.000000 -0.080000" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.012000" length="0.160000"/>
+      </geometry>
+      <material name="domino_printed"/>
+    </visual>
+    <visual>
+      <origin xyz="0.018000 0.000000 -0.080000" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.004000" length="0.145000"/>
+      </geometry>
+      <material name="domino_carbon"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.018000 0.000000 -0.080000" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.004000" length="0.145000"/>
+      </geometry>
+      <material name="domino_carbon"/>
+    </visual>
+    <collision>
+      <origin xyz="0.000000 0.000000 -0.080000" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.014000" length="0.160000"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="dom_p_21_1_lower_link">
+    <inertial>
+      <origin xyz="0.000000 0.000000 -0.076500" rpy="0 0 0"/>
+      <mass value="0.100000"/>
+      <inertia ixx="0.00040000" ixy="0" ixz="0" iyy="0.00040000" iyz="0" izz="0.00006000"/>
+    </inertial>
+    <visual>
+      <origin xyz="0.000000 0.000000 -0.076500" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.010000" length="0.153000"/>
+      </geometry>
+      <material name="domino_printed"/>
+    </visual>
+    <visual>
+      <origin xyz="0.016000 0.000000 -0.076500" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.003500" length="0.135000"/>
+      </geometry>
+      <material name="domino_carbon"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.016000 0.000000 -0.076500" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.003500" length="0.135000"/>
+      </geometry>
+      <material name="domino_carbon"/>
+    </visual>
+    <collision>
+      <origin xyz="0.000000 0.000000 -0.076500" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.012000" length="0.153000"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="dom_p_21_1_foot">
+    <inertial>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0"/>
+      <mass value="0.030000"/>
+      <inertia ixx="0.00004000" ixy="0" ixz="0" iyy="0.00004000" iyz="0" izz="0.00004000"/>
+    </inertial>
+    <visual>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="0.024000"/>
+      </geometry>
+      <material name="domino_foot"/>
+    </visual>
+    <collision>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="0.024000"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="dom_p_21_1_shoulder_ab_ad" type="revolute">
+    <origin xyz="-0.167500 -0.062375 0.000000" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child link="dom_p_21_1_hip_carriage"/>
+    <axis xyz="-1.000000 0.000000 0.000000"/>
+    <limit lower="-0.523599" upper="0.523599" effort="8.0" velocity="6.0"/>
+    <dynamics damping="0.05" friction="0.0"/>
+  </joint>
+  <joint name="dom_p_21_1_upper_pitch" type="revolute">
+    <origin xyz="0.080500 -0.028000 0.000000" rpy="0 0 0"/>
+    <parent link="dom_p_21_1_hip_carriage"/>
+    <child link="dom_p_21_1_upper_link"/>
+    <axis xyz="0.000000 1.000000 0.000000"/>
+    <limit lower="-0.523599" upper="1.047198" effort="8.0" velocity="6.0"/>
+    <dynamics damping="0.05" friction="0.0"/>
+  </joint>
+  <joint name="dom_p_21_1_lower_linkage" type="revolute">
+    <origin xyz="0.000000 0.000000 -0.160000" rpy="0 0 0"/>
+    <parent link="dom_p_21_1_upper_link"/>
+    <child link="dom_p_21_1_lower_link"/>
+    <axis xyz="0.000000 1.000000 0.000000"/>
+    <limit lower="-0.523599" upper="1.570796" effort="8.0" velocity="6.0"/>
+    <dynamics damping="0.05" friction="0.0"/>
+  </joint>
+  <joint name="dom_p_21_1_foot_fixed" type="fixed">
+    <origin xyz="0.000000 0.000000 -0.153000" rpy="0 0 0"/>
+    <parent link="dom_p_21_1_lower_link"/>
+    <child link="dom_p_21_1_foot"/>
+  </joint>
+</robot>

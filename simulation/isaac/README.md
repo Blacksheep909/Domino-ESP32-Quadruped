@@ -25,6 +25,7 @@ This folder is the working plan for turning Domino from CAD and firmware into a 
 | `reports/domino-combined-linkage-characterization.md` | Motion characterization for the combined two-drive CAD-derived one-leg linkage. |
 | `reports/domino-four-leg-linkage-runtime.md` | First all-leg CAD-derived pitch-linkage Isaac/PhysX smoke test. |
 | `reports/domino-12-actuator-runtime.md` | First fixed-base all-leg scene exposing the full twelve-actuator Domino command layout. |
+| `reports/domino-quadruped-runtime-sweep.md` | First clean all-leg 12-DoF Isaac Lab articulation runtime sweep. |
 
 ## Current Finding
 
@@ -107,6 +108,31 @@ powershell -ExecutionPolicy Bypass -File simulation/isaac/run-domino-urdf-import
   -OutputUsd <output-folder>/domino_one_leg_clean.usd `
   -FixBase `
   -AcceptEula
+```
+
+Generate and import the clean all-leg quadruped prototype:
+
+```powershell
+<python> simulation/isaac/prototypes/quadruped/generate_quadruped_urdf.py
+
+powershell -ExecutionPolicy Bypass -File simulation/isaac/run-domino-urdf-import.ps1 `
+  -UrdfPath simulation/isaac/prototypes/quadruped/domino_quadruped_clean.urdf `
+  -IsaacLabRoot <path-to-IsaacLab> `
+  -IsaacPython <path-to-isaac-python> `
+  -OutputUsd <output-folder>/domino_quadruped_clean.usd `
+  -FixBase `
+  -NoMergeJoints `
+  -AcceptEula
+```
+
+Run the clean all-leg quadruped articulation sweep:
+
+```powershell
+<isaac-python> simulation/isaac/prototypes/quadruped/run_quadruped_sweep.py `
+  --usd-path <output-folder>/domino_quadruped_clean.usd `
+  --headless `
+  --steps 600 `
+  --report-path <output-folder>/domino_quadruped_sweep_report.json
 ```
 
 Extract CAD linkage pivots from the generated URDF:
@@ -273,6 +299,6 @@ The next useful asset is a clean four-leg Isaac Lab robot that combines the vali
 
 That should be validated fixed-base first, then with gravity and simple contacts, before any policy training.
 
-Current runtime status: the simplified one-leg prototype imports, spawns as an Isaac Lab articulation, finds the three expected driven joints, and completes a headless joint sweep.
+Current runtime status: the simplified one-leg prototype imports, spawns as an Isaac Lab articulation, finds the three expected driven joints, and completes a headless joint sweep. The new clean all-leg quadruped prototype also imports, spawns as an Isaac Lab articulation, finds the expected twelve action joints, and completes a fixed-base headless joint sweep with no joint-limit violations.
 
-Current linkage status: a generic one-actuator four-bar linkage, the CAD-derived lower triangle, the CAD-derived upper loop, a combined two-drive one-leg linkage, and an all-leg four-module pitch-linkage scene all run headlessly with passive pin joints and loop-closing revolute constraints. The four-leg scene validates eight CAD-derived pitch drives and eight loop closures together. A fixed-base `domino-four-12-actuators` mode adds the four shoulder hip ab/ad drives, giving the intended twelve actuator channels: shoulder, lower linkage, and upper pitch for each leg. The newer `domino-four-12-fixed-body` mode attaches all four shoulder joints to one shared kinematic body reference and its independent sweep gives a full-rank `13 / 13` local fit. The runtime report now emits a named twelve-action `action_space` and fails by default if generated targets exceed the modeled joint limits. This is still fixed-base, no-contact, no-gravity, and not a policy-training robot yet. The next unresolved gate is converting the shared-body twelve-actuator scene into a clean Isaac Lab robot with a resettable base, contacts, hard stops, and the training environment.
+Current linkage status: a generic one-actuator four-bar linkage, the CAD-derived lower triangle, the CAD-derived upper loop, a combined two-drive one-leg linkage, and an all-leg four-module pitch-linkage scene all run headlessly with passive pin joints and loop-closing revolute constraints. The four-leg scene validates eight CAD-derived pitch drives and eight loop closures together. A fixed-base `domino-four-12-actuators` mode adds the four shoulder hip ab/ad drives, giving the intended twelve actuator channels: shoulder, lower linkage, and upper pitch for each leg. The newer `domino-four-12-fixed-body` mode attaches all four shoulder joints to one shared kinematic body reference and its independent sweep gives a full-rank `13 / 13` local fit. The runtime report now emits a named twelve-action `action_space` and fails by default if generated targets exceed the modeled joint limits. This is still fixed-base and no-contact. The next unresolved gate is adding gravity, contacts, reset behavior, hard stops, and a DirectRLEnv stand/height task around the clean all-leg articulation.

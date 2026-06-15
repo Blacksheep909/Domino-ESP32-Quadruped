@@ -104,6 +104,27 @@ Shared fixed-body independent sweep:
 
 The generated CAD URDF marks `Revolute 47` as continuous, but its pivot mirrors the other lower-linkage drive pivots. This test continues to treat it as a driven lower-linkage actuator until the CAD/export metadata is corrected or the physical design says otherwise.
 
+## Action Contract
+
+The current shared-body test exposes twelve actuator targets. The intended Isaac Lab action vector is:
+
+| Index | Action name | CAD-derived joint | Role | Target limit |
+| ---: | --- | --- | --- | --- |
+| 0 | `dom_p_4_1_shoulder_ab_ad` | `dom_p_4_1_revolute_1` | Shoulder hip ab/ad | `-30 deg` to `30 deg` |
+| 1 | `dom_p_4_1_lower_linkage` | `dom_p_4_1_revolute_59` | Lower two-bar/four-bar drive | `-120 deg` to `0 deg` |
+| 2 | `dom_p_4_1_upper_pitch` | `dom_p_4_1_revolute_58` | Upper pitch drive | `-30 deg` to `60 deg` |
+| 3 | `dom_p_12_1_shoulder_ab_ad` | `dom_p_12_1_revolute_2` | Shoulder hip ab/ad | `-30 deg` to `30 deg` |
+| 4 | `dom_p_12_1_lower_linkage` | `dom_p_12_1_revolute_46` | Lower two-bar/four-bar drive | `-120 deg` to `0 deg` |
+| 5 | `dom_p_12_1_upper_pitch` | `dom_p_12_1_revolute_55` | Upper pitch drive | `-30 deg` to `60 deg` |
+| 6 | `dom_p_25_1_shoulder_ab_ad` | `dom_p_25_1_revolute_3` | Shoulder hip ab/ad | `-30 deg` to `30 deg` |
+| 7 | `dom_p_25_1_lower_linkage` | `dom_p_25_1_revolute_47` | Lower two-bar/four-bar drive | `-120 deg` to `0 deg` |
+| 8 | `dom_p_25_1_upper_pitch` | `dom_p_25_1_revolute_56` | Upper pitch drive | `-30 deg` to `60 deg` |
+| 9 | `dom_p_21_1_shoulder_ab_ad` | `dom_p_21_1_revolute_4` | Shoulder hip ab/ad | `-30 deg` to `30 deg` |
+| 10 | `dom_p_21_1_lower_linkage` | `dom_p_21_1_revolute_48` | Lower two-bar/four-bar drive | `-30 deg` to `90 deg` |
+| 11 | `dom_p_21_1_upper_pitch` | `dom_p_21_1_revolute_57` | Upper pitch drive | `-30 deg` to `60 deg` |
+
+The runtime report writes this same list to `action_space`, and each drive entry includes its `action_index`, `action_name`, role, axis, center, and modeled target limits. By default, the prototype now fails if a generated target exceeds those modeled limits. `--disable-drive-limit-checks` is available for deliberate stress tests, but it should stay off for training bring-up.
+
 ## Stability Smoke Test
 
 | Metric | Result |
@@ -152,6 +173,7 @@ The full-rank result is the useful milestone: the fixed-base scene now exposes t
 | Rank deficient | `false` |
 | Max loop-closure error | `0.00001425 m` |
 | Max body linear speed | `0.029793 m/s` |
+| Modeled target limit violations | `0 deg` |
 | Status | `passed` |
 
 This is the stronger current gate. The four shoulder joints now attach to one shared kinematic body reference rather than four separate kinematic anchors, while the twelve actuator inputs and eight closed pitch-linkage loops remain stable over the tested range.

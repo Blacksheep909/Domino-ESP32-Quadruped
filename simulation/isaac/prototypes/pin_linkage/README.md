@@ -211,7 +211,9 @@ All-leg scene:
 
 `--drive-schedule phased-sine` is the default smoke test. All drives move together with phase offsets, which is useful for constraint stability but not enough for independent calibration because the input matrix is rank deficient.
 
-`--drive-schedule independent` moves one drive at a time while the other drives hold their centre positions. Use this mode when fitting the local relationship between the commanded inputs and measured output proxies. In `domino-four-12-actuators`, one independent cycle covers all twelve real actuator channels.
+`--drive-schedule independent` moves one drive at a time while the other drives hold their center positions. Use this mode when fitting the local relationship between the commanded inputs and measured output proxies. In the twelve-actuator modes, one independent cycle covers all twelve real actuator channels: four shoulders, four lower linkage drives, and four upper pitch drives.
+
+The JSON report includes a named `action_space` with the exact action index order. The script also checks generated drive targets against the modeled joint limits by default; use `--disable-drive-limit-checks` only for deliberate stress tests.
 
 ## What Passing Means
 

@@ -248,6 +248,51 @@ def world_endpoint(view: SingleRigidPrim, local_point: Gf.Vec3f) -> np.ndarray:
     return position.astype(np.float64) + rotation @ local
 
 
+def quat_wxyz_to_pitch_y_deg(orientation) -> float:
+    orientation = to_numpy(orientation)
+    w, x, y, z = [float(v) for v in orientation]
+    sin_pitch = 2.0 * ((w * y) - (z * x))
+    sin_pitch = max(-1.0, min(1.0, sin_pitch))
+    return math.degrees(math.asin(sin_pitch))
+
+
+def empty_scalar_stats():
+    return {"min": float("inf"), "max": float("-inf"), "final": 0.0}
+
+
+def update_scalar_stats(stats: dict, value: float):
+    stats["min"] = min(stats["min"], float(value))
+    stats["max"] = max(stats["max"], float(value))
+    stats["final"] = float(value)
+
+
+def empty_vector_stats():
+    return {
+        "min": np.array([float("inf"), float("inf"), float("inf")], dtype=np.float64),
+        "max": np.array([float("-inf"), float("-inf"), float("-inf")], dtype=np.float64),
+        "final": np.zeros(3, dtype=np.float64),
+    }
+
+
+def update_vector_stats(stats: dict, value: np.ndarray):
+    value = np.asarray(value, dtype=np.float64)
+    stats["min"] = np.minimum(stats["min"], value)
+    stats["max"] = np.maximum(stats["max"], value)
+    stats["final"] = value
+
+
+def rounded_scalar_stats(stats: dict) -> dict[str, float]:
+    return {key: round(float(value), 6) for key, value in stats.items()}
+
+
+def rounded_vector_stats(stats: dict) -> dict[str, list[float]]:
+    return {
+        "min_m": [round(float(value), 6) for value in stats["min"]],
+        "max_m": [round(float(value), 6) for value in stats["max"]],
+        "final_m": [round(float(value), 6) for value in stats["final"]],
+    }
+
+
 def build_generic_four_bar(stage):
     root = "/World/PinLinkage"
     UsdGeom.Xform.Define(stage, root)
@@ -302,6 +347,16 @@ def build_generic_four_bar(stage):
                 "pivot": pivot_c.tolist(),
             }
         ],
+        "characterization": {
+            "pitch_bodies": ["ground", "crank", "coupler", "rocker"],
+            "relative_pitch_pairs": [
+                {"name": "crank_to_ground", "body_a": "crank", "body_b": "ground"},
+                {"name": "coupler_to_ground", "body_a": "coupler", "body_b": "ground"},
+                {"name": "rocker_to_ground", "body_a": "rocker", "body_b": "ground"},
+            ],
+            "drive_angle_pairs": {"drive_crank_pin": {"body_a": "crank", "body_b": "ground"}},
+            "pivot_tracks": [{"name": "loop_closure_pin", "body": "coupler", "pivot": pivot_c.tolist()}],
+        },
     }
 
 
@@ -407,6 +462,23 @@ def build_domino_lower_triangle(stage):
                 "pivot": points["closure_revolute_25_26"].tolist(),
             }
         ],
+        "characterization": {
+            "pitch_bodies": ["ground", "lower_driver", "coupler", "diagonal"],
+            "relative_pitch_pairs": [
+                {"name": "lower_driver_to_ground", "body_a": "lower_driver", "body_b": "ground"},
+                {"name": "coupler_to_ground", "body_a": "coupler", "body_b": "ground"},
+                {"name": "diagonal_to_ground", "body_a": "diagonal", "body_b": "ground"},
+                {"name": "diagonal_to_coupler", "body_a": "diagonal", "body_b": "coupler"},
+            ],
+            "drive_angle_pairs": {"drive_revolute_59": {"body_a": "lower_driver", "body_b": "ground"}},
+            "pivot_tracks": [
+                {
+                    "name": "lower_closure_revolute_25_26",
+                    "body": "lower_driver",
+                    "pivot": points["closure_revolute_25_26"].tolist(),
+                }
+            ],
+        },
     }
 
 
@@ -506,6 +578,18 @@ def build_domino_upper_loop(stage):
                 "pivot": points["closure_revolute_51"].tolist(),
             }
         ],
+        "characterization": {
+            "pitch_bodies": ["ground", "lower_reference", "upper_driver", "coupler"],
+            "relative_pitch_pairs": [
+                {"name": "upper_driver_to_ground", "body_a": "upper_driver", "body_b": "ground"},
+                {"name": "coupler_to_lower_reference", "body_a": "coupler", "body_b": "lower_reference"},
+                {"name": "upper_driver_to_coupler", "body_a": "upper_driver", "body_b": "coupler"},
+            ],
+            "drive_angle_pairs": {"drive_revolute_58": {"body_a": "upper_driver", "body_b": "ground"}},
+            "pivot_tracks": [
+                {"name": "upper_closure_revolute_32_51", "body": "upper_driver", "pivot": points["closure_revolute_51"].tolist()}
+            ],
+        },
     }
 
 
@@ -658,6 +742,32 @@ def build_domino_combined_leg(stage):
                 "pivot": points["upper_closure_revolute_51"].tolist(),
             },
         ],
+        "characterization": {
+            "pitch_bodies": ["ground", "lower_driver", "coupler", "lower_diagonal", "upper_driver"],
+            "relative_pitch_pairs": [
+                {"name": "lower_driver_to_ground", "body_a": "lower_driver", "body_b": "ground"},
+                {"name": "upper_driver_to_ground", "body_a": "upper_driver", "body_b": "ground"},
+                {"name": "coupler_to_ground", "body_a": "coupler", "body_b": "ground"},
+                {"name": "lower_diagonal_to_coupler", "body_a": "lower_diagonal", "body_b": "coupler"},
+                {"name": "upper_driver_to_coupler", "body_a": "upper_driver", "body_b": "coupler"},
+            ],
+            "drive_angle_pairs": {
+                "lower_drive_revolute_59": {"body_a": "lower_driver", "body_b": "ground"},
+                "upper_drive_revolute_58": {"body_a": "upper_driver", "body_b": "ground"},
+            },
+            "pivot_tracks": [
+                {
+                    "name": "lower_closure_revolute_25_26",
+                    "body": "lower_driver",
+                    "pivot": points["lower_closure_revolute_25_26"].tolist(),
+                },
+                {
+                    "name": "upper_closure_revolute_32_51",
+                    "body": "upper_driver",
+                    "pivot": points["upper_closure_revolute_51"].tolist(),
+                },
+            ],
+        },
     }
 
 
@@ -728,6 +838,18 @@ def main():
         if args_cli.secondary_drive_frequency_hz is not None
         else args_cli.drive_frequency_hz
     )
+    characterization = linkage.get("characterization", {})
+    body_pitch_stats = {
+        name: empty_scalar_stats() for name in characterization.get("pitch_bodies", [])
+    }
+    relative_pitch_stats = {
+        pair["name"]: empty_scalar_stats() for pair in characterization.get("relative_pitch_pairs", [])
+    }
+    drive_target_stats = {spec["joint"]: empty_scalar_stats() for spec in drive_specs}
+    drive_tracking_error_stats = {spec["joint"]: empty_scalar_stats() for spec in drive_specs}
+    pivot_track_stats = {
+        track["name"]: empty_vector_stats() for track in characterization.get("pivot_tracks", [])
+    }
 
     for step in range(args_cli.steps):
         time_s = step * sim_dt
@@ -737,20 +859,53 @@ def main():
             frequency = args_cli.drive_frequency_hz if spec["frequency_source"] == "primary" else secondary_frequency
             target = center + amplitude * math.sin((2.0 * math.pi * frequency * time_s) + spec["phase_rad"])
             spec["target_attr"].Set(float(target))
+            spec["current_target_deg"] = float(target)
+            update_scalar_stats(drive_target_stats[spec["joint"]], float(target))
 
         sim.step()
 
         positions = []
         velocities = []
-        for view in views.values():
+        pose_cache = {}
+        for name, view in views.items():
             pos, quat = view.get_world_pose()
             lin_vel = view.get_linear_velocity()
+            pose_cache[name] = {"position": pos, "orientation": quat}
             positions.extend(to_numpy(pos).flatten().tolist())
             positions.extend(to_numpy(quat).flatten().tolist())
             velocities.extend(to_numpy(lin_vel).flatten().tolist())
         if not np.isfinite(np.array(positions + velocities, dtype=np.float64)).all():
             min_finite = False
             break
+
+        pitch_values = {}
+        for body_name in characterization.get("pitch_bodies", []):
+            pitch = quat_wxyz_to_pitch_y_deg(pose_cache[body_name]["orientation"])
+            pitch_values[body_name] = pitch
+            update_scalar_stats(body_pitch_stats[body_name], pitch)
+
+        for pair in characterization.get("relative_pitch_pairs", []):
+            body_a = pair["body_a"]
+            body_b = pair["body_b"]
+            if body_a not in pitch_values:
+                pitch_values[body_a] = quat_wxyz_to_pitch_y_deg(pose_cache[body_a]["orientation"])
+            if body_b not in pitch_values:
+                pitch_values[body_b] = quat_wxyz_to_pitch_y_deg(pose_cache[body_b]["orientation"])
+            update_scalar_stats(relative_pitch_stats[pair["name"]], pitch_values[body_a] - pitch_values[body_b])
+
+        for spec in drive_specs:
+            pair = characterization.get("drive_angle_pairs", {}).get(spec["joint"])
+            if not pair:
+                continue
+            body_a = pair["body_a"]
+            body_b = pair["body_b"]
+            if body_a not in pitch_values:
+                pitch_values[body_a] = quat_wxyz_to_pitch_y_deg(pose_cache[body_a]["orientation"])
+            if body_b not in pitch_values:
+                pitch_values[body_b] = quat_wxyz_to_pitch_y_deg(pose_cache[body_b]["orientation"])
+            actual_deg = pitch_values[body_a] - pitch_values[body_b]
+            error_deg = actual_deg - spec["current_target_deg"]
+            update_scalar_stats(drive_tracking_error_stats[spec["joint"]], error_deg)
 
         for check in linkage["loop_checks"]:
             pivot = np.array(check["pivot"], dtype=np.float64)
@@ -760,6 +915,12 @@ def main():
             world_b = world_endpoint(views[check["body_b"]], local_endpoint(pivot, body_b["center"]))
             loop_error = float(np.linalg.norm(world_a - world_b))
             max_loop_errors[check["name"]] = max(max_loop_errors[check["name"]], loop_error)
+
+        for track in characterization.get("pivot_tracks", []):
+            pivot = np.array(track["pivot"], dtype=np.float64)
+            body = linkage["bodies"][track["body"]]
+            world = world_endpoint(views[track["body"]], local_endpoint(pivot, body["center"]))
+            update_vector_stats(pivot_track_stats[track["name"]], world)
 
         max_linear_speed = max(
             max_linear_speed, max(float(np.linalg.norm(to_numpy(view.get_linear_velocity()))) for view in views.values())
@@ -799,6 +960,17 @@ def main():
         "max_loop_closure_error_m": round(max(max_loop_errors.values()), 8),
         "loop_closure_errors_m": {name: round(value, 8) for name, value in max_loop_errors.items()},
         "max_body_linear_speed_m_s": round(max_linear_speed, 6),
+        "characterization": {
+            "drive_target_deg": {name: rounded_scalar_stats(stats) for name, stats in drive_target_stats.items()},
+            "drive_tracking_error_deg": {
+                name: rounded_scalar_stats(stats) for name, stats in drive_tracking_error_stats.items()
+            },
+            "body_pitch_y_deg": {name: rounded_scalar_stats(stats) for name, stats in body_pitch_stats.items()},
+            "relative_pitch_y_deg": {
+                name: rounded_scalar_stats(stats) for name, stats in relative_pitch_stats.items()
+            },
+            "tracked_pivots_world": {name: rounded_vector_stats(stats) for name, stats in pivot_track_stats.items()},
+        },
         "final_poses": final_poses,
     }
 

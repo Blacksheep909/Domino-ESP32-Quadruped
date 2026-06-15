@@ -23,6 +23,7 @@ This folder is the working plan for turning Domino from CAD and firmware into a 
 | `reports/domino-one-leg-runtime-sweep.md` | Result of the first clean one-leg Isaac Lab articulation sweep. |
 | `reports/domino-pin-linkage-runtime.md` | Results of the generic and CAD-derived actuated passive pin-linkage runtime tests. |
 | `reports/domino-combined-linkage-characterization.md` | Motion characterization for the combined two-drive CAD-derived one-leg linkage. |
+| `reports/domino-four-leg-linkage-runtime.md` | First all-leg CAD-derived pitch-linkage Isaac/PhysX smoke test. |
 
 ## Current Finding
 
@@ -155,6 +156,22 @@ Run the combined two-drive one-leg linkage test:
   --save-usd <output-folder>/domino_combined_leg.usd
 ```
 
+Run the all-leg CAD-derived pitch-linkage test:
+
+```powershell
+<isaac-python> simulation/isaac/prototypes/pin_linkage/run_pin_linkage.py `
+  --headless `
+  --geometry domino-four-combined-legs `
+  --steps 600 `
+  --fit-start-step 60 `
+  --drive-amplitude-deg 1 `
+  --secondary-drive-amplitude-deg 1 `
+  --drive-frequency-hz 0.15 `
+  --secondary-drive-frequency-hz 0.15 `
+  --report-path <output-folder>/domino_four_combined_legs_report.json `
+  --save-usd <output-folder>/domino_four_combined_legs.usd
+```
+
 ## Isaac Runtime Notes
 
 NVIDIA's current Isaac Lab import workflow recommends converting robot assets into USD and then writing an asset configuration for spawning and training. The Isaac Lab docs also call out useful URDF import settings such as fixed base selection, fixed-joint merging, joint drive configuration, and setting joint target type to `none` during import when you want to configure drives later. See:
@@ -165,16 +182,17 @@ NVIDIA's current Isaac Lab import workflow recommends converting robot assets in
 
 ## Immediate Next Milestone
 
-The next useful asset to validate is the clean one-leg USD generated from `prototypes/one_leg/domino_one_leg_clean.urdf`, with:
+The next useful asset is a clean four-leg Isaac Lab robot that combines the validated pieces:
 
-- Three driven joints with readable names.
+- Hip ab/ad articulation from the generated CAD hip links.
+- The CAD-derived pitch-linkage constraints proven by `domino-four-combined-legs`.
+- Twelve driven policy actions with readable names.
 - Simplified collision bodies.
-- Correct joint axes and limits.
-- Passive linkage geometry either visual-only or constrained after the driven model works.
-- A small Isaac Lab script that can reset the leg and sweep each joint through safe limits.
+- Correct joint axes, limits, reset defaults, and hard-stop checks.
+- A small Isaac Lab script that can reset the robot and sweep each driven joint through safe limits.
 
-Once the one-leg model behaves, duplicate it into a four-leg robot and wire the Isaac Lab action space to the same twelve-servo abstraction used by the firmware.
+That should be validated fixed-base first, then with gravity and simple contacts, before any policy training.
 
 Current runtime status: the simplified one-leg prototype imports, spawns as an Isaac Lab articulation, finds the three expected driven joints, and completes a headless joint sweep.
 
-Current linkage status: a generic one-actuator four-bar linkage, the CAD-derived lower triangle, the CAD-derived upper loop, and a combined two-drive one-leg linkage all run headlessly with passive pin joints and loop-closing revolute constraints. The combined linkage is stable and now has a first local linear calibration fit from two commanded drive targets to measured linkage-output proxies. The next unresolved gate is validating that fit with one-input sweeps, comparing it against the clean one-leg abstraction, replacing body-pitch proxy measurements with a policy-ready output coordinate, then merging the calibrated behavior into the clean one-leg asset.
+Current linkage status: a generic one-actuator four-bar linkage, the CAD-derived lower triangle, the CAD-derived upper loop, a combined two-drive one-leg linkage, and an all-leg four-module pitch-linkage scene all run headlessly with passive pin joints and loop-closing revolute constraints. The four-leg scene validates eight CAD-derived pitch drives and eight loop closures together, but it is still fixed-base, no-contact, no-gravity, and not a policy-training robot yet. The next unresolved gate is independent per-drive calibration, merging the pitch linkage pattern with hip ab/ad articulation, and then reintroducing gravity, contacts, hard stops, and the Isaac Lab training environment.

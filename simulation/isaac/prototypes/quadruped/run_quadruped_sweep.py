@@ -29,6 +29,7 @@ usd_path = Path(args_cli.usd_path).expanduser().resolve()
 if not usd_path.exists():
     raise FileNotFoundError(f"USD path does not exist: {usd_path}")
 os.environ["DOMINO_QUADRUPED_USD"] = str(usd_path)
+os.environ.setdefault("WARP_CACHE_PATH", str((Path.cwd() / "simulation" / "isaac" / "out" / "warp_cache").resolve()))
 
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
@@ -37,7 +38,12 @@ import torch  # noqa: E402
 
 import isaaclab.sim as sim_utils  # noqa: E402
 from isaaclab.assets import Articulation  # noqa: E402
-from domino_quadruped_cfg import ACTION_JOINT_NAMES, DOMINO_QUADRUPED_CFG  # noqa: E402
+from domino_quadruped_cfg import (  # noqa: E402
+    ACTION_JOINT_NAMES,
+    DOMINO_QUADRUPED_CFG,
+    action_group_counts,
+    validate_action_layout,
+)
 
 
 def design_scene() -> Articulation:
@@ -74,8 +80,7 @@ def main():
     robot.update(sim.get_physics_dt())
 
     joint_ids, joint_names = robot.find_joints(ACTION_JOINT_NAMES, preserve_order=True)
-    if joint_names != ACTION_JOINT_NAMES:
-        raise RuntimeError(f"Expected joints {ACTION_JOINT_NAMES}, found {joint_names}. All joints: {robot.joint_names}")
+    validate_action_layout(joint_names)
 
     joint_ids_tensor = torch.tensor(joint_ids, device=sim.device, dtype=torch.long)
     limits = robot.data.soft_joint_pos_limits[0, joint_ids_tensor, :]
@@ -123,6 +128,7 @@ def main():
         "steps": args_cli.steps,
         "physics_dt": sim_dt,
         "action_count": len(joint_names),
+        "action_group_counts": action_group_counts(),
         "action_joint_names": joint_names,
         "joint_ids": joint_ids,
         "soft_joint_limits_rad": {

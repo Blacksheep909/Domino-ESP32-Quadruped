@@ -38,6 +38,12 @@ parser.add_argument(
 parser.add_argument("--drive-amplitude-deg", type=float, default=12.0, help="Driven crank target amplitude.")
 parser.add_argument("--drive-frequency-hz", type=float, default=0.6, help="Driven crank target frequency.")
 parser.add_argument(
+    "--fit-start-step",
+    type=int,
+    default=0,
+    help="First physics step to include in the linear calibration fit.",
+)
+parser.add_argument(
     "--secondary-drive-amplitude-deg",
     type=float,
     default=None,
@@ -290,6 +296,57 @@ def rounded_vector_stats(stats: dict) -> dict[str, list[float]]:
         "min_m": [round(float(value), 6) for value in stats["min"]],
         "max_m": [round(float(value), 6) for value in stats["max"]],
         "final_m": [round(float(value), 6) for value in stats["final"]],
+    }
+
+
+def fit_linear_calibration(samples: list[dict], input_names: list[str], output_names: list[str]) -> dict:
+    """Fit a local linear map from commanded drive targets to measured linkage outputs."""
+    if not output_names:
+        return {
+            "status": "skipped",
+            "reason": "No calibration outputs are configured for this geometry.",
+            "sample_count": len(samples),
+        }
+
+    if len(samples) <= len(input_names):
+        return {
+            "status": "skipped",
+            "reason": "Not enough samples for a linear fit.",
+            "sample_count": len(samples),
+        }
+
+    x = np.array([[1.0] + [sample["inputs"][name] for name in input_names] for sample in samples], dtype=np.float64)
+    rank = int(np.linalg.matrix_rank(x))
+    results = {}
+    for output_name in output_names:
+        y = np.array([sample["outputs"][output_name] for sample in samples], dtype=np.float64)
+        coeffs, *_ = np.linalg.lstsq(x, y, rcond=None)
+        predicted = x @ coeffs
+        residual = y - predicted
+        ss_res = float(np.sum(residual * residual))
+        centered = y - float(np.mean(y))
+        ss_tot = float(np.sum(centered * centered))
+        r_squared = 1.0 if ss_tot <= 1e-12 else 1.0 - (ss_res / ss_tot)
+        rmse = math.sqrt(ss_res / max(len(samples), 1))
+        results[output_name] = {
+            "intercept": round(float(coeffs[0]), 6),
+            "coefficients": {
+                input_name: round(float(coeffs[index + 1]), 6) for index, input_name in enumerate(input_names)
+            },
+            "rmse": round(float(rmse), 6),
+            "r_squared": round(float(r_squared), 6),
+            "min_actual": round(float(np.min(y)), 6),
+            "max_actual": round(float(np.max(y)), 6),
+        }
+
+    return {
+        "status": "fit",
+        "model": "output_deg = intercept + sum(coeff_deg_per_deg * drive_target_deg)",
+        "sample_count": len(samples),
+        "matrix_rank": rank,
+        "input_count_with_intercept": len(input_names) + 1,
+        "inputs": input_names,
+        "outputs": results,
     }
 
 
@@ -850,6 +907,8 @@ def main():
     pivot_track_stats = {
         track["name"]: empty_vector_stats() for track in characterization.get("pivot_tracks", [])
     }
+    calibration_samples = []
+    calibration_output_names = set()
 
     for step in range(args_cli.steps):
         time_s = step * sim_dt
@@ -879,6 +938,8 @@ def main():
             break
 
         pitch_values = {}
+        relative_pitch_values = {}
+        drive_angle_values = {}
         for body_name in characterization.get("pitch_bodies", []):
             pitch = quat_wxyz_to_pitch_y_deg(pose_cache[body_name]["orientation"])
             pitch_values[body_name] = pitch
@@ -891,7 +952,9 @@ def main():
                 pitch_values[body_a] = quat_wxyz_to_pitch_y_deg(pose_cache[body_a]["orientation"])
             if body_b not in pitch_values:
                 pitch_values[body_b] = quat_wxyz_to_pitch_y_deg(pose_cache[body_b]["orientation"])
-            update_scalar_stats(relative_pitch_stats[pair["name"]], pitch_values[body_a] - pitch_values[body_b])
+            relative_pitch = pitch_values[body_a] - pitch_values[body_b]
+            relative_pitch_values[pair["name"]] = relative_pitch
+            update_scalar_stats(relative_pitch_stats[pair["name"]], relative_pitch)
 
         for spec in drive_specs:
             pair = characterization.get("drive_angle_pairs", {}).get(spec["joint"])
@@ -904,8 +967,32 @@ def main():
             if body_b not in pitch_values:
                 pitch_values[body_b] = quat_wxyz_to_pitch_y_deg(pose_cache[body_b]["orientation"])
             actual_deg = pitch_values[body_a] - pitch_values[body_b]
+            drive_angle_values[spec["joint"]] = actual_deg
             error_deg = actual_deg - spec["current_target_deg"]
             update_scalar_stats(drive_tracking_error_stats[spec["joint"]], error_deg)
+
+        if step >= args_cli.fit_start_step:
+            sample_outputs = {}
+            for body_name in characterization.get("pitch_bodies", []):
+                output_name = f"body_pitch_y_deg.{body_name}"
+                sample_outputs[output_name] = pitch_values[body_name]
+                calibration_output_names.add(output_name)
+            for pair in characterization.get("relative_pitch_pairs", []):
+                output_name = f"relative_pitch_y_deg.{pair['name']}"
+                sample_outputs[output_name] = relative_pitch_values[pair["name"]]
+                calibration_output_names.add(output_name)
+            for spec in drive_specs:
+                if spec["joint"] not in drive_angle_values:
+                    continue
+                output_name = f"drive_angle_deg.{spec['joint']}"
+                sample_outputs[output_name] = drive_angle_values[spec["joint"]]
+                calibration_output_names.add(output_name)
+            calibration_samples.append(
+                {
+                    "inputs": {spec["joint"]: spec["current_target_deg"] for spec in drive_specs},
+                    "outputs": sample_outputs,
+                }
+            )
 
         for check in linkage["loop_checks"]:
             pivot = np.array(check["pivot"], dtype=np.float64)
@@ -970,6 +1057,11 @@ def main():
                 name: rounded_scalar_stats(stats) for name, stats in relative_pitch_stats.items()
             },
             "tracked_pivots_world": {name: rounded_vector_stats(stats) for name, stats in pivot_track_stats.items()},
+            "linear_calibration_fit": fit_linear_calibration(
+                calibration_samples,
+                [spec["joint"] for spec in drive_specs],
+                sorted(calibration_output_names),
+            ),
         },
         "final_poses": final_poses,
     }

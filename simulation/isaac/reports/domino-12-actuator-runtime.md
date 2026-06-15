@@ -8,6 +8,11 @@ This report records the first fixed-base Isaac/PhysX test where the Domino CAD-d
 
 This is still a bring-up scene, not the final policy-training robot. The bodies are simplified, gravity and contacts are disabled, and the base anchors are kinematic so the linkage can be validated before ground interaction is introduced.
 
+Two fixed-base variants are tracked here:
+
+- `domino-four-12-actuators`: each leg has its own kinematic hip reference. This isolates the twelve actuator layout.
+- `domino-four-12-fixed-body`: all four shoulder joints attach to one shared kinematic body reference. This is closer to the final robot body structure and is the next gate toward a resettable/floating Isaac Lab robot.
+
 ## Runtime Command Shape
 
 Phased-sine stability smoke test:
@@ -49,6 +54,45 @@ Independent twelve-drive calibration sweep:
   --no-print-report
 ```
 
+Shared fixed-body smoke test:
+
+```powershell
+<isaac-python> simulation/isaac/prototypes/pin_linkage/run_pin_linkage.py `
+  --headless `
+  --geometry domino-four-12-fixed-body `
+  --steps 600 `
+  --fit-start-step 60 `
+  --drive-amplitude-deg 1 `
+  --secondary-drive-amplitude-deg 1 `
+  --shoulder-drive-amplitude-deg 1 `
+  --drive-frequency-hz 0.15 `
+  --secondary-drive-frequency-hz 0.15 `
+  --shoulder-drive-frequency-hz 0.15 `
+  --report-path <output-folder>/domino_four_12_fixed_body_report.json `
+  --no-print-report
+```
+
+Shared fixed-body independent sweep:
+
+```powershell
+<isaac-python> simulation/isaac/prototypes/pin_linkage/run_pin_linkage.py `
+  --headless `
+  --geometry domino-four-12-fixed-body `
+  --drive-schedule independent `
+  --steps 1200 `
+  --independent-segment-steps 100 `
+  --independent-settle-steps 20 `
+  --fit-start-step 0 `
+  --drive-amplitude-deg 1 `
+  --secondary-drive-amplitude-deg 1 `
+  --shoulder-drive-amplitude-deg 1 `
+  --drive-frequency-hz 0.5 `
+  --secondary-drive-frequency-hz 0.5 `
+  --shoulder-drive-frequency-hz 0.5 `
+  --report-path <output-folder>/domino_four_12_fixed_body_independent_report.json `
+  --no-print-report
+```
+
 ## Actuator Map
 
 | Leg module | Shoulder hip ab/ad | Lower linkage drive | Upper pitch drive |
@@ -77,6 +121,8 @@ The phased-sine run exercises all twelve drive targets together. Its linear cali
 
 ## Independent Calibration Sweep
 
+Per-leg anchor variant:
+
 | Metric | Result |
 | --- | ---: |
 | Physics steps | `2400` |
@@ -92,11 +138,29 @@ The phased-sine run exercises all twelve drive targets together. Its linear cali
 
 The full-rank result is the useful milestone: the fixed-base scene now exposes the complete twelve-servo command layout and each actuator can be swept independently without the closed pitch linkages becoming unstable.
 
+## Shared Fixed Body Sweep
+
+| Metric | Result |
+| --- | ---: |
+| Geometry mode | `domino-four-12-fixed-body` |
+| Physics steps | `1200` |
+| Segment length | `100 steps` |
+| Segment settle exclusion | `20 steps` |
+| Calibration samples | `960` |
+| Matrix rank | `13` |
+| Input columns including intercept | `13` |
+| Rank deficient | `false` |
+| Max loop-closure error | `0.00001425 m` |
+| Max body linear speed | `0.029793 m/s` |
+| Status | `passed` |
+
+This is the stronger current gate. The four shoulder joints now attach to one shared kinematic body reference rather than four separate kinematic anchors, while the twelve actuator inputs and eight closed pitch-linkage loops remain stable over the tested range.
+
 ## Remaining Gap
 
-This does not yet prove policy training. The next gate is to turn this fixed-base 12-actuator linkage scene into a clean Isaac Lab robot with:
+This does not yet prove policy training. The next gate is to turn the shared fixed-body 12-actuator linkage scene into a clean Isaac Lab robot with:
 
 1. A single floating or resettable base.
-2. Hip ab/ad articulation integrated with the body instead of per-leg kinematic anchors.
+2. Hip ab/ad articulation integrated with the body as an Isaac Lab articulation or equivalent resettable asset.
 3. Gravity, contacts, simple collision bodies, and hard-stop checks.
 4. A twelve-action Isaac Lab environment wired to the same actuator order shown above.

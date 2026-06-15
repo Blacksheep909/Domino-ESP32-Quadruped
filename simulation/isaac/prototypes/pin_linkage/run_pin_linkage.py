@@ -62,6 +62,24 @@ parser.add_argument(
     help="Secondary driven joint frequency for multi-drive geometries.",
 )
 parser.add_argument(
+    "--drive-schedule",
+    choices=("phased-sine", "independent"),
+    default="phased-sine",
+    help="Drive all inputs with their phase offsets, or sweep one drive at a time for calibration.",
+)
+parser.add_argument(
+    "--independent-segment-steps",
+    type=int,
+    default=160,
+    help="Physics steps per active drive when --drive-schedule independent is used.",
+)
+parser.add_argument(
+    "--independent-settle-steps",
+    type=int,
+    default=20,
+    help="Initial steps inside each independent segment to exclude from the linear calibration fit.",
+)
+parser.add_argument(
     "--graceful-close",
     action="store_true",
     help="Call SimulationApp.close() before exit. Disabled by default because it can hang on some Windows setups.",
@@ -240,6 +258,52 @@ def make_drive_spec(
         "phase_rad": math.radians(float(phase_deg)),
         "phase_deg": float(phase_deg),
     }
+
+
+def drive_center_deg(spec: dict, primary_center: float) -> float:
+    return float(primary_center if spec["amplitude_source"] == "primary" else spec["center_deg"])
+
+
+def drive_amplitude_deg(spec: dict, primary_amplitude: float, secondary_amplitude: float) -> float:
+    return float(primary_amplitude if spec["amplitude_source"] == "primary" else secondary_amplitude)
+
+
+def drive_frequency_hz(spec: dict, primary_frequency: float, secondary_frequency: float) -> float:
+    return float(primary_frequency if spec["frequency_source"] == "primary" else secondary_frequency)
+
+
+def drive_target_deg(
+    spec: dict,
+    time_s: float,
+    primary_center: float,
+    primary_amplitude: float,
+    primary_frequency: float,
+    secondary_amplitude: float,
+    secondary_frequency: float,
+) -> float:
+    center = drive_center_deg(spec, primary_center)
+    amplitude = drive_amplitude_deg(spec, primary_amplitude, secondary_amplitude)
+    frequency = drive_frequency_hz(spec, primary_frequency, secondary_frequency)
+    return center + amplitude * math.sin((2.0 * math.pi * frequency * time_s) + spec["phase_rad"])
+
+
+def independent_drive_target_deg(
+    spec: dict,
+    drive_index: int,
+    active_drive_index: int,
+    segment_time_s: float,
+    primary_center: float,
+    primary_amplitude: float,
+    primary_frequency: float,
+    secondary_amplitude: float,
+    secondary_frequency: float,
+) -> float:
+    center = drive_center_deg(spec, primary_center)
+    if drive_index != active_drive_index:
+        return center
+    amplitude = drive_amplitude_deg(spec, primary_amplitude, secondary_amplitude)
+    frequency = drive_frequency_hz(spec, primary_frequency, secondary_frequency)
+    return center + amplitude * math.sin(2.0 * math.pi * frequency * segment_time_s)
 
 
 def world_endpoint(view: SingleRigidPrim, local_point: Gf.Vec3f) -> np.ndarray:
@@ -1237,6 +1301,8 @@ def main():
     max_loop_errors = {check["name"]: 0.0 for check in linkage["loop_checks"]}
     min_finite = True
     primary_center = float(args_cli.drive_center_deg if args_cli.drive_center_deg is not None else linkage["drive_center_deg"])
+    primary_amplitude = float(args_cli.drive_amplitude_deg)
+    primary_frequency = float(args_cli.drive_frequency_hz)
     secondary_amplitude = float(
         args_cli.secondary_drive_amplitude_deg
         if args_cli.secondary_drive_amplitude_deg is not None
@@ -1247,6 +1313,8 @@ def main():
         if args_cli.secondary_drive_frequency_hz is not None
         else args_cli.drive_frequency_hz
     )
+    independent_segment_steps = max(1, int(args_cli.independent_segment_steps))
+    independent_settle_steps = max(0, min(int(args_cli.independent_settle_steps), independent_segment_steps - 1))
     characterization = linkage.get("characterization", {})
     body_pitch_stats = {
         name: empty_scalar_stats() for name in characterization.get("pitch_bodies", [])
@@ -1264,11 +1332,35 @@ def main():
 
     for step in range(args_cli.steps):
         time_s = step * sim_dt
-        for spec in drive_specs:
-            center = primary_center if spec["amplitude_source"] == "primary" else spec["center_deg"]
-            amplitude = args_cli.drive_amplitude_deg if spec["amplitude_source"] == "primary" else secondary_amplitude
-            frequency = args_cli.drive_frequency_hz if spec["frequency_source"] == "primary" else secondary_frequency
-            target = center + amplitude * math.sin((2.0 * math.pi * frequency * time_s) + spec["phase_rad"])
+        segment_step = 0
+        active_drive_index = None
+        if args_cli.drive_schedule == "independent":
+            segment_step = step % independent_segment_steps
+            active_drive_index = (step // independent_segment_steps) % len(drive_specs)
+
+        for drive_index, spec in enumerate(drive_specs):
+            if args_cli.drive_schedule == "independent":
+                target = independent_drive_target_deg(
+                    spec,
+                    drive_index,
+                    active_drive_index,
+                    segment_step * sim_dt,
+                    primary_center,
+                    primary_amplitude,
+                    primary_frequency,
+                    secondary_amplitude,
+                    secondary_frequency,
+                )
+            else:
+                target = drive_target_deg(
+                    spec,
+                    time_s,
+                    primary_center,
+                    primary_amplitude,
+                    primary_frequency,
+                    secondary_amplitude,
+                    secondary_frequency,
+                )
             spec["target_attr"].Set(float(target))
             spec["current_target_deg"] = float(target)
             update_scalar_stats(drive_target_stats[spec["joint"]], float(target))
@@ -1323,7 +1415,11 @@ def main():
             error_deg = actual_deg - spec["current_target_deg"]
             update_scalar_stats(drive_tracking_error_stats[spec["joint"]], error_deg)
 
-        if step >= args_cli.fit_start_step:
+        include_calibration_sample = step >= args_cli.fit_start_step
+        if args_cli.drive_schedule == "independent":
+            include_calibration_sample = include_calibration_sample and segment_step >= independent_settle_steps
+
+        if include_calibration_sample:
             sample_outputs = {}
             for body_name in characterization.get("pitch_bodies", []):
                 output_name = f"body_pitch_y_deg.{body_name}"
@@ -1379,19 +1475,21 @@ def main():
         "drive": {
             "joint": linkage["drive_joint_name"],
             "target_center_deg": primary_center,
-            "target_amplitude_deg": args_cli.drive_amplitude_deg,
-            "frequency_hz": args_cli.drive_frequency_hz,
+            "target_amplitude_deg": primary_amplitude,
+            "frequency_hz": primary_frequency,
+        },
+        "drive_schedule": {
+            "mode": args_cli.drive_schedule,
+            "independent_segment_steps": independent_segment_steps,
+            "independent_settle_steps": independent_settle_steps,
+            "segments_per_full_cycle": len(drive_specs),
         },
         "drives": [
             {
                 "joint": spec["joint"],
-                "target_center_deg": primary_center if spec["amplitude_source"] == "primary" else spec["center_deg"],
-                "target_amplitude_deg": args_cli.drive_amplitude_deg
-                if spec["amplitude_source"] == "primary"
-                else secondary_amplitude,
-                "frequency_hz": args_cli.drive_frequency_hz
-                if spec["frequency_source"] == "primary"
-                else secondary_frequency,
+                "target_center_deg": drive_center_deg(spec, primary_center),
+                "target_amplitude_deg": drive_amplitude_deg(spec, primary_amplitude, secondary_amplitude),
+                "frequency_hz": drive_frequency_hz(spec, primary_frequency, secondary_frequency),
                 "phase_deg": spec["phase_deg"],
             }
             for spec in drive_specs

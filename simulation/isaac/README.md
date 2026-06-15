@@ -172,6 +172,25 @@ Run the all-leg CAD-derived pitch-linkage test:
   --save-usd <output-folder>/domino_four_combined_legs.usd
 ```
 
+Run the all-leg independent drive calibration sweep:
+
+```powershell
+<isaac-python> simulation/isaac/prototypes/pin_linkage/run_pin_linkage.py `
+  --headless `
+  --geometry domino-four-combined-legs `
+  --drive-schedule independent `
+  --steps 3200 `
+  --independent-segment-steps 400 `
+  --independent-settle-steps 80 `
+  --fit-start-step 0 `
+  --drive-amplitude-deg 1 `
+  --secondary-drive-amplitude-deg 1 `
+  --drive-frequency-hz 0.15 `
+  --secondary-drive-frequency-hz 0.15 `
+  --report-path <output-folder>/domino_four_independent_calibration_report.json `
+  --save-usd <output-folder>/domino_four_independent_calibration.usd
+```
+
 ## Isaac Runtime Notes
 
 NVIDIA's current Isaac Lab import workflow recommends converting robot assets into USD and then writing an asset configuration for spawning and training. The Isaac Lab docs also call out useful URDF import settings such as fixed base selection, fixed-joint merging, joint drive configuration, and setting joint target type to `none` during import when you want to configure drives later. See:
@@ -195,4 +214,4 @@ That should be validated fixed-base first, then with gravity and simple contacts
 
 Current runtime status: the simplified one-leg prototype imports, spawns as an Isaac Lab articulation, finds the three expected driven joints, and completes a headless joint sweep.
 
-Current linkage status: a generic one-actuator four-bar linkage, the CAD-derived lower triangle, the CAD-derived upper loop, a combined two-drive one-leg linkage, and an all-leg four-module pitch-linkage scene all run headlessly with passive pin joints and loop-closing revolute constraints. The four-leg scene validates eight CAD-derived pitch drives and eight loop closures together, but it is still fixed-base, no-contact, no-gravity, and not a policy-training robot yet. The next unresolved gate is independent per-drive calibration, merging the pitch linkage pattern with hip ab/ad articulation, and then reintroducing gravity, contacts, hard stops, and the Isaac Lab training environment.
+Current linkage status: a generic one-actuator four-bar linkage, the CAD-derived lower triangle, the CAD-derived upper loop, a combined two-drive one-leg linkage, and an all-leg four-module pitch-linkage scene all run headlessly with passive pin joints and loop-closing revolute constraints. The four-leg scene validates eight CAD-derived pitch drives and eight loop closures together. A separate independent one-drive-at-a-time calibration sweep now gives a full-rank local fit for all eight pitch drives. This is still fixed-base, no-contact, no-gravity, and not a policy-training robot yet. The next unresolved gate is merging the pitch linkage pattern with hip ab/ad articulation, then reintroducing gravity, contacts, hard stops, and the Isaac Lab training environment.

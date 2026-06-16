@@ -1,6 +1,6 @@
 # Domino Floating Contact, Stand Env, PPO, And Playback Smoke
 
-This report records the first floating-base gravity/contact smoke test, the first Isaac Lab `DirectRLEnv` stand-task smoke test, the first tiny RSL-RL PPO checkpoint smoke, and the first checkpoint playback smoke for the clean Domino quadruped prototype.
+This report records the first floating-base gravity/contact smoke test, the first Isaac Lab `DirectRLEnv` stand-task smoke tests, the first RSL-RL PPO checkpoint smokes, the first checkpoint playback smokes, and the first contact-aware foot observation gate for the clean Domino quadruped prototype.
 
 ## Floating Contact Smoke
 
@@ -31,23 +31,27 @@ This proves the clean all-leg articulation can run as a floating robot under gra
 
 Status: **passed for first stand-task environment smoke**.
 
-The `DominoStandEnv` task wraps the same clean floating quadruped with:
+The current `DominoStandEnv` task wraps the same clean floating quadruped with:
 
 - Twelve action dimensions: four shoulder ab/ad drives, four lower-linkage drives, and four upper-pitch drives.
-- Forty-five policy observation dimensions.
+- Forty-nine policy observation dimensions: the original 45 base/joint/action terms plus four foot-contact flags.
 - Reset logic for root and joint state.
 - Height, orientation, joint-velocity, and action-rate reward terms.
 - Termination checks for low root height and excessive tilt.
+- Foot contact reporting through Isaac Lab `ContactSensor`.
 
 | Metric | Result |
 | --- | ---: |
-| Environment steps | `300` |
-| Number of environments | `1` |
+| Environment steps | `100` |
+| Number of environments | `4` |
 | Action dimension | `12` |
-| Observation dimension | `45` |
-| Mean reward | `0.997727` |
+| Observation dimension | `49` |
+| Foot-contact observation dimension | `4` |
+| Mean foot contacts per env | `3.78` |
+| Max foot contact force | `283.217041 N` |
+| Mean reward | `0.997172` |
 | Terminated count | `0` |
-| Truncated count | `1` |
+| Truncated count | `0` |
 | Min root height | `0.311065 m` |
 | Max root tilt | `0.716005 deg` |
 | Status | `passed` |
@@ -64,13 +68,14 @@ This run used `DominoStandEnv` directly through Isaac Lab's RSL-RL wrapper. It p
 | --- | ---: |
 | PPO iterations | `1` |
 | Rollout steps per env | `8` |
-| Number of environments | `1` |
+| Number of environments | `16` |
 | Actor output dimension | `12` |
-| Actor/critic input dimension | `45` |
+| Actor/critic input dimension | `49` |
+| Foot-contact observation dimension | `4` |
 | Saved checkpoints | `model_0.pt` |
 | Status | `passed` |
 
-The actor output dimension is the full Domino actuator contract: four shoulder ab/ad actuators, four lower-linkage drives, and four upper-pitch drives.
+The actor output dimension is the full Domino actuator contract: four shoulder ab/ad actuators, four lower-linkage drives, and four upper-pitch drives. The actor input now includes the four foot-contact flags needed for later gait rewards.
 
 ## RSL-RL Checkpoint Playback Smoke
 
@@ -81,17 +86,20 @@ The saved `model_0.pt` checkpoint was loaded into a fresh `DominoStandEnv` insta
 | Metric | Result |
 | --- | ---: |
 | Evaluation steps | `250` |
-| Number of environments | `1` |
+| Number of environments | `16` |
 | Action dimension | `12` |
-| Observation dimension | `45` |
-| Mean reward | `0.998135` |
-| Done count | `1` |
-| Min root height | `0.310862 m` |
-| Max root tilt | `0.567862 deg` |
-| Max absolute policy action | `0.308126` |
+| Observation dimension | `49` |
+| Foot-contact observation dimension | `4` |
+| Mean foot contacts per env | `3.904` |
+| Max foot contact force | `246.698898 N` |
+| Mean reward | `0.997732` |
+| Done count | `16` |
+| Min root height | `0.311042 m` |
+| Max root tilt | `1.020291 deg` |
+| Max absolute policy action | `0.35261` |
 | Status | `passed` |
 
-The single done event is the expected stand-task episode timeout, not a fall termination. This still does not prove useful locomotion; it proves the current checkpoint can be loaded, produces finite 12-channel actions, and steps the Domino stand environment without destabilizing the base.
+The done events are the expected stand-task episode timeouts, not fall terminations. This still does not prove useful locomotion; it proves the current contact-aware checkpoint can be loaded, produces finite 12-channel actions, reads finite foot-contact observations, and steps the Domino stand environment without destabilizing the base.
 
 ## Parallel Env And PPO Smoke
 
@@ -117,9 +125,11 @@ The stand task now sizes its static ground box from the requested cloned-env gri
 | 16-env PPO checkpoint | `model_0.pt` |
 | 16-env playback | `250 steps`, `model_0.pt` |
 | 16-env playback done count | `16 expected timeouts` |
-| 16-env min root height | `0.310835 m` |
-| 16-env max root tilt | `0.597089 deg` |
-| 16-env max absolute policy action | `0.311672` |
+| 16-env min root height | `0.311042 m` |
+| 16-env max root tilt | `1.020291 deg` |
+| 16-env max absolute policy action | `0.35261` |
+| 16-env observation dimension | `49` |
+| 16-env mean foot contacts per env | `3.904` |
 
 This proves the current stand task can run and train through RSL-RL with cloned environments, not only as a single-robot script.
 
@@ -129,6 +139,6 @@ The local Isaac installation still emits warnings about Kit config writes and ex
 
 ## Next Gate
 
-The next useful milestone is a longer stand-stability training pass. After that, add contact sensors and richer foot/body observations before attempting velocity-command locomotion.
+The next useful milestone is a longer stand-stability training pass. After that, add richer body/foot observations and velocity-command locomotion rewards.
 
 The major fidelity gap is still the same: this policy task uses the clean tree articulation for training. The CAD-derived passive linkage loops are validated separately in the pin-linkage prototypes, but they have not yet been merged into the floating policy-training articulation.

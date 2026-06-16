@@ -107,3 +107,36 @@ Load the newest checkpoint under the log root and step it in a fresh env:
 ```
 
 Runtime status: passed. The playback smoke loaded `model_0.pt`, emitted finite 12-channel actions, and completed one stand-task episode horizon without a fall termination.
+
+## Parallel Training Smoke
+
+The stand env sizes its static ground from the cloned-env grid, so it can run small parallel RSL-RL tests without cloned robots starting off the ground plate.
+
+Example 16-env training-scale smoke:
+
+```powershell
+<isaac-python> simulation/isaac/prototypes/quadruped/run_domino_stand_rsl_rl_train.py `
+  --usd-path <output-folder>/domino_quadruped_clean_floating.usd `
+  --headless `
+  --num-envs 16 `
+  --iterations 1 `
+  --num-steps-per-env 8 `
+  --log-root <output-folder>/domino_rsl_rl `
+  --report-path <output-folder>/domino_stand_rsl_rl_train_16env_report.json
+```
+
+Example 16-env playback:
+
+```powershell
+<isaac-python> simulation/isaac/prototypes/quadruped/run_domino_stand_rsl_rl_play.py `
+  --usd-path <output-folder>/domino_quadruped_clean_floating.usd `
+  --headless `
+  --num-envs 16 `
+  --steps 250 `
+  --log-root <output-folder>/domino_rsl_rl `
+  --report-path <output-folder>/domino_stand_rsl_rl_play_16env_report.json
+```
+
+Runtime status: passed. The 16-env smoke used a 10 m ground box, completed a 128-timestep PPO rollout/update, wrote a checkpoint, then replayed that checkpoint for one episode horizon across all 16 envs. All 16 done events were expected timeouts, not fall terminations.
+
+The remaining CAD-fidelity gap is important: this training env still uses the clean tree articulation. The CAD-derived passive linkage loops are validated in the pin-linkage prototypes, but they are not yet merged into the floating policy-training articulation.

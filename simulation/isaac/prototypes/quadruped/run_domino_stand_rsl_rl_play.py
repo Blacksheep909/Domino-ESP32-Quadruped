@@ -126,6 +126,7 @@ def main() -> None:
         "checkpoint_run": checkpoint_path.parent.name,
         "steps": args_cli.steps,
         "num_envs": wrapped_env.num_envs,
+        "ground_size_m": round(float(env._ground_size_m), 6),
         "action_dim": action_dim,
         "action_group_counts": action_group_counts(),
         "observation_dim": observations["policy"].shape[-1],

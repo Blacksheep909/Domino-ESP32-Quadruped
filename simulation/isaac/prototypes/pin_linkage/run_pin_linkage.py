@@ -113,6 +113,8 @@ parser.add_argument(
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 
+os.environ.setdefault("WARP_CACHE_PATH", str((Path.cwd() / "simulation" / "isaac" / "out" / "warp_cache").resolve()))
+
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
 

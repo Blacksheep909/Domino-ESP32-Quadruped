@@ -11,6 +11,14 @@ The raw CAD URDF is still kept as reference, but it is not used directly for tra
 
 That gives the real 12-servo Domino command layout: one shoulder actuator plus two pitch/linkage-drive actuators per leg. The Isaac Lab config treats this order as a hard contract and the runtime checks fail if any of the 12 imported actuator joints are missing or reordered.
 
+Per leg, the commanded actuator layout is:
+
+- `shoulder_ab_ad`: hip/shoulder abduction-adduction.
+- `lower_linkage`: one drive channel for the two-bar/four-bar leg linkage.
+- `upper_pitch`: the second drive channel for the two-bar/four-bar leg linkage.
+
+Across four legs this gives 4 shoulder actuators and 8 linkage-drive actuators, 12 total.
+
 The passive two-bar/four-bar linkage is not physically closed in this asset yet. That detail is currently validated in the pin-linkage prototype and should be added back as a separate fixed-base constraint gate before attempting a high-fidelity floating robot.
 
 ## Generate URDF
@@ -73,7 +81,7 @@ Run the first `DirectRLEnv` wrapper:
   --report-path <output-folder>/domino_stand_env_smoke_report.json
 ```
 
-`DominoStandEnv` has 12 actions, 49 policy observations, reset logic, rewards, and termination checks. The 12 actions are the four shoulder ab/ad actuators plus the two linkage-drive actuators on each leg. The latest observation layout adds four foot-contact flags to the original base, joint, and action terms.
+`DominoStandEnv` has 12 actions, 49 policy observations, reset logic, rewards, and termination checks. The 12 actions are the four shoulder ab/ad actuators plus two linkage-drive actuators on each leg: `lower_linkage` and `upper_pitch`. The latest observation layout adds four foot-contact flags to the original base, joint, and action terms.
 
 ## RSL-RL PPO Smoke
 
@@ -140,3 +148,16 @@ Example 16-env playback:
 Runtime status: passed. The contact-aware 16-env smoke used a 10 m ground box, completed a 128-timestep PPO rollout/update with 49 policy observations, wrote a checkpoint, then replayed that checkpoint for one episode horizon across all 16 envs. All 16 done events were expected timeouts, not fall terminations.
 
 The remaining CAD-fidelity gap is important: this training env still uses the clean tree articulation. The CAD-derived passive linkage loops are validated in the pin-linkage prototypes, but they are not yet merged into the floating policy-training articulation.
+
+## CAD Linkage Contract Check
+
+After generating a `domino-four-12-fixed-body` JSON report from the pin-linkage prototype, verify the clean policy action contract against it:
+
+```powershell
+<python> simulation/isaac/prototypes/quadruped/check_cad_linkage_contract.py `
+  --linkage-report <output-folder>/domino_four_12_fixed_body_independent_report.json `
+  --urdf-path simulation/isaac/prototypes/quadruped/domino_quadruped_clean.urdf `
+  --report-path <output-folder>/domino_policy_cad_contract_report.json
+```
+
+Runtime status: passed. The checker validates the twelve action names/order, CAD-derived roles, policy limits, clean URDF limits, default joint positions, per-leg actuator layout, and full-rank CAD linkage calibration. See [`../../reports/domino-policy-cad-linkage-contract.md`](../../reports/domino-policy-cad-linkage-contract.md).

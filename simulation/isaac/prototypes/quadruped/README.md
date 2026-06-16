@@ -147,7 +147,7 @@ Example 16-env playback:
 
 Runtime status: passed. The contact-aware 16-env smoke used a 10 m ground box, completed a 128-timestep PPO rollout/update with 49 policy observations, wrote a checkpoint, then replayed that checkpoint for one episode horizon across all 16 envs. All 16 done events were expected timeouts, not fall terminations.
 
-The remaining CAD-fidelity gap is important: this training env still uses the clean tree articulation. The CAD-derived passive linkage loops now pass fixed-base, shared-body, and first floating gravity/contact smokes in the pin-linkage prototype, but they are not yet merged into this resettable/cloned policy-training articulation.
+The remaining CAD-fidelity gap is important: this training env still uses the clean tree articulation. The CAD-derived passive linkage loops now pass fixed-base, shared-body, first floating gravity/contact, and policy-style reset/action smokes in the pin-linkage prototype, but they are not yet merged into this cloned policy-training articulation.
 
 ## CAD Linkage Contract Check
 

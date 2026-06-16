@@ -110,9 +110,33 @@ parser.add_argument(
 )
 parser.add_argument(
     "--drive-schedule",
-    choices=("phased-sine", "independent"),
+    choices=("phased-sine", "independent", "policy-step"),
     default="phased-sine",
-    help="Drive all inputs with their phase offsets, or sweep one drive at a time for calibration.",
+    help="Drive all inputs with phase offsets, sweep one drive at a time, or apply held policy-style actions.",
+)
+parser.add_argument(
+    "--policy-action-scale-deg",
+    type=float,
+    default=0.5,
+    help="Target delta in degrees for normalized policy-step actions before limit clamping.",
+)
+parser.add_argument(
+    "--policy-hold-steps",
+    type=int,
+    default=20,
+    help="Physics steps to hold each synthetic policy-step action vector.",
+)
+parser.add_argument(
+    "--reset-interval-steps",
+    type=int,
+    default=0,
+    help="If positive, reset all rigid bodies to their initial poses every N steps.",
+)
+parser.add_argument(
+    "--max-post-reset-position-error-m",
+    type=float,
+    default=0.0,
+    help="Optional failure threshold for the max rigid-body position error immediately after reset. Use 0 to report only.",
 )
 parser.add_argument(
     "--independent-segment-steps",
@@ -421,6 +445,23 @@ def independent_drive_target_deg(
     return center + amplitude * math.sin(2.0 * math.pi * frequency * segment_time_s)
 
 
+def normalized_policy_action(drive_index: int, policy_step_index: int) -> float:
+    phase = (0.73 * float(policy_step_index)) + (1.618 * float(drive_index))
+    value = (0.72 * math.sin(phase)) + (0.28 * math.cos((0.47 * phase) + (0.31 * float(drive_index))))
+    return max(-1.0, min(1.0, value))
+
+
+def policy_drive_target_deg(spec: dict, drive_index: int, policy_step_index: int, scale_deg: float) -> tuple[float, float]:
+    center = drive_center_deg(spec, None)
+    normalized_action = normalized_policy_action(drive_index, policy_step_index)
+    unclamped_target = center + (float(scale_deg) * normalized_action)
+    target_limit = spec.get("target_limit_deg")
+    if target_limit is None:
+        return normalized_action, unclamped_target
+    lower_deg, upper_deg = float(target_limit[0]), float(target_limit[1])
+    return normalized_action, max(lower_deg, min(upper_deg, unclamped_target))
+
+
 def drive_limit_violation_deg(spec: dict, target_deg: float) -> float:
     target_limit = spec.get("target_limit_deg")
     if target_limit is None:
@@ -477,6 +518,17 @@ def update_scalar_stats(stats: dict, value: float):
     stats["final"] = float(value)
 
 
+def empty_abs_scalar_stats():
+    return {"min": float("inf"), "max": 0.0, "final": 0.0}
+
+
+def update_abs_scalar_stats(stats: dict, value: float):
+    value = abs(float(value))
+    stats["min"] = min(stats["min"], value)
+    stats["max"] = max(stats["max"], value)
+    stats["final"] = value
+
+
 def empty_vector_stats():
     return {
         "min": np.array([float("inf"), float("inf"), float("inf")], dtype=np.float64),
@@ -502,6 +554,57 @@ def rounded_vector_stats(stats: dict) -> dict[str, list[float]]:
         "max_m": [round(float(value), 6) for value in stats["max"]],
         "final_m": [round(float(value), 6) for value in stats["final"]],
     }
+
+
+def capture_rigid_body_states(views: dict[str, SingleRigidPrim]) -> dict[str, dict[str, np.ndarray]]:
+    states = {}
+    for name, view in views.items():
+        position, orientation = view.get_world_pose()
+        states[name] = {
+            "position": to_numpy(position).astype(np.float32),
+            "orientation": to_numpy(orientation).astype(np.float32),
+        }
+    return states
+
+
+def quat_position_error(
+    position: np.ndarray,
+    orientation: np.ndarray,
+    reference_position: np.ndarray,
+    reference_orientation: np.ndarray,
+) -> tuple[float, float]:
+    position_error = float(np.linalg.norm(np.asarray(position, dtype=np.float64) - reference_position))
+    orientation = np.asarray(orientation, dtype=np.float64)
+    reference_orientation = np.asarray(reference_orientation, dtype=np.float64)
+    orientation_error = float(min(np.linalg.norm(orientation - reference_orientation), np.linalg.norm(orientation + reference_orientation)))
+    return position_error, orientation_error
+
+
+def reset_rigid_bodies_to_initial(
+    views: dict[str, SingleRigidPrim],
+    initial_states: dict[str, dict[str, np.ndarray]],
+    drive_specs: list[dict],
+) -> tuple[float, float]:
+    for spec in drive_specs:
+        spec["target_attr"].Set(float(spec["center_deg"]))
+        spec["current_target_deg"] = float(spec["center_deg"])
+    max_position_error = 0.0
+    max_orientation_error = 0.0
+    for name, view in views.items():
+        state = initial_states[name]
+        zero_velocity = view._backend_utils.convert(np.zeros((1, 6), dtype=np.float32), device=view._device)
+        view.set_world_pose(position=state["position"], orientation=state["orientation"])
+        view._rigid_prim_view.set_velocities(zero_velocity)
+        position, orientation = view.get_world_pose()
+        position_error, orientation_error = quat_position_error(
+            to_numpy(position),
+            to_numpy(orientation),
+            state["position"],
+            state["orientation"],
+        )
+        max_position_error = max(max_position_error, position_error)
+        max_orientation_error = max(max_orientation_error, orientation_error)
+    return max_position_error, max_orientation_error
 
 
 def fit_linear_calibration(samples: list[dict], input_names: list[str], output_names: list[str]) -> dict:
@@ -1627,11 +1730,15 @@ def main():
     drive_specs = linkage.get("drives", [make_drive_spec(linkage["drive_joint_name"], linkage["drive"], linkage["drive_center_deg"])])
     for spec in drive_specs:
         spec["target_attr"] = spec["drive"].GetTargetPositionAttr()
+    initial_body_states = capture_rigid_body_states(views)
     sim_dt = sim.get_physics_dt()
     max_linear_speed = 0.0
     max_loop_errors = {check["name"]: 0.0 for check in linkage["loop_checks"]}
     min_finite = True
     body_reference_height_stats = empty_scalar_stats()
+    reset_steps = []
+    reset_position_error_stats = empty_abs_scalar_stats()
+    reset_orientation_error_stats = empty_abs_scalar_stats()
     primary_center = float(args_cli.drive_center_deg) if args_cli.drive_center_deg is not None else None
     primary_amplitude = float(args_cli.drive_amplitude_deg)
     primary_frequency = float(args_cli.drive_frequency_hz)
@@ -1670,6 +1777,7 @@ def main():
     drive_target_stats = {spec["joint"]: empty_scalar_stats() for spec in drive_specs}
     drive_tracking_error_stats = {spec["joint"]: empty_scalar_stats() for spec in drive_specs}
     drive_limit_violation_stats = {spec["joint"]: empty_scalar_stats() for spec in drive_specs}
+    policy_action_stats = {spec["joint"]: empty_scalar_stats() for spec in drive_specs}
     pivot_track_stats = {
         track["name"]: empty_vector_stats() for track in characterization.get("pivot_tracks", [])
     }
@@ -1683,6 +1791,11 @@ def main():
         if args_cli.drive_schedule == "independent":
             segment_step = step % independent_segment_steps
             active_drive_index = (step // independent_segment_steps) % len(drive_specs)
+        if args_cli.reset_interval_steps > 0 and step > 0 and step % int(args_cli.reset_interval_steps) == 0:
+            position_error, orientation_error = reset_rigid_bodies_to_initial(views, initial_body_states, drive_specs)
+            reset_steps.append(step)
+            update_abs_scalar_stats(reset_position_error_stats, position_error)
+            update_abs_scalar_stats(reset_orientation_error_stats, orientation_error)
 
         for drive_index, spec in enumerate(drive_specs):
             if args_cli.drive_schedule == "independent":
@@ -1699,6 +1812,15 @@ def main():
                     shoulder_amplitude,
                     shoulder_frequency,
                 )
+            elif args_cli.drive_schedule == "policy-step":
+                policy_step_index = step // max(1, int(args_cli.policy_hold_steps))
+                normalized_action, target = policy_drive_target_deg(
+                    spec,
+                    drive_index,
+                    policy_step_index,
+                    args_cli.policy_action_scale_deg,
+                )
+                update_scalar_stats(policy_action_stats[spec["joint"]], normalized_action)
             else:
                 target = drive_target_deg(
                     spec,
@@ -1858,6 +1980,14 @@ def main():
             "Floating body_reference final height "
             f"{body_reference_height_stats['final']:.6f} m was below {args_cli.min_floating_root_height_m:.6f} m."
         )
+    if (
+        args_cli.max_post_reset_position_error_m > 0.0
+        and reset_position_error_stats["max"] > args_cli.max_post_reset_position_error_m
+    ):
+        failure_reasons.append(
+            "Max post-reset position error "
+            f"{reset_position_error_stats['max']:.8f} m exceeded {args_cli.max_post_reset_position_error_m:.8f} m."
+        )
 
     report = {
         "status": "passed" if not failure_reasons else "failed",
@@ -1879,6 +2009,16 @@ def main():
             "independent_segment_steps": independent_segment_steps,
             "independent_settle_steps": independent_settle_steps,
             "segments_per_full_cycle": len(drive_specs),
+            "policy_action_scale_deg": float(args_cli.policy_action_scale_deg),
+            "policy_hold_steps": max(1, int(args_cli.policy_hold_steps)),
+        },
+        "reset_smoke": {
+            "enabled": args_cli.reset_interval_steps > 0,
+            "interval_steps": int(args_cli.reset_interval_steps),
+            "reset_count": len(reset_steps),
+            "reset_steps": reset_steps,
+            "max_post_reset_position_error_m": round(float(reset_position_error_stats["max"]), 8),
+            "max_post_reset_orientation_error_quat_norm": round(float(reset_orientation_error_stats["max"]), 8),
         },
         "action_space": [
             {
@@ -1931,6 +2071,11 @@ def main():
             },
             "drive_limit_violation_deg": {
                 name: rounded_scalar_stats(stats) for name, stats in drive_limit_violation_stats.items()
+            },
+            "policy_normalized_action": {
+                name: rounded_scalar_stats(stats)
+                for name, stats in policy_action_stats.items()
+                if args_cli.drive_schedule == "policy-step"
             },
             "body_pitch_y_deg": {name: rounded_scalar_stats(stats) for name, stats in body_pitch_stats.items()},
             "body_roll_x_deg": {name: rounded_scalar_stats(stats) for name, stats in body_roll_stats.items()},

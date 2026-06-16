@@ -56,6 +56,8 @@ The new `domino-four-12-floating-body` mode keeps the CAD-derived linkage struct
 
 The twelve action channels remain the same contract used by the clean policy model: four shoulder ab/ad drives, four lower-linkage drives, and four upper-pitch drives.
 
+The next reset/action gate is tracked in [`domino-floating-cad-policy-reset.md`](domino-floating-cad-policy-reset.md).
+
 ## Remaining Gap
 
-This is still not the final policy-training robot. The floating CAD linkage is authored as a direct PhysX rigid-body/joint scene, not yet as a resettable/cloned Isaac Lab `DirectRLEnv` training asset. The next gate is to wrap or convert this floating CAD-linkage scene so policy code can reset it, clone it across environments, read body/contact observations, and command the same twelve action targets through an Isaac Lab training loop.
+This is still not the final policy-training robot. The floating CAD linkage is authored as a direct PhysX rigid-body/joint scene, not yet as a cloned Isaac Lab `DirectRLEnv` training asset. The next gate is to wrap or convert this floating CAD-linkage scene so policy code can clone it across environments, read body/contact observations, compute rewards and terminations, and command the same twelve action targets through an Isaac Lab training loop.

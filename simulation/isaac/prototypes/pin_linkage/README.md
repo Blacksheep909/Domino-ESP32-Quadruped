@@ -51,7 +51,7 @@ Run the CAD-derived Domino upper linkage loop:
 
 The script authors the linkage directly into the current Isaac stage, applies sinusoidal targets to the driven input joints, steps physics, and reports body state, loop-closure drift, drive target ranges, body pitch ranges, relative linkage angles, tracked pivot motion, and an optional local linear calibration fit.
 
-Runtime status: the generic linkage, the CAD-derived lower triangle, the CAD-derived upper loop, the combined CAD-derived one-leg mechanism, a four-leg CAD-derived pitch-linkage scene, a fixed-base twelve-actuator scene, a shared fixed-body twelve-actuator scene, and a floating shared-body twelve-actuator contact scene have all passed headless Isaac/PhysX runs. See [`../../reports/domino-pin-linkage-runtime.md`](../../reports/domino-pin-linkage-runtime.md), [`../../reports/domino-four-leg-linkage-runtime.md`](../../reports/domino-four-leg-linkage-runtime.md), [`../../reports/domino-12-actuator-runtime.md`](../../reports/domino-12-actuator-runtime.md), and [`../../reports/domino-floating-cad-linkage-contact.md`](../../reports/domino-floating-cad-linkage-contact.md).
+Runtime status: the generic linkage, the CAD-derived lower triangle, the CAD-derived upper loop, the combined CAD-derived one-leg mechanism, a four-leg CAD-derived pitch-linkage scene, a fixed-base twelve-actuator scene, a shared fixed-body twelve-actuator scene, a floating shared-body twelve-actuator contact scene, and a policy-style floating CAD reset/action scene have all passed headless Isaac/PhysX runs. See [`../../reports/domino-pin-linkage-runtime.md`](../../reports/domino-pin-linkage-runtime.md), [`../../reports/domino-four-leg-linkage-runtime.md`](../../reports/domino-four-leg-linkage-runtime.md), [`../../reports/domino-12-actuator-runtime.md`](../../reports/domino-12-actuator-runtime.md), [`../../reports/domino-floating-cad-linkage-contact.md`](../../reports/domino-floating-cad-linkage-contact.md), and [`../../reports/domino-floating-cad-policy-reset.md`](../../reports/domino-floating-cad-policy-reset.md).
 
 Motion-characterization status: the combined one-leg mechanism is stable and has a first local linear calibration fit from drive targets to measured linkage-output proxies. The all-leg pitch scene has an independent one-drive-at-a-time calibration sweep that gives a full-rank local fit for all eight pitch drives. The twelve-actuator scenes add the four shoulder hip ab/ad drives and give full-rank local fits across all twelve actuator inputs. The current strongest gate is `domino-four-12-fixed-body`, where all four shoulder joints attach to one shared kinematic body reference. These fits are useful engineering data, but they are not yet the final policy action/state mapping. See [`../../reports/domino-combined-linkage-characterization.md`](../../reports/domino-combined-linkage-characterization.md), [`../../reports/domino-four-leg-linkage-runtime.md`](../../reports/domino-four-leg-linkage-runtime.md), and [`../../reports/domino-12-actuator-runtime.md`](../../reports/domino-12-actuator-runtime.md).
 
@@ -186,6 +186,24 @@ Run the floating shared-body twelve-actuator contact smoke:
   --no-print-report
 ```
 
+Run the floating shared-body policy-style action/reset smoke:
+
+```powershell
+<isaac-python> simulation/isaac/prototypes/pin_linkage/run_pin_linkage.py `
+  --headless `
+  --geometry domino-four-12-floating-body `
+  --drive-schedule policy-step `
+  --steps 360 `
+  --policy-action-scale-deg 0.25 `
+  --policy-hold-steps 20 `
+  --reset-interval-steps 120 `
+  --max-post-reset-position-error-m 0.001 `
+  --max-loop-closure-error-m 0.005 `
+  --min-floating-root-height-m 0.02 `
+  --report-path <output-folder>/domino_four_12_floating_policy_step_reset_report.json `
+  --no-print-report
+```
+
 ## CAD-Derived Modes
 
 The `domino-lower-triangle`, `domino-upper-loop`, `domino-combined-leg`, `domino-four-combined-legs`, `domino-four-12-actuators`, `domino-four-12-fixed-body`, and `domino-four-12-floating-body` modes use pivots extracted by [`../../analyze-domino-linkage-pivots.ps1`](../../analyze-domino-linkage-pivots.ps1).
@@ -233,6 +251,8 @@ All-leg scene:
 
 `--drive-schedule independent` moves one drive at a time while the other drives hold their center positions. Use this mode when fitting the local relationship between the commanded inputs and measured output proxies. In the twelve-actuator modes, one independent cycle covers all twelve real actuator channels: four shoulders, four lower linkage drives, and four upper pitch drives.
 
+`--drive-schedule policy-step` applies bounded normalized action vectors to the same twelve actuator channels and holds each vector for `--policy-hold-steps`. Use this mode with `--reset-interval-steps` to check the reset/action mechanics needed before the CAD linkage is wrapped as an Isaac Lab training environment.
+
 The JSON report includes a named `action_space` with the exact action index order. The script also checks generated drive targets against the modeled joint limits by default; use `--disable-drive-limit-checks` only for deliberate stress tests.
 
 ## What Passing Means
@@ -241,4 +261,6 @@ Passing means the isolated one-actuator passive-pin loops, a simplified two-driv
 
 The floating shared-body smoke adds gravity, a static ground box, and four simple spherical contact proxies at the CAD lower-closure points. Passing that test means the CAD-derived linkage can hold a static supported pose under gravity while keeping the loop-closure error finite.
 
-It does **not** mean the Domino robot is finished. The next step is to wrap or convert the floating shared-body twelve-actuator scene into a clean Isaac Lab robot with reset/clone support, hard stops, contact observations, and a twelve-action training environment.
+The policy-step reset smoke proves the same floating scene accepts policy-shaped twelve-channel commands and can reset all CAD-linkage rigid bodies back to their initial poses during runtime.
+
+It does **not** mean the Domino robot is finished. The next step is to wrap or convert the floating shared-body twelve-actuator scene into a clean Isaac Lab robot with clone support, hard stops, contact observations, rewards, terminations, and RSL-RL training.

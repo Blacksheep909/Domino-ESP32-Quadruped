@@ -9,7 +9,7 @@ The goal is to prove that a small closed linkage can run in Isaac/PhysX with:
 - A loop-closing revolute pin.
 - No contacts or gravity in the first pass.
 
-This started as a controlled generic four-bar test, then gained CAD-derived one-joint, one-leg, all-leg pitch-linkage, fixed-base twelve-actuator, and shared-body twelve-actuator Domino linkage modes.
+This started as a controlled generic four-bar test, then gained CAD-derived one-joint, one-leg, all-leg pitch-linkage, fixed-base twelve-actuator, shared-body twelve-actuator, and floating shared-body Domino linkage modes.
 
 ## Runtime Test
 
@@ -51,7 +51,7 @@ Run the CAD-derived Domino upper linkage loop:
 
 The script authors the linkage directly into the current Isaac stage, applies sinusoidal targets to the driven input joints, steps physics, and reports body state, loop-closure drift, drive target ranges, body pitch ranges, relative linkage angles, tracked pivot motion, and an optional local linear calibration fit.
 
-Runtime status: the generic linkage, the CAD-derived lower triangle, the CAD-derived upper loop, the combined CAD-derived one-leg mechanism, a four-leg CAD-derived pitch-linkage scene, a fixed-base twelve-actuator scene, and a shared fixed-body twelve-actuator scene have all passed headless Isaac/PhysX runs. See [`../../reports/domino-pin-linkage-runtime.md`](../../reports/domino-pin-linkage-runtime.md), [`../../reports/domino-four-leg-linkage-runtime.md`](../../reports/domino-four-leg-linkage-runtime.md), and [`../../reports/domino-12-actuator-runtime.md`](../../reports/domino-12-actuator-runtime.md).
+Runtime status: the generic linkage, the CAD-derived lower triangle, the CAD-derived upper loop, the combined CAD-derived one-leg mechanism, a four-leg CAD-derived pitch-linkage scene, a fixed-base twelve-actuator scene, a shared fixed-body twelve-actuator scene, and a floating shared-body twelve-actuator contact scene have all passed headless Isaac/PhysX runs. See [`../../reports/domino-pin-linkage-runtime.md`](../../reports/domino-pin-linkage-runtime.md), [`../../reports/domino-four-leg-linkage-runtime.md`](../../reports/domino-four-leg-linkage-runtime.md), [`../../reports/domino-12-actuator-runtime.md`](../../reports/domino-12-actuator-runtime.md), and [`../../reports/domino-floating-cad-linkage-contact.md`](../../reports/domino-floating-cad-linkage-contact.md).
 
 Motion-characterization status: the combined one-leg mechanism is stable and has a first local linear calibration fit from drive targets to measured linkage-output proxies. The all-leg pitch scene has an independent one-drive-at-a-time calibration sweep that gives a full-rank local fit for all eight pitch drives. The twelve-actuator scenes add the four shoulder hip ab/ad drives and give full-rank local fits across all twelve actuator inputs. The current strongest gate is `domino-four-12-fixed-body`, where all four shoulder joints attach to one shared kinematic body reference. These fits are useful engineering data, but they are not yet the final policy action/state mapping. See [`../../reports/domino-combined-linkage-characterization.md`](../../reports/domino-combined-linkage-characterization.md), [`../../reports/domino-four-leg-linkage-runtime.md`](../../reports/domino-four-leg-linkage-runtime.md), and [`../../reports/domino-12-actuator-runtime.md`](../../reports/domino-12-actuator-runtime.md).
 
@@ -166,9 +166,29 @@ Run the shared-body fixed-base twelve-actuator independent sweep:
   --no-print-report
 ```
 
+Run the floating shared-body twelve-actuator contact smoke:
+
+```powershell
+<isaac-python> simulation/isaac/prototypes/pin_linkage/run_pin_linkage.py `
+  --headless `
+  --geometry domino-four-12-floating-body `
+  --steps 300 `
+  --drive-amplitude-deg 0 `
+  --secondary-drive-amplitude-deg 0 `
+  --shoulder-drive-amplitude-deg 0 `
+  --drive-frequency-hz 0.5 `
+  --secondary-drive-frequency-hz 0.5 `
+  --shoulder-drive-frequency-hz 0.5 `
+  --max-loop-closure-error-m 0.005 `
+  --min-floating-root-height-m 0.02 `
+  --report-path <output-folder>/domino_four_12_floating_body_report.json `
+  --save-usd <output-folder>/domino_four_12_floating_body.usd `
+  --no-print-report
+```
+
 ## CAD-Derived Modes
 
-The `domino-lower-triangle`, `domino-upper-loop`, `domino-combined-leg`, `domino-four-combined-legs`, `domino-four-12-actuators`, and `domino-four-12-fixed-body` modes use pivots extracted by [`../../analyze-domino-linkage-pivots.ps1`](../../analyze-domino-linkage-pivots.ps1).
+The `domino-lower-triangle`, `domino-upper-loop`, `domino-combined-leg`, `domino-four-combined-legs`, `domino-four-12-actuators`, `domino-four-12-fixed-body`, and `domino-four-12-floating-body` modes use pivots extracted by [`../../analyze-domino-linkage-pivots.ps1`](../../analyze-domino-linkage-pivots.ps1).
 
 Lower triangle:
 
@@ -219,4 +239,6 @@ The JSON report includes a named `action_space` with the exact action index orde
 
 Passing means the isolated one-actuator passive-pin loops, a simplified two-drive combined leg, a fixed-base all-leg pitch-linkage scene, a fixed-base twelve-actuator scene, and a shared fixed-body twelve-actuator scene can run without non-finite state or obvious constraint explosion. The calibration fits mean the combined one-leg case, the all-leg pitch independent sweep, and the twelve-actuator independent sweeps have repeatable local relationships between commanded drive targets and measured linkage-output proxies over the tested range.
 
-It does **not** mean the Domino robot is finished. The next step is to convert the shared fixed-body twelve-actuator scene into a clean Isaac Lab robot with a resettable base, gravity, contacts, hard stops, and a twelve-action training environment.
+The floating shared-body smoke adds gravity, a static ground box, and four simple spherical contact proxies at the CAD lower-closure points. Passing that test means the CAD-derived linkage can hold a static supported pose under gravity while keeping the loop-closure error finite.
+
+It does **not** mean the Domino robot is finished. The next step is to wrap or convert the floating shared-body twelve-actuator scene into a clean Isaac Lab robot with reset/clone support, hard stops, contact observations, and a twelve-action training environment.

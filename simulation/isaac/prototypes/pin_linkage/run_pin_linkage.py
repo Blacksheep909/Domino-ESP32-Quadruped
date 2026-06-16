@@ -34,9 +34,41 @@ parser.add_argument(
         "domino-four-combined-legs",
         "domino-four-12-actuators",
         "domino-four-12-fixed-body",
+        "domino-four-12-floating-body",
     ),
     default="generic-four-bar",
     help="Linkage geometry to author into the Isaac stage.",
+)
+parser.add_argument(
+    "--enable-gravity",
+    action="store_true",
+    help="Enable gravity on dynamic linkage bodies. Automatically enabled for floating-body geometry.",
+)
+parser.add_argument(
+    "--floating-height-m",
+    type=float,
+    default=0.12,
+    help="World Z offset applied to the floating shared-body CAD linkage geometry.",
+)
+parser.add_argument(
+    "--disable-ground-box",
+    action="store_true",
+    help="Do not add the simple static ground box used by the floating-body smoke.",
+)
+parser.add_argument("--ground-size-m", type=float, default=10.0, help="Ground-box X/Y size for floating-body smoke.")
+parser.add_argument("--ground-thickness-m", type=float, default=0.05, help="Ground-box thickness.")
+parser.add_argument("--foot-proxy-radius-m", type=float, default=0.024, help="Radius for CAD lower-closure foot proxies.")
+parser.add_argument(
+    "--max-loop-closure-error-m",
+    type=float,
+    default=0.0,
+    help="Optional failure threshold for maximum loop closure error. Use 0 to report without failing.",
+)
+parser.add_argument(
+    "--min-floating-root-height-m",
+    type=float,
+    default=-1.0,
+    help="Optional failure threshold for floating body_reference final height. Use -1 to report without failing.",
 )
 parser.add_argument(
     "--drive-center-deg",
@@ -114,6 +146,8 @@ AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 
 os.environ.setdefault("WARP_CACHE_PATH", str((Path.cwd() / "simulation" / "isaac" / "out" / "warp_cache").resolve()))
+FLOATING_BODY_GEOMETRY = args_cli.geometry == "domino-four-12-floating-body"
+DYNAMIC_GRAVITY_ENABLED = bool(args_cli.enable_gravity or FLOATING_BODY_GEOMETRY)
 
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
@@ -172,7 +206,7 @@ def apply_rigid_body(prim, mass: float, kinematic: bool = False):
     rigid_api.CreateKinematicEnabledAttr(kinematic)
 
     physx_api = PhysxSchema.PhysxRigidBodyAPI.Apply(prim)
-    physx_api.GetDisableGravityAttr().Set(True)
+    physx_api.GetDisableGravityAttr().Set(bool(kinematic or not DYNAMIC_GRAVITY_ENABLED))
     physx_api.CreateLinearDampingAttr().Set(0.02)
     physx_api.CreateAngularDampingAttr().Set(0.02)
 
@@ -232,6 +266,26 @@ def create_body_from_points(
         "center": center,
         "points": point_array,
     }
+
+
+def create_static_ground_box(stage, prim_path: str, size_m: float, thickness_m: float):
+    ground = UsdGeom.Cube.Define(stage, prim_path)
+    ground.CreateSizeAttr(1.0)
+    xform = UsdGeom.XformCommonAPI(ground)
+    xform.SetTranslate(Gf.Vec3d(0.0, 0.0, -0.5 * float(thickness_m)))
+    xform.SetScale(Gf.Vec3f(float(size_m), float(size_m), float(thickness_m)))
+    UsdPhysics.CollisionAPI.Apply(ground.GetPrim())
+    return {"path": prim_path, "size_m": float(size_m), "thickness_m": float(thickness_m)}
+
+
+def create_body_collision_sphere(stage, body: dict, name: str, center: np.ndarray, radius_m: float):
+    sphere_path = f"{body['path']}/{name}"
+    sphere = UsdGeom.Sphere.Define(stage, sphere_path)
+    sphere.CreateRadiusAttr(float(radius_m))
+    local = local_endpoint(center, body["center"])
+    UsdGeom.XformCommonAPI(sphere).SetTranslate(Gf.Vec3d(float(local[0]), float(local[1]), float(local[2])))
+    UsdPhysics.CollisionAPI.Apply(sphere.GetPrim())
+    return {"path": str(sphere_path), "radius_m": float(radius_m), "center_m": np.asarray(center).tolist()}
 
 
 def create_pin_joint(
@@ -1113,10 +1167,13 @@ def build_domino_combined_leg_instance(
     spec: dict,
     include_shoulder: bool = False,
     shared_base: dict | None = None,
+    world_offset: np.ndarray | None = None,
+    add_foot_proxy: bool = False,
 ) -> dict:
     leg_root = f"{root}/{spec['id']}"
     UsdGeom.Xform.Define(stage, leg_root)
-    points = {name: np.array(value, dtype=np.float64) for name, value in spec["points"].items()}
+    offset = np.zeros(3, dtype=np.float64) if world_offset is None else np.asarray(world_offset, dtype=np.float64)
+    points = {name: np.array(value, dtype=np.float64) + offset for name, value in spec["points"].items()}
     prefix = spec["id"]
 
     base_anchor_key = f"{prefix}_base_anchor"
@@ -1331,6 +1388,15 @@ def build_domino_combined_leg_instance(
 
     lower_loop_name = f"{prefix}_lower_loop_closure_{spec['lower_closure_joints'][0].replace(' ', '_')}_{spec['lower_closure_joints'][1].replace(' ', '_')}"
     upper_loop_name = f"{prefix}_upper_loop_closure_{spec['upper_closure_joints'][0].replace(' ', '_')}_{spec['upper_closure_joints'][1].replace(' ', '_')}"
+    foot_proxy = None
+    if add_foot_proxy:
+        foot_proxy = create_body_collision_sphere(
+            stage,
+            lower_driver,
+            f"{prefix}_foot_proxy",
+            points["lower_closure"],
+            args_cli.foot_proxy_radius_m,
+        )
     bodies.update(
         {
             ground_key: ground,
@@ -1386,6 +1452,7 @@ def build_domino_combined_leg_instance(
             "shoulder_axis": spec["shoulder_axis"] if include_shoulder else None,
             "lower_drive_joint": spec["lower_drive_joint"],
             "upper_drive_joint": spec["upper_drive_joint"],
+            "foot_proxy": foot_proxy,
             "lower_closure_joints": list(spec["lower_closure_joints"]),
             "upper_closure_joints": list(spec["upper_closure_joints"]),
             "notes": spec.get("notes", []),
@@ -1393,8 +1460,15 @@ def build_domino_combined_leg_instance(
     }
 
 
-def build_domino_four_combined_legs(stage, include_shoulders: bool = False, shared_body: bool = False):
-    if shared_body:
+def build_domino_four_combined_legs(
+    stage,
+    include_shoulders: bool = False,
+    shared_body: bool = False,
+    floating_body: bool = False,
+):
+    if floating_body:
+        root = "/World/DominoFour12FloatingBody"
+    elif shared_body:
         root = "/World/DominoFour12FixedBody"
     elif include_shoulders:
         root = "/World/DominoFour12Actuators"
@@ -1413,9 +1487,14 @@ def build_domino_four_combined_legs(stage, include_shoulders: bool = False, shar
     pivot_tracks = []
     legs = []
     shared_base = None
+    world_offset = (
+        np.array([0.0, 0.0, float(args_cli.floating_height_m)], dtype=np.float64)
+        if floating_body
+        else np.zeros(3, dtype=np.float64)
+    )
     if shared_body:
         hip_points = [
-            np.array(spec["points"]["hip_origin"], dtype=np.float64)
+            np.array(spec["points"]["hip_origin"], dtype=np.float64) + world_offset
             for spec in DOMINO_FOUR_COMBINED_LEG_SPECS
         ]
         body_reference = create_body_from_points(
@@ -1425,7 +1504,7 @@ def build_domino_four_combined_legs(stage, include_shoulders: bool = False, shar
             hip_points,
             width=0.030,
             mass=1.2,
-            kinematic=True,
+            kinematic=not floating_body,
         )
         shared_base = {"key": "body_reference", "body": body_reference}
         bodies[shared_base["key"]] = body_reference
@@ -1437,6 +1516,8 @@ def build_domino_four_combined_legs(stage, include_shoulders: bool = False, shar
             spec,
             include_shoulder=include_shoulders,
             shared_base=shared_base,
+            world_offset=world_offset,
+            add_foot_proxy=floating_body,
         )
         points.update(leg["points"])
         bodies.update(leg["bodies"])
@@ -1451,7 +1532,9 @@ def build_domino_four_combined_legs(stage, include_shoulders: bool = False, shar
 
     return {
         "geometry": (
-            "domino-four-12-fixed-body"
+            "domino-four-12-floating-body"
+            if floating_body
+            else "domino-four-12-fixed-body"
             if shared_body
             else "domino-four-12-actuators"
             if include_shoulders
@@ -1476,6 +1559,8 @@ def build_domino_four_combined_legs(stage, include_shoulders: bool = False, shar
 
 
 def build_linkage(stage):
+    if args_cli.geometry == "domino-four-12-floating-body":
+        return build_domino_four_combined_legs(stage, include_shoulders=True, shared_body=True, floating_body=True)
     if args_cli.geometry == "domino-four-12-fixed-body":
         return build_domino_four_combined_legs(stage, include_shoulders=True, shared_body=True)
     if args_cli.geometry == "domino-four-12-actuators":
@@ -1515,6 +1600,15 @@ def main():
     UsdGeom.SetStageMetersPerUnit(stage, 1.0)
     UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
 
+    ground_box = None
+    if FLOATING_BODY_GEOMETRY and not args_cli.disable_ground_box:
+        ground_box = create_static_ground_box(
+            stage,
+            "/World/Ground",
+            size_m=args_cli.ground_size_m,
+            thickness_m=args_cli.ground_thickness_m,
+        )
+
     linkage = build_linkage(stage)
     if args_cli.save_usd:
         save_path = Path(args_cli.save_usd).expanduser().resolve()
@@ -1537,6 +1631,7 @@ def main():
     max_linear_speed = 0.0
     max_loop_errors = {check["name"]: 0.0 for check in linkage["loop_checks"]}
     min_finite = True
+    body_reference_height_stats = empty_scalar_stats()
     primary_center = float(args_cli.drive_center_deg) if args_cli.drive_center_deg is not None else None
     primary_amplitude = float(args_cli.drive_amplitude_deg)
     primary_frequency = float(args_cli.drive_frequency_hz)
@@ -1635,6 +1730,8 @@ def main():
             pos, quat = view.get_world_pose()
             lin_vel = view.get_linear_velocity()
             pose_cache[name] = {"position": pos, "orientation": quat}
+            if name == "body_reference":
+                update_scalar_stats(body_reference_height_stats, float(to_numpy(pos).flatten()[2]))
             positions.extend(to_numpy(pos).flatten().tolist())
             positions.extend(to_numpy(quat).flatten().tolist())
             velocities.extend(to_numpy(lin_vel).flatten().tolist())
@@ -1744,11 +1841,32 @@ def main():
         pos, quat = view.get_world_pose()
         final_poses[name] = {"position_m": tensor_list(pos), "orientation_wxyz": tensor_list(quat)}
 
+    max_loop_error = max(max_loop_errors.values()) if max_loop_errors else 0.0
+    failure_reasons = []
+    if not min_finite:
+        failure_reasons.append("Non-finite body pose or velocity detected.")
+    if args_cli.max_loop_closure_error_m > 0.0 and max_loop_error > args_cli.max_loop_closure_error_m:
+        failure_reasons.append(
+            f"Max loop closure error {max_loop_error:.8f} m exceeded {args_cli.max_loop_closure_error_m:.8f} m."
+        )
+    if (
+        FLOATING_BODY_GEOMETRY
+        and args_cli.min_floating_root_height_m >= 0.0
+        and body_reference_height_stats["final"] < args_cli.min_floating_root_height_m
+    ):
+        failure_reasons.append(
+            "Floating body_reference final height "
+            f"{body_reference_height_stats['final']:.6f} m was below {args_cli.min_floating_root_height_m:.6f} m."
+        )
+
     report = {
-        "status": "passed" if min_finite else "failed",
+        "status": "passed" if not failure_reasons else "failed",
         "geometry": linkage["geometry"],
         "steps": step + 1,
         "physics_dt": sim_dt,
+        "dynamic_gravity_enabled": DYNAMIC_GRAVITY_ENABLED,
+        "ground_box": ground_box,
+        "floating_height_m": float(args_cli.floating_height_m) if FLOATING_BODY_GEOMETRY else None,
         "linkage_points_m": linkage["points"],
         "drive": {
             "joint": linkage["drive_joint_name"],
@@ -1799,9 +1917,13 @@ def main():
             }
             for index, spec in enumerate(drive_specs)
         ],
-        "max_loop_closure_error_m": round(max(max_loop_errors.values()), 8),
+        "max_loop_closure_error_m": round(max_loop_error, 8),
         "loop_closure_errors_m": {name: round(value, 8) for name, value in max_loop_errors.items()},
         "max_body_linear_speed_m_s": round(max_linear_speed, 6),
+        "body_reference_height_m": rounded_scalar_stats(body_reference_height_stats)
+        if "body_reference" in views
+        else None,
+        "failure_reasons": failure_reasons,
         "characterization": {
             "drive_target_deg": {name: rounded_scalar_stats(stats) for name, stats in drive_target_stats.items()},
             "drive_tracking_error_deg": {
@@ -1834,7 +1956,7 @@ def main():
     if not args_cli.no_print_report:
         print(json.dumps(report, indent=2), flush=True)
     if report["status"] != "passed":
-        raise RuntimeError("Pin-linkage test produced non-finite state.")
+        raise RuntimeError(f"Pin-linkage test failed: {'; '.join(failure_reasons)}")
 
 
 if __name__ == "__main__":

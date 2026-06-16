@@ -28,6 +28,7 @@ This folder is the working plan for turning Domino from CAD and firmware into a 
 | `reports/domino-quadruped-runtime-sweep.md` | First clean all-leg 12-DoF Isaac Lab articulation runtime sweep. |
 | `reports/domino-quadruped-contact-stand-env.md` | First floating-base contact smoke, first Domino stand `DirectRLEnv` smoke, first tiny RSL-RL PPO checkpoint smoke, and first playback smoke. |
 | `reports/domino-policy-cad-linkage-contract.md` | Automated check that the clean policy action contract matches the CAD-derived shared fixed-body linkage report. |
+| `reports/domino-floating-cad-linkage-contact.md` | First gravity/contact smoke for the floating CAD-derived twelve-actuator linkage scene. |
 
 ## Current Finding
 
@@ -360,6 +361,26 @@ Validate the policy action contract against a CAD-derived linkage JSON report:
   --report-path <output-folder>/domino_policy_cad_contract_report.json
 ```
 
+Run the floating CAD-derived twelve-actuator linkage contact smoke:
+
+```powershell
+<isaac-python> simulation/isaac/prototypes/pin_linkage/run_pin_linkage.py `
+  --headless `
+  --geometry domino-four-12-floating-body `
+  --steps 300 `
+  --drive-amplitude-deg 0 `
+  --secondary-drive-amplitude-deg 0 `
+  --shoulder-drive-amplitude-deg 0 `
+  --drive-frequency-hz 0.5 `
+  --secondary-drive-frequency-hz 0.5 `
+  --shoulder-drive-frequency-hz 0.5 `
+  --max-loop-closure-error-m 0.005 `
+  --min-floating-root-height-m 0.02 `
+  --report-path <output-folder>/domino_four_12_floating_body_report.json `
+  --save-usd <output-folder>/domino_four_12_floating_body.usd `
+  --no-print-report
+```
+
 ## Isaac Runtime Notes
 
 NVIDIA's current Isaac Lab import workflow recommends converting robot assets into USD and then writing an asset configuration for spawning and training. The Isaac Lab docs also call out useful URDF import settings such as fixed base selection, fixed-joint merging, joint drive configuration, and setting joint target type to `none` during import when you want to configure drives later. See:
@@ -370,17 +391,17 @@ NVIDIA's current Isaac Lab import workflow recommends converting robot assets in
 
 ## Immediate Next Milestone
 
-The next useful asset is a clean four-leg Isaac Lab robot that combines the validated pieces:
+The next useful asset is a resettable Isaac Lab wrapper for the floating CAD-linkage scene. It should combine the validated pieces:
 
 - Hip ab/ad articulation from the generated CAD hip links.
 - The CAD-derived pitch-linkage constraints proven by `domino-four-combined-legs`.
 - Twelve driven policy actions with readable names.
 - Simplified collision bodies.
 - Correct joint axes, limits, reset defaults, and hard-stop checks.
-- A small Isaac Lab script that can reset the robot and sweep each driven joint through safe limits.
+- An Isaac Lab script that can reset the floating CAD linkage, sweep each driven joint through safe limits, and then expose the same twelve targets to a training environment.
 
-That should be validated fixed-base first, then with gravity and simple contacts, before any policy training.
+The fixed-base, shared-body, and first floating gravity/contact gates now pass. The remaining integration work is cloning/resetting that CAD-linkage scene through Isaac Lab policy code.
 
 Current runtime status: the simplified one-leg prototype imports, spawns as an Isaac Lab articulation, finds the three expected driven joints, and completes a headless joint sweep. The new clean all-leg quadruped prototype also imports, spawns as an Isaac Lab articulation, finds the expected twelve action joints, and completes a fixed-base headless joint sweep with no joint-limit violations. The floating-base import now passes a 1000-step gravity/contact smoke, and `DominoStandEnv` passes one-env, four-env, and sixteen-env `DirectRLEnv` smokes with 12 actions and 49 observations. The RSL-RL path runs PPO, writes checkpoints, and reloads those checkpoints for playback. The strongest current parallel gate is a contact-aware 16-env PPO smoke with a 10 m ground box, 128 rollout timesteps, four foot-contact observation flags, and a 250-step playback horizon. The 12 actions are enforced as four shoulder ab/ad actuators plus two linkage-drive actuators on each leg: `lower_linkage` and `upper_pitch`. A separate contract checker now verifies that the clean policy action names, per-leg actuator layout, and URDF limits match the CAD-derived shared fixed-body linkage report.
 
-Current linkage status: a generic one-actuator four-bar linkage, the CAD-derived lower triangle, the CAD-derived upper loop, a combined two-drive one-leg linkage, and an all-leg four-module pitch-linkage scene all run headlessly with passive pin joints and loop-closing revolute constraints. The four-leg scene validates eight CAD-derived pitch/linkage drives and eight loop closures together. A fixed-base `domino-four-12-actuators` mode adds the four shoulder hip ab/ad drives, giving the intended twelve actuator channels: shoulder, lower linkage, and upper pitch for each leg. The newer `domino-four-12-fixed-body` mode attaches all four shoulder joints to one shared kinematic body reference and its independent sweep gives a full-rank `13 / 13` local fit. The runtime report now emits a named twelve-action `action_space` and fails by default if generated targets exceed the modeled joint limits. The next unresolved gate is longer stand-stability training, followed by richer body/foot observations, velocity-command locomotion, and merging the validated CAD passive linkage constraints into the floating policy-training articulation.
+Current linkage status: a generic one-actuator four-bar linkage, the CAD-derived lower triangle, the CAD-derived upper loop, a combined two-drive one-leg linkage, and an all-leg four-module pitch-linkage scene all run headlessly with passive pin joints and loop-closing revolute constraints. The four-leg scene validates eight CAD-derived pitch/linkage drives and eight loop closures together. A fixed-base `domino-four-12-actuators` mode adds the four shoulder hip ab/ad drives, giving the intended twelve actuator channels: shoulder, lower linkage, and upper pitch for each leg. The newer `domino-four-12-fixed-body` mode attaches all four shoulder joints to one shared kinematic body reference and its independent sweep gives a full-rank `13 / 13` local fit. The first `domino-four-12-floating-body` smoke now replaces the kinematic body anchor with a dynamic shared body, enables gravity, adds a ground box and four foot contact proxies, and holds the CAD linkage finite over a 300-step contact test. The runtime report emits a named twelve-action `action_space` and fails by default if generated targets exceed the modeled joint limits. The next unresolved gate is wrapping or converting the floating CAD-linkage scene into a resettable/cloned Isaac Lab training asset, then running policy training against that asset.

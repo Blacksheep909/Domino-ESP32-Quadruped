@@ -178,9 +178,11 @@ The full-rank result is the useful milestone: the fixed-base scene now exposes t
 
 This is the stronger current gate. The four shoulder joints now attach to one shared kinematic body reference rather than four separate kinematic anchors, while the twelve actuator inputs and eight closed pitch-linkage loops remain stable over the tested range.
 
+The next contact gate is tracked separately in [`domino-floating-cad-linkage-contact.md`](domino-floating-cad-linkage-contact.md). That run replaces the shared kinematic body reference with a dynamic shared body, enables gravity, and adds simple foot contact proxies.
+
 ## Remaining Gap
 
-This does not yet prove policy training. The next gate is to turn the shared fixed-body 12-actuator linkage scene into a clean Isaac Lab robot with:
+This does not yet prove policy training. The next gate is to turn the floating shared-body 12-actuator linkage scene into a clean Isaac Lab robot with:
 
 1. A single floating or resettable base.
 2. Hip ab/ad articulation integrated with the body as an Isaac Lab articulation or equivalent resettable asset.

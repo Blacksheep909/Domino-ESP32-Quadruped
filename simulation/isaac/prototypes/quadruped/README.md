@@ -73,7 +73,7 @@ Run the first `DirectRLEnv` wrapper:
   --report-path <output-folder>/domino_stand_env_smoke_report.json
 ```
 
-`DominoStandEnv` has 12 actions, 45 policy observations, reset logic, rewards, and termination checks. The 12 actions are the four shoulder ab/ad actuators plus the two linkage-drive actuators on each leg.
+`DominoStandEnv` has 12 actions, 49 policy observations, reset logic, rewards, and termination checks. The 12 actions are the four shoulder ab/ad actuators plus the two linkage-drive actuators on each leg. The latest observation layout adds four foot-contact flags to the original base, joint, and action terms.
 
 ## RSL-RL PPO Smoke
 
@@ -90,7 +90,7 @@ Run a tiny checkpoint-producing training smoke:
   --report-path <output-folder>/domino_stand_rsl_rl_report.json
 ```
 
-Runtime status: passed. The smoke produced a 45-input actor/critic, a 12-output actor, and a `model_0.pt` checkpoint. This is only a training-path proof, not a useful walking policy yet.
+Runtime status: passed. The smoke produced a 49-input actor/critic, a 12-output actor, and a `model_0.pt` checkpoint. This is only a training-path proof, not a useful walking policy yet.
 
 ## RSL-RL Playback Smoke
 
@@ -137,6 +137,6 @@ Example 16-env playback:
   --report-path <output-folder>/domino_stand_rsl_rl_play_16env_report.json
 ```
 
-Runtime status: passed. The 16-env smoke used a 10 m ground box, completed a 128-timestep PPO rollout/update, wrote a checkpoint, then replayed that checkpoint for one episode horizon across all 16 envs. All 16 done events were expected timeouts, not fall terminations.
+Runtime status: passed. The contact-aware 16-env smoke used a 10 m ground box, completed a 128-timestep PPO rollout/update with 49 policy observations, wrote a checkpoint, then replayed that checkpoint for one episode horizon across all 16 envs. All 16 done events were expected timeouts, not fall terminations.
 
 The remaining CAD-fidelity gap is important: this training env still uses the clean tree articulation. The CAD-derived passive linkage loops are validated in the pin-linkage prototypes, but they are not yet merged into the floating policy-training articulation.

@@ -102,6 +102,7 @@ def main() -> None:
         "action_dim": action_dim,
         "action_group_counts": action_group_counts(),
         "observation_dim": observations["policy"].shape[-1],
+        "foot_contact_dim": len(env._foot_body_ids),
         "checkpoints": checkpoints,
         "log_dir_name": log_dir.name,
     }

@@ -11,6 +11,7 @@ import isaaclab.sim as sim_utils
 from isaaclab.assets import Articulation
 from isaaclab.envs import DirectRLEnv, DirectRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
+from isaaclab.sensors import ContactSensor, ContactSensorCfg
 from isaaclab.sim import SimulationCfg
 from isaaclab.utils import configclass
 import omni.usd
@@ -20,8 +21,10 @@ from domino_quadruped_cfg import (
     ACTION_JOINT_NAMES,
     DOMINO_QUADRUPED_CFG,
     EXPECTED_ACTION_COUNT,
+    FOOT_BODY_NAMES,
     POLICY_OBSERVATION_DIM,
     validate_action_layout,
+    validate_foot_body_layout,
 )
 
 
@@ -62,6 +65,9 @@ class DominoStandEnvCfg(DirectRLEnvCfg):
 
     # robot
     robot = DOMINO_QUADRUPED_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+    contact_sensor: ContactSensorCfg = ContactSensorCfg(
+        prim_path="/World/envs/env_.*/Robot/.*", history_length=3, update_period=1 / 200, track_air_time=True
+    )
 
     # stand task
     target_height_m = 0.31
@@ -72,6 +78,7 @@ class DominoStandEnvCfg(DirectRLEnvCfg):
     flat_orientation_reward_scale = -2.0
     joint_velocity_reward_scale = -0.002
     action_rate_reward_scale = -0.02
+    foot_contact_threshold_n = 1.0
 
 
 class DominoStandEnv(DirectRLEnv):
@@ -82,6 +89,8 @@ class DominoStandEnv(DirectRLEnv):
 
         self._action_joint_ids, action_joint_names = self._robot.find_joints(ACTION_JOINT_NAMES, preserve_order=True)
         validate_action_layout(action_joint_names)
+        self._foot_body_ids, foot_body_names = self._contact_sensor.find_bodies(FOOT_BODY_NAMES, preserve_order=True)
+        validate_foot_body_layout(foot_body_names)
 
         self._actions = torch.zeros(self.num_envs, self.cfg.action_space, device=self.device)
         self._previous_actions = torch.zeros_like(self._actions)
@@ -93,6 +102,8 @@ class DominoStandEnv(DirectRLEnv):
     def _setup_scene(self):
         self._robot = Articulation(self.cfg.robot)
         self.scene.articulations["robot"] = self._robot
+        self._contact_sensor = ContactSensor(self.cfg.contact_sensor)
+        self.scene.sensors["contact_sensor"] = self._contact_sensor
         self._ground_size_m = calculate_ground_size_m(
             self.cfg.scene.num_envs,
             self.cfg.scene.env_spacing,
@@ -115,6 +126,13 @@ class DominoStandEnv(DirectRLEnv):
     def _apply_action(self) -> None:
         self._robot.set_joint_position_target(self._processed_joint_targets)
 
+    def _get_foot_contact_forces(self) -> torch.Tensor:
+        net_forces = self._contact_sensor.data.net_forces_w_history
+        return torch.max(torch.norm(net_forces[:, :, self._foot_body_ids], dim=-1), dim=1)[0]
+
+    def _get_foot_contact_flags(self) -> torch.Tensor:
+        return (self._get_foot_contact_forces() > self.cfg.foot_contact_threshold_n).to(dtype=torch.float32)
+
     def _get_observations(self) -> dict:
         joint_pos_error = self._robot.data.joint_pos[:, self._action_joint_ids] - self._robot.data.default_joint_pos[
             :, self._action_joint_ids
@@ -127,6 +145,7 @@ class DominoStandEnv(DirectRLEnv):
                 joint_pos_error,
                 self._robot.data.joint_vel[:, self._action_joint_ids],
                 self._actions,
+                self._get_foot_contact_flags(),
             ),
             dim=-1,
         )

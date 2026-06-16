@@ -102,6 +102,8 @@ def main() -> None:
     min_root_height = float("inf")
     max_root_tilt = 0.0
     max_action_abs = 0.0
+    foot_contact_sum = 0.0
+    max_foot_contact_force = 0.0
 
     with torch.inference_mode():
         for _ in range(args_cli.steps):
@@ -114,6 +116,12 @@ def main() -> None:
             max_root_tilt = max(
                 max_root_tilt,
                 float(torch.max(root_tilt_deg(env._robot.data.projected_gravity_b)).detach().cpu()),
+            )
+            foot_contact_flags = env._get_foot_contact_flags()
+            foot_contact_forces = env._get_foot_contact_forces()
+            foot_contact_sum += float(torch.sum(foot_contact_flags).detach().cpu())
+            max_foot_contact_force = max(
+                max_foot_contact_force, float(torch.max(foot_contact_forces).detach().cpu())
             )
             if not torch.isfinite(actions).all() or not torch.isfinite(obs["policy"]).all() or not torch.isfinite(rewards).all():
                 raise RuntimeError("Non-finite action, observation, or reward during checkpoint playback.")
@@ -130,6 +138,9 @@ def main() -> None:
         "action_dim": action_dim,
         "action_group_counts": action_group_counts(),
         "observation_dim": observations["policy"].shape[-1],
+        "foot_contact_dim": len(env._foot_body_ids),
+        "mean_foot_contacts_per_env": round(foot_contact_sum / max(args_cli.steps * wrapped_env.num_envs, 1), 6),
+        "max_foot_contact_force_n": round(max_foot_contact_force, 6),
         "mean_reward": round(float(torch.mean(total_reward / max(args_cli.steps, 1)).detach().cpu()), 6),
         "done_count": done_count,
         "min_root_height_m": round(min_root_height, 6),

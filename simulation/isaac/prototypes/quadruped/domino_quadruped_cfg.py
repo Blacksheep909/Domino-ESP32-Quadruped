@@ -48,8 +48,11 @@ ACTION_JOINT_NAMES = [
     for entry in LEG_ACTION_LAYOUT
     for joint_name in (entry["shoulder"], entry["lower_linkage"], entry["upper_pitch"])
 ]
+FOOT_BODY_NAMES = [f"{entry['leg_id']}_foot" for entry in LEG_ACTION_LAYOUT]
 EXPECTED_ACTION_COUNT = 12
-POLICY_OBSERVATION_DIM = 3 + 3 + 3 + (EXPECTED_ACTION_COUNT * 3)
+EXPECTED_FOOT_COUNT = 4
+BASE_POLICY_OBSERVATION_DIM = 3 + 3 + 3 + (EXPECTED_ACTION_COUNT * 3)
+POLICY_OBSERVATION_DIM = BASE_POLICY_OBSERVATION_DIM + EXPECTED_FOOT_COUNT
 
 
 def action_group_counts() -> dict[str, int]:
@@ -80,6 +83,19 @@ def validate_action_layout(joint_names: Sequence[str]) -> None:
         raise RuntimeError(f"Unexpected Domino action group counts: {counts}.")
 
 
+def validate_foot_body_layout(body_names: Sequence[str]) -> None:
+    actual = list(body_names)
+    if actual != FOOT_BODY_NAMES:
+        missing = [name for name in FOOT_BODY_NAMES if name not in actual]
+        extra = [name for name in actual if name not in FOOT_BODY_NAMES]
+        raise RuntimeError(
+            "Domino foot body layout mismatch. "
+            f"Expected {FOOT_BODY_NAMES}; found {actual}; missing {missing}; extra {extra}."
+        )
+    if len(actual) != EXPECTED_FOOT_COUNT or len(set(actual)) != EXPECTED_FOOT_COUNT:
+        raise RuntimeError(f"Domino foot layout must contain {EXPECTED_FOOT_COUNT} unique bodies; found {actual}.")
+
+
 DEFAULT_JOINT_POS = {
     "dom_p_4_1_shoulder_ab_ad": 0.0,
     "dom_p_4_1_lower_linkage": -0.75,
@@ -98,6 +114,7 @@ DEFAULT_JOINT_POS = {
 DOMINO_QUADRUPED_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
         usd_path=DOMINO_QUADRUPED_USD_PATH,
+        activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             rigid_body_enabled=True,
             max_linear_velocity=100.0,

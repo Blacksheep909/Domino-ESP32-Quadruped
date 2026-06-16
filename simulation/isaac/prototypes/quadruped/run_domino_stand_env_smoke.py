@@ -15,6 +15,7 @@ parser = argparse.ArgumentParser(description="Run a Domino stand DirectRLEnv smo
 parser.add_argument("--usd-path", required=True, help="Path to the imported floating-base quadruped USD.")
 parser.add_argument("--steps", type=int, default=300, help="Number of environment steps to run.")
 parser.add_argument("--num-envs", type=int, default=1, help="Number of cloned environments.")
+parser.add_argument("--seed", type=int, default=42, help="Environment seed.")
 parser.add_argument("--report-path", default="", help="Optional JSON report output path.")
 parser.add_argument(
     "--graceful-close",
@@ -52,6 +53,7 @@ def main():
     cfg = DominoStandEnvCfg()
     cfg.scene.num_envs = int(args_cli.num_envs)
     cfg.sim.device = args_cli.device
+    cfg.seed = int(args_cli.seed)
 
     env = DominoStandEnv(cfg)
     observations, _ = env.reset()
@@ -83,9 +85,10 @@ def main():
 
     report = {
         "status": "passed",
-        "usd_path": str(usd_path),
+        "usd_file": usd_path.name,
         "steps": args_cli.steps,
         "num_envs": env.num_envs,
+        "ground_size_m": round(float(env._ground_size_m), 6),
         "action_dim": action_dim,
         "action_group_counts": action_group_counts(),
         "observation_dim": observations["policy"].shape[-1],

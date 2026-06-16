@@ -94,8 +94,9 @@ def main() -> None:
 
     report = {
         "status": "passed",
-        "usd_path": str(usd_path),
+        "usd_file": usd_path.name,
         "num_envs": env.num_envs,
+        "ground_size_m": round(float(env._ground_size_m), 6),
         "iterations": agent_cfg.max_iterations,
         "num_steps_per_env": agent_cfg.num_steps_per_env,
         "action_dim": action_dim,

@@ -93,6 +93,36 @@ The saved `model_0.pt` checkpoint was loaded into a fresh `DominoStandEnv` insta
 
 The single done event is the expected stand-task episode timeout, not a fall termination. This still does not prove useful locomotion; it proves the current checkpoint can be loaded, produces finite 12-channel actions, and steps the Domino stand environment without destabilizing the base.
 
+## Parallel Env And PPO Smoke
+
+Status: **passed for parallel stand-env and PPO smoke**.
+
+The stand task now sizes its static ground box from the requested cloned-env grid. This avoids the one-env 4 m ground plate becoming too small when policy training uses multiple environments.
+
+| Gate | Result |
+| --- | ---: |
+| 4-env env smoke | `passed` |
+| 4-env ground size | `6.0 m` |
+| 4-env env smoke steps | `100` |
+| 4-env PPO smoke | `2 iterations x 16 steps/env` |
+| 4-env PPO checkpoints | `model_0.pt`, `model_1.pt` |
+| 4-env playback | `250 steps`, `model_1.pt` |
+| 4-env playback done count | `4 expected timeouts` |
+| 4-env min root height | `0.310751 m` |
+| 4-env max root tilt | `0.627761 deg` |
+| 16-env env smoke | `passed` |
+| 16-env ground size | `10.0 m` |
+| 16-env env smoke steps | `50` |
+| 16-env PPO smoke | `1 iteration x 8 steps/env` |
+| 16-env PPO checkpoint | `model_0.pt` |
+| 16-env playback | `250 steps`, `model_0.pt` |
+| 16-env playback done count | `16 expected timeouts` |
+| 16-env min root height | `0.310835 m` |
+| 16-env max root tilt | `0.597089 deg` |
+| 16-env max absolute policy action | `0.311672` |
+
+This proves the current stand task can run and train through RSL-RL with cloned environments, not only as a single-robot script.
+
 ## Local Isaac Notes
 
 The local Isaac installation still emits warnings about Kit config writes and extension startup. The Domino runners now set `WARP_CACHE_PATH` to the ignored `simulation/isaac/out/warp_cache` folder by default, which avoids the global Warp cache collision that previously blocked `DirectRLEnv` import.
@@ -100,3 +130,5 @@ The local Isaac installation still emits warnings about Kit config writes and ex
 ## Next Gate
 
 The next useful milestone is a longer stand-stability training pass. After that, add contact sensors and richer foot/body observations before attempting velocity-command locomotion.
+
+The major fidelity gap is still the same: this policy task uses the clean tree articulation for training. The CAD-derived passive linkage loops are validated separately in the pin-linkage prototypes, but they have not yet been merged into the floating policy-training articulation.

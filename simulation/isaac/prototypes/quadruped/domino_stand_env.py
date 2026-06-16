@@ -25,15 +25,21 @@ from domino_quadruped_cfg import (
 )
 
 
-def create_static_ground_box(prim_path: str = "/World/Ground") -> None:
+def create_static_ground_box(prim_path: str = "/World/Ground", size_m: float = 4.0) -> None:
     """Create a static collision box whose top face sits at world Z=0."""
     stage = omni.usd.get_context().get_stage()
     ground = UsdGeom.Cube.Define(stage, prim_path)
     ground.CreateSizeAttr(1.0)
     xform = UsdGeom.XformCommonAPI(ground)
     xform.SetTranslate(Gf.Vec3d(0.0, 0.0, -0.025))
-    xform.SetScale(Gf.Vec3f(4.0, 4.0, 0.05))
+    xform.SetScale(Gf.Vec3f(float(size_m), float(size_m), 0.05))
     UsdPhysics.CollisionAPI.Apply(ground.GetPrim())
+
+
+def calculate_ground_size_m(num_envs: int, env_spacing_m: float, margin_m: float, min_size_m: float) -> float:
+    grid_width = max(1, math.ceil(math.sqrt(max(num_envs, 1))))
+    cloned_env_span_m = max(0.0, float(grid_width - 1) * float(env_spacing_m))
+    return max(float(min_size_m), cloned_env_span_m + 2.0 * float(margin_m))
 
 
 @configclass
@@ -51,6 +57,8 @@ class DominoStandEnvCfg(DirectRLEnvCfg):
 
     # scene
     scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=1, env_spacing=2.0, replicate_physics=True)
+    ground_margin_m = 2.0
+    ground_min_size_m = 4.0
 
     # robot
     robot = DOMINO_QUADRUPED_CFG.replace(prim_path="/World/envs/env_.*/Robot")
@@ -79,11 +87,19 @@ class DominoStandEnv(DirectRLEnv):
         self._previous_actions = torch.zeros_like(self._actions)
         self._processed_joint_targets = self._robot.data.default_joint_pos.clone()
         self._max_tilt_rad = math.radians(self.cfg.max_tilt_deg)
+        if not hasattr(self, "_ground_size_m"):
+            self._ground_size_m = float(self.cfg.ground_min_size_m)
 
     def _setup_scene(self):
         self._robot = Articulation(self.cfg.robot)
         self.scene.articulations["robot"] = self._robot
-        create_static_ground_box()
+        self._ground_size_m = calculate_ground_size_m(
+            self.cfg.scene.num_envs,
+            self.cfg.scene.env_spacing,
+            self.cfg.ground_margin_m,
+            self.cfg.ground_min_size_m,
+        )
+        create_static_ground_box(size_m=self._ground_size_m)
         self.scene.clone_environments(copy_from_source=False)
         if self.device == "cpu":
             self.scene.filter_collisions(global_prim_paths=["/World/Ground"])

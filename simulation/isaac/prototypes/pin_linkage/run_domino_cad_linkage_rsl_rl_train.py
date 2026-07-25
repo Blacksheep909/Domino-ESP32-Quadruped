@@ -69,6 +69,18 @@ parser.add_argument("--command-progress-reward-scale", type=float, default=None,
 parser.add_argument("--command-velocity-reward-scale", type=float, default=None, help="Penalty scale for squared command x/y velocity error.")
 parser.add_argument("--command-velocity-tracking-reward-scale", type=float, default=None, help="Positive command velocity tracking reward scale.")
 parser.add_argument("--command-velocity-tracking-sigma", type=float, default=None, help="Velocity error sigma for the positive command-tracking reward.")
+parser.add_argument(
+    "--command-stagnation-penalty-scale",
+    type=float,
+    default=None,
+    help="Penalty scale applied when commanded forward speed stays below the configured stagnation threshold.",
+)
+parser.add_argument(
+    "--command-stagnation-speed-m-s",
+    type=float,
+    default=None,
+    help="Directional speed below which a nonzero locomotion command is considered stagnant.",
+)
 parser.add_argument("--alive-reward-scale", type=float, default=None, help="Per-step survival reward scale.")
 parser.add_argument("--action-reward-scale", type=float, default=None, help="Reward scale for squared action magnitude.")
 parser.add_argument("--action-rate-reward-scale", type=float, default=None, help="Reward scale for squared action changes.")
@@ -1269,6 +1281,10 @@ def main() -> None:
         env_cfg.command_velocity_tracking_reward_scale = float(args_cli.command_velocity_tracking_reward_scale)
     if args_cli.command_velocity_tracking_sigma is not None:
         env_cfg.command_velocity_tracking_sigma = max(float(args_cli.command_velocity_tracking_sigma), 1e-6)
+    if args_cli.command_stagnation_penalty_scale is not None:
+        env_cfg.command_stagnation_penalty_scale = float(args_cli.command_stagnation_penalty_scale)
+    if args_cli.command_stagnation_speed_m_s is not None:
+        env_cfg.command_stagnation_speed_m_s = max(float(args_cli.command_stagnation_speed_m_s), 1e-6)
     if args_cli.alive_reward_scale is not None:
         env_cfg.alive_reward_scale = float(args_cli.alive_reward_scale)
     if args_cli.action_reward_scale is not None:
@@ -1590,6 +1606,9 @@ def main() -> None:
             "command_progress_reward_scale": float(env_cfg.command_progress_reward_scale),
             "command_velocity_reward_scale": float(env_cfg.command_velocity_reward_scale),
             "command_velocity_tracking_reward_scale": float(env_cfg.command_velocity_tracking_reward_scale),
+            "command_velocity_tracking_sigma": float(env_cfg.command_velocity_tracking_sigma),
+            "command_stagnation_penalty_scale": float(env_cfg.command_stagnation_penalty_scale),
+            "command_stagnation_speed_m_s": float(env_cfg.command_stagnation_speed_m_s),
             "use_displacement_velocity_rewards": bool(env_cfg.use_displacement_velocity_rewards),
             "lateral_drift_reward_scale": float(env_cfg.lateral_drift_reward_scale),
             "yaw_drift_reward_scale": float(env_cfg.yaw_drift_reward_scale),

@@ -55,6 +55,15 @@ EXPECTED_LINKAGE_DRIVE_ACTION_COUNT = 8
 EXPECTED_FOOT_COUNT = 4
 BASE_POLICY_OBSERVATION_DIM = 3 + 3 + 3 + (EXPECTED_ACTION_COUNT * 3)
 POLICY_OBSERVATION_DIM = BASE_POLICY_OBSERVATION_DIM + EXPECTED_FOOT_COUNT
+SERVO_MECHANICAL_TRAVEL_FROM_NEUTRAL_DEG = 45.0
+VALIDATED_INITIAL_POLICY_ACTION_SCALE_DEG = 16.0
+
+
+def centered_servo_limits_deg(center_deg: float) -> tuple[float, float]:
+    return (
+        float(center_deg) - SERVO_MECHANICAL_TRAVEL_FROM_NEUTRAL_DEG,
+        float(center_deg) + SERVO_MECHANICAL_TRAVEL_FROM_NEUTRAL_DEG,
+    )
 
 DEFAULT_JOINT_POS = {
     "dom_p_4_1_shoulder_ab_ad": 0.0,
@@ -78,10 +87,12 @@ CAD_ACTION_ROLES = {
 }
 
 CAD_ACTION_LIMITS_DEG = {
-    **{name: (-30.0, 30.0) for name in SHOULDER_ACTION_JOINT_NAMES},
-    **{name: (-120.0, 0.0) for name in LOWER_LINKAGE_ACTION_JOINT_NAMES[:3]},
-    "dom_p_21_1_lower_linkage": (-30.0, 90.0),
-    **{name: (-30.0, 60.0) for name in UPPER_PITCH_ACTION_JOINT_NAMES},
+    **{name: centered_servo_limits_deg(0.0) for name in SHOULDER_ACTION_JOINT_NAMES},
+    "dom_p_4_1_lower_linkage": centered_servo_limits_deg(22.5),
+    "dom_p_12_1_lower_linkage": centered_servo_limits_deg(22.5),
+    "dom_p_25_1_lower_linkage": centered_servo_limits_deg(-22.5),
+    "dom_p_21_1_lower_linkage": centered_servo_limits_deg(22.5),
+    **{name: centered_servo_limits_deg(22.5) for name in UPPER_PITCH_ACTION_JOINT_NAMES},
 }
 
 

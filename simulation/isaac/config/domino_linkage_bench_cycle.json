@@ -1,0 +1,43 @@
+{
+  "name": "domino_verified_linkage_bench_cycle",
+  "type": "keyframe_sequence",
+  "loop": true,
+  "action_scale_deg": 32.0,
+  "servo_target_rate_limit_deg_s": 180.0,
+  "total_steps": 480,
+  "notes": [
+    "Contact-free mechanism validation cycle for the 12-actuator Domino CAD linkage.",
+    "Each leg uses one shoulder servo and two linkage servos; all remaining loop joints are passive revolute pins.",
+    "The measured mechanical envelope is approximately 45 degrees either side of the starting stance. Ground-contact training peaks at 22.4 degrees on the linkage drives and 11.2 degrees on the shoulders after the 27.2-degree linkage peak terminated the first episode at step 121."
+  ],
+  "segments": [
+    {
+      "name": "neutral_to_diagonal_a",
+      "steps": 120,
+      "start_actions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+      "end_actions": [-0.35, 0.70, -0.70, 0.35, 0.70, -0.70, 0.35, -0.70, 0.70, -0.35, -0.70, 0.70],
+      "swing_leg_index": -1
+    },
+    {
+      "name": "diagonal_a_to_neutral",
+      "steps": 120,
+      "start_actions": [-0.35, 0.70, -0.70, 0.35, 0.70, -0.70, 0.35, -0.70, 0.70, -0.35, -0.70, 0.70],
+      "end_actions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+      "swing_leg_index": -1
+    },
+    {
+      "name": "neutral_to_diagonal_b",
+      "steps": 120,
+      "start_actions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+      "end_actions": [0.35, -0.70, 0.70, -0.35, -0.70, 0.70, -0.35, 0.70, -0.70, 0.35, 0.70, -0.70],
+      "swing_leg_index": -1
+    },
+    {
+      "name": "diagonal_b_to_neutral",
+      "steps": 120,
+      "start_actions": [0.35, -0.70, 0.70, -0.35, -0.70, 0.70, -0.35, 0.70, -0.70, 0.35, 0.70, -0.70],
+      "end_actions": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+      "swing_leg_index": -1
+    }
+  ]
+}

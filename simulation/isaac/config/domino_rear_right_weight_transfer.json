@@ -1,0 +1,116 @@
+{
+  "name": "domino_dom_p_21_1_weight_transfer",
+  "target_leg_index": 3,
+  "target_leg": {
+    "leg_id": "dom_p_21_1",
+    "shoulder": "dom_p_21_1_shoulder_ab_ad",
+    "linkage_drives": [
+      "dom_p_21_1_lower_linkage",
+      "dom_p_21_1_upper_pitch"
+    ],
+    "action_order": [
+      "dom_p_21_1_shoulder_ab_ad",
+      "dom_p_21_1_lower_linkage",
+      "dom_p_21_1_upper_pitch"
+    ]
+  },
+  "action_scale_deg": 8.0,
+  "servo_target_rate_limit_deg_s": 90.0,
+  "transfer_steps": 60,
+  "lift_steps": 60,
+  "hold_steps": 20,
+  "release_steps": 40,
+  "return_steps": 80,
+  "neutral_steps": 80,
+  "transfer_actions": [
+    -0.5475519895553589,
+    0.7743750214576721,
+    -0.6257519721984863,
+    0.8593220114707947,
+    0.4241800010204315,
+    0.6325590014457703,
+    -0.4746359884738922,
+    -0.9691179990768433,
+    1.0,
+    -0.1019899994134903,
+    0.0,
+    0.0
+  ],
+  "final_actions": [
+    -0.5475519895553589,
+    0.7743750214576721,
+    -0.6257519721984863,
+    0.8593220114707947,
+    0.4241800010204315,
+    0.6325590014457703,
+    -0.4746359884738922,
+    -0.9691179990768433,
+    1.0,
+    -0.1019899994134903,
+    0.2772800028324127,
+    -0.37348198890686035
+  ],
+  "verified_metrics": {
+    "candidate_index": 16,
+    "passed": true,
+    "stable_mechanics": true,
+    "score": 0.106284,
+    "transfer_actions": [
+      -0.5475519895553589,
+      0.7743750214576721,
+      -0.6257519721984863,
+      0.8593220114707947,
+      0.4241800010204315,
+      0.6325590014457703,
+      -0.4746359884738922,
+      -0.9691179990768433,
+      1.0,
+      -0.1019899994134903,
+      0.0,
+      0.0
+    ],
+    "final_actions": [
+      -0.5475519895553589,
+      0.7743750214576721,
+      -0.6257519721984863,
+      0.8593220114707947,
+      0.4241800010204315,
+      0.6325590014457703,
+      -0.4746359884738922,
+      -0.9691179990768433,
+      1.0,
+      -0.1019899994134903,
+      0.2772800028324127,
+      -0.37348198890686035
+    ],
+    "target_peak_clearance_m": 0.015125,
+    "target_clearance_lift_m": 0.010352,
+    "target_peak_body_relative_lift_m": 0.070344,
+    "target_max_body_relative_motion_m": 0.090899,
+    "support_count_at_peak": 3,
+    "clearances_at_target_peak_m": [
+      0.006693,
+      0.002765,
+      0.006962,
+      0.015125
+    ],
+    "tilt_at_target_peak_deg": 19.927052,
+    "height_at_target_peak_m": 0.250443,
+    "max_tilt_deg": 19.927052,
+    "min_body_height_m": 0.250443,
+    "max_joint_separation_m": 0.003351,
+    "body_displacement_m": [
+      -0.026914000511169434,
+      0.0051380000077188015,
+      -0.0031530000269412994
+    ],
+    "recovery_tilt_deg": 2.820778,
+    "recovery_body_height_m": 0.281317,
+    "recovery_linear_speed_m_s": 0.025026,
+    "recovery_angular_speed_rad_s": 0.019725,
+    "done_count": 0,
+    "terminated_count": 0,
+    "finite": true,
+    "generation": 0
+  }
+}

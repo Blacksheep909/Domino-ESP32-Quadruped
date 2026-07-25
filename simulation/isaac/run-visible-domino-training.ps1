@@ -1,0 +1,264 @@
+param(
+    [string]$IsaacSimRoot = $env:ISAAC_SIM_ROOT,
+    [string]$IsaacLabRoot = $env:ISAACLAB_ROOT,
+    [int]$NumEnvs = 1,
+    [int]$Iterations = 1,
+    [int]$NumStepsPerEnv = 32,
+    [int]$SaveInterval = 1,
+    [int]$PolicyValidationSteps = 2360,
+    [double]$VisibleStepDelayS = 0.0,
+    [int]$Seed = 9306,
+    [double]$InitialNoiseStd = 0.05,
+    [double]$PpoLearningRate = 0.00004,
+    [double]$PpoEntropyCoefficient = 0.0008,
+    [double]$ActionScaleDeg = 16.0,
+    [double]$ServoTargetRateLimitDegS = 90.0,
+    [int]$ResetSettleSteps = 15,
+    [double]$CommandXMps = 0.05,
+    [double]$GaitFrequencyHz = 1.0,
+    [double]$EpisodeLengthS = 70.0,
+    [double]$MinHeightM = 0.02,
+    [double]$MaxTiltDeg = 75.0,
+    [double]$ActualCadGroundClearanceM = 0.001,
+    [double]$GroundSizeM = 10.0,
+    [double]$AliveRewardScale = 1.0,
+    [double]$CommandProgressRewardScale = 3.6,
+    [double]$CommandVelocityRewardScale = -4.0,
+    [double]$CommandVelocityTrackingRewardScale = 1.5,
+    [double]$CommandVelocityTrackingSigma = 0.06,
+    [double]$LateralDriftRewardScale = -650.0,
+    [double]$YawDriftRewardScale = -3.0,
+    [double]$CommandYawRewardScale = -1.5,
+    [double]$GaitContactRewardScale = 2.2,
+    [double]$StanceContactRewardScale = 0.45,
+    [double]$SwingContactPenaltyScale = -4.0,
+    [double]$FootClearanceRewardScale = 4.0,
+    [double]$FootContactRewardScale = 0.0,
+    [double]$ActionRewardScale = -0.02,
+    [double]$ActionRateRewardScale = -0.02,
+    [double]$ReferenceTrackingRewardScale = 2.0,
+    [double]$ReferenceTrackingSigma = 0.55,
+    [double]$ReferenceMseRewardScale = -2.5,
+    [bool]$ReferenceActionIdentityInit = $true,
+    [int]$ReferenceActionBcSteps = 1,
+    [string]$RunName = "linkage_swing_hipframe_bc_training",
+    [string]$ReferenceGait = "",
+    [ValidateSet("flat", "stairs")]
+    [string]$TerrainType = "flat",
+    [ValidateSet("linkage-lower-closure", "actual-cad-visual-bottom", "actual-cad-grounded-support")]
+    [string]$FootCollisionMode = "actual-cad-visual-bottom",
+    [ValidateSet("direct", "passive")]
+    [string]$ClosureModel = "passive",
+    [string]$ResumeCheckpoint = "",
+    [ValidateSet("reset", "final", "policy")]
+    [string]$HoldOpenMode = "final",
+    [int]$HoldOpenRenderFrames = 4,
+    [int]$HoldOpenExitAfterFrames = 0,
+    [switch]$NoHoldOpen,
+    [switch]$Headless,
+    [switch]$SkipPPOAfterBC = $true,
+    [switch]$AllowIndefinitePolicyHoldOpen,
+    [switch]$NoVulkanWorkaround
+)
+
+$ErrorActionPreference = "Stop"
+
+$isaacDir = $PSScriptRoot
+$repoRoot = (Resolve-Path -LiteralPath (Join-Path $isaacDir "..\..")).Path
+$runningKit = Get-Process -Name "kit" -ErrorAction SilentlyContinue
+if ($runningKit) {
+    $runningDescriptions = $runningKit | ForEach-Object {
+        "PID {0}, started {1}" -f $_.Id, $_.StartTime
+    }
+    throw (
+        "Isaac Kit is already running ({0}). Close the existing Isaac window before launching so the current " +
+        "Domino code and CAD contacts are loaded."
+    ) -f ($runningDescriptions -join "; ")
+}
+
+if (-not $IsaacSimRoot -or $IsaacSimRoot.Trim().Length -eq 0) {
+    throw "Set -IsaacSimRoot or ISAAC_SIM_ROOT to your Isaac Sim install."
+}
+
+if (-not $IsaacLabRoot -or $IsaacLabRoot.Trim().Length -eq 0) {
+    throw "Set -IsaacLabRoot or ISAACLAB_ROOT to your Isaac Lab checkout."
+}
+
+$resolvedIsaacSimRoot = (Resolve-Path -LiteralPath $IsaacSimRoot).Path
+$resolvedIsaacLabRoot = (Resolve-Path -LiteralPath $IsaacLabRoot).Path
+$isaacPython = Join-Path $resolvedIsaacSimRoot "python.bat"
+if (-not (Test-Path -LiteralPath $isaacPython)) {
+    throw "Could not find Isaac Sim Python at $isaacPython"
+}
+
+$trainScript = Join-Path $repoRoot "simulation\isaac\prototypes\pin_linkage\run_domino_cad_linkage_rsl_rl_train.py"
+$resolvedResumeCheckpoint = ""
+if ($ResumeCheckpoint -and $ResumeCheckpoint.Trim().Length -gt 0) {
+    $resolvedResumeCheckpoint = (Resolve-Path -LiteralPath $ResumeCheckpoint).Path
+}
+$referenceGaitCandidates = @(
+    (Join-Path $repoRoot "simulation\isaac\config\domino_linkage_swing_cycle_teacher.json"),
+    (Join-Path $repoRoot "simulation\isaac\config\domino_calibrated_neutral_teacher.json"),
+    (Join-Path $repoRoot "simulation\isaac\out\cad_identity\teacher_grid\teacher_grounded_support_scale20_seed240704.json"),
+    (Join-Path $repoRoot "simulation\isaac\out\cad_identity\teacher_grid\teacher_grounded_support_valid_lower_scale20_seed240704.json"),
+    (Join-Path $repoRoot "simulation\isaac\out\cad_identity\teacher_grid\teacher_random001_scale70_freq225.json")
+)
+if ($ReferenceGait -and $ReferenceGait.Trim().Length -gt 0) {
+    $referenceGait = (Resolve-Path -LiteralPath $ReferenceGait).Path
+} else {
+    $referenceGait = $referenceGaitCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+}
+$logRoot = Join-Path $repoRoot ("simulation\isaac\out\cad_identity\next_policy\" + $RunName)
+$reportPath = Join-Path $repoRoot ("simulation\isaac\out\cad_identity\next_policy\" + $RunName + ".json")
+
+$requiredArtifacts = @($trainScript, $referenceGait)
+if ($resolvedResumeCheckpoint) {
+    $requiredArtifacts += $resolvedResumeCheckpoint
+}
+foreach ($required in $requiredArtifacts) {
+    if (-not (Test-Path -LiteralPath $required)) {
+        throw "Missing required Domino training artifact: $required"
+    }
+}
+
+Set-Location -LiteralPath $repoRoot
+
+$pythonPathParts = @(
+    (Join-Path $resolvedIsaacLabRoot "source\isaaclab"),
+    (Join-Path $resolvedIsaacLabRoot "source\isaaclab_rl"),
+    (Join-Path $resolvedIsaacLabRoot "source\isaaclab_tasks"),
+    (Join-Path $resolvedIsaacLabRoot "source\isaaclab_mimic"),
+    (Join-Path $repoRoot "simulation\isaac\out\isaac_py_deps_clean"),
+    (Join-Path $resolvedIsaacSimRoot "site")
+)
+if ($env:PYTHONPATH) {
+    $pythonPathParts += $env:PYTHONPATH
+}
+$env:ISAAC_SIM_ROOT = $resolvedIsaacSimRoot
+$env:PYTHONPATH = ($pythonPathParts -join ";")
+$env:PYTHONUNBUFFERED = "1"
+
+$args = @(
+    $trainScript,
+    "--num-envs", ([string]$NumEnvs),
+    "--iterations", ([string]$Iterations),
+    "--num-steps-per-env", ([string]$NumStepsPerEnv),
+    "--save-interval", ([string]$SaveInterval),
+    "--visible-step-delay-s", ([string]$VisibleStepDelayS),
+    "--seed", ([string]$Seed),
+    "--init-noise-std", ([string]$InitialNoiseStd),
+    "--ppo-learning-rate", ([string]$PpoLearningRate),
+    "--ppo-entropy-coef", ([string]$PpoEntropyCoefficient),
+    "--action-scale-deg", ([string]$ActionScaleDeg),
+    "--servo-target-rate-limit-deg-s", ([string]$ServoTargetRateLimitDegS),
+    "--reset-settle-steps", ([string]$ResetSettleSteps),
+    "--command-x-m-s", ([string]$CommandXMps),
+    "--command-y-m-s", "0.0",
+    "--command-yaw-rad-s", "0.0",
+    "--gait-frequency-hz", ([string]$GaitFrequencyHz),
+    "--episode-length-s", ([string]$EpisodeLengthS),
+    "--min-height-m", ([string]$MinHeightM),
+    "--max-tilt-deg", ([string]$MaxTiltDeg),
+    "--actual-cad-ground-clearance-m", ([string]$ActualCadGroundClearanceM),
+    "--ground-size-m", ([string]$GroundSizeM),
+    "--policy-validation-steps", ([string]$PolicyValidationSteps),
+    "--policy-validation-settle-steps", "120",
+    "--policy-validation-ramp-steps", "0",
+    "--policy-reference-action-snap-tolerance", "0.0001",
+    "--policy-gate-max-joint-separation-m", "0.001",
+    "--policy-gate-min-forward-m", "-0.20",
+    "--policy-gate-max-lateral-m", "0.12",
+    "--policy-gate-max-yaw-rad", "0.70",
+    "--policy-gate-max-tilt-deg", "30.0",
+    "--policy-gate-max-swing-contact", "0.60",
+    "--policy-gate-min-swing-clearance-m", "0.003",
+    "--policy-gate-min-each-cad-foot-clearance-m", "0.005",
+    "--policy-gate-min-foot-motion-m", "0.050",
+    "--policy-gate-min-each-linkage-drive-motion-deg", "4.0",
+    "--policy-gate-max-visual-foot-motion-m", "0.25",
+    "--reference-gait-candidate", $referenceGait,
+    "--include-reference-actions-in-observation",
+    "--reference-action-bc-steps", ([string]$ReferenceActionBcSteps),
+    "--reference-action-bc-settle-steps", "0",
+    "--reference-action-bc-replay-steps", "0",
+    "--reference-action-bc-batch-size", "256",
+    "--reference-action-bc-lr", "0.0002",
+    "--reference-action-bc-output-penalty", "0.0",
+    "--reference-action-bc-lower-linkage-weight", "1.5",
+    "--reference-action-bc-upper-pitch-weight", "1.5",
+    "--reference-action-tracking-reward-scale", ([string]$ReferenceTrackingRewardScale),
+    "--reference-action-tracking-sigma", ([string]$ReferenceTrackingSigma),
+    "--reference-action-mse-reward-scale", ([string]$ReferenceMseRewardScale),
+    "--foot-collision-mode", $FootCollisionMode,
+    "--closure-model", $ClosureModel,
+    "--terrain-type", $TerrainType,
+    "--alive-reward-scale", ([string]$AliveRewardScale),
+    "--command-progress-reward-scale", ([string]$CommandProgressRewardScale),
+    "--command-velocity-reward-scale", ([string]$CommandVelocityRewardScale),
+    "--command-velocity-tracking-reward-scale", ([string]$CommandVelocityTrackingRewardScale),
+    "--command-velocity-tracking-sigma", ([string]$CommandVelocityTrackingSigma),
+    "--lateral-drift-reward-scale", ([string]$LateralDriftRewardScale),
+    "--yaw-drift-reward-scale", ([string]$YawDriftRewardScale),
+    "--command-yaw-reward-scale", ([string]$CommandYawRewardScale),
+    "--gait-contact-reward-scale", ([string]$GaitContactRewardScale),
+    "--stance-contact-reward-scale", ([string]$StanceContactRewardScale),
+    "--swing-contact-penalty-scale", ([string]$SwingContactPenaltyScale),
+    "--foot-clearance-reward-scale", ([string]$FootClearanceRewardScale),
+    "--foot-contact-reward-scale", ([string]$FootContactRewardScale),
+    "--action-reward-scale", ([string]$ActionRewardScale),
+    "--action-rate-reward-scale", ([string]$ActionRateRewardScale),
+    "--log-root", $logRoot,
+    "--report-path", $reportPath,
+    "--rendering_mode", "performance"
+)
+
+if ($NumEnvs -gt 1) {
+    $args += "--allow-multi-env-viewport"
+}
+
+if ($ReferenceActionIdentityInit) {
+    $args += "--reference-action-identity-init"
+}
+
+if (-not $NoVulkanWorkaround) {
+    $args += "--kit_args=--/app/vulkan=false"
+}
+
+if ($resolvedResumeCheckpoint) {
+    $args += @("--resume-checkpoint", $resolvedResumeCheckpoint)
+}
+
+if ($Headless) {
+    $args += "--headless"
+}
+
+if ($SkipPPOAfterBC) {
+    $args += "--skip-ppo-after-bc"
+}
+
+if ($AllowIndefinitePolicyHoldOpen) {
+    $args += "--allow-indefinite-policy-hold-open"
+}
+
+if (-not $NoHoldOpen) {
+    $args += @(
+        "--hold-open",
+        "--hold-open-mode", $HoldOpenMode,
+        "--hold-open-render-frames", ([string]$HoldOpenRenderFrames),
+        "--hold-open-exit-after-frames", ([string]$HoldOpenExitAfterFrames)
+    )
+}
+
+Write-Host "Launching Domino actual-CAD linkage-swing policy training..."
+Write-Host "Contact model: CAD-fitted 11.991 mm foot spheres with startup terrain-penetration gate."
+Write-Host ("Command range: +/-{0:N1} deg; servo target slew: {1:N1} deg/s." -f $ActionScaleDeg, $ServoTargetRateLimitDegS)
+Write-Host ("Report: {0}" -f $reportPath)
+Write-Host ("Log root: {0}" -f $logRoot)
+if ($resolvedResumeCheckpoint) {
+    Write-Host ("Resume checkpoint: {0}" -f $resolvedResumeCheckpoint)
+} else {
+    Write-Host "Resume checkpoint: none; starting fresh for this CAD/contact setup."
+}
+
+& $isaacPython @args
+exit $LASTEXITCODE

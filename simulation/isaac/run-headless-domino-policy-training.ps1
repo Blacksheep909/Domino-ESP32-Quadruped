@@ -11,6 +11,7 @@ param(
 $ErrorActionPreference = "Stop"
 $launcher = Join-Path $PSScriptRoot "run-visible-domino-actual-cad-learning.ps1"
 $checkpointRoot = Join-Path $PSScriptRoot "out\cad_identity\next_policy\actual_cad_warmstart_walk"
+$trackedBaseline = Join-Path $PSScriptRoot "checkpoints\domino_actual_cad_baseline_model_210.pt"
 
 if ($Fresh -and -not [string]::IsNullOrWhiteSpace($ResumeCheckpoint)) {
     throw "Use either -Fresh or -ResumeCheckpoint, not both."
@@ -23,6 +24,9 @@ if (-not $Fresh -and [string]::IsNullOrWhiteSpace($ResumeCheckpoint) -and (Test-
     if ($latestCheckpoint) {
         $ResumeCheckpoint = $latestCheckpoint.FullName
     }
+}
+if (-not $Fresh -and [string]::IsNullOrWhiteSpace($ResumeCheckpoint) -and (Test-Path -LiteralPath $trackedBaseline)) {
+    $ResumeCheckpoint = $trackedBaseline
 }
 
 Write-Host "Domino actual-CAD PPO training"

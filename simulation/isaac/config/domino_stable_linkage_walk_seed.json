@@ -1,0 +1,35 @@
+{
+  "candidate": {
+    "name": "stable_linkage_walk_seed",
+    "lower_amp": 0.23967826201398398,
+    "upper_amp": 0.4217712797381669,
+    "shoulder_amp": 0.05,
+    "lower_bias": -0.6,
+    "upper_bias": 0.1286766746673263,
+    "shoulder_bias": 0.0,
+    "lower_phase": 2.7485285010838894,
+    "upper_phase": -1.399939032857416,
+    "shoulder_phase": 0.7793195954599752,
+    "frequency_scale": 1.031541260225524,
+    "leg_phase_0": -0.025412309160217195,
+    "leg_phase_1": -1.4122034277970812,
+    "leg_phase_2": -2.83116652045672,
+    "leg_phase_3": 1.4127558276463823,
+    "shoulder_sign_0": -1.0,
+    "shoulder_sign_1": 1.0,
+    "shoulder_sign_2": 1.0,
+    "shoulder_sign_3": -1.0,
+    "lower_sign_0": 1.0,
+    "lower_sign_1": 1.0,
+    "lower_sign_2": 1.0,
+    "lower_sign_3": 1.0,
+    "upper_sign_0": 1.0,
+    "upper_sign_1": 1.0,
+    "upper_sign_2": 1.0,
+    "upper_sign_3": 1.0
+  },
+  "provenance": {
+    "source": "teacher_calibrated_neutral_all_foot_best.json",
+    "change": "Reduced shoulder sweep and restored mirrored left/right shoulder signs for a stable PPO locomotion seed."
+  }
+}

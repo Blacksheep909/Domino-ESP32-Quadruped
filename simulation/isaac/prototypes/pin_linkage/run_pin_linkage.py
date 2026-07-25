@@ -12,9 +12,22 @@ import json
 import math
 import os
 from pathlib import Path
+import sys
 import traceback
 
 import numpy as np
+
+CONTRACT_DIR = Path(__file__).resolve().parents[1] / "quadruped"
+if str(CONTRACT_DIR) not in sys.path:
+    sys.path.insert(0, str(CONTRACT_DIR))
+
+from domino_action_contract import (  # noqa: E402
+    ACTION_JOINT_NAMES,
+    EXPECTED_ACTION_COUNT,
+    action_group_counts,
+    per_leg_action_layout,
+    validate_action_layout,
+)
 
 from isaaclab.app import AppLauncher
 
@@ -166,12 +179,41 @@ parser.add_argument(
     action="store_true",
     help="Call SimulationApp.close() before exit. Disabled by default because it can hang on some Windows setups.",
 )
+parser.add_argument(
+    "--allow-proxy-visuals",
+    action="store_true",
+    help="Allow visible rendering of CAD-derived cube/sphere proxy geometries for physics debugging.",
+)
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
+
+
+def is_human_viewable_run(args: argparse.Namespace) -> bool:
+    livestream_arg = int(getattr(args, "livestream", -1))
+    livestream_env = int(os.environ.get("LIVESTREAM", "0") or 0)
+    livestream = livestream_arg if livestream_arg >= 0 else livestream_env
+    enable_cameras = bool(getattr(args, "enable_cameras", False) or int(os.environ.get("ENABLE_CAMERAS", "0") or 0))
+    return bool((not args.headless) or livestream in {1, 2} or enable_cameras)
+
 
 os.environ.setdefault("WARP_CACHE_PATH", str((Path.cwd() / "simulation" / "isaac" / "out" / "warp_cache").resolve()))
 FLOATING_BODY_GEOMETRY = args_cli.geometry == "domino-four-12-floating-body"
 DYNAMIC_GRAVITY_ENABLED = bool(args_cli.enable_gravity or FLOATING_BODY_GEOMETRY)
+DOMINO_PROXY_GEOMETRIES = {
+    "domino-lower-triangle",
+    "domino-upper-loop",
+    "domino-combined-leg",
+    "domino-four-combined-legs",
+    "domino-four-12-actuators",
+    "domino-four-12-fixed-body",
+    "domino-four-12-floating-body",
+}
+if args_cli.geometry in DOMINO_PROXY_GEOMETRIES and is_human_viewable_run(args_cli) and not args_cli.allow_proxy_visuals:
+    raise SystemExit(
+        "This Domino scene uses CAD-derived cube/sphere proxy visuals, not the actual Domino CAD mesh. "
+        "Run headless for physics tests, use prototypes/actual_cad for real CAD visual inspection, "
+        "or pass --allow-proxy-visuals when deliberately debugging proxy physics."
+    )
 
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
@@ -337,6 +379,24 @@ def create_pin_joint(
     return joint
 
 
+def axis_token(axis_label: str) -> str:
+    label = str(axis_label).strip().upper()
+    if label.startswith("-"):
+        label = label[1:]
+    if label not in {"X", "Y", "Z"}:
+        raise ValueError(f"Unsupported Domino joint axis label: {axis_label}")
+    return label
+
+
+def axis_sign(axis_label: str) -> float:
+    return -1.0 if str(axis_label).strip().startswith("-") else 1.0
+
+
+def signed_limit_deg(limit_deg: tuple[float, float], sign: float) -> tuple[float, float]:
+    signed = [float(sign) * float(limit_deg[0]), float(sign) * float(limit_deg[1])]
+    return min(signed), max(signed)
+
+
 def apply_angular_drive(joint, stiffness: float, damping: float, max_force: float, target_deg: float):
     drive = UsdPhysics.DriveAPI.Apply(joint.GetPrim(), "angular")
     drive.CreateTypeAttr("force")
@@ -359,29 +419,58 @@ def make_drive_spec(
     axis: str = "Y",
     target_limit_deg: tuple[float, float] | None = None,
     action_name: str | None = None,
+    command_center_deg: float | None = None,
+    command_limit_deg: tuple[float, float] | None = None,
+    target_sign: float = 1.0,
+    cad_axis: str | None = None,
 ):
     target_limit = None
     if target_limit_deg is not None:
         target_limit = [float(target_limit_deg[0]), float(target_limit_deg[1])]
+    command_limit = None
+    if command_limit_deg is not None:
+        command_limit = [float(command_limit_deg[0]), float(command_limit_deg[1])]
     return {
         "joint": joint,
         "drive": drive,
         "center_deg": float(center_deg),
+        "command_center_deg": float(center_deg if command_center_deg is None else command_center_deg),
         "amplitude_source": amplitude_source,
         "frequency_source": frequency_source,
         "phase_rad": math.radians(float(phase_deg)),
         "phase_deg": float(phase_deg),
         "role": role,
         "axis": axis,
+        "cad_axis": cad_axis or axis,
+        "target_sign": float(target_sign),
+        "command_limit_deg": command_limit,
         "target_limit_deg": target_limit,
         "action_name": action_name or joint,
     }
 
 
-def drive_center_deg(spec: dict, primary_center_override: float | None) -> float:
+def drive_command_center_deg(spec: dict, primary_center_override: float | None) -> float:
     if spec["amplitude_source"] == "primary" and primary_center_override is not None:
         return float(primary_center_override)
-    return float(spec["center_deg"])
+    return float(spec.get("command_center_deg", spec["center_deg"]))
+
+
+def target_from_command_deg(spec: dict, command_target_deg: float) -> float:
+    target = float(command_target_deg)
+    command_limit = spec.get("command_limit_deg")
+    if command_limit is not None:
+        lower_deg, upper_deg = float(command_limit[0]), float(command_limit[1])
+        target = max(lower_deg, min(upper_deg, target))
+    target *= float(spec.get("target_sign", 1.0))
+    target_limit = spec.get("target_limit_deg")
+    if target_limit is not None:
+        lower_deg, upper_deg = float(target_limit[0]), float(target_limit[1])
+        target = max(lower_deg, min(upper_deg, target))
+    return target
+
+
+def drive_center_deg(spec: dict, primary_center_override: float | None) -> float:
+    return target_from_command_deg(spec, drive_command_center_deg(spec, primary_center_override))
 
 
 def drive_amplitude_deg(
@@ -418,10 +507,11 @@ def drive_target_deg(
     shoulder_amplitude: float,
     shoulder_frequency: float,
 ) -> float:
-    center = drive_center_deg(spec, primary_center)
+    center = drive_command_center_deg(spec, primary_center)
     amplitude = drive_amplitude_deg(spec, primary_amplitude, secondary_amplitude, shoulder_amplitude)
     frequency = drive_frequency_hz(spec, primary_frequency, secondary_frequency, shoulder_frequency)
-    return center + amplitude * math.sin((2.0 * math.pi * frequency * time_s) + spec["phase_rad"])
+    command_target = center + amplitude * math.sin((2.0 * math.pi * frequency * time_s) + spec["phase_rad"])
+    return target_from_command_deg(spec, command_target)
 
 
 def independent_drive_target_deg(
@@ -437,12 +527,13 @@ def independent_drive_target_deg(
     shoulder_amplitude: float,
     shoulder_frequency: float,
 ) -> float:
-    center = drive_center_deg(spec, primary_center)
+    center = drive_command_center_deg(spec, primary_center)
     if drive_index != active_drive_index:
-        return center
+        return target_from_command_deg(spec, center)
     amplitude = drive_amplitude_deg(spec, primary_amplitude, secondary_amplitude, shoulder_amplitude)
     frequency = drive_frequency_hz(spec, primary_frequency, secondary_frequency, shoulder_frequency)
-    return center + amplitude * math.sin(2.0 * math.pi * frequency * segment_time_s)
+    command_target = center + amplitude * math.sin(2.0 * math.pi * frequency * segment_time_s)
+    return target_from_command_deg(spec, command_target)
 
 
 def normalized_policy_action(drive_index: int, policy_step_index: int) -> float:
@@ -452,14 +543,10 @@ def normalized_policy_action(drive_index: int, policy_step_index: int) -> float:
 
 
 def policy_drive_target_deg(spec: dict, drive_index: int, policy_step_index: int, scale_deg: float) -> tuple[float, float]:
-    center = drive_center_deg(spec, None)
+    center = drive_command_center_deg(spec, None)
     normalized_action = normalized_policy_action(drive_index, policy_step_index)
-    unclamped_target = center + (float(scale_deg) * normalized_action)
-    target_limit = spec.get("target_limit_deg")
-    if target_limit is None:
-        return normalized_action, unclamped_target
-    lower_deg, upper_deg = float(target_limit[0]), float(target_limit[1])
-    return normalized_action, max(lower_deg, min(upper_deg, unclamped_target))
+    command_target = center + (float(scale_deg) * normalized_action)
+    return normalized_action, target_from_command_deg(spec, command_target)
 
 
 def drive_limit_violation_deg(spec: dict, target_deg: float) -> float:
@@ -1153,7 +1240,9 @@ DOMINO_FOUR_COMBINED_LEG_SPECS = [
         "shoulder_limit_deg": (-30.0, 30.0),
         "shoulder_center_deg": 0.0,
         "lower_drive_joint": "Revolute 59",
+        "lower_drive_axis": "-Y",
         "upper_drive_joint": "Revolute 58",
+        "upper_drive_axis": "-Y",
         "lower_passive_joint": "Revolute 43",
         "lower_coupler_joint": "Revolute 33",
         "lower_closure_joints": ("Revolute 25", "Revolute 26"),
@@ -1180,7 +1269,9 @@ DOMINO_FOUR_COMBINED_LEG_SPECS = [
         "shoulder_limit_deg": (-30.0, 30.0),
         "shoulder_center_deg": 0.0,
         "lower_drive_joint": "Revolute 46",
+        "lower_drive_axis": "-Y",
         "upper_drive_joint": "Revolute 55",
+        "upper_drive_axis": "-Y",
         "lower_passive_joint": "Revolute 44",
         "lower_coupler_joint": "Revolute 36",
         "lower_closure_joints": ("Revolute 23", "Revolute 24"),
@@ -1207,7 +1298,9 @@ DOMINO_FOUR_COMBINED_LEG_SPECS = [
         "shoulder_limit_deg": (-30.0, 30.0),
         "shoulder_center_deg": 0.0,
         "lower_drive_joint": "Revolute 47",
+        "lower_drive_axis": "Y",
         "upper_drive_joint": "Revolute 56",
+        "upper_drive_axis": "-Y",
         "lower_passive_joint": "Revolute 45",
         "lower_coupler_joint": "Revolute 35",
         "lower_closure_joints": ("Revolute 21", "Revolute 22"),
@@ -1238,7 +1331,9 @@ DOMINO_FOUR_COMBINED_LEG_SPECS = [
         "shoulder_limit_deg": (-30.0, 30.0),
         "shoulder_center_deg": 0.0,
         "lower_drive_joint": "Revolute 48",
+        "lower_drive_axis": "-Y",
         "upper_drive_joint": "Revolute 57",
+        "upper_drive_axis": "-Y",
         "lower_passive_joint": "Revolute 42",
         "lower_coupler_joint": "Revolute 37",
         "lower_closure_joints": ("Revolute 27", "Revolute 28"),
@@ -1351,11 +1446,19 @@ def build_domino_combined_leg_instance(
 
     lower_joint_name = joint_key(prefix, spec["lower_drive_joint"])
     upper_joint_name = joint_key(prefix, spec["upper_drive_joint"])
-    lower_limit_deg = spec["lower_drive_limit_deg"]
+    lower_sign = axis_sign(spec["lower_drive_axis"])
+    lower_limit_deg = signed_limit_deg(spec["lower_drive_limit_deg"], lower_sign)
+    lower_center_deg = lower_sign * float(spec["lower_drive_center_deg"])
+    upper_sign = axis_sign(spec["upper_drive_axis"])
+    upper_command_limit_deg = (-30.0, 60.0)
+    upper_limit_deg = signed_limit_deg(upper_command_limit_deg, upper_sign)
+    upper_center_deg = upper_sign * float(spec["upper_drive_center_deg"])
 
     if include_shoulder:
         shoulder_joint_name = joint_key(prefix, spec["shoulder_joint"])
-        shoulder_limit_deg = spec["shoulder_limit_deg"]
+        shoulder_sign = axis_sign(spec["shoulder_axis"])
+        shoulder_limit_deg = signed_limit_deg(spec["shoulder_limit_deg"], shoulder_sign)
+        shoulder_center_deg = shoulder_sign * float(spec["shoulder_center_deg"])
         shoulder_joint = create_pin_joint(
             stage,
             f"{leg_root}/joints/{shoulder_joint_name}",
@@ -1364,27 +1467,31 @@ def build_domino_combined_leg_instance(
             points["hip_origin"],
             lower_deg=shoulder_limit_deg[0],
             upper_deg=shoulder_limit_deg[1],
-            axis="X",
+            axis=axis_token(spec["shoulder_axis"]),
         )
         shoulder_drive = apply_angular_drive(
             shoulder_joint,
             stiffness=1.4,
             damping=0.35,
             max_force=0.75,
-            target_deg=spec["shoulder_center_deg"],
+            target_deg=shoulder_center_deg,
         )
         drives.append(
             make_drive_spec(
                 shoulder_joint_name,
                 shoulder_drive,
-                spec["shoulder_center_deg"],
+                shoulder_center_deg,
                 amplitude_source="shoulder",
                 frequency_source="shoulder",
                 phase_deg=spec["phase_deg"],
                 role="shoulder_ab_ad",
-                axis="X",
-                target_limit_deg=spec["shoulder_limit_deg"],
+                axis=axis_token(spec["shoulder_axis"]),
+                target_limit_deg=shoulder_limit_deg,
                 action_name=f"{prefix}_shoulder_ab_ad",
+                command_center_deg=spec["shoulder_center_deg"],
+                command_limit_deg=spec["shoulder_limit_deg"],
+                target_sign=shoulder_sign,
+                cad_axis=spec["shoulder_axis"],
             )
         )
         drive_angle_pairs[shoulder_joint_name] = {
@@ -1401,6 +1508,7 @@ def build_domino_combined_leg_instance(
         points["lower_drive"],
         lower_deg=lower_limit_deg[0],
         upper_deg=lower_limit_deg[1],
+        axis=axis_token(spec["lower_drive_axis"]),
     )
     create_pin_joint(
         stage,
@@ -1430,8 +1538,9 @@ def build_domino_combined_leg_instance(
         ground,
         upper_driver,
         points["upper_drive"],
-        lower_deg=-30.0,
-        upper_deg=60.0,
+        lower_deg=upper_limit_deg[0],
+        upper_deg=upper_limit_deg[1],
+        axis=axis_token(spec["upper_drive_axis"]),
     )
     create_pin_joint(
         stage,
@@ -1446,39 +1555,47 @@ def build_domino_combined_leg_instance(
         stiffness=1.2,
         damping=0.35,
         max_force=0.65,
-        target_deg=spec["lower_drive_center_deg"],
+        target_deg=lower_center_deg,
     )
     upper_drive = apply_angular_drive(
         upper_drive_joint,
         stiffness=1.0,
         damping=0.30,
         max_force=0.55,
-        target_deg=spec["upper_drive_center_deg"],
+        target_deg=upper_center_deg,
     )
     drives.extend(
         [
             make_drive_spec(
                 lower_joint_name,
                 lower_drive,
-                spec["lower_drive_center_deg"],
+                lower_center_deg,
                 amplitude_source="primary",
                 phase_deg=spec["phase_deg"],
                 role="lower_linkage_drive",
-                axis="Y",
-                target_limit_deg=spec["lower_drive_limit_deg"],
+                axis=axis_token(spec["lower_drive_axis"]),
+                target_limit_deg=lower_limit_deg,
                 action_name=f"{prefix}_lower_linkage",
+                command_center_deg=spec["lower_drive_center_deg"],
+                command_limit_deg=spec["lower_drive_limit_deg"],
+                target_sign=lower_sign,
+                cad_axis=spec["lower_drive_axis"],
             ),
             make_drive_spec(
                 upper_joint_name,
                 upper_drive,
-                spec["upper_drive_center_deg"],
+                upper_center_deg,
                 amplitude_source="secondary",
                 frequency_source="secondary",
                 phase_deg=spec["phase_deg"] + 90.0,
                 role="upper_pitch_drive",
-                axis="Y",
-                target_limit_deg=(-30.0, 60.0),
+                axis=axis_token(spec["upper_drive_axis"]),
+                target_limit_deg=upper_limit_deg,
                 action_name=f"{prefix}_upper_pitch",
+                command_center_deg=spec["upper_drive_center_deg"],
+                command_limit_deg=upper_command_limit_deg,
+                target_sign=upper_sign,
+                cad_axis=spec["upper_drive_axis"],
             ),
         ]
     )
@@ -1632,6 +1749,12 @@ def build_domino_four_combined_legs(
         drive_angle_pairs.update(leg["characterization"]["drive_angle_pairs"])
         pivot_tracks.extend(leg["characterization"]["pivot_tracks"])
         legs.append(leg["leg"])
+
+    if include_shoulders:
+        action_names = [drive["action_name"] for drive in drives]
+        validate_action_layout(action_names)
+        if len(drives) != EXPECTED_ACTION_COUNT:
+            raise RuntimeError(f"Expected {EXPECTED_ACTION_COUNT} Domino actuator drives, found {len(drives)}.")
 
     return {
         "geometry": (
@@ -2011,6 +2134,12 @@ def main():
             "segments_per_full_cycle": len(drive_specs),
             "policy_action_scale_deg": float(args_cli.policy_action_scale_deg),
             "policy_hold_steps": max(1, int(args_cli.policy_hold_steps)),
+        },
+        "action_contract": {
+            "expected_action_count": EXPECTED_ACTION_COUNT,
+            "action_names": ACTION_JOINT_NAMES,
+            "action_group_counts": action_group_counts(),
+            "per_leg_action_layout": per_leg_action_layout(),
         },
         "reset_smoke": {
             "enabled": args_cli.reset_interval_steps > 0,

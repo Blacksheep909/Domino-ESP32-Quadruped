@@ -1,0 +1,113 @@
+{
+  "name": "domino_front_left_verified_swing",
+  "target_leg_index": 1,
+  "target_leg": {
+    "leg_id": "dom_p_12_1",
+    "shoulder": "dom_p_12_1_shoulder_ab_ad",
+    "linkage_drives": [
+      "dom_p_12_1_lower_linkage",
+      "dom_p_12_1_upper_pitch"
+    ],
+    "action_order": [
+      "dom_p_12_1_shoulder_ab_ad",
+      "dom_p_12_1_lower_linkage",
+      "dom_p_12_1_upper_pitch"
+    ]
+  },
+  "action_scale_deg": 16.0,
+  "servo_target_rate_limit_deg_s": 90.0,
+  "transfer_actions": [
+    -0.1264200061559677,
+    -0.1136000007390976,
+    0.09668999910354614,
+    -0.3708440065383911,
+    0.0,
+    0.0,
+    0.2296680063009262,
+    0.2555080056190491,
+    0.5,
+    -0.3123930096626282,
+    -0.014976000413298607,
+    -0.20348000526428223
+  ],
+  "lift_actions": [
+    -0.1264200061559677,
+    -0.1136000007390976,
+    0.09668999910354614,
+    -0.3708440065383911,
+    0.5,
+    -0.4428339898586273,
+    0.2296680063009262,
+    0.2555080056190491,
+    0.5,
+    -0.3123930096626282,
+    -0.014976000413298607,
+    -0.20348000526428223
+  ],
+  "sweep_actions": [
+    -0.1264200061559677,
+    -0.1136000007390976,
+    0.09668999910354614,
+    -0.3708440065383911,
+    -0.5,
+    -1.0,
+    0.2296680063009262,
+    0.2555080056190491,
+    0.5,
+    -0.3123930096626282,
+    -0.014976000413298607,
+    -0.20348000526428223
+  ],
+  "verified_metrics": {
+    "candidate_index": 5,
+    "passed": true,
+    "stable_mechanics": true,
+    "drive_gate_passed": true,
+    "airborne_gate_passed": true,
+    "endpoint_motion_gate_passed": true,
+    "support_gate_passed": true,
+    "score": 0.3083913,
+    "sweep_actions": [
+      -0.1264200061559677,
+      -0.1136000007390976,
+      0.09668999910354614,
+      -0.3708440065383911,
+      -0.5,
+      -1.0,
+      0.2296680063009262,
+      0.2555080056190491,
+      0.5,
+      -0.3123930096626282,
+      -0.014976000413298607,
+      -0.20348000526428223
+    ],
+    "swing_start_clearance_m": 0.025749,
+    "min_sweep_clearance_m": 0.009419,
+    "max_body_relative_fore_aft_motion_m": 0.073008,
+    "max_body_relative_total_motion_m": 0.075397,
+    "target_linkage_drive_motion_deg": [
+      10.071235,
+      11.3697
+    ],
+    "min_target_linkage_drive_motion_deg": 10.071235,
+    "sweep_linkage_drive_motion_deg": [
+      12.969698,
+      8.879822
+    ],
+    "max_sweep_linkage_drive_motion_deg": 12.969698,
+    "min_support_count_during_sweep": 3,
+    "max_tilt_deg": 9.179072,
+    "min_body_height_m": 0.278313,
+    "max_joint_separation_m": 0.002683,
+    "body_displacement_from_swing_start_m": [
+      -0.01894400082528591,
+      0.028137000277638435,
+      -0.006622999906539917
+    ],
+    "recovery_tilt_deg": 1.157921,
+    "recovery_linear_speed_m_s": 0.026245,
+    "recovery_angular_speed_rad_s": 0.050357,
+    "finite": true,
+    "generation": 0
+  }
+}

@@ -32,6 +32,7 @@ from domino_action_contract import (
     EXPECTED_FOOT_COUNT,
     VALIDATED_INITIAL_POLICY_ACTION_SCALE_DEG,
 )
+from domino_locomotion_rewards import command_motion_terms
 from domino_reference_gait import (
     PHASE_OFFSETS_RAD,
     REFERENCE_GAIT_PARAMETER_NAMES,
@@ -202,6 +203,8 @@ class DominoCadLinkageEnvCfg(DirectRLEnvCfg):
     command_velocity_tracking_reward_scale = 1.0
     command_velocity_tracking_sigma = 0.06
     command_progress_reward_scale = 2.0
+    command_stagnation_penalty_scale = 0.0
+    command_stagnation_speed_m_s = 0.03
     use_displacement_velocity_rewards = True
     lateral_drift_reward_scale = 0.0
     yaw_drift_reward_scale = 0.0
@@ -1115,6 +1118,7 @@ class DominoCadLinkageEnv(DirectRLEnv):
         command_velocity_terms = []
         command_velocity_tracking_terms = []
         command_progress_terms = []
+        command_stagnation_terms = []
         lateral_drift_terms = []
         yaw_drift_terms = []
         command_yaw_terms = []
@@ -1151,18 +1155,23 @@ class DominoCadLinkageEnv(DirectRLEnv):
             angular_velocity_terms.append(float(np.sum(np.square(angular_velocity))))
             displacement_velocity = (position - previous_positions_np[env_index]) / max(float(self.step_dt), 1e-6)
             reward_velocity = displacement_velocity if bool(self.cfg.use_displacement_velocity_rewards) else linear_velocity
-            velocity_error = float((reward_velocity[0] - command[0]) ** 2 + (reward_velocity[1] - command[1]) ** 2)
-            command_velocity_terms.append(
-                velocity_error
+            command_motion = command_motion_terms(
+                reward_velocity[:2],
+                command[:2],
+                tracking_sigma_m_s=float(self.cfg.command_velocity_tracking_sigma),
+                stagnation_speed_m_s=float(self.cfg.command_stagnation_speed_m_s),
             )
-            sigma_v = max(float(self.cfg.command_velocity_tracking_sigma), 1e-6)
-            command_velocity_tracking_terms.append(float(math.exp(-velocity_error / (sigma_v * sigma_v))))
-            planar_command_norm = float(np.linalg.norm(command[:2]))
-            if planar_command_norm > 1e-6:
-                command_direction = command[:2] / planar_command_norm
-                command_progress_terms.append(float(np.dot(reward_velocity[:2], command_direction)))
-            else:
-                command_progress_terms.append(0.0)
+            if int(self._reset_settle_steps_remaining[env_index].item()) > 0:
+                command_motion = {
+                    "velocity_error_sq": 0.0,
+                    "velocity_tracking": 0.0,
+                    "directional_progress_m_s": 0.0,
+                    "stagnation": 0.0,
+                }
+            command_velocity_terms.append(command_motion["velocity_error_sq"])
+            command_velocity_tracking_terms.append(command_motion["velocity_tracking"])
+            command_progress_terms.append(command_motion["directional_progress_m_s"])
+            command_stagnation_terms.append(command_motion["stagnation"])
             initial_body_position = self._initial_body_states[env_index]["body_reference"]["position"].reshape(-1)
             initial_body_orientation = self._initial_body_states[env_index]["body_reference"]["orientation"].reshape(-1)
             lateral_drift_terms.append(float((position[1] - initial_body_position[1]) ** 2))
@@ -1208,6 +1217,7 @@ class DominoCadLinkageEnv(DirectRLEnv):
         command_velocity = torch.tensor(command_velocity_terms, dtype=torch.float32, device=self.device)
         command_velocity_tracking = torch.tensor(command_velocity_tracking_terms, dtype=torch.float32, device=self.device)
         command_progress = torch.tensor(command_progress_terms, dtype=torch.float32, device=self.device)
+        command_stagnation = torch.tensor(command_stagnation_terms, dtype=torch.float32, device=self.device)
         lateral_drift = torch.tensor(lateral_drift_terms, dtype=torch.float32, device=self.device)
         yaw_drift = torch.tensor(yaw_drift_terms, dtype=torch.float32, device=self.device)
         command_yaw = torch.tensor(command_yaw_terms, dtype=torch.float32, device=self.device)
@@ -1230,6 +1240,7 @@ class DominoCadLinkageEnv(DirectRLEnv):
             "command_velocity_error_sq": command_velocity,
             "command_velocity_tracking": command_velocity_tracking,
             "command_progress": command_progress,
+            "command_stagnation": command_stagnation,
             "lateral_drift_sq": lateral_drift,
             "yaw_drift_sq": yaw_drift,
             "command_yaw_error_sq": command_yaw,
@@ -1253,6 +1264,7 @@ class DominoCadLinkageEnv(DirectRLEnv):
             "command_velocity_error_sq": float(self.cfg.command_velocity_reward_scale),
             "command_velocity_tracking": float(self.cfg.command_velocity_tracking_reward_scale),
             "command_progress": float(self.cfg.command_progress_reward_scale),
+            "command_stagnation": float(self.cfg.command_stagnation_penalty_scale),
             "lateral_drift_sq": float(self.cfg.lateral_drift_reward_scale),
             "yaw_drift_sq": float(self.cfg.yaw_drift_reward_scale),
             "command_yaw_error_sq": float(self.cfg.command_yaw_reward_scale),

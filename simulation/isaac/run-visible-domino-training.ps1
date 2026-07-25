@@ -6,6 +6,17 @@ param(
     [int]$NumStepsPerEnv = 32,
     [int]$SaveInterval = 1,
     [int]$PolicyValidationSteps = 2360,
+    [int]$PolicyValidationSettleSteps = 120,
+    [int]$PolicyValidationRampSteps = 0,
+    [double]$PolicyGateMinForwardM = 0.001,
+    [double]$PolicyGateMaxLateralM = 0.12,
+    [double]$PolicyGateMaxYawRad = 0.70,
+    [double]$PolicyGateMaxTiltDeg = 30.0,
+    [double]$PolicyGateMaxSwingContact = 0.60,
+    [double]$PolicyGateMinSwingClearanceM = 0.003,
+    [double]$PolicyGateMinEachCadFootClearanceM = 0.005,
+    [double]$PolicyGateMinFootMotionM = 0.050,
+    [double]$PolicyGateMinEachLinkageDriveMotionDeg = 4.0,
     [double]$VisibleStepDelayS = 0.0,
     [int]$Seed = 9306,
     [double]$InitialNoiseStd = 0.05,
@@ -26,6 +37,8 @@ param(
     [double]$CommandVelocityRewardScale = -4.0,
     [double]$CommandVelocityTrackingRewardScale = 1.5,
     [double]$CommandVelocityTrackingSigma = 0.06,
+    [double]$CommandStagnationPenaltyScale = 0.0,
+    [double]$CommandStagnationSpeedMps = 0.03,
     [double]$LateralDriftRewardScale = -650.0,
     [double]$YawDriftRewardScale = -3.0,
     [double]$CommandYawRewardScale = -1.5,
@@ -56,6 +69,7 @@ param(
     [int]$HoldOpenExitAfterFrames = 0,
     [switch]$NoHoldOpen,
     [switch]$Headless,
+    [switch]$ResumeLoadOptimizer,
     [switch]$SkipPPOAfterBC = $true,
     [switch]$AllowIndefinitePolicyHoldOpen,
     [switch]$NoVulkanWorkaround
@@ -162,19 +176,19 @@ $args = @(
     "--actual-cad-ground-clearance-m", ([string]$ActualCadGroundClearanceM),
     "--ground-size-m", ([string]$GroundSizeM),
     "--policy-validation-steps", ([string]$PolicyValidationSteps),
-    "--policy-validation-settle-steps", "120",
-    "--policy-validation-ramp-steps", "0",
-    "--policy-reference-action-snap-tolerance", "0.0001",
+    "--policy-validation-settle-steps", ([string]$PolicyValidationSettleSteps),
+    "--policy-validation-ramp-steps", ([string]$PolicyValidationRampSteps),
+    "--policy-reference-action-snap-tolerance", "0.0",
     "--policy-gate-max-joint-separation-m", "0.001",
-    "--policy-gate-min-forward-m", "-0.20",
-    "--policy-gate-max-lateral-m", "0.12",
-    "--policy-gate-max-yaw-rad", "0.70",
-    "--policy-gate-max-tilt-deg", "30.0",
-    "--policy-gate-max-swing-contact", "0.60",
-    "--policy-gate-min-swing-clearance-m", "0.003",
-    "--policy-gate-min-each-cad-foot-clearance-m", "0.005",
-    "--policy-gate-min-foot-motion-m", "0.050",
-    "--policy-gate-min-each-linkage-drive-motion-deg", "4.0",
+    "--policy-gate-min-forward-m", ([string]$PolicyGateMinForwardM),
+    "--policy-gate-max-lateral-m", ([string]$PolicyGateMaxLateralM),
+    "--policy-gate-max-yaw-rad", ([string]$PolicyGateMaxYawRad),
+    "--policy-gate-max-tilt-deg", ([string]$PolicyGateMaxTiltDeg),
+    "--policy-gate-max-swing-contact", ([string]$PolicyGateMaxSwingContact),
+    "--policy-gate-min-swing-clearance-m", ([string]$PolicyGateMinSwingClearanceM),
+    "--policy-gate-min-each-cad-foot-clearance-m", ([string]$PolicyGateMinEachCadFootClearanceM),
+    "--policy-gate-min-foot-motion-m", ([string]$PolicyGateMinFootMotionM),
+    "--policy-gate-min-each-linkage-drive-motion-deg", ([string]$PolicyGateMinEachLinkageDriveMotionDeg),
     "--policy-gate-max-visual-foot-motion-m", "0.25",
     "--reference-gait-candidate", $referenceGait,
     "--include-reference-actions-in-observation",
@@ -197,6 +211,8 @@ $args = @(
     "--command-velocity-reward-scale", ([string]$CommandVelocityRewardScale),
     "--command-velocity-tracking-reward-scale", ([string]$CommandVelocityTrackingRewardScale),
     "--command-velocity-tracking-sigma", ([string]$CommandVelocityTrackingSigma),
+    "--command-stagnation-penalty-scale", ([string]$CommandStagnationPenaltyScale),
+    "--command-stagnation-speed-m-s", ([string]$CommandStagnationSpeedMps),
     "--lateral-drift-reward-scale", ([string]$LateralDriftRewardScale),
     "--yaw-drift-reward-scale", ([string]$YawDriftRewardScale),
     "--command-yaw-reward-scale", ([string]$CommandYawRewardScale),
@@ -226,6 +242,10 @@ if (-not $NoVulkanWorkaround) {
 
 if ($resolvedResumeCheckpoint) {
     $args += @("--resume-checkpoint", $resolvedResumeCheckpoint)
+}
+
+if ($ResumeLoadOptimizer) {
+    $args += "--resume-load-optimizer"
 }
 
 if ($Headless) {

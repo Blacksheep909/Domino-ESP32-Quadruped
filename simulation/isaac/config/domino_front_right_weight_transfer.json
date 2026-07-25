@@ -1,0 +1,109 @@
+{
+  "name": "domino_dom_p_4_1_weight_transfer",
+  "target_leg_index": 0,
+  "target_leg": {
+    "leg_id": "dom_p_4_1",
+    "shoulder": "dom_p_4_1_shoulder_ab_ad",
+    "linkage_drives": [
+      "dom_p_4_1_lower_linkage",
+      "dom_p_4_1_upper_pitch"
+    ],
+    "action_order": [
+      "dom_p_4_1_shoulder_ab_ad",
+      "dom_p_4_1_lower_linkage",
+      "dom_p_4_1_upper_pitch"
+    ]
+  },
+  "action_scale_deg": 8.0,
+  "servo_target_rate_limit_deg_s": 90.0,
+  "transfer_steps": 60,
+  "lift_steps": 60,
+  "hold_steps": 20,
+  "transfer_actions": [
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "final_actions": [
+    1.0,
+    1.0,
+    -1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "verified_metrics": {
+    "candidate_index": 8,
+    "passed": true,
+    "stable_mechanics": true,
+    "score": 0.1320146,
+    "transfer_actions": [
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "final_actions": [
+      1.0,
+      1.0,
+      -1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "target_peak_clearance_m": 0.031136,
+    "target_clearance_lift_m": 0.030329,
+    "target_peak_body_relative_lift_m": 0.036803,
+    "target_max_body_relative_motion_m": 0.069176,
+    "support_count_at_peak": 3,
+    "clearances_at_target_peak_m": [
+      0.031136,
+      0.000356,
+      0.007479,
+      0.004209
+    ],
+    "tilt_at_target_peak_deg": 6.51337,
+    "height_at_target_peak_m": 0.276329,
+    "max_tilt_deg": 9.757698,
+    "min_body_height_m": 0.270696,
+    "max_joint_separation_m": 0.002792,
+    "body_displacement_m": [
+      -0.0018840000266209245,
+      -0.0032289999071508646,
+      -0.00266400002874434
+    ],
+    "done_count": 0,
+    "terminated_count": 0,
+    "finite": true,
+    "generation": 0
+  }
+}

@@ -1,0 +1,114 @@
+{
+  "name": "domino_rear_right_verified_swing",
+  "target_leg_index": 3,
+  "target_leg": {
+    "leg_id": "dom_p_21_1",
+    "shoulder": "dom_p_21_1_shoulder_ab_ad",
+    "linkage_drives": [
+      "dom_p_21_1_lower_linkage",
+      "dom_p_21_1_upper_pitch"
+    ],
+    "action_order": [
+      "dom_p_21_1_shoulder_ab_ad",
+      "dom_p_21_1_lower_linkage",
+      "dom_p_21_1_upper_pitch"
+    ]
+  },
+  "action_scale_deg": 16.0,
+  "servo_target_rate_limit_deg_s": 90.0,
+  "transfer_actions": [
+    -0.27377599477767944,
+    0.38718798756599426,
+    -0.31287598609924316,
+    0.42966100573539734,
+    0.21209000051021576,
+    0.3162800073623657,
+    -0.2373179942369461,
+    -0.48455899953842163,
+    0.5,
+    -0.05099499970674515,
+    0.0,
+    0.0
+  ],
+  "lift_actions": [
+    -0.27377599477767944,
+    0.38718798756599426,
+    -0.31287598609924316,
+    0.42966100573539734,
+    0.21209000051021576,
+    0.3162800073623657,
+    -0.2373179942369461,
+    -0.48455899953842163,
+    0.5,
+    -0.05099499970674515,
+    0.13864000141620636,
+    -0.18674099445343018
+  ],
+  "sweep_actions": [
+    -0.27377599477767944,
+    0.38718798756599426,
+    -0.31287598609924316,
+    0.42966100573539734,
+    0.21209000051021576,
+    0.3162800073623657,
+    -0.2373179942369461,
+    -0.48455899953842163,
+    0.5,
+    -0.05099499970674515,
+    -1.0,
+    -0.5
+  ],
+  "verified_metrics": {
+    "candidate_index": 3,
+    "passed": true,
+    "stable_mechanics": true,
+    "drive_gate_passed": true,
+    "airborne_gate_passed": true,
+    "endpoint_motion_gate_passed": true,
+    "support_gate_passed": true,
+    "feasibility_ratio": 1.0,
+    "score": 0.2449001,
+    "sweep_actions": [
+      -0.27377599477767944,
+      0.38718798756599426,
+      -0.31287598609924316,
+      0.42966100573539734,
+      0.21209000051021576,
+      0.3162800073623657,
+      -0.2373179942369461,
+      -0.48455899953842163,
+      0.5,
+      -0.05099499970674515,
+      -1.0,
+      -0.5
+    ],
+    "swing_start_clearance_m": 0.012778,
+    "min_sweep_clearance_m": 0.005012,
+    "max_hip_carriage_relative_fore_aft_motion_m": 0.069355,
+    "max_hip_carriage_relative_total_motion_m": 0.082722,
+    "target_linkage_drive_motion_deg": [
+      7.630638,
+      19.061566
+    ],
+    "min_target_linkage_drive_motion_deg": 7.630638,
+    "sweep_linkage_drive_motion_deg": [
+      12.864551,
+      4.751146
+    ],
+    "max_sweep_linkage_drive_motion_deg": 12.864551,
+    "min_support_count_during_sweep": 2,
+    "max_tilt_deg": 14.314389,
+    "min_body_height_m": 0.257713,
+    "max_joint_separation_m": 0.003311,
+    "body_displacement_from_swing_start_m": [
+      0.029702000319957733,
+      0.10780200362205505,
+      0.016801999881863594
+    ],
+    "recovery_tilt_deg": 12.283712,
+    "recovery_linear_speed_m_s": 0.022363,
+    "recovery_angular_speed_rad_s": 0.025844,
+    "finite": true,
+    "generation": 0
+  }
+}

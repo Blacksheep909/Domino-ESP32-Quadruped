@@ -54,16 +54,25 @@ DOMINO_QUADRUPED_CFG = ArticulationCfg(
         ),
     ),
     init_state=ArticulationCfg.InitialStateCfg(
-        pos=(0.0, 0.0, 0.38),
+        # The neutral 0.25 / -0.75 rad linkage pose places the 24 mm feet
+        # on the ground at a base height of about 0.315 m.
+        pos=(0.0, 0.0, 0.32),
         joint_pos=DEFAULT_JOINT_POS,
     ),
     actuators={
-        "domino_servos": ImplicitActuatorCfg(
-            joint_names_expr=ACTION_JOINT_NAMES,
-            effort_limit_sim=8.0,
+        "shoulder_servos_40kg": ImplicitActuatorCfg(
+            joint_names_expr=SHOULDER_ACTION_JOINT_NAMES,
+            effort_limit_sim=3.92,
             velocity_limit_sim=6.0,
-            stiffness=12.0,
-            damping=1.5,
+            stiffness=35.0,
+            damping=2.0,
+        ),
+        "linkage_servos_35kg": ImplicitActuatorCfg(
+            joint_names_expr=LINKAGE_DRIVE_ACTION_JOINT_NAMES,
+            effort_limit_sim=3.43,
+            velocity_limit_sim=6.0,
+            stiffness=35.0,
+            damping=2.0,
         ),
     },
 )

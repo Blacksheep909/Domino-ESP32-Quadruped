@@ -1,0 +1,37 @@
+{
+  "candidate": {
+    "name": "domino_neutral_diagonal_trot_seed",
+    "lower_amp": 0.25,
+    "upper_amp": 0.30,
+    "shoulder_amp": 0.08,
+    "lower_bias": 0.0,
+    "upper_bias": 0.0,
+    "shoulder_bias": 0.0,
+    "lower_phase": 0.0,
+    "upper_phase": -1.5707963267948966,
+    "shoulder_phase": 0.0,
+    "frequency_scale": 1.0,
+    "leg_phase_0": 0.0,
+    "leg_phase_1": 3.141592653589793,
+    "leg_phase_2": 0.0,
+    "leg_phase_3": 3.141592653589793,
+    "shoulder_sign_0": -1.0,
+    "shoulder_sign_1": 1.0,
+    "shoulder_sign_2": 1.0,
+    "shoulder_sign_3": -1.0,
+    "lower_sign_0": 1.0,
+    "lower_sign_1": 1.0,
+    "lower_sign_2": 1.0,
+    "lower_sign_3": 1.0,
+    "upper_sign_0": 1.0,
+    "upper_sign_1": 1.0,
+    "upper_sign_2": 1.0,
+    "upper_sign_3": 1.0
+  },
+  "provenance": {
+    "purpose": "Neutral-centered diagonal trot seed for PPO residual learning.",
+    "mechanism_envelope": "Peak linkage command is 4.8 degrees at the 16-degree action scale, matching the passed visual mechanism gate.",
+    "phase_order": "Front-right and rear-left move together; front-left and rear-right form the opposite diagonal pair.",
+    "foot_loop_direction": "Upper linkage lags the lower linkage by 90 degrees so stance motion drives the body toward positive X."
+  }
+}

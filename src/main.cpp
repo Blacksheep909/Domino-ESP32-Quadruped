@@ -488,9 +488,16 @@ void bodyKinematicsSimple(LegIndex leg,
   const float legY_world = footWorldY - hipWorldY;
   const float legZ_worldUp = footWorldZ - hipWorldZ;
 
-  *outX = legX_world;
-  *outY = legY_world;
-  *outZ = -legZ_worldUp;
+  // IK is solved in the local leg/body frame, not the world frame. The hip
+  // plane was rotated into world space above, so rotate the hip-to-foot vector
+  // back through R^T before converting world +Z-up into IK +Z-down.
+  const float legX_local = R00 * legX_world + R10 * legY_world + R20 * legZ_worldUp;
+  const float legY_local = R01 * legX_world + R11 * legY_world + R21 * legZ_worldUp;
+  const float legZ_localUp = R02 * legX_world + R12 * legY_world + R22 * legZ_worldUp;
+
+  *outX = legX_local;
+  *outY = legY_local;
+  *outZ = -legZ_localUp;
 }
 
 // Move all four legs given a simple body pose expressed in the world/body frame.

@@ -1,0 +1,114 @@
+{
+  "name": "domino_front_right_verified_swing",
+  "target_leg_index": 0,
+  "target_leg": {
+    "leg_id": "dom_p_4_1",
+    "shoulder": "dom_p_4_1_shoulder_ab_ad",
+    "linkage_drives": [
+      "dom_p_4_1_lower_linkage",
+      "dom_p_4_1_upper_pitch"
+    ],
+    "action_order": [
+      "dom_p_4_1_shoulder_ab_ad",
+      "dom_p_4_1_lower_linkage",
+      "dom_p_4_1_upper_pitch"
+    ]
+  },
+  "action_scale_deg": 16.0,
+  "servo_target_rate_limit_deg_s": 90.0,
+  "transfer_actions": [
+    0.5,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "lift_actions": [
+    0.5,
+    0.5,
+    -0.5,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "sweep_actions": [
+    0.8372870087623596,
+    0.5678690075874329,
+    0.24205300211906433,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "verified_metrics": {
+    "candidate_index": 0,
+    "passed": true,
+    "stable_mechanics": true,
+    "drive_gate_passed": true,
+    "airborne_gate_passed": true,
+    "endpoint_motion_gate_passed": true,
+    "support_gate_passed": true,
+    "feasibility_ratio": 1.021682,
+    "score": 0.1396783,
+    "sweep_actions": [
+      0.8372870087623596,
+      0.5678690075874329,
+      0.24205300211906433,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "swing_start_clearance_m": 0.031168,
+    "min_sweep_clearance_m": 0.007747,
+    "max_body_relative_fore_aft_motion_m": 0.028607,
+    "max_body_relative_total_motion_m": 0.0492,
+    "target_linkage_drive_motion_deg": [
+      6.770704,
+      6.933148
+    ],
+    "min_target_linkage_drive_motion_deg": 6.770704,
+    "sweep_linkage_drive_motion_deg": [
+      0.026838,
+      11.427002
+    ],
+    "max_sweep_linkage_drive_motion_deg": 11.427002,
+    "min_support_count_during_sweep": 3,
+    "max_tilt_deg": 9.960716,
+    "min_body_height_m": 0.270221,
+    "max_joint_separation_m": 0.003064,
+    "body_displacement_from_swing_start_m": [
+      0.0019409999949857593,
+      -0.003725999966263771,
+      0.0036269999109208584
+    ],
+    "recovery_tilt_deg": 6.143599,
+    "recovery_linear_speed_m_s": 0.023649,
+    "recovery_angular_speed_rad_s": 0.004993,
+    "finite": true,
+    "generation": 0
+  }
+}

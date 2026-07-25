@@ -12,7 +12,7 @@ Visible, livestreamed, and camera-rendered multi-environment runs are also block
 
 ## Reproduce the Current Baseline
 
-Install Isaac Sim and Isaac Lab, then clone this repository. The CAD meshes, generated URDF package, 29-body linkage builder, 12-actuator environment, reference gait, reward configuration, and launch scripts are tracked. Isaac Sim, Isaac Lab, generated checkpoints, and local run logs are deliberately not committed.
+Install Isaac Sim and Isaac Lab, then clone this repository. The CAD meshes, generated URDF package, 29-body linkage builder, 12-actuator environment, reference gait, reward configuration, launch scripts, and the pre-500-run `model_210` example policy are tracked. Isaac Sim, Isaac Lab, subsequent generated checkpoints, and local run logs are deliberately not committed.
 
 Set the runtime locations if they are not installed at `C:\isaac-sim` and `C:\isaac-projects\IsaacLab`:
 
@@ -39,6 +39,15 @@ powershell -ExecutionPolicy Bypass -File simulation/isaac/run-headless-domino-po
 
 The headless launcher resumes the newest compatible local checkpoint when one exists. Pass `-Fresh` to initialize a new actor from the tracked diagonal-trot reference, or pass `-ResumeCheckpoint <model.pt>` to choose a checkpoint explicitly. Checkpoints and reports are written below `simulation/isaac/out/`.
 
+On a fresh clone, the launcher automatically starts from `checkpoints/domino_actual_cad_baseline_model_210.pt`. To inspect that exact policy in a visible single-robot run before continuing PPO:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File simulation/isaac/run-visible-domino-actual-cad-learning.ps1 `
+  -NumEnvs 1 `
+  -Iterations 1 `
+  -ResumeCheckpoint simulation/isaac/checkpoints/domino_actual_cad_baseline_model_210.pt
+```
+
 This is still a work-in-progress locomotion experiment. The tracked setup demonstrates the real CAD appearance, all 12 servo channels, passive lower and upper linkage pins, reset/termination handling, and an active PPO training loop. It is not presented as a converged walking policy.
 
 ## Included Files
@@ -54,6 +63,7 @@ This is still a work-in-progress locomotion experiment. The tracked setup demons
 | `run-visible-domino-training.ps1` | Visible or headless BC/PPO launcher for the calibrated neutral, passive-linkage model. |
 | `run-visible-domino-actual-cad-learning.ps1` | Current single-robot actual-CAD PPO configuration used for visual inspection. |
 | `run-headless-domino-policy-training.ps1` | Clone-friendly 500-iteration headless launcher with automatic local checkpoint resume. |
+| `checkpoints/domino_actual_cad_baseline_model_210.pt` | Pre-500-run example policy used to reproduce or continue the current actual-CAD PPO experiment. |
 | `prototypes/one_leg/` | Clean three-joint one-leg prototype for the first stable Isaac articulation. |
 | `prototypes/actual_cad/` | USD audit/wrapper tools for the real Domino mesh CAD export. |
 | `prototypes/pin_linkage/` | Minimal actuated pin-joint constraint prototype with generic and CAD-derived Domino linkage modes. |

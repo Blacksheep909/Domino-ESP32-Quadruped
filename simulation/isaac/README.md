@@ -39,6 +39,17 @@ powershell -ExecutionPolicy Bypass -File simulation/isaac/run-headless-domino-po
 
 The headless launcher resumes the newest compatible local checkpoint when one exists. Pass `-Fresh` to initialize a new actor from the tracked diagonal-trot reference, or pass `-ResumeCheckpoint <model.pt>` to choose a checkpoint explicitly. Checkpoints and reports are written below `simulation/isaac/out/`.
 
+Use the velocity-dominant V2 launcher for new locomotion training:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File simulation/isaac/run-headless-domino-velocity-policy.ps1 `
+  -NumEnvs 10 `
+  -GateIterations 40 `
+  -TotalIterations 500
+```
+
+V2 follows the task-first structure used by Isaac Lab's Go2, Anymal, and Spot velocity environments. Commanded velocity and directional progress dominate the reward, stationary behavior under a nonzero command is explicitly penalized, and reference/contact shaping is secondary. The launcher runs a 40-iteration locomotion gate first and starts the remaining 460 iterations only after the policy demonstrates forward displacement, all-foot motion, all-linkage-drive motion, bounded drift, and stable pin constraints.
+
 On a fresh clone, the launcher automatically starts from `checkpoints/domino_actual_cad_baseline_model_210.pt`. To inspect that exact policy in a visible single-robot run before continuing PPO:
 
 ```powershell
@@ -63,6 +74,7 @@ This is still a work-in-progress locomotion experiment. The tracked setup demons
 | `run-visible-domino-training.ps1` | Visible or headless BC/PPO launcher for the calibrated neutral, passive-linkage model. |
 | `run-visible-domino-actual-cad-learning.ps1` | Current single-robot actual-CAD PPO configuration used for visual inspection. |
 | `run-headless-domino-policy-training.ps1` | Clone-friendly 500-iteration headless launcher with automatic local checkpoint resume. |
+| `run-headless-domino-velocity-policy.ps1` | Velocity-dominant, two-stage locomotion launcher that rejects stationary policies before the long training stage. |
 | `checkpoints/domino_actual_cad_baseline_model_210.pt` | Pre-500-run example policy used to reproduce or continue the current actual-CAD PPO experiment. |
 | `prototypes/one_leg/` | Clean three-joint one-leg prototype for the first stable Isaac articulation. |
 | `prototypes/actual_cad/` | USD audit/wrapper tools for the real Domino mesh CAD export. |

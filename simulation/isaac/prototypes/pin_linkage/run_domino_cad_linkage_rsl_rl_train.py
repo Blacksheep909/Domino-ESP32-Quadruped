@@ -283,6 +283,12 @@ parser.add_argument(
     help="Maximum mean commanded-swing foot contact fraction before live trained-policy display.",
 )
 parser.add_argument(
+    "--policy-gate-min-gait-contact-match",
+    type=float,
+    default=0.0,
+    help="Minimum mean agreement between measured and commanded diagonal gait contacts.",
+)
+parser.add_argument(
     "--policy-gate-min-swing-clearance-m",
     type=float,
     default=0.0002,
@@ -911,6 +917,8 @@ def validate_trained_policy_rollout(
         failures.append(f"tilt_deg={max_body_tilt_deg:.6f}")
     if mean_swing_contact > float(gate_args.policy_gate_max_swing_contact):
         failures.append(f"swing_contact={mean_swing_contact:.6f}")
+    if mean_gait_contact_match < float(gate_args.policy_gate_min_gait_contact_match):
+        failures.append(f"gait_contact_match={mean_gait_contact_match:.6f}")
     if mean_swing_clearance_m < float(gate_args.policy_gate_min_swing_clearance_m):
         failures.append(f"swing_clearance_m={mean_swing_clearance_m:.6f}")
     if min_each_actual_cad_foot_peak_clearance_m < float(
@@ -951,6 +959,7 @@ def validate_trained_policy_rollout(
             "max_yaw_rad": float(gate_args.policy_gate_max_yaw_rad),
             "max_tilt_deg": float(gate_args.policy_gate_max_tilt_deg),
             "max_swing_contact": float(gate_args.policy_gate_max_swing_contact),
+            "min_gait_contact_match": float(gate_args.policy_gate_min_gait_contact_match),
             "min_swing_clearance_m": float(gate_args.policy_gate_min_swing_clearance_m),
             "min_each_actual_cad_foot_clearance_m": float(
                 gate_args.policy_gate_min_each_cad_foot_clearance_m

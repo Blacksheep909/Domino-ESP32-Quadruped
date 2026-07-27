@@ -82,6 +82,27 @@ DOMINO_TPU_FOOT_DYNAMIC_FRICTION = 1.20
 DOMINO_TPU_FOOT_RESTITUTION = 0.02
 DOMINO_TPU_FOOT_FRICTION_COMBINE_MODE = "max"
 DOMINO_TPU_FOOT_RESTITUTION_COMBINE_MODE = "min"
+DOMINO_VISUAL_MATERIAL_ROOT = "/World/Looks/Domino"
+DOMINO_VISUAL_MATERIALS = {
+    "printed_white": {
+        "path": f"{DOMINO_VISUAL_MATERIAL_ROOT}/PrintedWhite",
+        "diffuse_color": (0.82, 0.80, 0.74),
+        "roughness": 0.62,
+        "metallic": 0.0,
+    },
+    "carbon": {
+        "path": f"{DOMINO_VISUAL_MATERIAL_ROOT}/Carbon",
+        "diffuse_color": (0.018, 0.022, 0.025),
+        "roughness": 0.34,
+        "metallic": 0.05,
+    },
+    "tpu": {
+        "path": f"{DOMINO_VISUAL_MATERIAL_ROOT}/TpuBlack",
+        "diffuse_color": (0.012, 0.014, 0.016),
+        "roughness": 0.82,
+        "metallic": 0.0,
+    },
+}
 FOOT_CLOSURE_STABILIZER_STIFFNESS = 2.4
 FOOT_CLOSURE_STABILIZER_DAMPING = 0.85
 FOOT_CLOSURE_STABILIZER_MAX_FORCE_N_M = 1.8
@@ -208,6 +229,37 @@ ACTUAL_CAD_VISUAL_BODY_ALIASES = {
 }
 
 
+def actual_cad_visual_material_key(body_key: str) -> str:
+    """Map each CAD rigid body to the closest dominant real-world material."""
+    if body_key == "body_reference":
+        return "printed_white"
+    if body_key.endswith("_lower_closure"):
+        return "tpu"
+    if body_key.endswith(("_lower_diagonal", "_upper_closure")):
+        return "carbon"
+    return "printed_white"
+
+
+def get_or_create_domino_visual_material(stage, material_key: str):
+    spec = DOMINO_VISUAL_MATERIALS[material_key]
+    material_path = str(spec["path"])
+    material_prim = stage.GetPrimAtPath(material_path)
+    if material_prim.IsValid():
+        return UsdShade.Material(material_prim)
+
+    material = UsdShade.Material.Define(stage, material_path)
+    shader = UsdShade.Shader.Define(stage, f"{material_path}/PreviewSurface")
+    shader.CreateIdAttr("UsdPreviewSurface")
+    diffuse = spec["diffuse_color"]
+    shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(
+        Gf.Vec3f(float(diffuse[0]), float(diffuse[1]), float(diffuse[2]))
+    )
+    shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(float(spec["roughness"]))
+    shader.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(float(spec["metallic"]))
+    material.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(), "surface")
+    return material
+
+
 @dataclass(frozen=True)
 class DominoCadLinkageBuildConfig:
     root_prim_path: str = "/World/DominoFour12FloatingBody"
@@ -274,7 +326,7 @@ def create_stl_visual_mesh(
     mesh_dir: Path,
     world_offset: np.ndarray,
     source_translation_m: tuple[float, float, float] = (0.0, 0.0, 0.0),
-    color: tuple[float, float, float] = (0.54, 0.57, 0.60),
+    material_key: str = "printed_white",
 ) -> dict:
     mesh_path = mesh_dir / f"{link_name}.stl"
     if not mesh_path.exists():
@@ -300,12 +352,22 @@ def create_stl_visual_mesh(
     mesh.CreateFaceVertexCountsAttr(list(counts))
     mesh.CreateFaceVertexIndicesAttr(list(indices))
     mesh.CreateDoubleSidedAttr(True)
-    mesh.CreateDisplayColorAttr([Gf.Vec3f(float(color[0]), float(color[1]), float(color[2]))])
+    material = get_or_create_domino_visual_material(stage, material_key)
+    UsdShade.MaterialBindingAPI.Apply(mesh.GetPrim()).Bind(
+        material,
+        bindingStrength=UsdShade.Tokens.strongerThanDescendants,
+        materialPurpose="preview",
+    )
+    diffuse = DOMINO_VISUAL_MATERIALS[material_key]["diffuse_color"]
+    mesh.CreateDisplayColorAttr(
+        [Gf.Vec3f(float(diffuse[0]), float(diffuse[1]), float(diffuse[2]))]
+    )
     return {
         "link_name": link_name,
         "path": str(mesh.GetPath()),
         "triangle_count": len(counts),
         "source_translation_m": source_translation.tolist(),
+        "visual_material": material_key,
     }
 
 
@@ -330,6 +392,7 @@ def attach_actual_cad_visuals(stage, bodies: dict, world_offset: np.ndarray, mes
                     mesh_dir,
                     world_offset,
                     source_translation_m=source_translation,
+                    material_key=actual_cad_visual_material_key(body_key),
                 )
             )
     if missing_bodies:
@@ -348,6 +411,15 @@ def attach_actual_cad_visuals(stage, bodies: dict, world_offset: np.ndarray, mes
         "expected_triangle_count": EXPECTED_ACTUAL_CAD_TOTAL_TRIANGLE_COUNT,
         "corrector_paths": corrector_paths,
         "attached_links": attached,
+        "visual_materials": {
+            key: {
+                "path": str(spec["path"]),
+                "diffuse_color": list(spec["diffuse_color"]),
+                "roughness": float(spec["roughness"]),
+                "metallic": float(spec["metallic"]),
+            }
+            for key, spec in DOMINO_VISUAL_MATERIALS.items()
+        },
         "front_runtime_visual_from_rear_body": dict(FRONT_RUNTIME_VISUAL_FROM_REAR_BODY),
         "front_from_rear_translation_m": list(FRONT_FROM_REAR_TRANSLATION_M),
         "cad_collision_fits": cad_collision_fits,

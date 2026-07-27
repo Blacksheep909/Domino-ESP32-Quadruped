@@ -84,17 +84,35 @@ DOMINO_TPU_FOOT_FRICTION_COMBINE_MODE = "max"
 DOMINO_TPU_FOOT_RESTITUTION_COMBINE_MODE = "min"
 DOMINO_VISUAL_MATERIAL_ROOT = "/World/Looks/Domino"
 DOMINO_VISUAL_MATERIALS = {
-    "printed_white": {
-        "path": f"{DOMINO_VISUAL_MATERIAL_ROOT}/PrintedWhite",
-        "diffuse_color": (0.82, 0.80, 0.74),
-        "roughness": 0.62,
+    "frame_graphite": {
+        "path": f"{DOMINO_VISUAL_MATERIAL_ROOT}/FrameGraphite",
+        "diffuse_color": (0.12, 0.15, 0.18),
+        "roughness": 0.48,
         "metallic": 0.0,
     },
-    "carbon": {
-        "path": f"{DOMINO_VISUAL_MATERIAL_ROOT}/Carbon",
-        "diffuse_color": (0.018, 0.022, 0.025),
-        "roughness": 0.34,
-        "metallic": 0.05,
+    "drive_orange": {
+        "path": f"{DOMINO_VISUAL_MATERIAL_ROOT}/DriveOrange",
+        "diffuse_color": (0.95, 0.24, 0.035),
+        "roughness": 0.42,
+        "metallic": 0.0,
+    },
+    "upper_blue": {
+        "path": f"{DOMINO_VISUAL_MATERIAL_ROOT}/UpperDriveBlue",
+        "diffuse_color": (0.025, 0.34, 0.82),
+        "roughness": 0.40,
+        "metallic": 0.0,
+    },
+    "coupler_yellow": {
+        "path": f"{DOMINO_VISUAL_MATERIAL_ROOT}/CouplerYellow",
+        "diffuse_color": (0.96, 0.66, 0.035),
+        "roughness": 0.44,
+        "metallic": 0.0,
+    },
+    "passive_carbon": {
+        "path": f"{DOMINO_VISUAL_MATERIAL_ROOT}/PassiveCarbon",
+        "diffuse_color": (0.025, 0.032, 0.040),
+        "roughness": 0.36,
+        "metallic": 0.04,
     },
     "tpu": {
         "path": f"{DOMINO_VISUAL_MATERIAL_ROOT}/TpuBlack",
@@ -230,14 +248,18 @@ ACTUAL_CAD_VISUAL_BODY_ALIASES = {
 
 
 def actual_cad_visual_material_key(body_key: str) -> str:
-    """Map each CAD rigid body to the closest dominant real-world material."""
+    """Color-code the real CAD bodies for readable prototype simulation."""
     if body_key == "body_reference":
-        return "printed_white"
+        return "frame_graphite"
     if body_key.endswith("_lower_closure"):
         return "tpu"
     if body_key.endswith(("_lower_diagonal", "_upper_closure")):
-        return "carbon"
-    return "printed_white"
+        return "passive_carbon"
+    if body_key.endswith("_coupler"):
+        return "coupler_yellow"
+    if body_key.endswith("_upper_driver"):
+        return "upper_blue"
+    return "drive_orange"
 
 
 def get_or_create_domino_visual_material(stage, material_key: str):
@@ -326,7 +348,7 @@ def create_stl_visual_mesh(
     mesh_dir: Path,
     world_offset: np.ndarray,
     source_translation_m: tuple[float, float, float] = (0.0, 0.0, 0.0),
-    material_key: str = "printed_white",
+    material_key: str = "frame_graphite",
 ) -> dict:
     mesh_path = mesh_dir / f"{link_name}.stl"
     if not mesh_path.exists():

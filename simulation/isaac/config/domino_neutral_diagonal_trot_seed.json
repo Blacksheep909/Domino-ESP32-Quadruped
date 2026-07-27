@@ -29,9 +29,9 @@
     "upper_sign_3": 1.0
   },
   "provenance": {
-    "purpose": "Neutral-centered diagonal trot seed for PPO residual learning.",
+    "purpose": "Neutral-centered diagonal motor-exploration seed for PPO bootstrap.",
     "mechanism_envelope": "Peak linkage command is 4.8 degrees at the 16-degree action scale, matching the passed visual mechanism gate.",
     "phase_order": "Front-right and rear-left move together; front-left and rear-right form the opposite diagonal pair.",
-    "foot_loop_direction": "Upper linkage lags the lower linkage by 90 degrees so stance motion drives the body toward positive X."
+    "foot_loop_direction": "This cycle was measured moving the CAD toward negative X. It is used only to bootstrap coordinated linkage motion; forward-policy stages set its tracking weight to zero and learn direction from velocity rewards."
   }
 }

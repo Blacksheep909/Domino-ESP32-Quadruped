@@ -90,17 +90,11 @@ DOMINO_VISUAL_MATERIALS = {
         "roughness": 0.50,
         "metallic": 0.0,
     },
-    "printed_polymer": {
-        "path": f"{DOMINO_VISUAL_MATERIAL_ROOT}/PrintedPolymer",
-        "diffuse_color": (0.46, 0.50, 0.53),
-        "roughness": 0.66,
-        "metallic": 0.0,
-    },
     "passive_carbon": {
-        "path": f"{DOMINO_VISUAL_MATERIAL_ROOT}/PassiveCarbon",
+        "path": f"{DOMINO_VISUAL_MATERIAL_ROOT}/LegBlack",
         "diffuse_color": (0.025, 0.032, 0.040),
-        "roughness": 0.36,
-        "metallic": 0.04,
+        "roughness": 0.44,
+        "metallic": 0.02,
     },
     "tpu": {
         "path": f"{DOMINO_VISUAL_MATERIAL_ROOT}/TpuBlack",
@@ -236,14 +230,12 @@ ACTUAL_CAD_VISUAL_BODY_ALIASES = {
 
 
 def actual_cad_visual_material_key(body_key: str) -> str:
-    """Color-code the real CAD bodies for readable prototype simulation."""
+    """Keep the chassis graphite and render the complete leg assembly black."""
     if body_key == "body_reference":
         return "frame_graphite"
     if body_key.endswith("_lower_closure"):
         return "tpu"
-    if body_key.endswith(("_lower_diagonal", "_upper_closure")):
-        return "passive_carbon"
-    return "printed_polymer"
+    return "passive_carbon"
 
 
 def get_or_create_domino_visual_material(stage, material_key: str):

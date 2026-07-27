@@ -86,26 +86,14 @@ DOMINO_VISUAL_MATERIAL_ROOT = "/World/Looks/Domino"
 DOMINO_VISUAL_MATERIALS = {
     "frame_graphite": {
         "path": f"{DOMINO_VISUAL_MATERIAL_ROOT}/FrameGraphite",
-        "diffuse_color": (0.12, 0.15, 0.18),
-        "roughness": 0.48,
+        "diffuse_color": (0.10, 0.12, 0.14),
+        "roughness": 0.50,
         "metallic": 0.0,
     },
-    "drive_orange": {
-        "path": f"{DOMINO_VISUAL_MATERIAL_ROOT}/DriveOrange",
-        "diffuse_color": (0.95, 0.24, 0.035),
-        "roughness": 0.42,
-        "metallic": 0.0,
-    },
-    "upper_blue": {
-        "path": f"{DOMINO_VISUAL_MATERIAL_ROOT}/UpperDriveBlue",
-        "diffuse_color": (0.025, 0.34, 0.82),
-        "roughness": 0.40,
-        "metallic": 0.0,
-    },
-    "coupler_yellow": {
-        "path": f"{DOMINO_VISUAL_MATERIAL_ROOT}/CouplerYellow",
-        "diffuse_color": (0.96, 0.66, 0.035),
-        "roughness": 0.44,
+    "printed_polymer": {
+        "path": f"{DOMINO_VISUAL_MATERIAL_ROOT}/PrintedPolymer",
+        "diffuse_color": (0.46, 0.50, 0.53),
+        "roughness": 0.66,
         "metallic": 0.0,
     },
     "passive_carbon": {
@@ -255,11 +243,7 @@ def actual_cad_visual_material_key(body_key: str) -> str:
         return "tpu"
     if body_key.endswith(("_lower_diagonal", "_upper_closure")):
         return "passive_carbon"
-    if body_key.endswith("_coupler"):
-        return "coupler_yellow"
-    if body_key.endswith("_upper_driver"):
-        return "upper_blue"
-    return "drive_orange"
+    return "printed_polymer"
 
 
 def get_or_create_domino_visual_material(stage, material_key: str):

@@ -326,6 +326,30 @@ parser.add_argument(
     help="Maximum rendered actual-CAD foot-bottom displacement allowed before live trained-policy display.",
 )
 parser.add_argument(
+    "--policy-gate-min-valid-cycles-per-foot",
+    type=int,
+    default=1,
+    help="Minimum valid contact-liftoff-swing-touchdown cycles required from every foot in every validation env.",
+)
+parser.add_argument(
+    "--policy-gate-min-valid-cycle-ratio",
+    type=float,
+    default=0.50,
+    help="Minimum fraction of completed foot cycles that pass clearance, travel, tilt, and touchdown-support checks.",
+)
+parser.add_argument(
+    "--policy-gate-max-foot-cycle-domination-ratio",
+    type=float,
+    default=0.50,
+    help="Maximum share of all valid cycles contributed by one foot.",
+)
+parser.add_argument("--gait-cycle-min-air-steps", type=int, default=3)
+parser.add_argument("--gait-cycle-touchdown-confirm-steps", type=int, default=2)
+parser.add_argument("--gait-cycle-min-clearance-m", type=float, default=0.004)
+parser.add_argument("--gait-cycle-min-body-relative-travel-m", type=float, default=0.020)
+parser.add_argument("--gait-cycle-max-tilt-deg", type=float, default=25.0)
+parser.add_argument("--gait-cycle-min-touchdown-support-feet", type=int, default=2)
+parser.add_argument(
     "--allow-proxy-visuals",
     action="store_true",
     help="Allow visible rendering of the CAD-derived cube/sphere proxy for physics debugging.",
@@ -404,6 +428,7 @@ from domino_action_contract import (  # noqa: E402
     ACTION_JOINT_NAMES,
     CAD_ACTION_ROLES,
     EXPECTED_ACTION_COUNT,
+    FOOT_BODY_NAMES,
     action_group_counts,
     per_leg_action_layout,
 )
@@ -417,6 +442,7 @@ from domino_cad_linkage_env import (  # noqa: E402
     yaw_from_quat_wxyz,
 )
 from domino_cad_linkage_rsl_rl_cfg import DominoCadLinkagePPORunnerCfg  # noqa: E402
+from domino_gait_cycle_metrics import GaitCycleTracker  # noqa: E402
 from domino_linkage_motion import (  # noqa: E402
     create_foot_endpoint_motion_tracker,
     create_linkage_motion_tracker,
@@ -605,6 +631,13 @@ def body_relative_actual_cad_visual_feet(env: DominoCadLinkageEnv, env_index: in
     return ((visual_feet - body_position.reshape(1, 3)) @ world_from_body).astype(np.float32)
 
 
+def body_relative_reward_feet(env: DominoCadLinkageEnv, env_index: int) -> np.ndarray:
+    body_position, body_orientation, _, _ = env._body_reference_state(env_index)
+    foot_positions, _ = env._reward_foot_positions_and_radii(env_index)
+    world_from_body = quat_wxyz_to_rotation_matrix(body_orientation)
+    return ((foot_positions - body_position.reshape(1, 3)) @ world_from_body).astype(np.float32)
+
+
 def prepare_hold_open_view(env: DominoCadLinkageEnv, mode: str, render_frames: int) -> dict[str, object]:
     report: dict[str, object] = {
         "enabled": True,
@@ -741,6 +774,38 @@ def validate_trained_policy_rollout(
     ]
     foot_endpoint_motion_tracker = create_foot_endpoint_motion_tracker(env)
     linkage_motion_tracker = create_linkage_motion_tracker(env)
+    gait_cycle_tracker = GaitCycleTracker(
+        env.num_envs,
+        FOOT_BODY_NAMES,
+        min_air_steps=int(gate_args.gait_cycle_min_air_steps),
+        touchdown_confirm_steps=int(gate_args.gait_cycle_touchdown_confirm_steps),
+        min_clearance_m=float(gate_args.gait_cycle_min_clearance_m),
+        min_body_relative_travel_m=float(
+            gate_args.gait_cycle_min_body_relative_travel_m
+        ),
+        max_tilt_deg=float(gate_args.gait_cycle_max_tilt_deg),
+        min_touchdown_support_feet=int(
+            gate_args.gait_cycle_min_touchdown_support_feet
+        ),
+    )
+    for env_index in range(env.num_envs):
+        reward_foot_positions, reward_foot_radii = env._reward_foot_positions_and_radii(
+            env_index
+        )
+        gait_cycle_tracker.initialize_env(
+            env_index,
+            env._foot_contact_flags_np(
+                reward_foot_positions,
+                env_index,
+                radii_m=reward_foot_radii,
+            ),
+            env._foot_ground_clearance_np(
+                reward_foot_positions,
+                env_index,
+                radii_m=reward_foot_radii,
+            ),
+            body_relative_reward_feet(env, env_index),
+        )
     done_count = 0
     terminated_count = 0
     timeout_count = 0
@@ -781,6 +846,7 @@ def validate_trained_policy_rollout(
             done_count += int(torch.count_nonzero(dones).detach().cpu())
             terminated_count += int(torch.count_nonzero(env.reset_terminated).detach().cpu())
             timeout_count += int(torch.count_nonzero(env.reset_time_outs).detach().cpu())
+            done_flags = dones.detach().cpu().numpy().astype(bool)
             update_linkage_motion_tracker(linkage_motion_tracker, env)
             update_foot_endpoint_motion_tracker(foot_endpoint_motion_tracker, env)
             for env_index in range(env.num_envs):
@@ -837,6 +903,23 @@ def validate_trained_policy_rollout(
                     env_index,
                     radii_m=reward_foot_radii,
                 )
+                ground_clearance = np.maximum(
+                    0.0,
+                    env._foot_ground_clearance_np(
+                        reward_foot_positions,
+                        env_index,
+                        radii_m=reward_foot_radii,
+                    ),
+                )
+                gait_cycle_tracker.update_env(
+                    env_index,
+                    rollout_step,
+                    foot_contacts,
+                    ground_clearance,
+                    body_relative_reward_feet(env, env_index),
+                    body_tilt_deg=tilt_deg,
+                    done=bool(done_flags[env_index]),
+                )
                 command = env._commands[env_index].detach().cpu().numpy().astype(np.float32)
                 desired_stance = env._desired_stance_np(env_index, command)
                 desired_swing = 1.0 - desired_stance
@@ -846,14 +929,6 @@ def validate_trained_policy_rollout(
                 gait_contact_match_sum += float(np.sum(1.0 - np.abs(foot_contacts - desired_stance))) / len(foot_contacts)
                 swing_contact_sum += float(np.sum(foot_contacts * desired_swing)) / swing_count
                 if float(np.sum(desired_swing)) > 0.0:
-                    ground_clearance = np.maximum(
-                        0.0,
-                        env._foot_ground_clearance_np(
-                            reward_foot_positions,
-                            env_index,
-                            radii_m=reward_foot_radii,
-                        ),
-                    )
                     swing_clearance_sum += float(np.sum(ground_clearance * desired_swing))
                     swing_sample_count += int(np.sum(desired_swing))
 
@@ -900,6 +975,7 @@ def validate_trained_policy_rollout(
     mean_gait_contact_match = gait_contact_match_sum / sample_count
     measured_linkage_motion = linkage_motion_report(linkage_motion_tracker)
     measured_foot_endpoint_motion = foot_endpoint_motion_report(foot_endpoint_motion_tracker)
+    gait_cycle_report = gait_cycle_tracker.summary()
 
     failures = []
     if not finite:
@@ -951,6 +1027,27 @@ def validate_trained_policy_rollout(
         )
     if max_visual_foot_motion_m > float(gate_args.policy_gate_max_visual_foot_motion_m):
         failures.append(f"visual_foot_motion_m={max_visual_foot_motion_m:.6f}")
+    if int(gait_cycle_report["min_valid_cycles_per_env_foot"]) < int(
+        gate_args.policy_gate_min_valid_cycles_per_foot
+    ):
+        failures.append(
+            "min_valid_liftoff_touchdown_cycles_per_env_foot="
+            f"{int(gait_cycle_report['min_valid_cycles_per_env_foot'])}"
+        )
+    if float(gait_cycle_report["valid_cycle_ratio"]) < float(
+        gate_args.policy_gate_min_valid_cycle_ratio
+    ):
+        failures.append(
+            "valid_liftoff_touchdown_cycle_ratio="
+            f"{float(gait_cycle_report['valid_cycle_ratio']):.6f}"
+        )
+    if float(gait_cycle_report["max_foot_valid_cycle_share"]) > float(
+        gate_args.policy_gate_max_foot_cycle_domination_ratio
+    ):
+        failures.append(
+            "max_foot_valid_cycle_share="
+            f"{float(gait_cycle_report['max_foot_valid_cycle_share']):.6f}"
+        )
 
     return {
         "enabled": True,
@@ -976,6 +1073,15 @@ def validate_trained_policy_rollout(
                 gate_args.policy_gate_min_each_linkage_drive_motion_deg
             ),
             "max_visual_foot_motion_m": float(gate_args.policy_gate_max_visual_foot_motion_m),
+            "min_valid_cycles_per_foot": int(
+                gate_args.policy_gate_min_valid_cycles_per_foot
+            ),
+            "min_valid_cycle_ratio": float(
+                gate_args.policy_gate_min_valid_cycle_ratio
+            ),
+            "max_foot_cycle_domination_ratio": float(
+                gate_args.policy_gate_max_foot_cycle_domination_ratio
+            ),
         },
         "done_count": int(done_count),
         "terminated_count": int(terminated_count),
@@ -987,6 +1093,7 @@ def validate_trained_policy_rollout(
         "max_joint_separation_during_rollout_m": round(max_joint_separation, 6),
         "linkage_drive_motion": measured_linkage_motion,
         "hip_carriage_relative_actual_cad_foot_motion": measured_foot_endpoint_motion,
+        "foot_liftoff_touchdown_cycles": gait_cycle_report,
         "final_body_reference_displacement_m": final_displacements,
         "final_yaw_heading_drift_rad": final_yaw_drifts,
         "final_forward_m": round(final_forward_m, 6),

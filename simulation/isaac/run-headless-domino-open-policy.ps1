@@ -1,7 +1,7 @@
 param(
     [string]$IsaacSimRoot = $(if ($env:ISAAC_SIM_ROOT) { $env:ISAAC_SIM_ROOT } else { "C:\isaac-sim" }),
     [string]$IsaacLabRoot = $(if ($env:ISAACLAB_ROOT) { $env:ISAACLAB_ROOT } else { "C:\isaac-projects\IsaacLab" }),
-    [int]$NumEnvs = 16,
+    [int]$NumEnvs = 32,
     [int]$Iterations = 500,
     [ValidateSet("cpu", "cuda:0")]
     [string]$PolicyDevice = "cuda:0",
@@ -26,7 +26,7 @@ Write-Host "Checkpoint: none; reference observation: none; imitation reward: non
     -Iterations $Iterations `
     -PolicyDevice $PolicyDevice `
     -PhysicsDevice $PhysicsDevice `
-    -NumStepsPerEnv 32 `
+    -NumStepsPerEnv 24 `
     -SaveInterval 10 `
     -PolicyValidationSteps $PolicyValidationSteps `
     -PolicyValidationSettleSteps 120 `
@@ -55,23 +55,30 @@ Write-Host "Checkpoint: none; reference observation: none; imitation reward: non
     -MaxTiltDeg 50.0 `
     -ActualCadGroundClearanceM 0.001 `
     -GroundSizeM 30.0 `
-    -AliveRewardScale 0.05 `
-    -CommandProgressRewardScale 12.0 `
-    -CommandVelocityRewardScale -5.0 `
-    -CommandVelocityTrackingRewardScale 4.0 `
-    -CommandVelocityTrackingSigma 0.05 `
-    -CommandStagnationPenaltyScale -3.0 `
+    -AliveRewardScale 0.0 `
+    -CommandProgressRewardScale 20.0 `
+    -CommandVelocityRewardScale -2.0 `
+    -CommandVelocityTrackingRewardScale 10.0 `
+    -CommandVelocityTrackingSigma 0.06 `
+    -CommandStagnationPenaltyScale -5.0 `
     -CommandStagnationSpeedMps 0.03 `
-    -LateralDriftRewardScale -25.0 `
-    -YawDriftRewardScale -2.0 `
-    -CommandYawRewardScale -1.0 `
-    -GaitContactRewardScale 2.5 `
-    -StanceContactRewardScale 0.25 `
-    -SwingContactPenaltyScale -1.75 `
-    -FootClearanceRewardScale 2.5 `
+    -LateralDriftRewardScale -3.0 `
+    -YawDriftRewardScale -0.5 `
+    -CommandYawRewardScale -0.5 `
+    -GaitContactRewardScale 4.0 `
+    -StanceContactRewardScale 0.5 `
+    -SwingContactPenaltyScale -5.0 `
+    -FootClearanceRewardScale 4.0 `
     -FootContactRewardScale 0.0 `
-    -ActionRewardScale -0.001 `
-    -ActionRateRewardScale -0.003 `
+    -FootSlipRewardScale -0.5 `
+    -AirTimeVarianceRewardScale -1.0 `
+    -ValidFootCycleRewardScale 1.0 `
+    -FootCycleMinAirTimeS 0.06 `
+    -FootCycleTargetAirTimeS 0.20 `
+    -FootCycleMinClearanceM 0.004 `
+    -FootCycleMinBodyRelativeTravelM 0.015 `
+    -ActionRewardScale -0.0001 `
+    -ActionRateRewardScale -0.002 `
     -ReferenceTrackingRewardScale 0.0 `
     -ReferenceMseRewardScale 0.0 `
     -ReferenceActionIdentityInit:$false `

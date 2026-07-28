@@ -69,6 +69,10 @@ powershell -ExecutionPolicy Bypass -File simulation/isaac/run-headless-domino-ve
 
 This launcher follows the task-first structure used by Isaac Lab's Go2, Anymal, and Spot velocity environments. Commanded velocity and directional progress dominate the locomotion reward, and stationary behavior under a nonzero command is explicitly penalized. A 40-iteration bootstrap first establishes coordinated linkage motion. The next 80 iterations remove the scripted gait-tracking reward and must demonstrate measured positive-X travel before the remaining training budget can start. Each gate also checks all-foot motion, all-linkage-drive motion, clearance, drift, tilt, resets, and pin-constraint separation. A failed gate stops the run rather than spending the full budget on a stationary or wrong-way policy.
 
+The three gates deliberately become stricter rather than demanding a finished gait immediately. Stage one permits incomplete or unbalanced foot cycles while requiring safe motor exploration. Stage two requires at least one recoverable liftoff-touchdown cycle from every foot but tolerates an uneven early gait. The final stage requires a higher valid-cycle ratio and rejects single-foot domination.
+
+Training episodes time out after `10 s`. A timeout is a normal state reset: PPO weights and optimizer state remain intact, and the policy continues learning from the next episode. The staged validation windows are `4.0 s`, `4.0 s`, and `4.8 s`, all shorter than the episode timeout, so a healthy policy is not rejected merely because it reached the configured time limit. Falls, unsafe body contact, excessive tilt, and missing foot recovery remain failures.
+
 On a fresh clone, the launcher automatically starts from `checkpoints/domino_actual_cad_baseline_model_210.pt`. To inspect that exact policy in a visible single-robot run before continuing PPO:
 
 ```powershell

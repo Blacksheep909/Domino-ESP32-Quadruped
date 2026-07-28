@@ -1,7 +1,7 @@
 param(
     [string]$IsaacSimRoot = $(if ($env:ISAAC_SIM_ROOT) { $env:ISAAC_SIM_ROOT } else { "C:\isaac-sim" }),
     [string]$IsaacLabRoot = $(if ($env:ISAACLAB_ROOT) { $env:ISAACLAB_ROOT } else { "C:\isaac-projects\IsaacLab" }),
-    [int]$NumEnvs = 10,
+    [int]$NumEnvs = 16,
     [int]$GateIterations = 40,
     [int]$CorrectionIterations = 80,
     [int]$TotalIterations = 500,
@@ -96,6 +96,9 @@ if ($BootstrapCheckpoint -and $BootstrapCheckpoint.Trim().Length -gt 0) {
     $stageOne.PolicyGateMinEachCadFootClearanceM = 0.0
     $stageOne.PolicyGateMinFootMotionM = 0.015
     $stageOne.PolicyGateMinEachLinkageDriveMotionDeg = 1.0
+    $stageOne.PolicyGateMinValidCyclesPerFoot = 0
+    $stageOne.PolicyGateMinValidCycleRatio = 0.0
+    $stageOne.PolicyGateMaxFootCycleDominationRatio = 1.0
     $stageOne.ReferenceActionIdentityInit = $true
     $stageOne.RunName = $gateRunName
 
@@ -138,6 +141,10 @@ $stageTwo.PolicyGateMinSwingClearanceM = 0.003
 $stageTwo.PolicyGateMinEachCadFootClearanceM = 0.004
 $stageTwo.PolicyGateMinFootMotionM = 0.020
 $stageTwo.PolicyGateMinEachLinkageDriveMotionDeg = 1.5
+$stageTwo.PolicyGateMinValidCyclesPerFoot = 1
+$stageTwo.PolicyGateMinValidCycleRatio = 0.30
+$stageTwo.PolicyGateMaxFootCycleDominationRatio = 0.70
+$stageTwo.GaitCycleMaxTiltDeg = 45.0
 $stageTwo.CommandProgressRewardScale = 40.0
 $stageTwo.CommandVelocityRewardScale = -2.0
 $stageTwo.CommandVelocityTrackingRewardScale = 15.0
@@ -192,6 +199,10 @@ $stageThree.PolicyGateMinSwingClearanceM = 0.004
 $stageThree.PolicyGateMinEachCadFootClearanceM = 0.005
 $stageThree.PolicyGateMinFootMotionM = 0.030
 $stageThree.PolicyGateMinEachLinkageDriveMotionDeg = 2.0
+$stageThree.PolicyGateMinValidCyclesPerFoot = 1
+$stageThree.PolicyGateMinValidCycleRatio = 0.60
+$stageThree.PolicyGateMaxFootCycleDominationRatio = 0.40
+$stageThree.GaitCycleMaxTiltDeg = 30.0
 $stageThree.GaitContactRewardScale = 5.0
 $stageThree.SwingContactPenaltyScale = -6.0
 $stageThree.FootClearanceRewardScale = 5.0

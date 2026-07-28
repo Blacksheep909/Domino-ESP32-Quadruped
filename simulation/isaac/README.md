@@ -55,6 +55,8 @@ The policy and physics devices are deliberately independent. Local July 2026 mea
 
 Every new training report records `runtime.policy_device`, `runtime.physics_device`, `performance.ppo_training_wall_seconds`, and `performance.ppo_samples_per_second`. Re-run the same workload with `-PhysicsDevice cuda:0` when changing the linkage implementation, Isaac Sim version, or GPU driver rather than assuming the current result remains optimal.
 
+The post-training gate also tracks confirmed contact-liftoff-swing-touchdown cycles per foot. A cycle is only valid when the foot remains airborne for multiple control steps, clears the terrain, travels relative to the body, returns with at least two-foot support, and stays within the configured body-tilt limit. Reports include per-foot cycle counts, rejected-cycle reasons, airborne fraction, clearance, travel, landing displacement, and single-foot domination. This rejects policies that produce large endpoint motion by throwing one leg or falling without demonstrating recoverable four-foot stepping.
+
 Use the velocity-dominant V2 launcher for new locomotion training:
 
 ```powershell

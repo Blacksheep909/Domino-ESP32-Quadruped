@@ -1,0 +1,81 @@
+param(
+    [string]$IsaacSimRoot = $(if ($env:ISAAC_SIM_ROOT) { $env:ISAAC_SIM_ROOT } else { "C:\isaac-sim" }),
+    [string]$IsaacLabRoot = $(if ($env:ISAACLAB_ROOT) { $env:ISAACLAB_ROOT } else { "C:\isaac-projects\IsaacLab" }),
+    [int]$NumEnvs = 10,
+    [int]$Iterations = 500,
+    [int]$Seed = 280728,
+    [int]$PolicyValidationSteps = 300,
+    [string]$RunName = "actual_cad_open_walk_v1"
+)
+
+$ErrorActionPreference = "Stop"
+$trainer = Join-Path $PSScriptRoot "run-visible-domino-training.ps1"
+
+Write-Host "Domino open-policy PPO training"
+Write-Host ("Environments: {0}; iterations: {1}; seed: {2}" -f $NumEnvs, $Iterations, $Seed)
+Write-Host "Checkpoint: none; reference observation: none; imitation reward: none."
+
+& $trainer `
+    -IsaacSimRoot $IsaacSimRoot `
+    -IsaacLabRoot $IsaacLabRoot `
+    -NumEnvs $NumEnvs `
+    -Iterations $Iterations `
+    -NumStepsPerEnv 32 `
+    -SaveInterval 10 `
+    -PolicyValidationSteps $PolicyValidationSteps `
+    -PolicyValidationSettleSteps 120 `
+    -PolicyValidationRampSteps 60 `
+    -PolicyGateMinForwardM 0.03 `
+    -PolicyGateMaxLateralM 0.12 `
+    -PolicyGateMaxYawRad 0.70 `
+    -PolicyGateMaxTiltDeg 30.0 `
+    -PolicyGateMaxSwingContact 0.80 `
+    -PolicyGateMinGaitContactMatch 0.48 `
+    -PolicyGateMinSwingClearanceM 0.002 `
+    -PolicyGateMinEachCadFootClearanceM 0.004 `
+    -PolicyGateMinFootMotionM 0.045 `
+    -PolicyGateMinEachLinkageDriveMotionDeg 3.0 `
+    -Seed $Seed `
+    -InitialNoiseStd 0.35 `
+    -PpoLearningRate 0.0003 `
+    -PpoEntropyCoefficient 0.01 `
+    -ActionScaleDeg 16.0 `
+    -ServoTargetRateLimitDegS 180.0 `
+    -ResetSettleSteps 15 `
+    -CommandXMps 0.10 `
+    -GaitFrequencyHz 1.25 `
+    -EpisodeLengthS 10.0 `
+    -MinHeightM 0.18 `
+    -MaxTiltDeg 50.0 `
+    -ActualCadGroundClearanceM 0.001 `
+    -GroundSizeM 30.0 `
+    -AliveRewardScale 0.05 `
+    -CommandProgressRewardScale 12.0 `
+    -CommandVelocityRewardScale -5.0 `
+    -CommandVelocityTrackingRewardScale 4.0 `
+    -CommandVelocityTrackingSigma 0.05 `
+    -CommandStagnationPenaltyScale -3.0 `
+    -CommandStagnationSpeedMps 0.03 `
+    -LateralDriftRewardScale -25.0 `
+    -YawDriftRewardScale -2.0 `
+    -CommandYawRewardScale -1.0 `
+    -GaitContactRewardScale 2.5 `
+    -StanceContactRewardScale 0.25 `
+    -SwingContactPenaltyScale -1.75 `
+    -FootClearanceRewardScale 2.5 `
+    -FootContactRewardScale 0.0 `
+    -ActionRewardScale -0.001 `
+    -ActionRateRewardScale -0.003 `
+    -ReferenceTrackingRewardScale 0.0 `
+    -ReferenceMseRewardScale 0.0 `
+    -ReferenceActionIdentityInit:$false `
+    -ReferenceActionBcSteps 0 `
+    -RunName $RunName `
+    -FootCollisionMode "actual-cad-visual-bottom" `
+    -ClosureModel "passive" `
+    -OpenPolicy `
+    -Headless `
+    -SkipPPOAfterBC:$false `
+    -NoHoldOpen
+
+exit $LASTEXITCODE

@@ -39,6 +39,16 @@ powershell -ExecutionPolicy Bypass -File simulation/isaac/run-headless-domino-po
 
 The headless launcher resumes the newest compatible local checkpoint when one exists. Pass `-Fresh` to initialize a new actor from the tracked diagonal-trot reference, or pass `-ResumeCheckpoint <model.pt>` to choose a checkpoint explicitly. Checkpoints and reports are written below `simulation/isaac/out/`.
 
+To train a policy from random network weights without a reference action in its observation, behavior cloning, or an imitation reward:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File simulation/isaac/run-headless-domino-open-policy.ps1 `
+  -NumEnvs 10 `
+  -Iterations 500
+```
+
+This open-policy experiment still uses task-level reward shaping: a `0.10 m/s` forward command, measured forward displacement and velocity, diagonal stance/swing contact timing, swing-foot clearance, uprightness, and penalties for stagnation, wrong-way travel, lateral/yaw drift, abrupt actions, non-foot ground contact, and falls. The actor must discover the 12 servo commands itself; it is not given a scripted gait target. The launcher writes a checkpoint every ten iterations and applies a stricter single-policy walking gate after training.
+
 Use the velocity-dominant V2 launcher for new locomotion training:
 
 ```powershell
@@ -75,6 +85,7 @@ This is still a work-in-progress locomotion experiment. The tracked setup demons
 | `run-visible-domino-training.ps1` | Visible or headless BC/PPO launcher for the calibrated neutral, passive-linkage model. |
 | `run-visible-domino-actual-cad-learning.ps1` | Current single-robot actual-CAD PPO configuration used for visual inspection. |
 | `run-headless-domino-policy-training.ps1` | Clone-friendly 500-iteration headless launcher with automatic local checkpoint resume. |
+| `run-headless-domino-open-policy.ps1` | From-scratch PPO launcher with no reference-action observation, behavior cloning, or imitation reward. |
 | `run-headless-domino-velocity-policy.ps1` | Velocity-dominant, three-stage locomotion curriculum that rejects stationary or wrong-way policies before the long training stage. |
 | `checkpoints/domino_actual_cad_baseline_model_210.pt` | Pre-500-run example policy used to reproduce or continue the current actual-CAD PPO experiment. |
 | `prototypes/one_leg/` | Clean three-joint one-leg prototype for the first stable Isaac articulation. |

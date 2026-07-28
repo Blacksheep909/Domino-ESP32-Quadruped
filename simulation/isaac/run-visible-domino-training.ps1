@@ -57,6 +57,7 @@ param(
     [int]$ReferenceActionBcSteps = 1,
     [string]$RunName = "linkage_swing_hipframe_bc_training",
     [string]$ReferenceGait = "",
+    [switch]$OpenPolicy,
     [ValidateSet("flat", "stairs")]
     [string]$TerrainType = "flat",
     [ValidateSet("linkage-lower-closure", "actual-cad-visual-bottom", "actual-cad-grounded-support")]
@@ -111,6 +112,9 @@ $resolvedResumeCheckpoint = ""
 if ($ResumeCheckpoint -and $ResumeCheckpoint.Trim().Length -gt 0) {
     $resolvedResumeCheckpoint = (Resolve-Path -LiteralPath $ResumeCheckpoint).Path
 }
+if ($OpenPolicy -and ($ReferenceActionIdentityInit -or $ReferenceActionBcSteps -gt 0)) {
+    throw "Open-policy training requires -ReferenceActionIdentityInit:`$false and -ReferenceActionBcSteps 0."
+}
 $referenceGaitCandidates = @(
     (Join-Path $repoRoot "simulation\isaac\config\domino_linkage_swing_cycle_teacher.json"),
     (Join-Path $repoRoot "simulation\isaac\config\domino_calibrated_neutral_teacher.json"),
@@ -118,15 +122,21 @@ $referenceGaitCandidates = @(
     (Join-Path $repoRoot "simulation\isaac\out\cad_identity\teacher_grid\teacher_grounded_support_valid_lower_scale20_seed240704.json"),
     (Join-Path $repoRoot "simulation\isaac\out\cad_identity\teacher_grid\teacher_random001_scale70_freq225.json")
 )
-if ($ReferenceGait -and $ReferenceGait.Trim().Length -gt 0) {
-    $referenceGait = (Resolve-Path -LiteralPath $ReferenceGait).Path
-} else {
-    $referenceGait = $referenceGaitCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+$referenceGait = ""
+if (-not $OpenPolicy) {
+    if ($ReferenceGait -and $ReferenceGait.Trim().Length -gt 0) {
+        $referenceGait = (Resolve-Path -LiteralPath $ReferenceGait).Path
+    } else {
+        $referenceGait = $referenceGaitCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    }
 }
 $logRoot = Join-Path $repoRoot ("simulation\isaac\out\cad_identity\next_policy\" + $RunName)
 $reportPath = Join-Path $repoRoot ("simulation\isaac\out\cad_identity\next_policy\" + $RunName + ".json")
 
-$requiredArtifacts = @($trainScript, $referenceGait)
+$requiredArtifacts = @($trainScript)
+if (-not $OpenPolicy) {
+    $requiredArtifacts += $referenceGait
+}
 if ($resolvedResumeCheckpoint) {
     $requiredArtifacts += $resolvedResumeCheckpoint
 }
@@ -192,19 +202,6 @@ $args = @(
     "--policy-gate-min-foot-motion-m", ([string]$PolicyGateMinFootMotionM),
     "--policy-gate-min-each-linkage-drive-motion-deg", ([string]$PolicyGateMinEachLinkageDriveMotionDeg),
     "--policy-gate-max-visual-foot-motion-m", "0.25",
-    "--reference-gait-candidate", $referenceGait,
-    "--include-reference-actions-in-observation",
-    "--reference-action-bc-steps", ([string]$ReferenceActionBcSteps),
-    "--reference-action-bc-settle-steps", "0",
-    "--reference-action-bc-replay-steps", "0",
-    "--reference-action-bc-batch-size", "256",
-    "--reference-action-bc-lr", "0.0002",
-    "--reference-action-bc-output-penalty", "0.0",
-    "--reference-action-bc-lower-linkage-weight", "1.5",
-    "--reference-action-bc-upper-pitch-weight", "1.5",
-    "--reference-action-tracking-reward-scale", ([string]$ReferenceTrackingRewardScale),
-    "--reference-action-tracking-sigma", ([string]$ReferenceTrackingSigma),
-    "--reference-action-mse-reward-scale", ([string]$ReferenceMseRewardScale),
     "--foot-collision-mode", $FootCollisionMode,
     "--closure-model", $ClosureModel,
     "--terrain-type", $TerrainType,
@@ -230,11 +227,29 @@ $args = @(
     "--rendering_mode", "performance"
 )
 
+if (-not $OpenPolicy) {
+    $args += @(
+        "--reference-gait-candidate", $referenceGait,
+        "--include-reference-actions-in-observation",
+        "--reference-action-bc-steps", ([string]$ReferenceActionBcSteps),
+        "--reference-action-bc-settle-steps", "0",
+        "--reference-action-bc-replay-steps", "0",
+        "--reference-action-bc-batch-size", "256",
+        "--reference-action-bc-lr", "0.0002",
+        "--reference-action-bc-output-penalty", "0.0",
+        "--reference-action-bc-lower-linkage-weight", "1.5",
+        "--reference-action-bc-upper-pitch-weight", "1.5",
+        "--reference-action-tracking-reward-scale", ([string]$ReferenceTrackingRewardScale),
+        "--reference-action-tracking-sigma", ([string]$ReferenceTrackingSigma),
+        "--reference-action-mse-reward-scale", ([string]$ReferenceMseRewardScale)
+    )
+}
+
 if ($NumEnvs -gt 1) {
     $args += "--allow-multi-env-viewport"
 }
 
-if ($ReferenceActionIdentityInit) {
+if (-not $OpenPolicy -and $ReferenceActionIdentityInit) {
     $args += "--reference-action-identity-init"
 }
 
@@ -276,6 +291,7 @@ Write-Host "Contact model: CAD-fitted 11.991 mm foot spheres with startup terrai
 Write-Host ("Command range: +/-{0:N1} deg; servo target slew: {1:N1} deg/s." -f $ActionScaleDeg, $ServoTargetRateLimitDegS)
 Write-Host ("Report: {0}" -f $reportPath)
 Write-Host ("Log root: {0}" -f $logRoot)
+Write-Host ("Policy initialization: {0}" -f $(if ($OpenPolicy) { "random PPO; no reference observation or imitation reward" } else { "reference-guided" }))
 if ($resolvedResumeCheckpoint) {
     Write-Host ("Resume checkpoint: {0}" -f $resolvedResumeCheckpoint)
 } else {

@@ -27,6 +27,12 @@ parser.add_argument(
     help="Zero-action steps used to settle the authored neutral pose before gait metrics begin.",
 )
 parser.add_argument("--candidate-count", type=int, default=16, help="Number of candidates to evaluate in parallel.")
+parser.add_argument(
+    "--candidate-offset",
+    type=int,
+    default=0,
+    help="Starting index for a deterministic --symmetry-candidate batch.",
+)
 parser.add_argument("--seed", type=int, default=42, help="Candidate generation seed.")
 parser.add_argument("--action-scale-deg", type=float, default=30.0, help="Maximum drive target offset, in degrees, for action=1.")
 parser.add_argument(
@@ -40,6 +46,9 @@ parser.add_argument("--command-y-m-s", type=float, default=0.0, help="Lateral ve
 parser.add_argument("--command-yaw-rad-s", type=float, default=0.0, help="Yaw-rate command.")
 parser.add_argument("--gait-frequency-hz", type=float, default=1.0, help="Base gait phase frequency.")
 parser.add_argument("--episode-length-s", type=float, default=6.0, help="Episode length.")
+parser.add_argument("--floating-height-m", type=float, default=None, help="Initial body-reference height override.")
+parser.add_argument("--min-height-m", type=float, default=None, help="Minimum body-reference height before reset.")
+parser.add_argument("--max-tilt-deg", type=float, default=None, help="Maximum body-reference tilt before reset.")
 parser.add_argument("--load-candidate", default="", help="Optional JSON candidate to replay instead of searching.")
 parser.add_argument("--refine-candidate", default="", help="Optional JSON candidate to perturb into a local search batch.")
 parser.add_argument("--symmetry-candidate", default="", help="Optional JSON candidate used to generate deterministic symmetry/phase variants.")
@@ -395,22 +404,31 @@ def candidate_filename(rank: int, candidate: dict[str, float | str]) -> str:
 
 
 def main() -> None:
+    candidate_count = int(args_cli.candidate_count)
+    candidate_offset = max(int(args_cli.candidate_offset), 0)
     if args_cli.load_candidate:
+        if candidate_offset:
+            raise ValueError("--candidate-offset is only supported with --symmetry-candidate.")
         candidates = load_candidate(args_cli.load_candidate)
     elif args_cli.refine_candidate:
+        if candidate_offset:
+            raise ValueError("--candidate-offset is only supported with --symmetry-candidate.")
         candidates = generate_refined_candidates(
             load_candidate(args_cli.refine_candidate)[0],
-            int(args_cli.candidate_count),
+            candidate_count,
             int(args_cli.seed),
             float(args_cli.refine_scale),
         )
     elif args_cli.symmetry_candidate:
-        candidates = generate_symmetry_candidates(
+        symmetry_candidates = generate_symmetry_candidates(
             load_candidate(args_cli.symmetry_candidate)[0],
-            int(args_cli.candidate_count),
+            candidate_offset + candidate_count,
         )
+        candidates = symmetry_candidates[candidate_offset : candidate_offset + candidate_count]
     else:
-        candidates = generate_candidates(int(args_cli.candidate_count), int(args_cli.seed))
+        if candidate_offset:
+            raise ValueError("--candidate-offset is only supported with --symmetry-candidate.")
+        candidates = generate_candidates(candidate_count, int(args_cli.seed))
     if len(candidates) < 1:
         raise RuntimeError("At least one gait candidate is required.")
 
@@ -444,6 +462,12 @@ def main() -> None:
     cfg.command_yaw_rad_s = float(args_cli.command_yaw_rad_s)
     cfg.gait_frequency_hz = float(args_cli.gait_frequency_hz)
     cfg.episode_length_s = float(args_cli.episode_length_s)
+    if args_cli.floating_height_m is not None:
+        cfg.floating_height_m = float(args_cli.floating_height_m)
+    if args_cli.min_height_m is not None:
+        cfg.min_height_m = float(args_cli.min_height_m)
+    if args_cli.max_tilt_deg is not None:
+        cfg.max_tilt_deg = float(args_cli.max_tilt_deg)
     cfg.foot_contact_reward_scale = 0.0
     cfg.command_progress_reward_scale = 20.0
     cfg.command_velocity_tracking_reward_scale = 4.0

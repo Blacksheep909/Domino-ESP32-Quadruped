@@ -1,8 +1,12 @@
 param(
     [string]$IsaacSimRoot = $(if ($env:ISAAC_SIM_ROOT) { $env:ISAAC_SIM_ROOT } else { "C:\isaac-sim" }),
     [string]$IsaacLabRoot = $(if ($env:ISAACLAB_ROOT) { $env:ISAACLAB_ROOT } else { "C:\isaac-projects\IsaacLab" }),
-    [int]$NumEnvs = 10,
+    [int]$NumEnvs = 16,
     [int]$Iterations = 500,
+    [ValidateSet("cpu", "cuda:0")]
+    [string]$PolicyDevice = "cuda:0",
+    [ValidateSet("same", "cpu", "cuda:0")]
+    [string]$PhysicsDevice = "cpu",
     [int]$Seed = 280728,
     [int]$PolicyValidationSteps = 300,
     [string]$RunName = "actual_cad_open_walk_v1"
@@ -20,6 +24,8 @@ Write-Host "Checkpoint: none; reference observation: none; imitation reward: non
     -IsaacLabRoot $IsaacLabRoot `
     -NumEnvs $NumEnvs `
     -Iterations $Iterations `
+    -PolicyDevice $PolicyDevice `
+    -PhysicsDevice $PhysicsDevice `
     -NumStepsPerEnv 32 `
     -SaveInterval 10 `
     -PolicyValidationSteps $PolicyValidationSteps `

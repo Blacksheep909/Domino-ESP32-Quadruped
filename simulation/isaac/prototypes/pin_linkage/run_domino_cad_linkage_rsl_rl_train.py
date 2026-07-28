@@ -9,6 +9,7 @@ import math
 import os
 from pathlib import Path
 import sys
+import time
 import traceback
 
 from isaaclab.app import AppLauncher
@@ -22,6 +23,12 @@ parser = argparse.ArgumentParser(description="Train the Domino CAD-linkage env b
 parser.add_argument("--num-envs", type=int, default=1, help="Number of manually authored CAD-linkage environments.")
 parser.add_argument("--iterations", type=int, default=1, help="PPO learning iterations to run.")
 parser.add_argument("--num-steps-per-env", type=int, default=8, help="Rollout steps per env per PPO iteration.")
+parser.add_argument(
+    "--physics-device",
+    choices=["same", "cpu", "cuda:0"],
+    default="same",
+    help="PhysX device. 'same' uses the AppLauncher --device value while allowing CPU PhysX with a CUDA policy.",
+)
 parser.add_argument("--save-interval", type=int, default=None, help="PPO checkpoint interval in learning iterations.")
 parser.add_argument(
     "--visible-step-delay-s",
@@ -1224,6 +1231,7 @@ def settle_behavior_clone_start(
 
 
 def main() -> None:
+    main_started_at = time.perf_counter()
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
     torch.backends.cudnn.deterministic = False
@@ -1231,7 +1239,7 @@ def main() -> None:
 
     env_cfg = DominoCadLinkageEnvCfg()
     env_cfg.scene.num_envs = int(args_cli.num_envs)
-    env_cfg.sim.device = args_cli.device
+    env_cfg.sim.device = args_cli.device if args_cli.physics_device == "same" else args_cli.physics_device
     env_cfg.seed = int(args_cli.seed)
     env_cfg.visible_step_delay_s = max(float(args_cli.visible_step_delay_s), 0.0)
     if VIEWABLE_RUN:
@@ -1467,8 +1475,11 @@ def main() -> None:
             },
             str(log_dir / "model_bc.pt"),
         )
+    ppo_training_wall_seconds = 0.0
     if not args_cli.skip_ppo_after_bc:
+        ppo_training_started_at = time.perf_counter()
         runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=True)
+        ppo_training_wall_seconds = time.perf_counter() - ppo_training_started_at
 
     checkpoints = [path.name for path in sorted(log_dir.glob("model*.pt"), key=checkpoint_index)]
     if not checkpoints:
@@ -1562,6 +1573,8 @@ def main() -> None:
     elif validation_failed:
         report_status = "passed_with_policy_validation_warnings"
 
+    total_timesteps = env.num_envs * agent_cfg.max_iterations * agent_cfg.num_steps_per_env
+    trained_timesteps = 0 if args_cli.skip_ppo_after_bc else total_timesteps
     report = {
         "status": report_status,
         "geometry": env._linkage["geometry"],
@@ -1586,7 +1599,25 @@ def main() -> None:
         "iterations": agent_cfg.max_iterations,
         "ppo_skipped_after_bc": bool(args_cli.skip_ppo_after_bc),
         "num_steps_per_env": agent_cfg.num_steps_per_env,
-        "total_timesteps": env.num_envs * agent_cfg.max_iterations * agent_cfg.num_steps_per_env,
+        "total_timesteps": total_timesteps,
+        "runtime": {
+            "policy_device": str(agent_cfg.device),
+            "physics_device": str(env_cfg.sim.device),
+            "simulation_dt_s": float(env_cfg.sim.dt),
+            "control_decimation": int(env_cfg.decimation),
+            "use_fabric": bool(env_cfg.sim.use_fabric),
+            "replicate_physics": bool(env_cfg.scene.replicate_physics),
+        },
+        "performance": {
+            "ppo_training_wall_seconds": round(float(ppo_training_wall_seconds), 6),
+            "ppo_trained_timesteps": int(trained_timesteps),
+            "ppo_samples_per_second": (
+                round(float(trained_timesteps) / ppo_training_wall_seconds, 6)
+                if ppo_training_wall_seconds > 0.0
+                else 0.0
+            ),
+            "main_wall_seconds_before_report": round(time.perf_counter() - main_started_at, 6),
+        },
         "action_dim": action_dim,
         "action_names": ACTION_JOINT_NAMES,
         "action_group_counts": action_group_counts(),

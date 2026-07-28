@@ -43,11 +43,17 @@ To train a policy from random network weights without a reference action in its 
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File simulation/isaac/run-headless-domino-open-policy.ps1 `
-  -NumEnvs 10 `
+  -NumEnvs 16 `
+  -PolicyDevice cuda:0 `
+  -PhysicsDevice cpu `
   -Iterations 500
 ```
 
 This open-policy experiment still uses task-level reward shaping: a `0.10 m/s` forward command, measured forward displacement and velocity, diagonal stance/swing contact timing, swing-foot clearance, uprightness, and penalties for stagnation, wrong-way travel, lateral/yaw drift, abrupt actions, non-foot ground contact, and falls. The actor must discover the 12 servo commands itself; it is not given a scripted gait target. The launcher writes a checkpoint every ten iterations and applies a stricter single-policy walking gate after training.
+
+The policy and physics devices are deliberately independent. Local July 2026 measurements on an RTX 3080 Ti found that this USD-synchronized closed-loop prototype trained faster with PPO on `cuda:0` and PhysX on `cpu`: four environments improved from `14.66` to `34.07` samples/s, ten improved from `16.98` to `48.47` samples/s, and sixteen CPU-physics environments reached `54.24` samples/s. Both device modes retained sub-`0.25 mm` maximum pin separation in the short comparison runs. The result is specific to this 29-body, 36-constraint prototype; conventional tensor-controlled tree articulations usually favor GPU PhysX.
+
+Every new training report records `runtime.policy_device`, `runtime.physics_device`, `performance.ppo_training_wall_seconds`, and `performance.ppo_samples_per_second`. Re-run the same workload with `-PhysicsDevice cuda:0` when changing the linkage implementation, Isaac Sim version, or GPU driver rather than assuming the current result remains optimal.
 
 Use the velocity-dominant V2 launcher for new locomotion training:
 

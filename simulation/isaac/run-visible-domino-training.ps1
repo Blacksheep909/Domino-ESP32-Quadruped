@@ -4,6 +4,10 @@ param(
     [int]$NumEnvs = 1,
     [int]$Iterations = 1,
     [int]$NumStepsPerEnv = 32,
+    [ValidateSet("cpu", "cuda:0")]
+    [string]$PolicyDevice = "cuda:0",
+    [ValidateSet("same", "cpu", "cuda:0")]
+    [string]$PhysicsDevice = "cpu",
     [int]$SaveInterval = 1,
     [int]$PolicyValidationSteps = 2360,
     [int]$PolicyValidationSettleSteps = 120,
@@ -168,6 +172,8 @@ $args = @(
     "--num-envs", ([string]$NumEnvs),
     "--iterations", ([string]$Iterations),
     "--num-steps-per-env", ([string]$NumStepsPerEnv),
+    "--device", $PolicyDevice,
+    "--physics-device", $PhysicsDevice,
     "--save-interval", ([string]$SaveInterval),
     "--visible-step-delay-s", ([string]$VisibleStepDelayS),
     "--seed", ([string]$Seed),
@@ -289,6 +295,7 @@ if (-not $NoHoldOpen) {
 Write-Host "Launching Domino actual-CAD linkage-swing policy training..."
 Write-Host "Contact model: CAD-fitted 11.991 mm foot spheres with startup terrain-penetration gate."
 Write-Host ("Command range: +/-{0:N1} deg; servo target slew: {1:N1} deg/s." -f $ActionScaleDeg, $ServoTargetRateLimitDegS)
+Write-Host ("Devices: policy={0}; physics={1}." -f $PolicyDevice, $PhysicsDevice)
 Write-Host ("Report: {0}" -f $reportPath)
 Write-Host ("Log root: {0}" -f $logRoot)
 Write-Host ("Policy initialization: {0}" -f $(if ($OpenPolicy) { "random PPO; no reference observation or imitation reward" } else { "reference-guided" }))

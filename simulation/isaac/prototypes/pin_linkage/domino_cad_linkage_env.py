@@ -33,6 +33,7 @@ from domino_action_contract import (
     VALIDATED_INITIAL_POLICY_ACTION_SCALE_DEG,
 )
 from domino_locomotion_rewards import command_motion_terms
+from domino_foot_reward_metrics import DominoFootRewardTracker
 from domino_reference_gait import (
     PHASE_OFFSETS_RAD,
     REFERENCE_GAIT_PARAMETER_NAMES,
@@ -218,6 +219,13 @@ class DominoCadLinkageEnvCfg(DirectRLEnvCfg):
     stance_contact_reward_scale = 0.20
     swing_contact_penalty_scale = -0.40
     foot_clearance_reward_scale = 0.20
+    foot_slip_reward_scale = -0.25
+    air_time_variance_reward_scale = -0.50
+    valid_foot_cycle_reward_scale = 0.50
+    foot_cycle_min_air_time_s = 0.06
+    foot_cycle_target_air_time_s = 0.20
+    foot_cycle_min_clearance_m = 0.004
+    foot_cycle_min_body_relative_travel_m = 0.015
 
 
 class DominoCadLinkageEnv(DirectRLEnv):
@@ -288,6 +296,31 @@ class DominoCadLinkageEnv(DirectRLEnv):
         self._last_reward_terms_unscaled: dict[str, torch.Tensor] = {}
         self._last_reward_terms_scaled: dict[str, torch.Tensor] = {}
         self._last_reward_terms_total = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
+        self._foot_reward_tracker = DominoFootRewardTracker(
+            self.num_envs,
+            EXPECTED_FOOT_COUNT,
+            step_dt_s=float(self.step_dt),
+            min_cycle_air_time_s=float(self.cfg.foot_cycle_min_air_time_s),
+            target_cycle_air_time_s=float(self.cfg.foot_cycle_target_air_time_s),
+            min_cycle_clearance_m=float(self.cfg.foot_cycle_min_clearance_m),
+            min_cycle_body_relative_travel_m=float(
+                self.cfg.foot_cycle_min_body_relative_travel_m
+            ),
+        )
+        for env_index in range(self.num_envs):
+            foot_positions, foot_radii = self._reward_foot_positions_and_radii(env_index)
+            foot_clearances = self._foot_ground_clearance_np(
+                foot_positions,
+                env_index,
+                radii_m=foot_radii,
+            )
+            self._foot_reward_tracker.reset_env(
+                env_index,
+                foot_clearances <= 0.0,
+                foot_clearances,
+                foot_positions,
+                self._body_relative_foot_positions_np(env_index, foot_positions),
+            )
 
     def _setup_scene(self) -> None:
         stage = omni.usd.get_context().get_stage()
@@ -845,6 +878,23 @@ class DominoCadLinkageEnv(DirectRLEnv):
             dtype=np.float32,
         )
 
+    def _body_relative_foot_positions_np(
+        self,
+        env_index: int,
+        foot_positions: np.ndarray,
+        body_position: np.ndarray | None = None,
+        body_orientation: np.ndarray | None = None,
+    ) -> np.ndarray:
+        if body_position is None or body_orientation is None:
+            body_position, body_orientation, _, _ = self._body_reference_state(
+                env_index
+            )
+        world_from_body = quat_wxyz_to_rotation_matrix(body_orientation)
+        return (
+            (np.asarray(foot_positions, dtype=np.float64) - body_position.reshape(1, 3))
+            @ world_from_body
+        ).astype(np.float32)
+
     def _reward_foot_positions(self, env_index: int) -> np.ndarray:
         return self._reward_foot_positions_and_radii(env_index)[0]
 
@@ -1128,6 +1178,9 @@ class DominoCadLinkageEnv(DirectRLEnv):
         stance_contact_terms = []
         swing_contact_terms = []
         foot_clearance_terms = []
+        foot_slip_terms = []
+        air_time_variance_terms = []
+        valid_foot_cycle_terms = []
         reference_action_tracking_terms = []
         reference_action_mse_terms = []
         actions_np = self._actions.detach().cpu().numpy().astype(np.float32)
@@ -1184,8 +1237,39 @@ class DominoCadLinkageEnv(DirectRLEnv):
             sigma_yaw = max(float(self.cfg.command_yaw_tracking_sigma), 1e-6)
             command_yaw_tracking_terms.append(float(math.exp(-yaw_error / (sigma_yaw * sigma_yaw))))
             foot_positions, foot_radii = self._reward_foot_positions_and_radii(env_index)
-            foot_contacts_np = self._foot_contact_flags_np(foot_positions, env_index, radii_m=foot_radii)
+            ground_clearance = self._foot_ground_clearance_np(
+                foot_positions,
+                env_index,
+                radii_m=foot_radii,
+            )
+            foot_contacts_np = (ground_clearance <= 0.0).astype(np.float32)
             foot_contact_terms.append(float(np.mean(foot_contacts_np)))
+            foot_reward_metrics = self._foot_reward_tracker.update_env(
+                env_index,
+                foot_contacts_np,
+                ground_clearance,
+                foot_positions,
+                self._body_relative_foot_positions_np(
+                    env_index,
+                    foot_positions,
+                    body_position=position,
+                    body_orientation=orientation,
+                ),
+                command_moving=(
+                    float(np.linalg.norm(command[:2])) + abs(float(command[2]))
+                    >= float(self.cfg.locomotion_command_threshold)
+                ),
+                suppress_reward=(
+                    int(self._reset_settle_steps_remaining[env_index].item()) > 0
+                ),
+            )
+            foot_slip_terms.append(foot_reward_metrics["foot_slip_m_s"])
+            air_time_variance_terms.append(
+                foot_reward_metrics["air_contact_time_variance_s2"]
+            )
+            valid_foot_cycle_terms.append(
+                foot_reward_metrics["valid_cycle_touchdown"]
+            )
             desired_stance = self._desired_stance_np(env_index, command)
             gait_contact_terms.append(float(np.mean(1.0 - np.abs(foot_contacts_np - desired_stance))))
             desired_swing = 1.0 - desired_stance
@@ -1194,12 +1278,19 @@ class DominoCadLinkageEnv(DirectRLEnv):
             stance_contact_terms.append(float(np.sum(foot_contacts_np * desired_stance) / stance_count))
             swing_contact_terms.append(float(np.sum(foot_contacts_np * desired_swing) / swing_count))
             if float(np.sum(desired_swing)) > 0.0:
-                ground_clearance = np.maximum(
+                positive_ground_clearance = np.maximum(0.0, ground_clearance)
+                normalized_clearance = np.clip(
+                    positive_ground_clearance
+                    / max(float(self.cfg.target_swing_clearance_m), 1e-6),
                     0.0,
-                    self._foot_ground_clearance_np(foot_positions, env_index, radii_m=foot_radii),
+                    1.0,
                 )
-                normalized_clearance = np.clip(ground_clearance / max(float(self.cfg.target_swing_clearance_m), 1e-6), 0.0, 1.0)
-                foot_clearance_terms.append(float(np.sum(normalized_clearance * desired_swing) / np.sum(desired_swing)))
+                foot_clearance_terms.append(
+                    float(
+                        np.sum(normalized_clearance * desired_swing)
+                        / np.sum(desired_swing)
+                    )
+                )
             else:
                 foot_clearance_terms.append(0.0)
             if reference_actions_np is not None:
@@ -1227,6 +1318,17 @@ class DominoCadLinkageEnv(DirectRLEnv):
         stance_contact = torch.tensor(stance_contact_terms, dtype=torch.float32, device=self.device)
         swing_contact = torch.tensor(swing_contact_terms, dtype=torch.float32, device=self.device)
         foot_clearance = torch.tensor(foot_clearance_terms, dtype=torch.float32, device=self.device)
+        foot_slip = torch.tensor(foot_slip_terms, dtype=torch.float32, device=self.device)
+        air_time_variance = torch.tensor(
+            air_time_variance_terms,
+            dtype=torch.float32,
+            device=self.device,
+        )
+        valid_foot_cycle = torch.tensor(
+            valid_foot_cycle_terms,
+            dtype=torch.float32,
+            device=self.device,
+        )
         reference_action_tracking = torch.tensor(reference_action_tracking_terms, dtype=torch.float32, device=self.device)
         reference_action_mse = torch.tensor(reference_action_mse_terms, dtype=torch.float32, device=self.device)
         action_penalty = torch.sum(torch.square(self._actions), dim=1)
@@ -1252,6 +1354,9 @@ class DominoCadLinkageEnv(DirectRLEnv):
             "stance_contact": stance_contact,
             "swing_contact": swing_contact,
             "foot_clearance": foot_clearance,
+            "foot_slip_m_s": foot_slip,
+            "air_contact_time_variance_s2": air_time_variance,
+            "valid_foot_cycle_touchdown": valid_foot_cycle,
             "reference_action_tracking": reference_action_tracking,
             "reference_action_mse": reference_action_mse,
         }
@@ -1276,6 +1381,13 @@ class DominoCadLinkageEnv(DirectRLEnv):
             "stance_contact": float(self.cfg.stance_contact_reward_scale),
             "swing_contact": float(self.cfg.swing_contact_penalty_scale),
             "foot_clearance": float(self.cfg.foot_clearance_reward_scale),
+            "foot_slip_m_s": float(self.cfg.foot_slip_reward_scale),
+            "air_contact_time_variance_s2": float(
+                self.cfg.air_time_variance_reward_scale
+            ),
+            "valid_foot_cycle_touchdown": float(
+                self.cfg.valid_foot_cycle_reward_scale
+            ),
             "reference_action_tracking": float(self.cfg.reference_action_tracking_reward_scale),
             "reference_action_mse": float(self.cfg.reference_action_mse_reward_scale),
         }
@@ -1541,3 +1653,22 @@ class DominoCadLinkageEnv(DirectRLEnv):
                 dtype=torch.float32,
                 device=self.device,
             )
+            if hasattr(self, "_foot_reward_tracker"):
+                foot_positions, foot_radii = self._reward_foot_positions_and_radii(
+                    env_index
+                )
+                foot_clearances = self._foot_ground_clearance_np(
+                    foot_positions,
+                    env_index,
+                    radii_m=foot_radii,
+                )
+                self._foot_reward_tracker.reset_env(
+                    env_index,
+                    foot_clearances <= 0.0,
+                    foot_clearances,
+                    foot_positions,
+                    self._body_relative_foot_positions_np(
+                        env_index,
+                        foot_positions,
+                    ),
+                )

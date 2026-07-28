@@ -43,15 +43,15 @@ To train a policy from random network weights without a reference action in its 
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File simulation/isaac/run-headless-domino-open-policy.ps1 `
-  -NumEnvs 16 `
+  -NumEnvs 32 `
   -PolicyDevice cuda:0 `
   -PhysicsDevice cpu `
   -Iterations 500
 ```
 
-This open-policy experiment still uses task-level reward shaping: a `0.10 m/s` forward command, measured forward displacement and velocity, diagonal stance/swing contact timing, swing-foot clearance, uprightness, and penalties for stagnation, wrong-way travel, lateral/yaw drift, abrupt actions, non-foot ground contact, and falls. The actor must discover the 12 servo commands itself; it is not given a scripted gait target. The launcher writes a checkpoint every ten iterations and applies a stricter single-policy walking gate after training.
+This open-policy experiment still uses task-level reward shaping: a `0.10 m/s` forward command, measured forward displacement and velocity, diagonal stance/swing contact timing, swing-foot clearance, qualified liftoff-touchdown cycles, uprightness, and penalties for stagnation, wrong-way travel, lateral/yaw drift, contacting-foot slip, unequal completed air/contact times, abrupt actions, non-foot ground contact, and falls. The actor must discover the 12 servo commands itself; it is not given a scripted gait target. The launcher writes a checkpoint every ten iterations and applies a stricter single-policy walking gate after training.
 
-The policy and physics devices are deliberately independent. Local July 2026 measurements on an RTX 3080 Ti found that this USD-synchronized closed-loop prototype trained faster with PPO on `cuda:0` and PhysX on `cpu`: four environments improved from `14.66` to `34.07` samples/s, ten improved from `16.98` to `48.47` samples/s, and sixteen CPU-physics environments reached `54.24` samples/s. Both device modes retained sub-`0.25 mm` maximum pin separation in the short comparison runs. The result is specific to this 29-body, 36-constraint prototype; conventional tensor-controlled tree articulations usually favor GPU PhysX.
+The policy and physics devices are deliberately independent. Local July 2026 measurements on an RTX 3080 Ti found that this USD-synchronized closed-loop prototype trained faster with PPO on `cuda:0` and PhysX on `cpu`: four environments improved from `14.66` to `34.07` samples/s, ten improved from `16.98` to `48.47` samples/s, and sixteen CPU-physics environments reached `54.24` samples/s before the additional foot rewards were added. With contact slip, timing balance, and qualified-cycle rewards enabled, sixteen environments reached `50.84` samples/s and thirty-two reached `56.66` samples/s. Both device modes retained sub-`0.25 mm` maximum pin separation in the short comparison runs. The result is specific to this 29-body, 36-constraint prototype; conventional tensor-controlled tree articulations usually favor GPU PhysX.
 
 Every new training report records `runtime.policy_device`, `runtime.physics_device`, `performance.ppo_training_wall_seconds`, and `performance.ppo_samples_per_second`. Re-run the same workload with `-PhysicsDevice cuda:0` when changing the linkage implementation, Isaac Sim version, or GPU driver rather than assuming the current result remains optimal.
 
@@ -61,17 +61,19 @@ Use the velocity-dominant V2 launcher for new locomotion training:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File simulation/isaac/run-headless-domino-velocity-policy.ps1 `
-  -NumEnvs 10 `
+  -NumEnvs 32 `
   -GateIterations 40 `
   -CorrectionIterations 80 `
   -TotalIterations 500
 ```
 
-This launcher follows the task-first structure used by Isaac Lab's Go2, Anymal, and Spot velocity environments. Commanded velocity and directional progress dominate the locomotion reward, and stationary behavior under a nonzero command is explicitly penalized. A 40-iteration bootstrap first establishes coordinated linkage motion. The next 80 iterations remove the scripted gait-tracking reward and must demonstrate measured positive-X travel before the remaining training budget can start. Each gate also checks all-foot motion, all-linkage-drive motion, clearance, drift, tilt, resets, and pin-constraint separation. A failed gate stops the run rather than spending the full budget on a stationary or wrong-way policy.
+This launcher follows the task-first structure used by Isaac Lab's Go2, Anymal, and Spot velocity environments. Commanded velocity and directional progress dominate the locomotion reward, and stationary behavior under a nonzero command is explicitly penalized. A 40-iteration reference-scaffolded bootstrap first establishes coordinated linkage motion. The next 80 iterations emphasize measured positive-X travel while retaining a modest gait scaffold before the remaining training budget can start. Each gate also checks all-foot motion, all-linkage-drive motion, clearance, drift, tilt, resets, and pin-constraint separation. A failed gate stops the run rather than spending the full budget on a stationary or wrong-way policy. Use `run-headless-domino-open-policy.ps1` when reference actions must be completely absent.
 
 The three gates deliberately become stricter rather than demanding a finished gait immediately. Stage one permits incomplete or unbalanced foot cycles while requiring safe motor exploration. Stage two requires at least one recoverable liftoff-touchdown cycle from every foot but tolerates an uneven early gait. The final stage requires a higher valid-cycle ratio and rejects single-foot domination.
 
 Training episodes time out after `10 s`. A timeout is a normal state reset: PPO weights and optimizer state remain intact, and the policy continues learning from the next episode. The staged validation windows are `4.0 s`, `4.0 s`, and `4.8 s`, all shorter than the episode timeout, so a healthy policy is not rejected merely because it reached the configured time limit. Falls, unsafe body contact, excessive tilt, and missing foot recovery remain failures.
+
+On the measured RTX 3080 Ti system, the default `32` environments and `24` control steps produce `768` transitions per PPO iteration. At `56.66` samples/s, a 500-iteration run contains `384,000` transitions and requires about `1 h 53 min` of PPO stepping. Allow roughly `2 h` total for the three CAD startups and policy gates. A from-scratch open policy may need `500-1500` iterations (`2-6 h`) before gait quality can be judged; checkpoint validation should determine when to stop, not wall-clock time alone.
 
 On a fresh clone, the launcher automatically starts from `checkpoints/domino_actual_cad_baseline_model_210.pt`. To inspect that exact policy in a visible single-robot run before continuing PPO:
 

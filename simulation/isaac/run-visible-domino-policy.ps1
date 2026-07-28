@@ -33,6 +33,7 @@ param(
     [double]$VisibleStepDelayS = 0.0,
     [string]$CaptureViewportPath = "",
     [string]$ReferenceGait = "",
+    [switch]$OpenPolicy,
     [switch]$NoHoldOpen,
     [switch]$Headless,
     [switch]$FixedBase,
@@ -63,6 +64,9 @@ if (-not (Test-Path -LiteralPath $isaacPython)) {
 
 $playScript = Join-Path $repoRoot "simulation\isaac\prototypes\pin_linkage\run_domino_cad_linkage_rsl_rl_play.py"
 $nextPolicyRoot = Join-Path $repoRoot "simulation\isaac\out\cad_identity\next_policy"
+if ($OpenPolicy -and $PolicyMode -ne "checkpoint") {
+    throw "-OpenPolicy is only valid with -PolicyMode checkpoint."
+}
 $verifiedPolicyCandidates = @()
 $trainingRoot = Join-Path $nextPolicyRoot "linkage_swing_hipframe_bc_training"
 $verifiedTrainingReportPath = Join-Path $nextPolicyRoot "linkage_swing_hipframe_bc_training.json"
@@ -123,14 +127,20 @@ $referenceGaitCandidates = @(
     (Join-Path $repoRoot "simulation\isaac\out\cad_identity\teacher_grid\teacher_grounded_support_valid_lower_scale20_seed240704.json"),
     (Join-Path $repoRoot "simulation\isaac\out\cad_identity\teacher_grid\teacher_random001_scale70_freq225.json")
 )
-if ($ReferenceGait -and $ReferenceGait.Trim().Length -gt 0) {
-    $referenceGait = (Resolve-Path -LiteralPath $ReferenceGait).Path
-} else {
-    $referenceGait = $referenceGaitCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+$referenceGait = ""
+if (-not $OpenPolicy) {
+    if ($ReferenceGait -and $ReferenceGait.Trim().Length -gt 0) {
+        $referenceGait = (Resolve-Path -LiteralPath $ReferenceGait).Path
+    } else {
+        $referenceGait = $referenceGaitCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    }
 }
 $reportPath = Join-Path $repoRoot ("simulation\isaac\out\cad_identity\next_policy\" + $RunName + ".json")
 
-$requiredArtifacts = @($playScript, $referenceGait)
+$requiredArtifacts = @($playScript)
+if (-not $OpenPolicy) {
+    $requiredArtifacts += $referenceGait
+}
 if ($PolicyMode -eq "checkpoint") {
     $requiredArtifacts += $checkpointPath
 }
@@ -165,9 +175,6 @@ $args = @(
     "--startup-zero-steps", ([string]$StartupZeroSteps),
     "--policy-ramp-steps", ([string]$PolicyRampSteps),
     "--seed", ([string]$Seed),
-    "--reference-gait-candidate", $referenceGait,
-    "--include-reference-actions-in-observation",
-    "--reference-action-snap-tolerance", "0.0001",
     "--action-scale-deg", ([string]$ActionScaleDeg),
     "--servo-target-rate-limit-deg-s", ([string]$ServoTargetRateLimitDegS),
     "--min-each-linkage-drive-motion-deg", "4.0",
@@ -192,12 +199,20 @@ $args = @(
     "--swing-contact-penalty-scale", "-4.0",
     "--foot-clearance-reward-scale", "4.0",
     "--foot-contact-reward-scale", "0.0",
-    "--reference-action-tracking-reward-scale", "2.0",
-    "--reference-action-tracking-sigma", "0.55",
-    "--reference-action-mse-reward-scale", "-2.5",
     "--report-path", $reportPath,
     "--rendering_mode", "performance"
 )
+
+if (-not $OpenPolicy) {
+    $args += @(
+        "--reference-gait-candidate", $referenceGait,
+        "--include-reference-actions-in-observation",
+        "--reference-action-snap-tolerance", "0.0001",
+        "--reference-action-tracking-reward-scale", "2.0",
+        "--reference-action-tracking-sigma", "0.55",
+        "--reference-action-mse-reward-scale", "-2.5"
+    )
+}
 
 if ($VisibleStartDelayS -gt 0.0) {
     $args += @("--visible-start-delay-s", ([string]$VisibleStartDelayS))
@@ -265,6 +280,7 @@ if (-not $NoHoldOpen) {
 
 Write-Host "Launching visible Domino actual-CAD policy playback..."
 Write-Host ("Policy mode: {0}" -f $PolicyMode)
+Write-Host ("Observation mode: {0}" -f $(if ($OpenPolicy) { "open policy; no reference-action channels" } else { "reference-conditioned" }))
 if ($PolicyMode -eq "checkpoint") {
     Write-Host ("Checkpoint: {0}" -f $checkpointPath)
 }

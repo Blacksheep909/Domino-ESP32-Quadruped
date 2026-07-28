@@ -104,6 +104,27 @@ parser.add_argument("--stance-contact-reward-scale", type=float, default=None, h
 parser.add_argument("--swing-contact-penalty-scale", type=float, default=None, help="Penalty scale for commanded swing feet staying in contact.")
 parser.add_argument("--foot-clearance-reward-scale", type=float, default=None, help="Swing foot clearance reward scale.")
 parser.add_argument("--foot-contact-reward-scale", type=float, default=None, help="All-foot contact reward scale.")
+parser.add_argument("--foot-slip-reward-scale", type=float, default=None, help="Contact-only planar foot-slip penalty scale.")
+parser.add_argument(
+    "--air-time-variance-reward-scale",
+    type=float,
+    default=None,
+    help="Penalty scale for unequal completed foot air/contact durations.",
+)
+parser.add_argument(
+    "--valid-foot-cycle-reward-scale",
+    type=float,
+    default=None,
+    help="Reward scale for qualified liftoff-to-touchdown foot cycles.",
+)
+parser.add_argument("--foot-cycle-min-air-time-s", type=float, default=None)
+parser.add_argument("--foot-cycle-target-air-time-s", type=float, default=None)
+parser.add_argument("--foot-cycle-min-clearance-m", type=float, default=None)
+parser.add_argument(
+    "--foot-cycle-min-body-relative-travel-m",
+    type=float,
+    default=None,
+)
 parser.add_argument("--reference-gait-candidate", default="", help="Optional scripted gait JSON used as an action-prior reward.")
 parser.add_argument(
     "--include-reference-actions-in-observation",
@@ -1433,6 +1454,37 @@ def main() -> None:
         env_cfg.foot_clearance_reward_scale = float(args_cli.foot_clearance_reward_scale)
     if args_cli.foot_contact_reward_scale is not None:
         env_cfg.foot_contact_reward_scale = float(args_cli.foot_contact_reward_scale)
+    if args_cli.foot_slip_reward_scale is not None:
+        env_cfg.foot_slip_reward_scale = float(args_cli.foot_slip_reward_scale)
+    if args_cli.air_time_variance_reward_scale is not None:
+        env_cfg.air_time_variance_reward_scale = float(
+            args_cli.air_time_variance_reward_scale
+        )
+    if args_cli.valid_foot_cycle_reward_scale is not None:
+        env_cfg.valid_foot_cycle_reward_scale = float(
+            args_cli.valid_foot_cycle_reward_scale
+        )
+    if args_cli.foot_cycle_min_air_time_s is not None:
+        env_cfg.foot_cycle_min_air_time_s = max(
+            float(args_cli.foot_cycle_min_air_time_s),
+            0.0,
+        )
+    if args_cli.foot_cycle_target_air_time_s is not None:
+        env_cfg.foot_cycle_target_air_time_s = max(
+            float(args_cli.foot_cycle_target_air_time_s),
+            env_cfg.foot_cycle_min_air_time_s,
+            1.0e-6,
+        )
+    if args_cli.foot_cycle_min_clearance_m is not None:
+        env_cfg.foot_cycle_min_clearance_m = max(
+            float(args_cli.foot_cycle_min_clearance_m),
+            0.0,
+        )
+    if args_cli.foot_cycle_min_body_relative_travel_m is not None:
+        env_cfg.foot_cycle_min_body_relative_travel_m = max(
+            float(args_cli.foot_cycle_min_body_relative_travel_m),
+            0.0,
+        )
     reference_candidate = None
     if args_cli.reference_gait_candidate:
         reference_candidate = apply_reference_gait_candidate(env_cfg, args_cli.reference_gait_candidate)
@@ -1765,6 +1817,25 @@ def main() -> None:
             "swing_contact_penalty_scale": float(env_cfg.swing_contact_penalty_scale),
             "foot_clearance_reward_scale": float(env_cfg.foot_clearance_reward_scale),
             "foot_contact_reward_scale": float(env_cfg.foot_contact_reward_scale),
+            "foot_slip_reward_scale": float(env_cfg.foot_slip_reward_scale),
+            "air_time_variance_reward_scale": float(
+                env_cfg.air_time_variance_reward_scale
+            ),
+            "valid_foot_cycle_reward_scale": float(
+                env_cfg.valid_foot_cycle_reward_scale
+            ),
+            "foot_cycle_min_air_time_s": float(
+                env_cfg.foot_cycle_min_air_time_s
+            ),
+            "foot_cycle_target_air_time_s": float(
+                env_cfg.foot_cycle_target_air_time_s
+            ),
+            "foot_cycle_min_clearance_m": float(
+                env_cfg.foot_cycle_min_clearance_m
+            ),
+            "foot_cycle_min_body_relative_travel_m": float(
+                env_cfg.foot_cycle_min_body_relative_travel_m
+            ),
             "reference_action_tracking_reward_scale": float(env_cfg.reference_action_tracking_reward_scale),
             "reference_action_tracking_sigma": float(env_cfg.reference_action_tracking_sigma),
             "reference_action_mse_reward_scale": float(env_cfg.reference_action_mse_reward_scale),

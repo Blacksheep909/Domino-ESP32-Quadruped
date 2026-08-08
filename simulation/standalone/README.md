@@ -47,17 +47,19 @@ bridge. The current robot mapping is:
 
 - channel 1: roll;
 - channel 2: forward command;
-- channel 3 / Boxer left-stick vertical: ride height (high / medium / low bands);
+- channel 3 / Boxer left-stick vertical: continuous ride height from 220 to 280 mm (1000 µs = low, 2000 µs = high);
 - channel 4: turn;
 - channel 5 / SA: stand mode;
-- channel 6 / SB: auxiliary and ignored by the current firmware;
-- channel 8 / SD: tilt mode.
+- channel 6 / SB: unbound and ignored by the current firmware;
+- channel 7 / SC: fully down enables the sinusoidal gait;
+- channel 8 / SD: tilt mode and a hard gait interlock.
 
-Keyboard fallback uses `W/S`, `A/D`, `Q/E`, `Space`, `T`, and `R`.
+Keyboard fallback uses `W/S`, `A/D`, `Q/E`, `Space`, `T`, `G`, and `R`.
 
-Walking and body translation are disabled while stand and tilt are calibrated.
-The renderer and physics proxy both consume the same 12 firmware-authored servo
-outputs.
+The first gait is a deliberately slow diagonal sinusoidal trot. Right-stick
+vertical commands forward/reverse travel and right-stick horizontal commands
+turning. Gait cannot run while SD/tilt is active. The renderer and physics proxy
+consume the same 12 firmware-authored servo outputs.
 
 Each launch records Boxer HID axes, mapped channels, outgoing controls, firmware
 mode, target pose, all servo outputs, body height, reset count, and per-foot

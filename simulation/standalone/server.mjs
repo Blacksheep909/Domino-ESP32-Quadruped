@@ -46,7 +46,7 @@ let debugBytes = statSync(debugLogPath).size;
 const channels = Array(16).fill(1500);
 channels[4] = 1000;
 // CRSF CH3 is the Boxer left-stick vertical and owns ride-height selection.
-channels[2] = 1000;
+channels[2] = 2000;
 channels[6] = 1000;
 channels[7] = 1000;
 

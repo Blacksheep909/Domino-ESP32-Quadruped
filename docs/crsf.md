@@ -30,8 +30,8 @@ On a quadruped, RC input is not just steering. It changes robot state:
 - Stand / stow.
 - Body tilt.
 - Ride height.
-- Balance mode request.
-- Future gait selection.
+- Sinusoidal gait selection and motion commands.
+- Experimental balance mode state.
 
 A bad switch read can move twelve servos at once. The CRSF layer exists to keep the receiver interface isolated, validated, and easier to test.
 

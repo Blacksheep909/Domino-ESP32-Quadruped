@@ -55,6 +55,95 @@ test("deep sit lowers the chassis onto four stable feet", async () => {
   assert.ok(state.baseTiltDegrees < 1, `base tilt was ${state.baseTiltDegrees} deg`);
 });
 
+test("diagonal sinusoidal gait stays supported and produces planar travel", async () => {
+  const physics = await createDominoPhysics();
+  const firmwareState = {
+    mode: "STAND",
+    pose_z_mm: 280,
+    servo_angle_deg: [...standServoReference],
+    leg_command_xyz_mm: [
+      [-15.75, 38, 280],
+      [-15.75, -38, 280],
+      [-15.75, 38, 280],
+      [-15.75, -38, 280],
+    ],
+  };
+
+  let state;
+  for (let frame = 0; frame < 480; frame += 1) {
+    state = physics.update(1 / 120, firmwareState, legs, standServoReference);
+  }
+  const startPosition = [...state.basePosition];
+  let minimumContacts = 4;
+  let maximumTilt = 0;
+  let plantedSlipDistance = 0;
+  let plantedContactSeconds = 0;
+  let bodyPathDistance = 0;
+  let previousGaitState = null;
+
+  firmwareState.mode = "GAIT";
+  for (let frame = 0; frame < 1200; frame += 1) {
+    const gaitCycle = (0.70 * (frame / 120)) % 1;
+    firmwareState.leg_command_xyz_mm = [0, 1, 2, 3].map((legIndex) => {
+      const diagonalA = legIndex === 0 || legIndex === 3;
+      const leftLeg = legIndex === 0 || legIndex === 2;
+      const cycle = (gaitCycle + (diagonalA ? 0 : 0.5)) % 1;
+      const stanceFraction = 0.62;
+      let xOffset;
+      let zOffset;
+      if (cycle < stanceFraction) {
+        const stance = cycle / stanceFraction;
+        const progress = 0.5 - 0.5 * Math.cos(Math.PI * stance);
+        xOffset = 20 * (1 - 2 * progress);
+        zOffset = 0;
+      } else {
+        const swing = (cycle - stanceFraction) / (1 - stanceFraction);
+        const progress = 0.5 - 0.5 * Math.cos(Math.PI * swing);
+        xOffset = 20 * (-1 + 2 * progress);
+        zOffset = -18 * Math.sin(Math.PI * swing) ** 2;
+      }
+      return [
+        -15.75 + xOffset,
+        leftLeg ? 38 : -38,
+        280 + zOffset,
+      ];
+    });
+    state = physics.update(1 / 120, firmwareState, legs, standServoReference);
+    if (previousGaitState) {
+      bodyPathDistance += Math.hypot(
+        state.basePosition[0] - previousGaitState.basePosition[0],
+        state.basePosition[2] - previousGaitState.basePosition[2],
+      );
+      state.footPositions.forEach((position, index) => {
+        if (!state.footContacts[index] || !previousGaitState.footContacts[index]) return;
+        const previousPosition = previousGaitState.footPositions[index];
+        plantedSlipDistance += Math.hypot(
+          position[0] - previousPosition[0],
+          position[2] - previousPosition[2],
+        );
+        plantedContactSeconds += 1 / 120;
+      });
+    }
+    previousGaitState = state;
+    minimumContacts = Math.min(minimumContacts, state.contactCount);
+    maximumTilt = Math.max(maximumTilt, state.baseTiltDegrees);
+  }
+
+  const planarTravel = Math.hypot(
+    state.basePosition[0] - startPosition[0],
+    state.basePosition[2] - startPosition[2],
+  );
+  assert.equal(state.resetCount, 0, `unexpected ${state.lastResetReason} reset`);
+  assert.ok(minimumContacts >= 2, `gait dropped to ${minimumContacts} contacts`);
+  assert.ok(maximumTilt < 25, `gait body tilt reached ${maximumTilt} deg`);
+  assert.ok(planarTravel > 0.02, `gait moved only ${planarTravel} m`);
+  const meanPlantedSlipSpeed = plantedSlipDistance / plantedContactSeconds;
+  const pathEfficiency = planarTravel / Math.max(bodyPathDistance, 1e-6);
+  assert.ok(meanPlantedSlipSpeed < 0.04, `planted-foot slip reached ${meanPlantedSlipSpeed} m/s`);
+  assert.ok(pathEfficiency > 0.20, `gait path efficiency was only ${pathEfficiency}`);
+  assert.ok(state.drivenTargets.every(Number.isFinite));
+});
+
 test("tilt command remains finite and physically supported", async () => {
   const physics = await createDominoPhysics();
   const firmwareState = {

@@ -97,8 +97,9 @@ First full-system tests:
 - Turn servo power on.
 - Test stow.
 - Test stand.
-- Test ride-height presets.
+- Sweep the continuous ride-height control.
 - Test tilt only after stand mode is stable.
+- Test gait only after stand, ride height, and foot clearance are stable.
 
 ## 8. Floor Testing
 

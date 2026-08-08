@@ -9,7 +9,7 @@ import "./styles.css";
 
 const canvas = document.querySelector("#scene");
 const demoSelection = new URLSearchParams(window.location.search).get("demo");
-const demoMode = ["1", "tilt", "roll", "roll-negative"].includes(demoSelection);
+const demoMode = ["1", "tilt", "roll", "roll-negative", "gait", "gait-reverse"].includes(demoSelection);
 const THEME_STORAGE_KEY = "domino-theme";
 let currentTheme = localStorage.getItem(THEME_STORAGE_KEY);
 if (currentTheme !== "light" && currentTheme !== "dark") {
@@ -373,14 +373,17 @@ let firmwareState = null;
 let visualServoAngles = null;
 const neutralServoAngles = [...standServoReference];
 const SERVO_VISUAL_RESPONSE = 24;
+const RIDE_HEIGHT_MIN_MM = 220;
+const RIDE_HEIGHT_MAX_MM = 280;
 let standRequested = false;
 let tiltRequested = false;
+let gaitRequested = false;
 let manualStandOverride = null;
 let manualTiltOverride = null;
-let manualHeightOverride = null;
+let manualGaitOverride = null;
 let observedPhysicalStand = null;
 let observedPhysicalTilt = null;
-let observedPhysicalHeight = null;
+let observedPhysicalGait = null;
 let forwardInput = 0;
 let turnInput = 0;
 let rollInput = 0;
@@ -765,23 +768,38 @@ function updateLinkage(runtime, shoulderDeltaDeg, upperDeltaDeg, lowerDeltaDeg) 
 const channels = Array(16).fill(1500);
 const RIDE_HEIGHT_CHANNEL_INDEX = 2;
 channels[4] = 1000;
-channels[RIDE_HEIGHT_CHANNEL_INDEX] = 1000;
+channels[RIDE_HEIGHT_CHANNEL_INDEX] = 2000;
 channels[6] = 1000;
 channels[7] = 1000;
 
 const channelDefinitions = [
-  { name: "ROLL", switch: false },
-  { name: "PITCH", switch: false },
+  { name: "ROLL / GAIT TURN", switch: false },
+  { name: "PITCH / GAIT FWD", switch: false },
   { name: "HEIGHT / LEFT Y", switch: false, height: true },
   { name: "YAW", switch: false },
   { name: "SA / STAND", switch: true },
-  { name: "SB / AUX", switch: true },
-  { name: "SC / BALANCE", switch: true },
+  { name: "SB / UNBOUND", switch: false, unbound: true },
+  { name: "SC / GAIT", switch: true },
   { name: "SD / TILT", switch: true },
 ];
+
+function heightMillimetersFromChannel(channelValue) {
+  const normalized = THREE.MathUtils.clamp((Number(channelValue) - 1000) / 1000, 0, 1);
+  return THREE.MathUtils.lerp(RIDE_HEIGHT_MIN_MM, RIDE_HEIGHT_MAX_MM, normalized);
+}
+
+function heightFractionFromMillimeters(heightMillimeters) {
+  return THREE.MathUtils.clamp(
+    (Number(heightMillimeters) - RIDE_HEIGHT_MIN_MM) /
+      (RIDE_HEIGHT_MAX_MM - RIDE_HEIGHT_MIN_MM),
+    0,
+    1,
+  );
+}
+
 const channelBars = channelDefinitions.map((definition, index) => {
   const element = document.createElement("div");
-  element.className = `channel${definition.switch ? " switch" : ""}`;
+  element.className = `channel${definition.switch ? " switch" : ""}${definition.unbound ? " unbound" : ""}`;
   element.innerHTML = `
     <div class="channel-heading"><strong>CH${index + 1}</strong><span>${definition.name}</span></div>
     <div class="channel-track"><div class="channel-fill"></div></div>
@@ -796,19 +814,19 @@ function updateChannelBars() {
     const value = Math.max(1000, Math.min(2000, channels[index]));
     const position = value < 1250 ? "LOW" : value > 1750 ? "HIGH" : "MID";
     const positionLabel = channelDefinitions[index].height
-      ? position === "LOW"
-        ? "HIGH RIDE"
-        : position === "HIGH"
-          ? "LOW RIDE"
-          : "MID RIDE"
-      : position;
+      ? `${heightMillimetersFromChannel(value).toFixed(0)} MM`
+      : channelDefinitions[index].unbound
+        ? "UNBOUND"
+        : position;
     element.style.setProperty("--level", `${(value - 1000) / 10}%`);
     element.classList.toggle("low", position === "LOW");
     element.classList.toggle("mid", position === "MID");
     element.classList.toggle("high", position === "HIGH");
     element.querySelector("output").textContent = Math.round(value);
     element.querySelector(".channel-position").textContent =
-      channelDefinitions[index].switch ? positionLabel : "";
+      channelDefinitions[index].switch || channelDefinitions[index].height || channelDefinitions[index].unbound
+        ? positionLabel
+        : "";
   });
 }
 
@@ -858,7 +876,7 @@ function sendChannels() {
       manualOverride:
         manualStandOverride !== null ||
         manualTiltOverride !== null ||
-        manualHeightOverride !== null,
+        manualGaitOverride !== null,
       clientInput: clientInputSnapshot,
       physics: physicsState,
     }));
@@ -875,6 +893,7 @@ window.addEventListener("keydown", (event) => {
     standRequested = !standRequested;
   }
   if (event.code === "KeyT") tiltRequested = !tiltRequested;
+  if (event.code === "KeyG") gaitRequested = !gaitRequested;
   if (event.code === "KeyR") resetRobot();
 });
 window.addEventListener("keyup", (event) => keys.delete(event.code));
@@ -884,11 +903,13 @@ function resetRobot() {
   robotYaw = 0;
   manualStandOverride = null;
   manualTiltOverride = null;
-  manualHeightOverride = null;
-  channels[RIDE_HEIGHT_CHANNEL_INDEX] = 1000;
+  manualGaitOverride = null;
+  gaitRequested = false;
+  channels[RIDE_HEIGHT_CHANNEL_INDEX] = 2000;
+  channels[6] = 1000;
   observedPhysicalStand = null;
   observedPhysicalTilt = null;
-  observedPhysicalHeight = null;
+  observedPhysicalGait = null;
 }
 
 function resetCameraView() {
@@ -978,16 +999,10 @@ document.querySelector("#tilt-button").addEventListener("click", () => {
     standRequested = true;
   }
 });
-document.querySelectorAll("[data-height]").forEach((button) => {
-  button.addEventListener("click", () => {
-    if (button.disabled) return;
-    manualHeightOverride = button.dataset.height;
-    channels[RIDE_HEIGHT_CHANNEL_INDEX] = manualHeightOverride === "HIGH"
-      ? 1000
-      : manualHeightOverride === "LOW"
-        ? 2000
-        : 1500;
-  });
+document.querySelector("#gait-button").addEventListener("click", () => {
+  const nextGait = !gaitRequested;
+  manualGaitOverride = nextGait;
+  gaitRequested = nextGait;
 });
 document.querySelector("#reset-button").addEventListener("click", resetRobot);
 document.querySelector("#reset-view-button").addEventListener("click", resetCameraView);
@@ -1021,11 +1036,7 @@ function axisToChannel(axis) {
 function applyPhysicalModeChannels() {
   const physicalStand = channels[4] > 1600;
   const physicalTilt = channels[7] > 1600;
-  const physicalHeight = channels[RIDE_HEIGHT_CHANNEL_INDEX] < 1250
-    ? "HIGH"
-    : channels[RIDE_HEIGHT_CHANNEL_INDEX] > 1750
-      ? "LOW"
-      : "MEDIUM";
+  const physicalGait = channels[6] > 1750;
 
   if (observedPhysicalStand !== null && physicalStand !== observedPhysicalStand) {
     manualStandOverride = null;
@@ -1033,26 +1044,21 @@ function applyPhysicalModeChannels() {
   if (observedPhysicalTilt !== null && physicalTilt !== observedPhysicalTilt) {
     manualTiltOverride = null;
   }
-  if (observedPhysicalHeight !== null && physicalHeight !== observedPhysicalHeight) {
-    manualHeightOverride = null;
+  if (observedPhysicalGait !== null && physicalGait !== observedPhysicalGait) {
+    manualGaitOverride = null;
   }
   observedPhysicalStand = physicalStand;
   observedPhysicalTilt = physicalTilt;
-  observedPhysicalHeight = physicalHeight;
+  observedPhysicalGait = physicalGait;
 
   standRequested = manualStandOverride ?? physicalStand;
   tiltRequested = manualTiltOverride ?? physicalTilt;
+  gaitRequested = manualGaitOverride ?? physicalGait;
   if (!standRequested) tiltRequested = false;
 
   if (manualStandOverride !== null) channels[4] = standRequested ? 2000 : 1000;
   if (manualTiltOverride !== null || !standRequested) channels[7] = tiltRequested ? 2000 : 1000;
-  if (manualHeightOverride !== null) {
-    channels[RIDE_HEIGHT_CHANNEL_INDEX] = manualHeightOverride === "HIGH"
-      ? 1000
-      : manualHeightOverride === "LOW"
-        ? 2000
-        : 1500;
-  }
+  if (manualGaitOverride !== null) channels[6] = gaitRequested ? 2000 : 1000;
 }
 
 function updateInput() {
@@ -1062,20 +1068,27 @@ function updateInput() {
   if (demoMode) {
     const tiltDiagnostic = demoSelection === "tilt";
     const rollDiagnostic = demoSelection === "roll" || demoSelection === "roll-negative";
+    const gaitDiagnostic = demoSelection === "gait" || demoSelection === "gait-reverse";
     document.querySelector("#gamepad-name").textContent =
-      rollDiagnostic ? "ROLL DIAGNOSTIC" :
-        tiltDiagnostic ? "TILT DIAGNOSTIC" : "AUTOMATIC DEMO";
+      gaitDiagnostic ? "GAIT DIAGNOSTIC" :
+        rollDiagnostic ? "ROLL DIAGNOSTIC" :
+          tiltDiagnostic ? "TILT DIAGNOSTIC" : "AUTOMATIC DEMO";
     standRequested = true;
     tiltRequested = tiltDiagnostic || rollDiagnostic;
-    forwardInput = tiltDiagnostic ? -0.25 : 0;
+    gaitRequested = gaitDiagnostic;
+    forwardInput = gaitDiagnostic
+      ? demoSelection === "gait-reverse" ? -0.55 : 0.55
+      : tiltDiagnostic ? -0.25 : 0;
     turnInput = tiltDiagnostic ? 0.30 : 0;
     rollInput = rollDiagnostic
       ? demoSelection === "roll-negative" ? -1 : 1
-      : tiltDiagnostic ? 0.35 : 0;
+      : gaitDiagnostic ? 0
+        : tiltDiagnostic ? 0.35 : 0;
     clientInputSnapshot = {
       source: "diagnostic",
-      name: rollDiagnostic ? "ROLL DIAGNOSTIC" :
-        tiltDiagnostic ? "TILT DIAGNOSTIC" : "STAND DIAGNOSTIC",
+      name: gaitDiagnostic ? "GAIT DIAGNOSTIC" :
+        rollDiagnostic ? "ROLL DIAGNOSTIC" :
+          tiltDiagnostic ? "TILT DIAGNOSTIC" : "STAND DIAGNOSTIC",
       axes: [],
     };
   } else if (bridgeInput.connected && Array.isArray(bridgeInput.channels)) {
@@ -1135,22 +1148,24 @@ function updateInput() {
     channels[1] = 1500 + Math.round(forwardInput * 500);
     channels[3] = 1500 + Math.round(turnInput * 500);
     channels[4] = standRequested ? 2000 : 1000;
+    channels[6] = gaitRequested ? 2000 : 1000;
     channels[7] = tiltRequested ? 2000 : 1000;
   }
 
   document.querySelector("#forward-value").textContent = forwardInput.toFixed(2);
   document.querySelector("#turn-value").textContent = turnInput.toFixed(2);
   document.querySelector("#roll-value").textContent = rollInput.toFixed(2);
-  const heightChannelValue = channels[RIDE_HEIGHT_CHANNEL_INDEX];
-  document.querySelector("#height-input-value").textContent = heightChannelValue < 1250
-    ? "HIGH"
-    : heightChannelValue > 1750
-      ? "LOW"
-      : "MID";
+  const heightMillimeters = heightMillimetersFromChannel(channels[RIDE_HEIGHT_CHANNEL_INDEX]);
+  document.querySelector("#height-input-value").textContent =
+    `${heightMillimeters.toFixed(0)} mm`;
+  document.querySelector("#height-control-value").textContent =
+    `${heightMillimeters.toFixed(0)} MM`;
+  document.querySelector("#height-meter-fill").style.width =
+    `${heightFractionFromMillimeters(heightMillimeters) * 100}%`;
   const manualOverrideActive =
     manualStandOverride !== null ||
     manualTiltOverride !== null ||
-    manualHeightOverride !== null;
+    manualGaitOverride !== null;
   document.querySelector("#channel-source").textContent = manualOverrideActive ? "MANUAL" : "ELRS";
   document.querySelector("#channel-source-detail").textContent =
     manualOverrideActive ? "SIM OVERRIDE" : "CRSF INPUT";
@@ -1176,12 +1191,19 @@ async function pollFirmware() {
           : firmwareState.mode;
     const sitting = stance === "SITTING";
     const tilting = stance === "TILTING";
+    const gaitActive = firmwareState.mode === "GAIT";
+    const gaitSwitchDown = channels[6] > 1750;
+    const gaitBlockedByTilt = gaitSwitchDown && (channels[7] > 1600 || tilting);
     const standButton = document.querySelector("#stand-button");
     const tiltButton = document.querySelector("#tilt-button");
+    const gaitButton = document.querySelector("#gait-button");
+    const gaitState = document.querySelector("#gait-state");
+    const rideHeightMm = Number.isFinite(Number(firmwareState.ride_height_mm))
+      ? Number(firmwareState.ride_height_mm)
+      : heightMillimetersFromChannel(channels[RIDE_HEIGHT_CHANNEL_INDEX]);
     document.querySelector("#mode-status").textContent = stance;
-    document.querySelector("#height-status").textContent =
-      `HEIGHT ${firmwareState.ride_height || "UNKNOWN"}`;
-    document.querySelector("#ride-height").textContent = firmwareState.ride_height || "UNKNOWN";
+    document.querySelector("#height-status").textContent = `HEIGHT ${rideHeightMm.toFixed(0)} MM`;
+    document.querySelector("#ride-height").textContent = `${rideHeightMm.toFixed(0)} mm`;
     const requestedStanding = manualStandOverride ?? standRequested;
     const poseTransitionPending =
       Math.abs(firmwareState.pose_z_mm - firmwareState.target_z_mm) > 0.5;
@@ -1203,23 +1225,23 @@ async function pollFirmware() {
     tiltButton.textContent = tilting ? "TILTING" : "LEVEL";
     tiltButton.title = tilting ? "Return Domino to level" : "Tilt Domino";
     tiltButton.classList.toggle("active", tilting);
-    const heightControl = document.querySelector(".height-control");
-    heightControl.classList.toggle("disabled", sitting);
-    heightControl.setAttribute("aria-disabled", String(sitting));
-    document.querySelectorAll("[data-height]").forEach((button) => {
-      button.disabled = sitting;
-      button.classList.toggle("active", button.dataset.height === firmwareState.ride_height);
-    });
-    document.querySelector("#frame-count").textContent = firmwareState.accepted_frames;
-    document.querySelector("#target-z").textContent = `${firmwareState.target_z_mm.toFixed(1)} mm`;
-    document.querySelector("#pose-z").textContent = `${firmwareState.pose_z_mm.toFixed(1)} mm`;
-    const activeAngles = legs.flatMap((leg) => [
-      firmwareState.servo_angle_deg[leg.channels.shoulder],
-      firmwareState.servo_angle_deg[leg.channels.upper],
-      firmwareState.servo_angle_deg[leg.channels.lower],
-    ]);
-    document.querySelector("#servo-range").textContent =
-      `${(Math.max(...activeAngles) - Math.min(...activeAngles)).toFixed(1)} deg`;
+    gaitButton.textContent = gaitActive
+      ? "GAIT ACTIVE"
+      : gaitBlockedByTilt
+        ? "GAIT BLOCKED"
+        : gaitSwitchDown
+          ? "GAIT READY"
+          : "GAIT OFF";
+    gaitButton.dataset.state = gaitBlockedByTilt ? "blocked" : gaitActive ? "active" : "idle";
+    gaitButton.classList.toggle("active", gaitActive);
+    gaitState.textContent = gaitActive
+      ? "ACTIVE"
+      : gaitBlockedByTilt
+        ? "BLOCKED BY TILT"
+        : gaitSwitchDown
+          ? "READY"
+          : "OFF";
+    gaitState.dataset.state = gaitBlockedByTilt ? "blocked" : gaitActive ? "active" : "idle";
     updateJointLegendValues();
   } catch {
     document.querySelector("#firmware-status").dataset.state = "offline";
@@ -1344,7 +1366,9 @@ function updateFootSymmetryHealth() {
     pairs[0],
   );
   const intentionalAsymmetry =
-    firmwareState?.tilt_active || firmwareState?.mode === "BALANCE";
+    firmwareState?.tilt_active ||
+    firmwareState?.mode === "BALANCE" ||
+    firmwareState?.mode === "GAIT";
   const healthy = intentionalAsymmetry || worst.errorMm <= FOOT_SYMMETRY_TOLERANCE_MM;
   const state = {
     healthy,

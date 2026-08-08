@@ -64,13 +64,13 @@ The project uses CRSF / ExpressLRS input over `Serial2`. Channel values are conv
 
 Important controls:
 
-- Roll stick: body roll in tilt mode.
-- Pitch stick: body pitch in tilt mode.
-- Yaw stick: body yaw in tilt mode.
+- Right-stick horizontal: body roll in tilt mode; differential turn command in gait mode.
+- Right-stick vertical: body pitch in tilt mode; forward/reverse command in gait mode.
+- Left-stick horizontal: body yaw in tilt mode; ignored by the first gait.
 - SA: stand/stow command.
-- SB: ride-height preset.
-- SC: balance mode request.
-- SD: body tilt enable.
+- SB: currently unbound.
+- SC: up/middle keeps normal stand; fully down requests gait mode.
+- SD: body tilt enable and hard gait interlock.
 
 Switches use hysteresis and debounce timing so mode transitions do not chatter.
 
@@ -82,8 +82,8 @@ At a high level, each loop:
 2. Updates link/failsafe state.
 3. Converts RC switches into menu intent.
 4. Updates the target leg height ramp.
-5. Enters or exits tilt and balance modes based on switch state and pose readiness.
-6. Computes body pose or balance Z offsets.
+5. Enters or exits tilt, gait, and balance modes based on switch state and pose readiness.
+6. Computes body pose, gait foot targets, or balance Z offsets.
 7. Calls the leg controller, which calls IK and writes PWM outputs.
 
 If CRSF link health is lost, the firmware moves toward the compact stow target.
@@ -98,5 +98,22 @@ This is intentionally conservative:
 - Commands are clamped.
 - The output is proportional-only for now.
 
-Treat this as an experimental balancing layer, not a complete dynamic stabilizer.
+SC middle is deliberately not mapped to balance during gait bring-up. The
+filtered three-position switch passes through its midpoint on the way to fully
+down; leaving balance on the midpoint would briefly trigger it on every gait
+selection.
 
+## Sinusoidal Gait
+
+`BODY_GAIT` is the first walking milestone. It uses a diagonal trot: FL/BR share
+one phase and FR/BL are offset by 180 degrees. A planted foot follows a
+half-cosine rearward stroke, then a matching raised return arc. Both horizontal
+phases have zero endpoint velocity to reduce touchdown and liftoff slip. The 62%
+stance duty adds a short four-foot support window between diagonal transfers.
+Stride, lift, frequency, and stick slew are intentionally conservative while
+the real mechanism is validated.
+
+Gait requires stand pose readiness, SC fully down, a live CRSF link, and SD/tilt
+off. Any tilt request blocks or exits gait immediately.
+
+Treat this as an experimental balancing layer, not a complete dynamic stabilizer.

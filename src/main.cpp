@@ -104,10 +104,12 @@ constexpr float kDegToRad = kPi / 180.0f;
 constexpr int ROLL_CH_INDEX = 0;
 constexpr int PITCH_CH_INDEX = 1;
 constexpr int YAW_CH_INDEX = 3;
-// The Boxer left-stick vertical is CRSF channel 3. The firmware uses its
-// three travel bands as the high / medium / low ride-height command.
+// The Boxer left-stick vertical is CRSF channel 3 and maps continuously to
+// the CAD-validated ride-height range.
 constexpr int RIDE_HEIGHT_CH_INDEX = 2;
 constexpr int SD_CH_INDEX = 7;
+constexpr int SC_GAIT_ON_THRESHOLD_US = 1750;
+constexpr int SC_GAIT_OFF_THRESHOLD_US = 1650;
 constexpr int SD_ON_THRESHOLD_US = 1600;
 constexpr int SD_OFF_THRESHOLD_US = 1400;
 constexpr float kStickCenterUs = 1500.0f;
@@ -145,10 +147,24 @@ constexpr uint32_t kTiltToggleDebounceMs = 300;      // Hold tilt candidate befo
 constexpr bool kDebugLoggingEnabled = false;
 constexpr bool kBalanceDebugLoggingEnabled = false;
 
-// Ride height configuration (stand-only, 3 presets driven by SB).
-// "High" is the default neutral stand height; "Medium" and "Low"
-// bring the feet closer to the body (smaller Z in IK frame).
-enum RideHeightPreset : uint8_t { RIDE_HIGH = 0, RIDE_MEDIUM = 1, RIDE_LOW = 2 };
+// First gait milestone: a deliberately slow diagonal trot. The diagonal pairs
+// use opposite phases. Each foot has a planted rearward stance followed by a
+// smooth raised return arc, with brief four-foot support overlap. Right-stick
+// vertical commands travel; right-stick horizontal commands differential
+// stride for turning.
+constexpr float kGaitStickDeadband = 0.12f;
+constexpr float kGaitMaxStrideMm = 24.0f;
+constexpr float kGaitMaxTurnStrideMm = 18.0f;
+constexpr float kGaitMaxLiftMm = 42.0f;
+constexpr float kGaitMinFrequencyHz = 0.58f;
+constexpr float kGaitMaxFrequencyHz = 0.82f;
+constexpr float kGaitStanceFraction = 0.62f;
+constexpr float kGaitCommandSlewPerSec = 1.5f;
+constexpr uint32_t kGaitToggleDebounceMs = 200;
+
+// Ride height configuration (stand-only, continuous CH3 command).
+// The Boxer left-stick vertical maps linearly across the CAD-validated
+// standing range. The stow pose remains a separate fixed safety pose.
 
 // High-level body mode. This is the top-level "menu" state that we will
 // extend as more behaviors are added (gaits, diagnostics, etc.).
@@ -157,29 +173,18 @@ enum BodyMode : uint8_t {
   BODY_STAND = 1,
   BODY_TILT = 2,
   BODY_BALANCE = 3,
+  BODY_GAIT = 4,
 };
 
-// Microsecond bands for SB positions (up / mid / down).
-// These values assume ~1000 us = switch fully up, ~1500 us = middle,
-// ~2000 us = fully down. Tweak if your radio outputs different ranges.
-constexpr int RIDE_HEIGHT_UPPER_POS_MAX_US = 1200;
-constexpr int RIDE_HEIGHT_LOWER_POS_MIN_US = 1800;
+// Offsets from kNeutralZ (mm). Positive values move the feet further from
+// the body; negative values bring them closer. Keep the minimum inside the
+// measured linkage workspace.
+constexpr float kRideHeightOffsetHighMm = 0.0f;
+constexpr float kRideHeightOffsetLowMm = -60.0f;
+constexpr float kRideHeightMaxMm = kNeutralZ + kRideHeightOffsetHighMm;
+constexpr float kRideHeightMinMm = kNeutralZ + kRideHeightOffsetLowMm;
 
-// Offsets from kNeutralZ (mm) for each ride height preset.
-// Positive values move the feet further from the body; negative values
-// move them closer. Keep results >= 0 to stay within IK assumptions.
-constexpr float kRideHeightOffsetHighMm = 0.0f;     // SB up  : default stand height.
-constexpr float kRideHeightOffsetLowMm = -60.0f;    // SB down: lowest CAD-validated linkage reach.
-constexpr float kRideHeightOffsetMediumMm =
-    0.5f * (kRideHeightOffsetHighMm + kRideHeightOffsetLowMm);  // SB mid : halfway between.
-
-constexpr float kRideHeightOffsetsMm[3] = {
-    kRideHeightOffsetHighMm,
-    kRideHeightOffsetMediumMm,
-    kRideHeightOffsetLowMm,
-};
-
-static_assert((kNeutralZ + kRideHeightOffsetLowMm) >= 220.0f,
+static_assert(kRideHeightMinMm >= 220.0f,
               "Lowest ride height must remain inside the CAD linkage workspace");
 
 using MoveLegFn = void (*)(Adafruit_PWMServoDriver &, float, float, float);
@@ -231,14 +236,14 @@ constexpr float kFootPosYBody[kLegCount] = {
 };
 
 bool sdCommandActive = false;
-RideHeightPreset currentRidePreset = RIDE_HIGH;
+float currentRideHeightMm = kRideHeightMaxMm;
 
 // Unified "menu" view of the robot's state based purely on RC inputs and
 // link/failsafe information. The control loop consumes this instead of
 // talking directly to raw switches.
 struct MenuState {
   BodyMode mode;
-  RideHeightPreset rideHeight;
+  float rideHeightMm;
   bool linkAlive;
   bool failsafeActive;
 };
@@ -252,6 +257,9 @@ bool balanceRefValid = false;
 // oscillations and jerkiness.
 float balanceRollCmdFilt = 0.0f;
 float balancePitchCmdFilt = 0.0f;
+float gaitPhaseRad = 0.0f;
+float gaitForwardCommand = 0.0f;
+float gaitTurnCommand = 0.0f;
 
 float normalizeChannel(int chValueUs) {
   const float normalized = (static_cast<float>(chValueUs) - kStickCenterUs) / kStickHalfRangeUs;
@@ -376,26 +384,18 @@ bool applySwitchDebounce(bool currentState,
 bool updateStandCommand(bool standActive, uint32_t now);
 bool updateSdCommand(bool sdActive, bool controlsEnabled, uint32_t now);
 
-RideHeightPreset detectRideHeightPresetFromChannelUs(int heightValueUs) {
-  if (heightValueUs <= RIDE_HEIGHT_UPPER_POS_MAX_US) {
-    return RIDE_HIGH;
-  }
-  if (heightValueUs >= RIDE_HEIGHT_LOWER_POS_MIN_US) {
-    return RIDE_LOW;
-  }
-  return RIDE_MEDIUM;
+float rideHeightMmFromChannelUs(int heightValueUs) {
+  const float clampedUs = fminf(2000.0f, fmaxf(1000.0f, static_cast<float>(heightValueUs)));
+  const float normalized = (clampedUs - 1000.0f) / 1000.0f;
+  return kRideHeightMinMm + normalized * (kRideHeightMaxMm - kRideHeightMinMm);
 }
 
-RideHeightPreset readRideHeightPreset() {
-  const int heightValueUs = ch_us[RIDE_HEIGHT_CH_INDEX];
-  return detectRideHeightPresetFromChannelUs(heightValueUs);
+float readRideHeightMm() {
+  return rideHeightMmFromChannelUs(ch_us[RIDE_HEIGHT_CH_INDEX]);
 }
 
-float computeStandTargetZForPreset(RideHeightPreset preset) {
-  const int index = static_cast<int>(preset);
-  const float offset = kRideHeightOffsetsMm[index];
-  const float candidate = kNeutralZ + offset;
-  return (candidate >= 0.0f) ? candidate : 0.0f;
+float computeStandTargetZ(float rideHeightMm) {
+  return fminf(kRideHeightMaxMm, fmaxf(kRideHeightMinMm, rideHeightMm));
 }
 
 // Raw RC -> menu inputs -------------------------------------------------
@@ -406,7 +406,8 @@ struct MenuInputs {
   bool standRequested = false;
   bool tiltSwitchDown = false;
   bool balanceRequested = false;
-  RideHeightPreset rideRequested = RIDE_HIGH;
+  bool gaitRequested = false;
+  float rideHeightMm = kRideHeightMaxMm;
 };
 
 MenuInputs readMenuInputs(uint32_t now, uint32_t* lastLinkAliveMs, bool* failsafeState) {
@@ -447,21 +448,30 @@ MenuInputs readMenuInputs(uint32_t now, uint32_t* lastLinkAliveMs, bool* failsaf
   }
   inputs.tiltSwitchDown = sdCommandActive;
 
-  // Balance request from SC (middle position only).
+  // During gait bring-up, SC up and middle both mean normal stand. Only SC
+  // fully down requests gait; hysteresis keeps the boundary from chattering.
+  // The experimental balance controller remains compiled but is deliberately
+  // not mapped to SC middle, because filtered switch travel passes through the
+  // midpoint and would briefly trigger balance on every gait selection.
   const int scValueUs = ch_us[SC_CH_INDEX];
-  // Assume 3-position: ~1000 (up), ~1500 (mid), ~2000 (down).
-  // Treat 1400-1600 us as the middle position.
-  inputs.balanceRequested = (scValueUs > 1400 && scValueUs < 1600);
-  static bool lastBalanceRequested = false;
-  if (inputs.balanceRequested != lastBalanceRequested) {
-    lastBalanceRequested = inputs.balanceRequested;
-    Serial.printf("SC=%d -> balanceRequested=%d\n", scValueUs, inputs.balanceRequested ? 1 : 0);
+  inputs.balanceRequested = false;
+  static bool scGaitCommand = false;
+  if (scGaitCommand) {
+    if (scValueUs < SC_GAIT_OFF_THRESHOLD_US) {
+      scGaitCommand = false;
+    }
+  } else if (scValueUs > SC_GAIT_ON_THRESHOLD_US) {
+    scGaitCommand = true;
+  }
+  inputs.gaitRequested = scGaitCommand && !inputs.failsafeActive;
+  static bool lastGaitRequested = false;
+  if (inputs.gaitRequested != lastGaitRequested) {
+    lastGaitRequested = inputs.gaitRequested;
+    Serial.printf("SC=%d -> gaitRequested=%d\n", scValueUs, inputs.gaitRequested ? 1 : 0);
   }
 
-  // Ride height preset from Boxer left-stick vertical / CRSF CH3. The
-  // firmware intentionally keeps the existing three preset bands so the
-  // same command is deterministic on the physical robot and in SIL.
-  inputs.rideRequested = readRideHeightPreset();
+  // Continuous ride height from Boxer left-stick vertical / CRSF CH3.
+  inputs.rideHeightMm = readRideHeightMm();
 
   return inputs;
 }
@@ -625,6 +635,100 @@ void moveLegsFromBodyPoseWithZOffsets(Adafruit_PWMServoDriver &driver,
   }
 }
 
+float applyGaitDeadband(float value) {
+  const float magnitude = fabsf(value);
+  if (magnitude <= kGaitStickDeadband) {
+    return 0.0f;
+  }
+  const float scaled = (magnitude - kGaitStickDeadband) / (1.0f - kGaitStickDeadband);
+  return copysignf(constrain(scaled, 0.0f, 1.0f), value);
+}
+
+float approachGaitCommand(float current, float target, float maximumStep) {
+  if (target > current) {
+    return fminf(target, current + maximumStep);
+  }
+  return fmaxf(target, current - maximumStep);
+}
+
+void resetGaitState() {
+  gaitPhaseRad = 0.0f;
+  gaitForwardCommand = 0.0f;
+  gaitTurnCommand = 0.0f;
+}
+
+float halfCosine01(float value) {
+  const float t = constrain(value, 0.0f, 1.0f);
+  return 0.5f - 0.5f * cosf(kPi * t);
+}
+
+void sampleGaitFootPath(float cycle,
+                        float halfStrideMm,
+                        float liftMm,
+                        float *xOffsetMm,
+                        float *zOffsetMm) {
+  cycle -= floorf(cycle);
+  if (cycle < kGaitStanceFraction) {
+    // Keep the foot on the ground while it travels from front to rear. A
+    // half-cosine starts and ends at zero velocity, avoiding a horizontal
+    // impulse at touchdown and liftoff. The >50% stance duty gives both
+    // diagonal pairs a brief support overlap.
+    const float stance = cycle / kGaitStanceFraction;
+    *xOffsetMm = halfStrideMm * (1.0f - 2.0f * halfCosine01(stance));
+    *zOffsetMm = 0.0f;
+    return;
+  }
+
+  // Return the unloaded foot from rear to front. Matching half-cosines make
+  // the horizontal velocity continuous at the phase boundaries, while sin^2
+  // gives zero vertical velocity at both ends of the swing.
+  const float swing = (cycle - kGaitStanceFraction) / (1.0f - kGaitStanceFraction);
+  const float swingPosition = halfCosine01(swing);
+  const float liftWave = sinf(kPi * swing);
+  *xOffsetMm = halfStrideMm * (-1.0f + 2.0f * swingPosition);
+  *zOffsetMm = -liftMm * liftWave * liftWave;
+}
+
+void applySinusoidalGait(Adafruit_PWMServoDriver &driver, float baseZ) {
+  constexpr float kControlStepSeconds = static_cast<float>(kControlIntervalMs) / 1000.0f;
+  const float targetForward = applyGaitDeadband(normalizeChannel(ch_us[PITCH_CH_INDEX]));
+  const float targetTurn = applyGaitDeadband(normalizeChannel(ch_us[ROLL_CH_INDEX]));
+  const float maximumCommandStep = kGaitCommandSlewPerSec * kControlStepSeconds;
+  gaitForwardCommand = approachGaitCommand(gaitForwardCommand, targetForward, maximumCommandStep);
+  gaitTurnCommand = approachGaitCommand(gaitTurnCommand, targetTurn, maximumCommandStep);
+
+  const float activity = fmaxf(fabsf(gaitForwardCommand), fabsf(gaitTurnCommand));
+  if (activity > 0.001f) {
+    const float frequencyHz =
+        kGaitMinFrequencyHz + activity * (kGaitMaxFrequencyHz - kGaitMinFrequencyHz);
+    gaitPhaseRad = fmodf(gaitPhaseRad + 2.0f * kPi * frequencyHz * kControlStepSeconds,
+                         2.0f * kPi);
+  } else {
+    gaitPhaseRad = 0.0f;
+  }
+
+  const float normalizedCycle = gaitPhaseRad / (2.0f * kPi);
+  for (int i = 0; i < kLegCount; ++i) {
+    const bool diagonalA = (i == LEG_FL || i == LEG_BR);
+    const bool leftLeg = (i == LEG_FL || i == LEG_BL);
+    const float sideSign = leftLeg ? 1.0f : -1.0f;
+    const float halfStrideMm =
+        gaitForwardCommand * kGaitMaxStrideMm +
+        sideSign * gaitTurnCommand * kGaitMaxTurnStrideMm;
+    float xOffsetMm = 0.0f;
+    float zOffsetMm = 0.0f;
+    sampleGaitFootPath(normalizedCycle + (diagonalA ? 0.0f : 0.5f),
+                       halfStrideMm,
+                       kGaitMaxLiftMm * activity,
+                       &xOffsetMm,
+                       &zOffsetMm);
+    const float x = FOOT_BACK_OFFSET_X + xOffsetMm;
+    const float y = sideSign * (FOOT_OUT_OFFSET_Y - BODY_HALF_WIDTH_Y);
+    const float z = baseZ + zOffsetMm;
+    commandLeg(driver, i, x, y, z);
+  }
+}
+
 bool updateStandCommand(bool standActive, uint32_t now) {
   static SwitchDebounceState saDebounce;
   const int saValueUs = ch_us[SA_CH_INDEX];
@@ -722,7 +826,7 @@ void exitTiltMode() {
 Adafruit_PWMServoDriver pca = Adafruit_PWMServoDriver();
 rampFloat zRamp;
 float currentTargetZ = kCloserPoseZ;
-MenuState menuState{BODY_STOW, RIDE_HIGH, false, true};
+MenuState menuState{BODY_STOW, kRideHeightMaxMm, false, true};
 
 void setup() {
   Serial.begin(115200);
@@ -755,6 +859,7 @@ void loop() {
   static bool failsafeActive = true;
   static SwitchDebounceState standModeDebounce;
   static SwitchDebounceState tiltDebounce;
+  static SwitchDebounceState gaitDebounce;
 
   const uint32_t now = millis();
   processCrsfFrames(now);
@@ -789,21 +894,22 @@ void loop() {
     menuState.mode = BODY_STAND;
   }
 
-  // 3) Always remember and report SB. Stow still uses its fixed compact pose,
-  //    but the selected ride height is retained for the next stand command.
-  if (inputs.rideRequested != currentRidePreset) {
-    currentRidePreset = inputs.rideRequested;
-    Serial.printf("Ride height preset=%d CH3_HEIGHT=%d\n",
-                  static_cast<int>(currentRidePreset),
+  // 3) Always remember and report the continuous CH3 height command. Stow
+  //    still uses its fixed compact pose, but the selected height is retained
+  //    for the next stand command.
+  if (fabsf(inputs.rideHeightMm - currentRideHeightMm) >= 0.1f) {
+    currentRideHeightMm = inputs.rideHeightMm;
+    Serial.printf("Ride height target=%.1fmm CH3_HEIGHT=%d\n",
+                  currentRideHeightMm,
                   ch_us[RIDE_HEIGHT_CH_INDEX]);
   }
-  menuState.rideHeight = currentRidePreset;
+  menuState.rideHeightMm = currentRideHeightMm;
 
   // 4) Compute the current Z target from the menu state.
   if (menuState.mode == BODY_STOW) {
     currentTargetZ = kCloserPoseZ;
   } else {
-    currentTargetZ = computeStandTargetZForPreset(menuState.rideHeight);
+    currentTargetZ = computeStandTargetZ(menuState.rideHeightMm);
   }
   zRamp.move(currentTargetZ);
 
@@ -813,7 +919,7 @@ void loop() {
   // 5) Tilt candidate: entering tilt requires the pose to be "ready" at the
   //    chosen height, but once in tilt we keep it latched as long as the
   //    stand command and tilt switch remain active. This avoids dropping out
-  //    of tilt while ride height ramps between presets.
+  //    of tilt while the requested ride height ramps continuously.
   const bool standPoseReady =
       (menuState.mode != BODY_STOW) &&
       (fabsf(lastPoseZ - currentTargetZ) <= kStandPoseToleranceMm) &&
@@ -825,7 +931,7 @@ void loop() {
     // and the tilt switch is held (no pose-ready requirement during ramps).
     desiredTiltActive = (standState == STAND) && inputs.tiltSwitchDown && !inputs.failsafeActive;
   } else {
-    // Entering tilt: require pose ready at the selected ride height so we
+    // Entering tilt: require pose ready at the requested ride height so we
     // don't tilt while legs are still moving into position.
     desiredTiltActive =
         (standState == STAND) && inputs.tiltSwitchDown && standPoseReady && !inputs.failsafeActive;
@@ -841,7 +947,30 @@ void loop() {
   }
   menuState.mode = tiltModeActive ? BODY_TILT : menuState.mode;
 
-  // 6) Balance mode: only allowed when standing (not stow, not tilt),
+  // 6) Gait mode: SC fully down requests a slow diagonal trot, but SD/tilt
+  //    always wins. The raw SD state blocks gait immediately rather than
+  //    waiting for the tilt-mode debounce to complete.
+  const bool gaitCandidateRaw =
+      menuState.mode == BODY_STAND &&
+      inputs.gaitRequested &&
+      !inputs.tiltSwitchDown &&
+      !tiltModeActive &&
+      standPoseReady &&
+      !inputs.failsafeActive;
+  bool gaitCandidateFiltered =
+      applySwitchDebounce(previousMode == BODY_GAIT,
+                          gaitCandidateRaw,
+                          now,
+                          &gaitDebounce,
+                          kGaitToggleDebounceMs);
+  if (inputs.tiltSwitchDown || tiltModeActive || inputs.failsafeActive) {
+    gaitCandidateFiltered = false;
+  }
+  if (gaitCandidateFiltered && menuState.mode == BODY_STAND) {
+    menuState.mode = BODY_GAIT;
+  }
+
+  // 7) Balance mode: only allowed when standing (not stow, tilt, or gait),
   //    and when the SC switch is in the middle position.
   if (!tiltModeActive && menuState.mode == BODY_STAND && inputs.balanceRequested &&
       !inputs.failsafeActive) {
@@ -860,6 +989,15 @@ void loop() {
     balanceRefValid = false;
     balanceRollCmdFilt = 0.0f;
     balancePitchCmdFilt = 0.0f;
+  }
+  if (previousMode != BODY_GAIT && menuState.mode == BODY_GAIT) {
+    resetGaitState();
+    Serial.printf("Entering BODY_GAIT (SC=%d, SD=%d)\n",
+                  ch_us[SC_CH_INDEX],
+                  ch_us[SD_CH_INDEX]);
+  } else if (previousMode == BODY_GAIT && menuState.mode != BODY_GAIT) {
+    resetGaitState();
+    Serial.printf("Exiting BODY_GAIT (newMode=%d)\n", static_cast<int>(menuState.mode));
   }
 
   logDebugState(now,
@@ -892,6 +1030,13 @@ void loop() {
       silBodyYawDeg = 0.0f;
 #endif
       moveLegsToSitBlend(pca, rampZ, sitBlend);
+    } else if (menuState.mode == BODY_GAIT) {
+#ifdef DOMINO_SIL
+      silBodyRollDeg = 0.0f;
+      silBodyPitchDeg = 0.0f;
+      silBodyYawDeg = 0.0f;
+#endif
+      applySinusoidalGait(pca, rampZ);
     } else {
 #ifdef DOMINO_SIL
       silBodyRollDeg = 0.0f;
@@ -1039,8 +1184,24 @@ extern "C" bool dominoSilTiltActive() {
   return tiltModeActive;
 }
 
-extern "C" int dominoSilRideHeight() {
-  return static_cast<int>(menuState.rideHeight);
+extern "C" float dominoSilRideHeightMm() {
+  return currentRideHeightMm;
+}
+
+extern "C" bool dominoSilGaitActive() {
+  return menuState.mode == BODY_GAIT;
+}
+
+extern "C" float dominoSilGaitPhaseRad() {
+  return gaitPhaseRad;
+}
+
+extern "C" float dominoSilGaitForwardCommand() {
+  return gaitForwardCommand;
+}
+
+extern "C" float dominoSilGaitTurnCommand() {
+  return gaitTurnCommand;
 }
 
 extern "C" float dominoSilLegCommandX(int legIndex) {

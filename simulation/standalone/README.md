@@ -47,8 +47,10 @@ bridge. The current robot mapping is:
 
 - channel 1: roll;
 - channel 2: forward command;
+- channel 3 / Boxer left-stick vertical: ride height (high / medium / low bands);
 - channel 4: turn;
 - channel 5 / SA: stand mode;
+- channel 6 / SB: auxiliary and ignored by the current firmware;
 - channel 8 / SD: tilt mode.
 
 Keyboard fallback uses `W/S`, `A/D`, `Q/E`, `Space`, `T`, and `R`.

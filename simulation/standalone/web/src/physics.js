@@ -32,6 +32,13 @@ const FOOT_PLANAR_HOLD_STIFFNESS = 480;
 const FOOT_PLANAR_HOLD_DAMPING = 34;
 const FOOT_PLANAR_HOLD_MAX_FORCE = 55;
 const FOOT_PLANAR_HOLD_MAX_FORCE_RATE = 600;
+const GAIT_FOOT_HOLD_STIFFNESS = 320;
+const GAIT_FOOT_HOLD_DAMPING = 28;
+const GAIT_FOOT_HOLD_MAX_FORCE = 42;
+const GAIT_FOOT_HOLD_MAX_FORCE_RATE = 480;
+const GAIT_STANCE_COMMAND_TOLERANCE_MM = 1.5;
+const GAIT_HEADING_STIFFNESS = 10;
+const GAIT_HEADING_DAMPING = 2.2;
 const MAX_SHOULDER_SPEED = THREE.MathUtils.degToRad(240);
 const MAX_LEG_SPEED = THREE.MathUtils.degToRad(300);
 const SIL_COMMAND_INDEX = {
@@ -186,6 +193,8 @@ export async function createDominoPhysics() {
   let commandedBodyHeight = INITIAL_BASE_HEIGHT;
   let tiltPlanarAnchor = null;
   let tiltFootAnchors = null;
+  let gaitFootAnchors = Array(LEG_SPECS.length).fill(null);
+  let gaitHeadingForward = null;
   let previousMode = null;
   let assistedBodyQuaternion = new THREE.Quaternion();
   const bodyPoseTorque = new THREE.Vector3();
@@ -321,6 +330,8 @@ export async function createDominoPhysics() {
     neutralStandTime = 0;
     tiltPlanarAnchor = null;
     tiltFootAnchors = null;
+    gaitFootAnchors = Array(LEG_SPECS.length).fill(null);
+    gaitHeadingForward = null;
     previousMode = null;
     assistedBodyQuaternion.identity();
     bodyPoseTorque.set(0, 0, 0);
@@ -447,20 +458,39 @@ export async function createDominoPhysics() {
     if (firmwareState?.mode !== "TILT" || !tiltFootAnchors) return;
     legRuntimes.forEach((runtime, index) => {
       const anchor = tiltFootAnchors[index];
+      applyFootPlanarHold(
+        runtime,
+        anchor,
+        FOOT_PLANAR_HOLD_STIFFNESS,
+        FOOT_PLANAR_HOLD_DAMPING,
+        FOOT_PLANAR_HOLD_MAX_FORCE,
+        FOOT_PLANAR_HOLD_MAX_FORCE_RATE,
+      );
+    });
+  }
+
+  function applyFootPlanarHold(
+    runtime,
+    anchor,
+    stiffness,
+    damping,
+    maximumForce,
+    maximumForceRate,
+    xScale = 1,
+    zScale = 1,
+  ) {
       const position = runtime.footCollider.translation();
       const velocity = runtime.lower.linvel();
       const correction = new THREE.Vector3(
-        FOOT_PLANAR_HOLD_STIFFNESS * (anchor.x - position.x) -
-          FOOT_PLANAR_HOLD_DAMPING * velocity.x,
+        xScale * (stiffness * (anchor.x - position.x) - damping * velocity.x),
         0,
-        FOOT_PLANAR_HOLD_STIFFNESS * (anchor.z - position.z) -
-          FOOT_PLANAR_HOLD_DAMPING * velocity.z,
+        zScale * (stiffness * (anchor.z - position.z) - damping * velocity.z),
       );
-      if (correction.length() > FOOT_PLANAR_HOLD_MAX_FORCE) {
-        correction.setLength(FOOT_PLANAR_HOLD_MAX_FORCE);
+      if (correction.length() > maximumForce) {
+        correction.setLength(maximumForce);
       }
       const forceStep = correction.clone().sub(runtime.planarHoldForce);
-      const maximumForceStep = FOOT_PLANAR_HOLD_MAX_FORCE_RATE * FIXED_TIMESTEP;
+      const maximumForceStep = maximumForceRate * FIXED_TIMESTEP;
       if (forceStep.length() > maximumForceStep) {
         forceStep.setLength(maximumForceStep);
       }
@@ -469,6 +499,53 @@ export async function createDominoPhysics() {
       runtime.lower.addForce(
         { x: runtime.planarHoldForce.x, y: 0, z: runtime.planarHoldForce.z },
         true,
+      );
+  }
+
+  function footHasContact(runtime) {
+    let touching = false;
+    world.contactPairsWith(runtime.footCollider, (otherCollider) => {
+      world.contactPair(runtime.footCollider, otherCollider, (manifold) => {
+        if (manifold.numSolverContacts() > 0) touching = true;
+      });
+    });
+    return touching;
+  }
+
+  function gaitLegIsInStance(firmwareState, runtimeIndex) {
+    const commandIndex = SIL_COMMAND_INDEX[LEG_SPECS[runtimeIndex].id];
+    const command = firmwareState?.leg_command_xyz_mm?.[commandIndex];
+    const poseZ = Number(firmwareState?.pose_z_mm);
+    return Array.isArray(command) &&
+      Number.isFinite(poseZ) &&
+      Math.abs((Number(command[2]) || 0) - poseZ) <= GAIT_STANCE_COMMAND_TOLERANCE_MM;
+  }
+
+  function driveGaitStanceAnchors(firmwareState) {
+    if (firmwareState?.mode !== "GAIT") return;
+    legRuntimes.forEach((runtime, index) => {
+      if (!gaitLegIsInStance(firmwareState, index)) {
+        gaitFootAnchors[index] = null;
+        runtime.planarHoldForce.set(0, 0, 0);
+        return;
+      }
+
+      const position = runtime.footCollider.translation();
+      const closeToGround = position.y <= FOOT_RADIUS + 0.008;
+      if (!gaitFootAnchors[index] && (footHasContact(runtime) || closeToGround)) {
+        gaitFootAnchors[index] = { x: position.x, z: position.z };
+      }
+      if (!gaitFootAnchors[index]) return;
+
+      applyFootPlanarHold(
+        runtime,
+        gaitFootAnchors[index],
+        GAIT_FOOT_HOLD_STIFFNESS,
+        GAIT_FOOT_HOLD_DAMPING,
+        GAIT_FOOT_HOLD_MAX_FORCE,
+        GAIT_FOOT_HOLD_MAX_FORCE_RATE,
+        0,
+        1,
       );
     });
   }
@@ -536,6 +613,20 @@ export async function createDominoPhysics() {
     correction.x -= angularVelocity.x * BODY_UPRIGHT_ASSIST_DAMPING;
     correction.z -= angularVelocity.z * BODY_UPRIGHT_ASSIST_DAMPING;
     correction.y = 0;
+    if (firmwareState?.mode === "GAIT" && gaitHeadingForward) {
+      const currentForward = new THREE.Vector3(1, 0, 0).applyQuaternion(quaternion);
+      currentForward.y = 0;
+      if (currentForward.lengthSq() > 1e-8) {
+        currentForward.normalize();
+        const headingError = Math.atan2(
+          currentForward.z * gaitHeadingForward.x -
+            currentForward.x * gaitHeadingForward.z,
+          currentForward.dot(gaitHeadingForward),
+        );
+        correction.y = headingError * GAIT_HEADING_STIFFNESS -
+          angularVelocity.y * GAIT_HEADING_DAMPING;
+      }
+    }
     if (correction.length() > BODY_UPRIGHT_ASSIST_MAX_TORQUE) {
       correction.setLength(BODY_UPRIGHT_ASSIST_MAX_TORQUE);
     }
@@ -557,6 +648,20 @@ export async function createDominoPhysics() {
     } else if (mode !== "TILT") {
       tiltPlanarAnchor = null;
       tiltFootAnchors = null;
+    }
+    if (mode === "GAIT" && previousMode !== "GAIT") {
+      gaitFootAnchors = Array(LEG_SPECS.length).fill(null);
+      const rotation = base.rotation();
+      gaitHeadingForward = new THREE.Vector3(1, 0, 0).applyQuaternion(
+        new THREE.Quaternion(rotation.x, rotation.y, rotation.z, rotation.w),
+      );
+      gaitHeadingForward.y = 0;
+      gaitHeadingForward.normalize();
+    } else if (mode !== "GAIT") {
+      gaitFootAnchors = Array(LEG_SPECS.length).fill(null);
+      gaitHeadingForward = null;
+    }
+    if (mode !== "TILT" && mode !== "GAIT") {
       legRuntimes.forEach((runtime) => runtime.planarHoldForce.set(0, 0, 0));
     }
     previousMode = mode;
@@ -579,6 +684,7 @@ export async function createDominoPhysics() {
       driveBodyHeight(firmwareState);
       driveBodyPlanarPosition(firmwareState);
       driveFootPlanarAnchors(firmwareState);
+      driveGaitStanceAnchors(firmwareState);
       driveBodyAttitude(firmwareState);
       world.step();
       accumulator -= FIXED_TIMESTEP;

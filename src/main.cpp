@@ -153,13 +153,16 @@ constexpr bool kBalanceDebugLoggingEnabled = false;
 // vertical commands travel; right-stick horizontal commands differential
 // stride for turning.
 constexpr float kGaitStickDeadband = 0.12f;
-constexpr float kGaitMaxStrideMm = 24.0f;
-constexpr float kGaitMaxTurnStrideMm = 16.0f;
-constexpr float kGaitMaxLiftMm = 34.0f;
+constexpr float kGaitMaxStrideMm = 33.0f;
+constexpr float kGaitMaxTurnStrideMm = 22.0f;
+constexpr float kGaitMaxLiftMm = 30.0f;
 constexpr float kGaitMinFrequencyHz = 0.54f;
 constexpr float kGaitMaxFrequencyHz = 0.76f;
 constexpr float kGaitStanceFraction = 0.68f;
 constexpr float kGaitCommandSlewPerSec = 1.5f;
+constexpr float kGaitAmplitudeSlewPerSec = 2.0f;
+constexpr float kGaitBodyHeightMm = 265.0f;
+constexpr float kGaitBodyHeightSlewMmPerSec = 80.0f;
 constexpr uint32_t kGaitToggleDebounceMs = 200;
 
 // Ride height configuration (stand-only, continuous CH3 command).
@@ -260,6 +263,8 @@ float balancePitchCmdFilt = 0.0f;
 float gaitPhaseRad = 0.0f;
 float gaitForwardCommand = 0.0f;
 float gaitTurnCommand = 0.0f;
+float gaitAmplitude = 0.0f;
+float gaitBodyZ = kGaitBodyHeightMm;
 
 float normalizeChannel(int chValueUs) {
   const float normalized = (static_cast<float>(chValueUs) - kStickCenterUs) / kStickHalfRangeUs;
@@ -651,21 +656,12 @@ float approachGaitCommand(float current, float target, float maximumStep) {
   return fmaxf(target, current - maximumStep);
 }
 
-float shapeGaitTravelCommand(float command) {
-  const float magnitude = fabsf(command);
-  if (magnitude <= 0.001f) {
-    return 0.0f;
-  }
-  // Give moderate stick commands enough stride to produce translation instead
-  // of merely rocking the chassis, while retaining a continuous zero crossing
-  // and the same full-stick mechanical limit.
-  return copysignf(sqrtf(magnitude), command);
-}
-
 void resetGaitState() {
   gaitPhaseRad = 0.0f;
   gaitForwardCommand = 0.0f;
   gaitTurnCommand = 0.0f;
+  gaitAmplitude = 0.0f;
+  gaitBodyZ = lastPoseZ;
 }
 
 float halfCosine01(float value) {
@@ -702,13 +698,29 @@ void sampleGaitFootPath(float cycle,
 
 void applySinusoidalGait(Adafruit_PWMServoDriver &driver, float baseZ) {
   constexpr float kControlStepSeconds = static_cast<float>(kControlIntervalMs) / 1000.0f;
+  const float gaitBodyTargetZ = fminf(baseZ, kGaitBodyHeightMm);
+  gaitBodyZ = approachGaitCommand(
+      gaitBodyZ,
+      gaitBodyTargetZ,
+      kGaitBodyHeightSlewMmPerSec * kControlStepSeconds);
   const float targetForward = applyGaitDeadband(normalizeChannel(ch_us[PITCH_CH_INDEX]));
   const float targetTurn = applyGaitDeadband(normalizeChannel(ch_us[ROLL_CH_INDEX]));
   const float maximumCommandStep = kGaitCommandSlewPerSec * kControlStepSeconds;
   gaitForwardCommand = approachGaitCommand(gaitForwardCommand, targetForward, maximumCommandStep);
   gaitTurnCommand = approachGaitCommand(gaitTurnCommand, targetTurn, maximumCommandStep);
 
-  const float activity = fmaxf(fabsf(gaitForwardCommand), fabsf(gaitTurnCommand));
+  const float activity = constrain(
+      sqrtf(gaitForwardCommand * gaitForwardCommand +
+            gaitTurnCommand * gaitTurnCommand),
+      0.0f,
+      1.0f);
+  const float startupBlend = halfCosine01(activity / 0.25f);
+  const float targetAmplitude =
+      startupBlend * (0.65f + 0.35f * activity);
+  gaitAmplitude = approachGaitCommand(
+      gaitAmplitude,
+      targetAmplitude,
+      kGaitAmplitudeSlewPerSec * kControlStepSeconds);
   if (activity > 0.001f) {
     const float frequencyHz =
         kGaitMinFrequencyHz + activity * (kGaitMaxFrequencyHz - kGaitMinFrequencyHz);
@@ -719,24 +731,26 @@ void applySinusoidalGait(Adafruit_PWMServoDriver &driver, float baseZ) {
   }
 
   const float normalizedCycle = gaitPhaseRad / (2.0f * kPi);
-  const float shapedForwardCommand = shapeGaitTravelCommand(gaitForwardCommand);
+  const float commandScale = activity > 0.001f ? 1.0f / activity : 0.0f;
+  const float forwardDirection = gaitForwardCommand * commandScale;
+  const float turnDirection = gaitTurnCommand * commandScale;
   for (int i = 0; i < kLegCount; ++i) {
     const bool diagonalA = (i == LEG_FL || i == LEG_BR);
     const bool leftLeg = (i == LEG_FL || i == LEG_BL);
     const float sideSign = leftLeg ? 1.0f : -1.0f;
-    const float halfStrideMm =
-        shapedForwardCommand * kGaitMaxStrideMm +
-        sideSign * gaitTurnCommand * kGaitMaxTurnStrideMm;
+    const float halfStrideMm = gaitAmplitude * (
+        forwardDirection * kGaitMaxStrideMm +
+        sideSign * turnDirection * kGaitMaxTurnStrideMm);
     float xOffsetMm = 0.0f;
     float zOffsetMm = 0.0f;
     sampleGaitFootPath(normalizedCycle + (diagonalA ? 0.0f : 0.5f),
                        halfStrideMm,
-                       kGaitMaxLiftMm * activity,
+                       kGaitMaxLiftMm * gaitAmplitude,
                        &xOffsetMm,
                        &zOffsetMm);
     const float x = FOOT_BACK_OFFSET_X + xOffsetMm;
     const float y = sideSign * (FOOT_OUT_OFFSET_Y - BODY_HALF_WIDTH_Y);
-    const float z = baseZ + zOffsetMm;
+    const float z = gaitBodyZ + zOffsetMm;
     commandLeg(driver, i, x, y, z);
   }
 }
@@ -1185,11 +1199,11 @@ extern "C" int dominoSilBodyMode() {
 }
 
 extern "C" float dominoSilTargetZ() {
-  return currentTargetZ;
+  return menuState.mode == BODY_GAIT ? fminf(currentTargetZ, kGaitBodyHeightMm) : currentTargetZ;
 }
 
 extern "C" float dominoSilPoseZ() {
-  return lastPoseZ;
+  return menuState.mode == BODY_GAIT ? gaitBodyZ : lastPoseZ;
 }
 
 extern "C" bool dominoSilTiltActive() {

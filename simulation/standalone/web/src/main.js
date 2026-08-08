@@ -1201,9 +1201,12 @@ async function pollFirmware() {
     const rideHeightMm = Number.isFinite(Number(firmwareState.ride_height_mm))
       ? Number(firmwareState.ride_height_mm)
       : heightMillimetersFromChannel(channels[RIDE_HEIGHT_CHANNEL_INDEX]);
+    const commandedHeightMm = Number.isFinite(Number(firmwareState.target_z_mm))
+      ? Number(firmwareState.target_z_mm)
+      : rideHeightMm;
     document.querySelector("#mode-status").textContent = stance;
     document.querySelector("#height-status").textContent = `HEIGHT ${rideHeightMm.toFixed(0)} MM`;
-    document.querySelector("#ride-height").textContent = `${rideHeightMm.toFixed(0)} mm`;
+    document.querySelector("#ride-height").textContent = `${commandedHeightMm.toFixed(0)} mm`;
     const requestedStanding = manualStandOverride ?? standRequested;
     const poseTransitionPending =
       Math.abs(firmwareState.pose_z_mm - firmwareState.target_z_mm) > 0.5;
@@ -1247,9 +1250,9 @@ async function pollFirmware() {
     document.querySelector("#firmware-status").dataset.state = "offline";
   }
 }
-// Avoid phase-locking Windows file reads to the firmware's 50 ms atomic state
-// publication. A relatively-prime cadence spreads the brief read window out.
-setInterval(pollFirmware, 53);
+// Follow the firmware's 20 ms control clock without phase-locking reads to its
+// alternating state-file writes.
+setInterval(pollFirmware, 23);
 
 function updateRobot(delta) {
   if (!firmwareState || !linkageRuntimesReady()) return;

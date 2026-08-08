@@ -83,24 +83,23 @@ test("diagonal sinusoidal gait stays supported and produces planar travel", asyn
 
   firmwareState.mode = "GAIT";
   for (let frame = 0; frame < 1200; frame += 1) {
-    const gaitCycle = (0.70 * (frame / 120)) % 1;
+    const gaitCycle = (0.65 * (frame / 120)) % 1;
     firmwareState.leg_command_xyz_mm = [0, 1, 2, 3].map((legIndex) => {
       const diagonalA = legIndex === 0 || legIndex === 3;
       const leftLeg = legIndex === 0 || legIndex === 2;
       const cycle = (gaitCycle + (diagonalA ? 0 : 0.5)) % 1;
-      const stanceFraction = 0.62;
+      const stanceFraction = 0.68;
       let xOffset;
       let zOffset;
       if (cycle < stanceFraction) {
         const stance = cycle / stanceFraction;
-        const progress = 0.5 - 0.5 * Math.cos(Math.PI * stance);
-        xOffset = 20 * (1 - 2 * progress);
+        xOffset = 17 * (1 - 2 * stance);
         zOffset = 0;
       } else {
         const swing = (cycle - stanceFraction) / (1 - stanceFraction);
         const progress = 0.5 - 0.5 * Math.cos(Math.PI * swing);
-        xOffset = 20 * (-1 + 2 * progress);
-        zOffset = -18 * Math.sin(Math.PI * swing) ** 2;
+        xOffset = 17 * (-1 + 2 * progress);
+        zOffset = -17 * Math.sin(Math.PI * swing) ** 2;
       }
       return [
         -15.75 + xOffset,
@@ -133,10 +132,16 @@ test("diagonal sinusoidal gait stays supported and produces planar travel", asyn
     state.basePosition[0] - startPosition[0],
     state.basePosition[2] - startPosition[2],
   );
+  const forwardTravel = Math.abs(state.basePosition[0] - startPosition[0]);
+  const lateralTravel = Math.abs(state.basePosition[2] - startPosition[2]);
   assert.equal(state.resetCount, 0, `unexpected ${state.lastResetReason} reset`);
   assert.ok(minimumContacts >= 2, `gait dropped to ${minimumContacts} contacts`);
   assert.ok(maximumTilt < 25, `gait body tilt reached ${maximumTilt} deg`);
   assert.ok(planarTravel > 0.02, `gait moved only ${planarTravel} m`);
+  assert.ok(
+    lateralTravel < Math.max(0.012, forwardTravel * 0.20),
+    `forward gait slid ${lateralTravel} m sideways over ${forwardTravel} m forward`,
+  );
   const meanPlantedSlipSpeed = plantedSlipDistance / plantedContactSeconds;
   const pathEfficiency = planarTravel / Math.max(bodyPathDistance, 1e-6);
   assert.ok(meanPlantedSlipSpeed < 0.04, `planted-foot slip reached ${meanPlantedSlipSpeed} m/s`);

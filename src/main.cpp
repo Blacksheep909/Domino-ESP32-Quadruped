@@ -52,12 +52,20 @@ bool tiltModeActive = false;
 extern float currentTargetZ;
 float lastPoseZ = 0.0f;
 
-constexpr float BODY_HALF_LENGTH_X = 167.0f;  // half distance front <-> back hips
-constexpr float BODY_HALF_WIDTH_Y = 62.0f;    // half distance left <-> right hips
-constexpr float HIP_HEIGHT_Z = 0.0f;          // body plate Z relative to world origin
+constexpr float BODY_HALF_LENGTH_X = 167.5f;  // CAD half distance front <-> back hips
+constexpr float BODY_HALF_WIDTH_Y = 62.375f;  // CAD half distance left <-> right hips
+constexpr float HIP_HEIGHT_Z = 10.5f;         // CAD hip axis above the body-centre plane
 constexpr float FOOT_BACK_OFFSET_X = -15.75f; // foot is slightly behind the hip in X
 constexpr float FOOT_OUT_OFFSET_Y = 100.0f;   // lateral distance from body center line
 constexpr float STAND_HEIGHT_Z = -280.0f;     // nominal foot Z in world frame (down)
+// The command-space neutral above comes from the original virtual leg. The
+// authored CAD foot is physically ahead of the hip and slightly closer to it.
+// Body rotations must use these real offsets, then map the result back into
+// the legacy command frame so the level-stand servo pulse remains unchanged.
+constexpr float CAD_NEUTRAL_FOOT_X_FROM_HIP = 2.541356f;
+constexpr float CAD_NEUTRAL_FOOT_Y_FROM_HIP = 38.1f;
+constexpr float CAD_NEUTRAL_FOOT_Z_FROM_HIP = -275.984374f;
+constexpr float COMMAND_NEUTRAL_FOOT_Y_FROM_HIP = 38.0f;
 constexpr float kStandPoseToleranceMm = 5.0f;
 
 namespace {
@@ -67,16 +75,28 @@ constexpr float kServoPwmFreqHz = 50.0f;
 constexpr float kNeutralHeightMm = 280.0f;
 constexpr float kNeutralX = 0.0f;
 constexpr float kNeutralY = 0.0f;
-// IK() assumes +Z is downward from the hip pivot, so reducing the magnitude
-// of Z lifts the foot toward the body. We use a neutral "stand" height and
-// a closer pose for a compact STOW configuration.
+// IK() assumes +Z is downward from the hip pivot, so reducing Z folds the
+// legs and lowers the chassis. The CAD linkage solver verifies the deep stow
+// below at full command without changing assembly branch.
 constexpr float kNeutralZ = kNeutralHeightMm;
 constexpr uint32_t kControlIntervalMs = 20;
 constexpr float kRampSpeedMmPerSec = 120.0f;
 
-constexpr float kBodyCurlDeltaMm = 150.0f;  // Move 15 cm toward the body.
-constexpr float kCloserPoseZ = kNeutralZ - kBodyCurlDeltaMm;
-static_assert(kCloserPoseZ >= 0.0f, "Closer pose Z must stay non-negative");
+constexpr float kCloserPoseZ = 160.0f;
+
+// STOW is a deep sit rather than the old 235 mm shallow crouch. Keeping X at
+// the standing footprint holds the feet beneath their hip pivots instead of
+// sweeping them out from under the body. All four legs use the same validated
+// fold depth. The rendered CAD closure solve keeps the feet beneath the hips
+// at 160 mm while all driven joints remain inside +/-45 degrees.
+constexpr float kSitFrontX = FOOT_BACK_OFFSET_X;
+constexpr float kSitRearX = FOOT_BACK_OFFSET_X;
+constexpr float kSitFrontZ = 160.0f;
+constexpr float kSitRearZ = 160.0f;
+static_assert(kSitFrontZ >= 160.0f && kSitRearZ >= 160.0f,
+              "Deep stow must remain inside the CAD linkage clearance envelope");
+constexpr float kSitBlendSpeedPerSec = 1.5f;
+float sitBlend = 1.0f;
 
 constexpr float kPi = 3.14159265358979323846f;
 constexpr float kDegToRad = kPi / 180.0f;
@@ -149,7 +169,7 @@ constexpr int SB_LOWER_POS_MIN_US = 1800;
 // Positive values move the feet further from the body; negative values
 // move them closer. Keep results >= 0 to stay within IK assumptions.
 constexpr float kRideHeightOffsetHighMm = 0.0f;     // SB up  : default stand height.
-constexpr float kRideHeightOffsetLowMm = -100.0f;   // SB down: much closer to the body.
+constexpr float kRideHeightOffsetLowMm = -60.0f;    // SB down: lowest CAD-validated linkage reach.
 constexpr float kRideHeightOffsetMediumMm =
     0.5f * (kRideHeightOffsetHighMm + kRideHeightOffsetLowMm);  // SB mid : halfway between.
 
@@ -159,8 +179,8 @@ constexpr float kRideHeightOffsetsMm[3] = {
     kRideHeightOffsetLowMm,
 };
 
-static_assert((kNeutralZ + kRideHeightOffsetLowMm) >= 0.0f,
-              "Lowest ride height must keep leg Z non-negative");
+static_assert((kNeutralZ + kRideHeightOffsetLowMm) >= 220.0f,
+              "Lowest ride height must remain inside the CAD linkage workspace");
 
 using MoveLegFn = void (*)(Adafruit_PWMServoDriver &, float, float, float);
 
@@ -170,6 +190,28 @@ constexpr MoveLegFn kMoveLegFns[kLegCount] = {
     moveLegBL,
     moveLegBR,
 };
+
+#ifdef DOMINO_SIL
+float silLegCommandX[kLegCount] = {};
+float silLegCommandY[kLegCount] = {};
+float silLegCommandZ[kLegCount] = {};
+float silBodyRollDeg = 0.0f;
+float silBodyPitchDeg = 0.0f;
+float silBodyYawDeg = 0.0f;
+#endif
+
+void commandLeg(Adafruit_PWMServoDriver &driver,
+                int legIndex,
+                float x,
+                float y,
+                float z) {
+#ifdef DOMINO_SIL
+  silLegCommandX[legIndex] = x;
+  silLegCommandY[legIndex] = y;
+  silLegCommandZ[legIndex] = z;
+#endif
+  kMoveLegFns[legIndex](driver, x, y, z);
+}
 
 // Nominal foot positions in the body/world frame when the body is level.
 // Used by the balance controller to compute per-leg Z corrections that
@@ -290,7 +332,7 @@ void logDebugState(uint32_t now,
 
 void moveAllLegs(Adafruit_PWMServoDriver &driver, float x, float y, float z) {
   for (int i = 0; i < kLegCount; ++i) {
-    kMoveLegFns[i](driver, x, y, z);
+    commandLeg(driver, i, x, y, z);
   }
 }
 
@@ -478,11 +520,14 @@ void bodyKinematicsSimple(LegIndex leg,
   const float hipWorldY = hyR + bodyY;
   const float hipWorldZ = hzR + bodyZ;
 
-  const float footBaseX = (leg == LEG_FL || leg == LEG_FR) ? +BODY_HALF_LENGTH_X : -BODY_HALF_LENGTH_X;
-  const float footBaseY = (leg == LEG_FL || leg == LEG_BL) ? +FOOT_OUT_OFFSET_Y : -FOOT_OUT_OFFSET_Y;
-  const float footWorldX = footBaseX + FOOT_BACK_OFFSET_X;
-  const float footWorldY = footBaseY;
-  const float footWorldZ = STAND_HEIGHT_Z;
+  const bool leftLeg = (leg == LEG_FL || leg == LEG_BL);
+  const float side = leftLeg ? 1.0f : -1.0f;
+  const float footBaseX =
+      (leg == LEG_FL || leg == LEG_FR) ? +BODY_HALF_LENGTH_X : -BODY_HALF_LENGTH_X;
+  const float footWorldX = footBaseX + CAD_NEUTRAL_FOOT_X_FROM_HIP;
+  const float footWorldY =
+      side * (BODY_HALF_WIDTH_Y + CAD_NEUTRAL_FOOT_Y_FROM_HIP);
+  const float footWorldZ = HIP_HEIGHT_Z + CAD_NEUTRAL_FOOT_Z_FROM_HIP;
 
   const float legX_world = footWorldX - hipWorldX;
   const float legY_world = footWorldY - hipWorldY;
@@ -495,9 +540,16 @@ void bodyKinematicsSimple(LegIndex leg,
   const float legY_local = R01 * legX_world + R11 * legY_world + R21 * legZ_worldUp;
   const float legZ_localUp = R02 * legX_world + R12 * legY_world + R22 * legZ_worldUp;
 
-  *outX = legX_local;
-  *outY = legY_local;
-  *outZ = -legZ_localUp;
+  *outX =
+      legX_local +
+      (FOOT_BACK_OFFSET_X - CAD_NEUTRAL_FOOT_X_FROM_HIP);
+  *outY =
+      legY_local +
+      side * (COMMAND_NEUTRAL_FOOT_Y_FROM_HIP -
+              CAD_NEUTRAL_FOOT_Y_FROM_HIP);
+  *outZ =
+      -legZ_localUp +
+      ((-STAND_HEIGHT_Z) + CAD_NEUTRAL_FOOT_Z_FROM_HIP);
 }
 
 // Move all four legs given a simple body pose expressed in the world/body frame.
@@ -524,7 +576,23 @@ void moveLegsFromBodyPose(Adafruit_PWMServoDriver &driver,
                          &xLeg,
                          &yLeg,
                          &zLeg);
-    kMoveLegFns[i](driver, xLeg, yLeg, zLeg);
+    commandLeg(driver, i, xLeg, yLeg, zLeg);
+  }
+}
+
+void moveLegsToSitBlend(Adafruit_PWMServoDriver &driver, float commonZ, float blend) {
+  const float t = constrain(blend, 0.0f, 1.0f);
+  for (int i = 0; i < kLegCount; ++i) {
+    const bool frontLeg = (i == LEG_FL || i == LEG_FR);
+    const bool leftLeg = (i == LEG_FL || i == LEG_BL);
+    const float sitX = frontLeg ? kSitFrontX : kSitRearX;
+    const float sitZ = frontLeg ? kSitFrontZ : kSitRearZ;
+    const float x = FOOT_BACK_OFFSET_X + t * (sitX - FOOT_BACK_OFFSET_X);
+    const float y = leftLeg
+        ? (FOOT_OUT_OFFSET_Y - BODY_HALF_WIDTH_Y)
+        : -(FOOT_OUT_OFFSET_Y - BODY_HALF_WIDTH_Y);
+    const float z = commonZ + t * (sitZ - commonZ);
+    commandLeg(driver, i, x, y, z);
   }
 }
 
@@ -551,7 +619,7 @@ void moveLegsFromBodyPoseWithZOffsets(Adafruit_PWMServoDriver &driver,
                          &yLeg,
                          &zLeg);
     const float zAdj = zLeg + zOffsetsWorld[i];
-    kMoveLegFns[i](driver, xLeg, yLeg, zAdj);
+    commandLeg(driver, i, xLeg, yLeg, zAdj);
   }
 }
 
@@ -603,12 +671,31 @@ void applyTiltPose(Adafruit_PWMServoDriver &driver) {
   // pitch: right stick Y (future; currently unused in the radio mapping)
   // yaw: left stick X (twist the body about Z)
   const float yawNorm = normalizeChannel(ch_us[YAW_CH_INDEX]);
-  const float rollNorm = normalizeChannel(ch_us[ROLL_CH_INDEX]);
-  const float pitchNorm = normalizeChannel(ch_us[PITCH_CH_INDEX]);
+  float rollNorm = normalizeChannel(ch_us[ROLL_CH_INDEX]);
+  float pitchNorm = normalizeChannel(ch_us[PITCH_CH_INDEX]);
+  float yawNormLimited = yawNorm;
+
+  // Keep diagonal stick commands inside one combined body-pose envelope.
+  // Without this, maximum roll, pitch, and yaw could all be applied at once,
+  // producing a much larger compound rotation than any individual limit.
+  const float commandMagnitude =
+      sqrtf(rollNorm * rollNorm + pitchNorm * pitchNorm + yawNormLimited * yawNormLimited);
+  if (commandMagnitude > 1.0f) {
+    const float scale = 1.0f / commandMagnitude;
+    rollNorm *= scale;
+    pitchNorm *= scale;
+    yawNormLimited *= scale;
+  }
 
   const float rollDeg = rollNorm * kMaxRollDeg;
   const float pitchDeg = pitchNorm * kMaxPitchDeg;
-  const float yawDeg = yawNorm * kMaxYawDeg;
+  const float yawDeg = yawNormLimited * kMaxYawDeg;
+
+#ifdef DOMINO_SIL
+  silBodyRollDeg = rollDeg;
+  silBodyPitchDeg = pitchDeg;
+  silBodyYawDeg = yawDeg;
+#endif
 
   const float bodyX = 0.0f;
   const float bodyY = 0.0f;
@@ -652,10 +739,8 @@ void setup() {
   zRamp.setSpeed(kRampSpeedMmPerSec);
   zRamp.go(kCloserPoseZ);
   lastPoseZ = kCloserPoseZ;
-  // Initialize legs using the same body-plate model as tilt/stand so poses
-  // remain consistent across modes.
-  const float initBodyZ = lastPoseZ + STAND_HEIGHT_Z;
-  moveLegsFromBodyPose(pca, 0.0f, 0.0f, initBodyZ, 0.0f, 0.0f, 0.0f);
+  sitBlend = 1.0f;
+  moveLegsToSitBlend(pca, lastPoseZ, sitBlend);
   standState = STOW;
   Serial.println("All legs initialized at stow pose (waiting for CRSF link).");
   Serial.println("Debug logging ready.");
@@ -702,19 +787,15 @@ void loop() {
     menuState.mode = BODY_STAND;
   }
 
-  // 3) Ride height preset is always taken from SB when stand is requested;
-  //    stow ignores ride height and uses the compact pose.
-  if (menuState.mode == BODY_STAND || menuState.mode == BODY_TILT || menuState.mode == BODY_BALANCE) {
-    if (inputs.rideRequested != currentRidePreset) {
-      currentRidePreset = inputs.rideRequested;
-      Serial.printf("Ride height preset=%d SB=%d\n",
-                    static_cast<int>(currentRidePreset),
-                    ch_us[SB_CH_INDEX]);
-    }
-    menuState.rideHeight = currentRidePreset;
-  } else {
-    menuState.rideHeight = RIDE_HIGH;  // default; ignored in actual stow pose.
+  // 3) Always remember and report SB. Stow still uses its fixed compact pose,
+  //    but the selected ride height is retained for the next stand command.
+  if (inputs.rideRequested != currentRidePreset) {
+    currentRidePreset = inputs.rideRequested;
+    Serial.printf("Ride height preset=%d SB=%d\n",
+                  static_cast<int>(currentRidePreset),
+                  ch_us[SB_CH_INDEX]);
   }
+  menuState.rideHeight = currentRidePreset;
 
   // 4) Compute the current Z target from the menu state.
   if (menuState.mode == BODY_STOW) {
@@ -733,7 +814,8 @@ void loop() {
   //    of tilt while ride height ramps between presets.
   const bool standPoseReady =
       (menuState.mode != BODY_STOW) &&
-      (fabsf(lastPoseZ - currentTargetZ) <= kStandPoseToleranceMm);
+      (fabsf(lastPoseZ - currentTargetZ) <= kStandPoseToleranceMm) &&
+      (sitBlend <= 0.05f);
 
   bool desiredTiltActive = false;
   if (tiltModeActive) {
@@ -791,10 +873,29 @@ void loop() {
     lastControlMs = now;
     const float rampZ = zRamp.update();
     lastPoseZ = rampZ;
+    const float sitBlendTarget = (menuState.mode == BODY_STOW) ? 1.0f : 0.0f;
+    const float sitBlendStep = kSitBlendSpeedPerSec * (static_cast<float>(kControlIntervalMs) / 1000.0f);
+    if (sitBlend < sitBlendTarget) {
+      sitBlend = fminf(sitBlendTarget, sitBlend + sitBlendStep);
+    } else if (sitBlend > sitBlendTarget) {
+      sitBlend = fmaxf(sitBlendTarget, sitBlend - sitBlendStep);
+    }
 
     if (menuState.mode == BODY_TILT) {
       applyTiltPose(pca);
+    } else if (sitBlend > 0.001f) {
+#ifdef DOMINO_SIL
+      silBodyRollDeg = 0.0f;
+      silBodyPitchDeg = 0.0f;
+      silBodyYawDeg = 0.0f;
+#endif
+      moveLegsToSitBlend(pca, rampZ, sitBlend);
     } else {
+#ifdef DOMINO_SIL
+      silBodyRollDeg = 0.0f;
+      silBodyPitchDeg = 0.0f;
+      silBodyYawDeg = 0.0f;
+#endif
       // Stand / stow / balance: use the same body-plate model as tilt mode.
       const float bodyZ = rampZ + STAND_HEIGHT_Z;
       float rollDeg = 0.0f;
@@ -916,3 +1017,51 @@ void loop() {
     }
   }
 }
+
+#ifdef DOMINO_SIL
+// Desktop simulation instrumentation. These accessors expose only state that
+// the native monitor needs; production ESP32 builds do not contain them.
+extern "C" int dominoSilBodyMode() {
+  return static_cast<int>(menuState.mode);
+}
+
+extern "C" float dominoSilTargetZ() {
+  return currentTargetZ;
+}
+
+extern "C" float dominoSilPoseZ() {
+  return lastPoseZ;
+}
+
+extern "C" bool dominoSilTiltActive() {
+  return tiltModeActive;
+}
+
+extern "C" int dominoSilRideHeight() {
+  return static_cast<int>(menuState.rideHeight);
+}
+
+extern "C" float dominoSilLegCommandX(int legIndex) {
+  return (legIndex >= 0 && legIndex < kLegCount) ? silLegCommandX[legIndex] : 0.0f;
+}
+
+extern "C" float dominoSilLegCommandY(int legIndex) {
+  return (legIndex >= 0 && legIndex < kLegCount) ? silLegCommandY[legIndex] : 0.0f;
+}
+
+extern "C" float dominoSilLegCommandZ(int legIndex) {
+  return (legIndex >= 0 && legIndex < kLegCount) ? silLegCommandZ[legIndex] : 0.0f;
+}
+
+extern "C" float dominoSilBodyRollDeg() {
+  return silBodyRollDeg;
+}
+
+extern "C" float dominoSilBodyPitchDeg() {
+  return silBodyPitchDeg;
+}
+
+extern "C" float dominoSilBodyYawDeg() {
+  return silBodyYawDeg;
+}
+#endif

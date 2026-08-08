@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Domino Firmware SIL</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>Domino Firmware SIL</h1>
+        <p id="connection">Waiting for simulator</p>
+      </div>
+      <div class="status-strip">
+        <span id="mode">STOW</span>
+        <span id="link">LINK LOST</span>
+        <span id="clock">0.00 s</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="viewport" aria-label="Domino linkage command view">
+        <canvas id="robot"></canvas>
+        <div class="legend">
+          <span><i class="drive"></i> Driven joint</span>
+          <span><i class="pin"></i> Pin joint</span>
+          <span><i class="foot"></i> TPU foot</span>
+        </div>
+      </section>
+
+      <aside>
+        <section>
+          <h2>Control State</h2>
+          <dl>
+            <div><dt>Target height</dt><dd id="target-z">0 mm</dd></div>
+            <div><dt>Current height</dt><dd id="pose-z">0 mm</dd></div>
+            <div><dt>CRSF frames</dt><dd id="frames">0</dd></div>
+            <div><dt>SA / stand</dt><dd id="sa">1500 us</dd></div>
+            <div><dt>SB / height</dt><dd id="sb">1500 us</dd></div>
+            <div><dt>SC / balance</dt><dd id="sc">1500 us</dd></div>
+            <div><dt>SD / tilt</dt><dd id="sd">1500 us</dd></div>
+          </dl>
+        </section>
+
+        <section>
+          <h2>Servo Outputs</h2>
+          <div id="servos" class="servo-list"></div>
+        </section>
+      </aside>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

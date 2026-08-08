@@ -32,7 +32,7 @@ from domino_action_contract import (
     EXPECTED_FOOT_COUNT,
     VALIDATED_INITIAL_POLICY_ACTION_SCALE_DEG,
 )
-from domino_locomotion_rewards import command_motion_terms
+from domino_locomotion_rewards import command_motion_terms, quadruped_support_terms
 from domino_foot_reward_metrics import DominoFootRewardTracker
 from domino_reference_gait import (
     PHASE_OFFSETS_RAD,
@@ -222,6 +222,8 @@ class DominoCadLinkageEnvCfg(DirectRLEnvCfg):
     foot_slip_reward_scale = -0.25
     air_time_variance_reward_scale = -0.50
     valid_foot_cycle_reward_scale = 0.50
+    front_rear_support_reward_scale = 1.0
+    excess_airborne_penalty_scale = -2.0
     foot_cycle_min_air_time_s = 0.06
     foot_cycle_target_air_time_s = 0.20
     foot_cycle_min_clearance_m = 0.004
@@ -1181,6 +1183,8 @@ class DominoCadLinkageEnv(DirectRLEnv):
         foot_slip_terms = []
         air_time_variance_terms = []
         valid_foot_cycle_terms = []
+        front_rear_support_terms = []
+        excess_airborne_terms = []
         reference_action_tracking_terms = []
         reference_action_mse_terms = []
         actions_np = self._actions.detach().cpu().numpy().astype(np.float32)
@@ -1244,6 +1248,11 @@ class DominoCadLinkageEnv(DirectRLEnv):
             )
             foot_contacts_np = (ground_clearance <= 0.0).astype(np.float32)
             foot_contact_terms.append(float(np.mean(foot_contacts_np)))
+            support_terms = quadruped_support_terms(foot_contacts_np)
+            front_rear_support_terms.append(
+                support_terms["front_rear_support_balance"]
+            )
+            excess_airborne_terms.append(support_terms["excess_airborne_feet"])
             foot_reward_metrics = self._foot_reward_tracker.update_env(
                 env_index,
                 foot_contacts_np,
@@ -1329,6 +1338,16 @@ class DominoCadLinkageEnv(DirectRLEnv):
             dtype=torch.float32,
             device=self.device,
         )
+        front_rear_support = torch.tensor(
+            front_rear_support_terms,
+            dtype=torch.float32,
+            device=self.device,
+        )
+        excess_airborne = torch.tensor(
+            excess_airborne_terms,
+            dtype=torch.float32,
+            device=self.device,
+        )
         reference_action_tracking = torch.tensor(reference_action_tracking_terms, dtype=torch.float32, device=self.device)
         reference_action_mse = torch.tensor(reference_action_mse_terms, dtype=torch.float32, device=self.device)
         action_penalty = torch.sum(torch.square(self._actions), dim=1)
@@ -1357,6 +1376,8 @@ class DominoCadLinkageEnv(DirectRLEnv):
             "foot_slip_m_s": foot_slip,
             "air_contact_time_variance_s2": air_time_variance,
             "valid_foot_cycle_touchdown": valid_foot_cycle,
+            "front_rear_support_balance": front_rear_support,
+            "excess_airborne_feet": excess_airborne,
             "reference_action_tracking": reference_action_tracking,
             "reference_action_mse": reference_action_mse,
         }
@@ -1387,6 +1408,12 @@ class DominoCadLinkageEnv(DirectRLEnv):
             ),
             "valid_foot_cycle_touchdown": float(
                 self.cfg.valid_foot_cycle_reward_scale
+            ),
+            "front_rear_support_balance": float(
+                self.cfg.front_rear_support_reward_scale
+            ),
+            "excess_airborne_feet": float(
+                self.cfg.excess_airborne_penalty_scale
             ),
             "reference_action_tracking": float(self.cfg.reference_action_tracking_reward_scale),
             "reference_action_mse": float(self.cfg.reference_action_mse_reward_scale),

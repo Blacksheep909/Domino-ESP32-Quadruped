@@ -39,3 +39,20 @@ def command_motion_terms(
         "directional_progress_m_s": directional_progress,
         "stagnation": stagnation,
     }
+
+
+def quadruped_support_terms(foot_contacts: np.ndarray) -> dict[str, float]:
+    """Reward front/rear support balance and penalize flight beyond a trot."""
+    contacts = np.asarray(foot_contacts, dtype=np.float64).reshape(-1)
+    if contacts.shape != (4,):
+        raise ValueError(f"Expected four foot contacts, received {contacts.shape}.")
+
+    front_support = float(np.mean(contacts[:2]))
+    rear_support = float(np.mean(contacts[2:]))
+    contact_count = float(np.sum(contacts))
+    airborne_count = float(np.sum(1.0 - contacts))
+    two_foot_factor = max(1.0 - abs(contact_count - 2.0) / 2.0, 0.0)
+    return {
+        "front_rear_support_balance": 2.0 * min(front_support, rear_support) * two_foot_factor,
+        "excess_airborne_feet": max(airborne_count - 2.0, 0.0),
+    }

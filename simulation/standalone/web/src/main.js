@@ -763,18 +763,19 @@ function updateLinkage(runtime, shoulderDeltaDeg, upperDeltaDeg, lowerDeltaDeg) 
 }
 
 const channels = Array(16).fill(1500);
+const RIDE_HEIGHT_CHANNEL_INDEX = 2;
 channels[4] = 1000;
-channels[5] = 1000;
+channels[RIDE_HEIGHT_CHANNEL_INDEX] = 1000;
 channels[6] = 1000;
 channels[7] = 1000;
 
 const channelDefinitions = [
   { name: "ROLL", switch: false },
   { name: "PITCH", switch: false },
-  { name: "THROTTLE", switch: false },
+  { name: "HEIGHT / LEFT Y", switch: false, height: true },
   { name: "YAW", switch: false },
   { name: "SA / STAND", switch: true },
-  { name: "SB / HEIGHT", switch: true },
+  { name: "SB / AUX", switch: true },
   { name: "SC / BALANCE", switch: true },
   { name: "SD / TILT", switch: true },
 ];
@@ -794,7 +795,7 @@ function updateChannelBars() {
   channelBars.forEach((element, index) => {
     const value = Math.max(1000, Math.min(2000, channels[index]));
     const position = value < 1250 ? "LOW" : value > 1750 ? "HIGH" : "MID";
-    const positionLabel = index === 5
+    const positionLabel = channelDefinitions[index].height
       ? position === "LOW"
         ? "HIGH RIDE"
         : position === "HIGH"
@@ -884,7 +885,7 @@ function resetRobot() {
   manualStandOverride = null;
   manualTiltOverride = null;
   manualHeightOverride = null;
-  channels[5] = 1000;
+  channels[RIDE_HEIGHT_CHANNEL_INDEX] = 1000;
   observedPhysicalStand = null;
   observedPhysicalTilt = null;
   observedPhysicalHeight = null;
@@ -981,7 +982,7 @@ document.querySelectorAll("[data-height]").forEach((button) => {
   button.addEventListener("click", () => {
     if (button.disabled) return;
     manualHeightOverride = button.dataset.height;
-    channels[5] = manualHeightOverride === "HIGH"
+    channels[RIDE_HEIGHT_CHANNEL_INDEX] = manualHeightOverride === "HIGH"
       ? 1000
       : manualHeightOverride === "LOW"
         ? 2000
@@ -1020,9 +1021,9 @@ function axisToChannel(axis) {
 function applyPhysicalModeChannels() {
   const physicalStand = channels[4] > 1600;
   const physicalTilt = channels[7] > 1600;
-  const physicalHeight = channels[5] < 1250
+  const physicalHeight = channels[RIDE_HEIGHT_CHANNEL_INDEX] < 1250
     ? "HIGH"
-    : channels[5] > 1750
+    : channels[RIDE_HEIGHT_CHANNEL_INDEX] > 1750
       ? "LOW"
       : "MEDIUM";
 
@@ -1046,7 +1047,7 @@ function applyPhysicalModeChannels() {
   if (manualStandOverride !== null) channels[4] = standRequested ? 2000 : 1000;
   if (manualTiltOverride !== null || !standRequested) channels[7] = tiltRequested ? 2000 : 1000;
   if (manualHeightOverride !== null) {
-    channels[5] = manualHeightOverride === "HIGH"
+    channels[RIDE_HEIGHT_CHANNEL_INDEX] = manualHeightOverride === "HIGH"
       ? 1000
       : manualHeightOverride === "LOW"
         ? 2000
@@ -1140,6 +1141,12 @@ function updateInput() {
   document.querySelector("#forward-value").textContent = forwardInput.toFixed(2);
   document.querySelector("#turn-value").textContent = turnInput.toFixed(2);
   document.querySelector("#roll-value").textContent = rollInput.toFixed(2);
+  const heightChannelValue = channels[RIDE_HEIGHT_CHANNEL_INDEX];
+  document.querySelector("#height-input-value").textContent = heightChannelValue < 1250
+    ? "HIGH"
+    : heightChannelValue > 1750
+      ? "LOW"
+      : "MID";
   const manualOverrideActive =
     manualStandOverride !== null ||
     manualTiltOverride !== null ||

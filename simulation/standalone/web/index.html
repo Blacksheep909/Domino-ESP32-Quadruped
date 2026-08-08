@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Domino Sandbox</title>
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+
+    <header>
+      <div class="brand">
+        <strong>DOMINO</strong>
+        <span>STANDALONE SANDBOX</span>
+      </div>
+      <div class="status">
+        <span id="firmware-status" data-state="offline">FIRMWARE</span>
+        <span id="link-status" data-state="offline">CRSF</span>
+        <span id="physics-status" data-state="offline">PHYSICS</span>
+        <span id="debug-status" data-state="online">REC</span>
+        <span id="mode-status">SITTING</span>
+        <span id="height-status">HEIGHT HIGH</span>
+        <span id="fps-status">0 FPS</span>
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false" title="Switch to dark theme">
+          <span id="theme-icon" aria-hidden="true">&#9788;</span>
+          <span id="theme-label" class="sr-only">Light theme</span>
+        </button>
+      </div>
+    </header>
+
+    <section id="channel-strip" aria-label="ELRS and CRSF channels">
+      <div class="channel-strip-label">
+        <strong id="channel-source">ELRS</strong>
+        <span id="channel-source-detail">CRSF INPUT</span>
+      </div>
+      <div id="channel-bars"></div>
+    </section>
+
+    <nav aria-label="Robot controls">
+      <div class="toolbar-group pose-control" role="group" aria-label="Body pose">
+        <button id="stand-button" type="button" title="Stand Domino">SITTING</button>
+        <button id="tilt-button" type="button" title="Tilt Domino">LEVEL</button>
+      </div>
+      <div class="toolbar-group height-control" role="group" aria-label="Ride height">
+        <span>HEIGHT</span>
+        <button type="button" data-height="HIGH">HIGH</button>
+        <button type="button" data-height="MEDIUM">MID</button>
+        <button type="button" data-height="LOW">LOW</button>
+      </div>
+      <div class="toolbar-group reset-control" role="group" aria-label="Reset controls">
+        <button id="reset-button" type="button" title="Reset position and return control to the radio">RESET ROBOT</button>
+        <button id="reset-view-button" type="button" title="Reset camera orbit and centre">RESET VIEW</button>
+      </div>
+      <div class="toolbar-group inspection-control" role="group" aria-label="Joint inspection overlay">
+        <button id="joints-button" type="button" aria-pressed="false" title="Show joint axes and labels">JOINTS</button>
+        <select id="joint-leg" aria-label="Annotated leg">
+          <option value="FR">FR</option>
+          <option value="FL">FL</option>
+          <option value="BR">BR</option>
+          <option value="BL">BL</option>
+          <option value="ALL">ALL</option>
+        </select>
+      </div>
+    </nav>
+
+    <aside>
+      <section>
+        <h2>INPUT</h2>
+        <dl>
+          <div><dt>Device</dt><dd id="gamepad-name">KEYBOARD</dd></div>
+          <div><dt>Pitch</dt><dd id="forward-value">0.00</dd></div>
+          <div><dt>Yaw</dt><dd id="turn-value">0.00</dd></div>
+          <div><dt>Roll</dt><dd id="roll-value">0.00</dd></div>
+        </dl>
+      </section>
+      <section>
+        <h2>FIRMWARE</h2>
+        <dl>
+          <div><dt>Frames</dt><dd id="frame-count">0</dd></div>
+          <div><dt>Target Z</dt><dd id="target-z">0 mm</dd></div>
+          <div><dt>Pose Z</dt><dd id="pose-z">0 mm</dd></div>
+          <div><dt>Ride height</dt><dd id="ride-height">HIGH</dd></div>
+          <div><dt>Servo range</dt><dd id="servo-range">0 deg</dd></div>
+        </dl>
+      </section>
+      <section>
+        <h2>MODEL</h2>
+        <dl>
+          <div><dt>Geometry</dt><dd id="mesh-count">0 / 29</dd></div>
+          <div><dt>Linkages</dt><dd id="linkage-health">CHECKING</dd></div>
+          <div><dt>Worst pin</dt><dd id="pin-error">--</dd></div>
+          <div><dt>Foot symmetry</dt><dd id="foot-symmetry">--</dd></div>
+          <div><dt>Actuators</dt><dd>12 LIVE</dd></div>
+          <div><dt>Physics</dt><dd id="physics-engine">STARTING</dd></div>
+          <div><dt>Body height</dt><dd id="body-height">--</dd></div>
+          <div><dt>Foot contacts</dt><dd id="foot-contacts">0 / 4</dd></div>
+          <div><dt>Feet</dt><dd>TPU / 1.25 MU</dd></div>
+        </dl>
+      </section>
+      <section id="joint-legend" hidden>
+        <h2>JOINT OVERLAY <span id="joint-legend-leg">FR</span></h2>
+        <div class="body-plane-readout" aria-label="Body attitude">
+          <div><span><i class="axis-x"></i>ROLL</span><output id="body-roll">--</output></div>
+          <div><span><i class="axis-y"></i>PITCH</span><output id="body-pitch">--</output></div>
+          <div><span><i class="axis-z"></i>YAW</span><output id="body-yaw">--</output></div>
+          <div><span>LEAN</span><output id="body-plane-tilt">--</output></div>
+        </div>
+        <div class="joint-legend-group">
+          <strong><i class="joint-swatch active"></i>ACTUATED <small>DELTA / SERVO</small></strong>
+          <span><b>q1</b><em>SHOULDER · X</em><output id="joint-q1-value">--</output></span>
+          <span><b>q2</b><em>UPPER · Y</em><output id="joint-q2-value">--</output></span>
+          <span><b>q3</b><em>LOWER · Y</em><output id="joint-q3-value">--</output></span>
+        </div>
+        <div class="joint-legend-group passive-joints">
+          <strong><i class="joint-swatch passive"></i>PASSIVE PINS <small>Y REVOLUTE</small></strong>
+          <span><b>P1</b><em>UPPER COUPLER</em></span>
+          <span><b>P2</b><em>UPPER DRIVER</em></span>
+          <span><b>P3</b><em>UPPER CLOSURE</em></span>
+          <span><b>P4</b><em>LOWER DRIVER</em></span>
+          <span><b>P5</b><em>LOWER COUPLER</em></span>
+          <span><b>P6</b><em>LOWER CLOSURE</em></span>
+        </div>
+      </section>
+    </aside>
+
+    <div id="loading">
+      <strong>LOADING DOMINO CAD</strong>
+      <span id="loading-detail">Preparing renderer</span>
+      <progress id="loading-progress" max="29" value="0"></progress>
+    </div>
+
+    <div class="camera-gizmo" aria-label="Camera axis navigation">
+      <canvas class="camera-gizmo-lines" width="112" height="112" aria-hidden="true"></canvas>
+      <span class="camera-gizmo-hub" aria-hidden="true"></span>
+      <button type="button" data-axis="+X" aria-label="View from positive X" title="View from +X">X</button>
+      <button type="button" data-axis="-X" aria-label="View from negative X" title="View from -X">-X</button>
+      <button type="button" data-axis="+Y" aria-label="View from positive Y" title="Top view">Y</button>
+      <button type="button" data-axis="-Y" aria-label="View from negative Y" title="Bottom view">-Y</button>
+      <button type="button" data-axis="+Z" aria-label="View from positive Z" title="View from +Z">Z</button>
+      <button type="button" data-axis="-Z" aria-label="View from negative Z" title="View from -Z">-Z</button>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

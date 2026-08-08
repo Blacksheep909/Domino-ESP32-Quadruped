@@ -89,6 +89,9 @@ parser.add_argument(
     help="Directional speed below which a nonzero locomotion command is considered stagnant.",
 )
 parser.add_argument("--alive-reward-scale", type=float, default=None, help="Per-step survival reward scale.")
+parser.add_argument("--vertical-velocity-reward-scale", type=float, default=None)
+parser.add_argument("--angular-velocity-reward-scale", type=float, default=None)
+parser.add_argument("--flat-orientation-reward-scale", type=float, default=None)
 parser.add_argument("--action-reward-scale", type=float, default=None, help="Reward scale for squared action magnitude.")
 parser.add_argument("--action-rate-reward-scale", type=float, default=None, help="Reward scale for squared action changes.")
 parser.add_argument(
@@ -117,6 +120,8 @@ parser.add_argument(
     default=None,
     help="Reward scale for qualified liftoff-to-touchdown foot cycles.",
 )
+parser.add_argument("--front-rear-support-reward-scale", type=float, default=None)
+parser.add_argument("--excess-airborne-penalty-scale", type=float, default=None)
 parser.add_argument("--foot-cycle-min-air-time-s", type=float, default=None)
 parser.add_argument("--foot-cycle-target-air-time-s", type=float, default=None)
 parser.add_argument("--foot-cycle-min-clearance-m", type=float, default=None)
@@ -1432,6 +1437,12 @@ def main() -> None:
         env_cfg.command_stagnation_speed_m_s = max(float(args_cli.command_stagnation_speed_m_s), 1e-6)
     if args_cli.alive_reward_scale is not None:
         env_cfg.alive_reward_scale = float(args_cli.alive_reward_scale)
+    if args_cli.vertical_velocity_reward_scale is not None:
+        env_cfg.vertical_velocity_reward_scale = float(args_cli.vertical_velocity_reward_scale)
+    if args_cli.angular_velocity_reward_scale is not None:
+        env_cfg.angular_velocity_reward_scale = float(args_cli.angular_velocity_reward_scale)
+    if args_cli.flat_orientation_reward_scale is not None:
+        env_cfg.flat_orientation_reward_scale = float(args_cli.flat_orientation_reward_scale)
     if args_cli.action_reward_scale is not None:
         env_cfg.action_reward_scale = float(args_cli.action_reward_scale)
     if args_cli.action_rate_reward_scale is not None:
@@ -1463,6 +1474,14 @@ def main() -> None:
     if args_cli.valid_foot_cycle_reward_scale is not None:
         env_cfg.valid_foot_cycle_reward_scale = float(
             args_cli.valid_foot_cycle_reward_scale
+        )
+    if args_cli.front_rear_support_reward_scale is not None:
+        env_cfg.front_rear_support_reward_scale = float(
+            args_cli.front_rear_support_reward_scale
+        )
+    if args_cli.excess_airborne_penalty_scale is not None:
+        env_cfg.excess_airborne_penalty_scale = float(
+            args_cli.excess_airborne_penalty_scale
         )
     if args_cli.foot_cycle_min_air_time_s is not None:
         env_cfg.foot_cycle_min_air_time_s = max(
@@ -1802,6 +1821,9 @@ def main() -> None:
             "max_tilt_deg": float(env_cfg.max_tilt_deg),
             "save_interval": int(agent_cfg.save_interval),
             "target_height_m": float(env_cfg.target_height_m),
+            "vertical_velocity_reward_scale": float(env_cfg.vertical_velocity_reward_scale),
+            "angular_velocity_reward_scale": float(env_cfg.angular_velocity_reward_scale),
+            "flat_orientation_reward_scale": float(env_cfg.flat_orientation_reward_scale),
             "command_progress_reward_scale": float(env_cfg.command_progress_reward_scale),
             "command_velocity_reward_scale": float(env_cfg.command_velocity_reward_scale),
             "command_velocity_tracking_reward_scale": float(env_cfg.command_velocity_tracking_reward_scale),
@@ -1823,6 +1845,12 @@ def main() -> None:
             ),
             "valid_foot_cycle_reward_scale": float(
                 env_cfg.valid_foot_cycle_reward_scale
+            ),
+            "front_rear_support_reward_scale": float(
+                env_cfg.front_rear_support_reward_scale
+            ),
+            "excess_airborne_penalty_scale": float(
+                env_cfg.excess_airborne_penalty_scale
             ),
             "foot_cycle_min_air_time_s": float(
                 env_cfg.foot_cycle_min_air_time_s

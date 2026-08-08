@@ -1,0 +1,6 @@
+allowBuilds:
+  esbuild: true
+  node-hid: true
+onlyBuiltDependencies:
+  - esbuild
+  - node-hid

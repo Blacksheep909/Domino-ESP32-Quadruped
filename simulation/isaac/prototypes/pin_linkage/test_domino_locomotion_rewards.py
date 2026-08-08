@@ -7,7 +7,7 @@ import unittest
 
 import numpy as np
 
-from domino_locomotion_rewards import command_motion_terms
+from domino_locomotion_rewards import command_motion_terms, quadruped_support_terms
 
 
 class CommandMotionRewardTests(unittest.TestCase):
@@ -77,6 +77,28 @@ class CommandMotionRewardTests(unittest.TestCase):
         self.assertLess(weighted_score(stationary), 0.0)
         self.assertGreater(weighted_score(tracking), 12.0)
         self.assertGreater(weighted_score(tracking) - weighted_score(stationary), 15.0)
+
+
+class QuadrupedSupportRewardTests(unittest.TestCase):
+    def test_diagonal_trot_has_balanced_support(self) -> None:
+        terms = quadruped_support_terms(np.array([1.0, 0.0, 0.0, 1.0]))
+        self.assertAlmostEqual(terms["front_rear_support_balance"], 1.0)
+        self.assertAlmostEqual(terms["excess_airborne_feet"], 0.0)
+
+    def test_all_feet_contact_does_not_earn_trot_support(self) -> None:
+        terms = quadruped_support_terms(np.ones(4))
+        self.assertAlmostEqual(terms["front_rear_support_balance"], 0.0)
+        self.assertAlmostEqual(terms["excess_airborne_feet"], 0.0)
+
+    def test_hind_leg_hop_loses_support_balance(self) -> None:
+        terms = quadruped_support_terms(np.array([0.0, 0.0, 1.0, 1.0]))
+        self.assertAlmostEqual(terms["front_rear_support_balance"], 0.0)
+        self.assertAlmostEqual(terms["excess_airborne_feet"], 0.0)
+
+    def test_full_flight_is_penalized(self) -> None:
+        terms = quadruped_support_terms(np.zeros(4))
+        self.assertAlmostEqual(terms["front_rear_support_balance"], 0.0)
+        self.assertAlmostEqual(terms["excess_airborne_feet"], 2.0)
 
 
 if __name__ == "__main__":

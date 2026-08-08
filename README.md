@@ -98,6 +98,33 @@ The firmware is split by responsibility:
 
 High-level behavior generates body/foot pose targets, then passes them through the same IK and servo mapping path. That keeps stand, stow, tilt, balance, and future gait work tied to one low-level geometry model.
 
+### Test Firmware Before Hardware
+
+Domino now has a desktop software-in-the-loop build under
+[simulation/sil](simulation/sil). It compiles the production `src/main.cpp`,
+CRSF parser, mode logic, IK, trims, channel mapping, and servo safety limits
+directly against simulated Arduino hardware. There is no second copy of the
+control algorithm to keep in sync.
+
+Run the deterministic safety scenario:
+
+```powershell
+.\simulation\sil\test.ps1
+```
+
+Open the live firmware monitor:
+
+```powershell
+.\simulation\sil\launch.ps1
+```
+
+The first stage validates the exact commands that would be sent to the
+PCA9685 without powering a servo. It covers startup stow, valid CRSF parsing,
+debounced mode changes, stand and tilt movement, ride-height switching, link
+loss, failsafe stow, and all 12 output pulse widths. The next integration stage
+will feed those same outputs into the CAD-derived Isaac articulation and accept
+Boxer input over USB.
+
 ## CRSF / ExpressLRS Radio Link
 
 One major goal of Domino was replacing simpler iBUS-style receiver handling with CRSF. CRSF is common in ExpressLRS systems and gives the robot a fast serial RC link, but it also requires correct frame synchronization, CRC validation, packed-channel decoding, filtering, and failsafe behavior.
@@ -115,7 +142,12 @@ The repo includes:
 - URDF reference export, Isaac topology report, and simulation bring-up notes under [simulation/isaac](simulation/isaac).
 - CAD and simulation notes in [docs/cad-design.md](docs/cad-design.md) and [docs/simulation-notes.md](docs/simulation-notes.md).
 
-The simulation work is exploratory. The visual model can be imported, but the real leg mechanism is closer to a closed-chain linkage than a URDF-friendly tree. A controllable simulation will need a simplified joint model or explicit constraints rather than a blind CAD import.
+The CAD-derived Isaac articulation and reinforcement-learning environment are
+still work in progress. The real leg mechanism is a closed-chain linkage rather
+than a simple URDF tree, so the simulation uses explicit pin-joint and linkage
+handling. The firmware SIL is deliberately separate from contact physics: it
+validates control decisions quickly, while Isaac validates mechanism motion,
+contacts, and learned policies.
 
 ## Build And Bring-Up Status
 
@@ -149,6 +181,7 @@ Hardware bring-up should be done in layers: receiver first, then one servo, then
 |   `-- pcb/                 Domino PCB Gerber package and notes
 |-- simulation/
 |   |-- isaac/               Isaac Sim / Isaac Lab bring-up notes and URDF topology tooling
+|   |-- sil/                 Desktop build of the production firmware and live monitor
 |   |-- urdf/generated/      Generated URDF reference export
 |   `-- usd/                 USD/USDZ exports for Isaac Sim experiments
 |-- platformio.ini          PlatformIO build configuration

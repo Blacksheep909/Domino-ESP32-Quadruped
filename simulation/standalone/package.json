@@ -1,0 +1,20 @@
+{
+  "name": "domino-standalone-simulator",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "start": "node server.mjs",
+    "test": "node --test boxer-hid.test.mjs cad-endpoint.test.mjs linkage.test.mjs physics.test.mjs"
+  },
+  "dependencies": {
+    "@dimforge/rapier3d-compat": "0.19.3",
+    "node-hid": "^3.4.0",
+    "three": "^0.179.1",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "vite": "^7.1.3"
+  }
+}

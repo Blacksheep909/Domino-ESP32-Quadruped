@@ -35,7 +35,9 @@ extern "C" float dominoSilBodyYawDeg();
 namespace {
 constexpr uint32_t kStepMs = 5;
 constexpr uint32_t kFrameIntervalMs = 20;
-constexpr uint32_t kTelemetryIntervalMs = 50;
+// Match the production 20 ms control loop so the rendered CAD receives every
+// commanded servo frame instead of visibly stepping at 20 Hz.
+constexpr uint32_t kTelemetryIntervalMs = 20;
 constexpr uint32_t kScenarioDurationMs = 11000;
 constexpr uint32_t kLoopPeriodMs = 12000;
 constexpr int kRideHeightChannelIndex = 2;  // Boxer left-stick vertical / CRSF CH3.

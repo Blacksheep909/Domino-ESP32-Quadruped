@@ -83,6 +83,8 @@ test("diagonal sinusoidal gait stays supported and produces planar travel", asyn
 
   firmwareState.mode = "GAIT";
   for (let frame = 0; frame < 1200; frame += 1) {
+    const gaitBodyZ = Math.max(265, 280 - 80 * (frame / 120));
+    firmwareState.pose_z_mm = gaitBodyZ;
     const gaitCycle = (0.65 * (frame / 120)) % 1;
     firmwareState.leg_command_xyz_mm = [0, 1, 2, 3].map((legIndex) => {
       const diagonalA = legIndex === 0 || legIndex === 3;
@@ -93,18 +95,18 @@ test("diagonal sinusoidal gait stays supported and produces planar travel", asyn
       let zOffset;
       if (cycle < stanceFraction) {
         const stance = cycle / stanceFraction;
-        xOffset = 17 * (1 - 2 * stance);
+        xOffset = 27 * (1 - 2 * stance);
         zOffset = 0;
       } else {
         const swing = (cycle - stanceFraction) / (1 - stanceFraction);
         const progress = 0.5 - 0.5 * Math.cos(Math.PI * swing);
-        xOffset = 17 * (-1 + 2 * progress);
-        zOffset = -17 * Math.sin(Math.PI * swing) ** 2;
+        xOffset = 27 * (-1 + 2 * progress);
+        zOffset = -25 * Math.sin(Math.PI * swing) ** 2;
       }
       return [
         -15.75 + xOffset,
         leftLeg ? 38 : -38,
-        280 + zOffset,
+        gaitBodyZ + zOffset,
       ];
     });
     state = physics.update(1 / 120, firmwareState, legs, standServoReference);

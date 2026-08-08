@@ -154,11 +154,11 @@ constexpr bool kBalanceDebugLoggingEnabled = false;
 // stride for turning.
 constexpr float kGaitStickDeadband = 0.12f;
 constexpr float kGaitMaxStrideMm = 24.0f;
-constexpr float kGaitMaxTurnStrideMm = 18.0f;
-constexpr float kGaitMaxLiftMm = 42.0f;
-constexpr float kGaitMinFrequencyHz = 0.58f;
-constexpr float kGaitMaxFrequencyHz = 0.82f;
-constexpr float kGaitStanceFraction = 0.62f;
+constexpr float kGaitMaxTurnStrideMm = 16.0f;
+constexpr float kGaitMaxLiftMm = 34.0f;
+constexpr float kGaitMinFrequencyHz = 0.54f;
+constexpr float kGaitMaxFrequencyHz = 0.76f;
+constexpr float kGaitStanceFraction = 0.68f;
 constexpr float kGaitCommandSlewPerSec = 1.5f;
 constexpr uint32_t kGaitToggleDebounceMs = 200;
 
@@ -651,6 +651,17 @@ float approachGaitCommand(float current, float target, float maximumStep) {
   return fmaxf(target, current - maximumStep);
 }
 
+float shapeGaitTravelCommand(float command) {
+  const float magnitude = fabsf(command);
+  if (magnitude <= 0.001f) {
+    return 0.0f;
+  }
+  // Give moderate stick commands enough stride to produce translation instead
+  // of merely rocking the chassis, while retaining a continuous zero crossing
+  // and the same full-stick mechanical limit.
+  return copysignf(sqrtf(magnitude), command);
+}
+
 void resetGaitState() {
   gaitPhaseRad = 0.0f;
   gaitForwardCommand = 0.0f;
@@ -669,19 +680,19 @@ void sampleGaitFootPath(float cycle,
                         float *zOffsetMm) {
   cycle -= floorf(cycle);
   if (cycle < kGaitStanceFraction) {
-    // Keep the foot on the ground while it travels from front to rear. A
-    // half-cosine starts and ends at zero velocity, avoiding a horizontal
-    // impulse at touchdown and liftoff. The >50% stance duty gives both
-    // diagonal pairs a brief support overlap.
+    // A planted foot must move rearward at constant speed relative to the
+    // body. The old half-cosine repeatedly accelerated and decelerated the
+    // loaded foot across the floor, which produced visible scrub and sideways
+    // reaction forces even for a steady forward command.
     const float stance = cycle / kGaitStanceFraction;
-    *xOffsetMm = halfStrideMm * (1.0f - 2.0f * halfCosine01(stance));
+    *xOffsetMm = halfStrideMm * (1.0f - 2.0f * stance);
     *zOffsetMm = 0.0f;
     return;
   }
 
-  // Return the unloaded foot from rear to front. Matching half-cosines make
-  // the horizontal velocity continuous at the phase boundaries, while sin^2
-  // gives zero vertical velocity at both ends of the swing.
+  // Return the unloaded foot from rear to front. The smooth swing curve keeps
+  // touchdown and lift-off gentle; only the unloaded leg uses this variable
+  // speed profile.
   const float swing = (cycle - kGaitStanceFraction) / (1.0f - kGaitStanceFraction);
   const float swingPosition = halfCosine01(swing);
   const float liftWave = sinf(kPi * swing);
@@ -708,12 +719,13 @@ void applySinusoidalGait(Adafruit_PWMServoDriver &driver, float baseZ) {
   }
 
   const float normalizedCycle = gaitPhaseRad / (2.0f * kPi);
+  const float shapedForwardCommand = shapeGaitTravelCommand(gaitForwardCommand);
   for (int i = 0; i < kLegCount; ++i) {
     const bool diagonalA = (i == LEG_FL || i == LEG_BR);
     const bool leftLeg = (i == LEG_FL || i == LEG_BL);
     const float sideSign = leftLeg ? 1.0f : -1.0f;
     const float halfStrideMm =
-        gaitForwardCommand * kGaitMaxStrideMm +
+        shapedForwardCommand * kGaitMaxStrideMm +
         sideSign * gaitTurnCommand * kGaitMaxTurnStrideMm;
     float xOffsetMm = 0.0f;
     float zOffsetMm = 0.0f;

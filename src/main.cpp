@@ -104,9 +104,9 @@ constexpr float kDegToRad = kPi / 180.0f;
 constexpr int ROLL_CH_INDEX = 0;
 constexpr int PITCH_CH_INDEX = 1;
 constexpr int YAW_CH_INDEX = 3;
-// SB is a 3-position switch used for ride height presets.
-// Adjust SB_CH_INDEX if your radio maps SB to a different CRSF channel.
-constexpr int SB_CH_INDEX = 5;
+// The Boxer left-stick vertical is CRSF channel 3. The firmware uses its
+// three travel bands as the high / medium / low ride-height command.
+constexpr int RIDE_HEIGHT_CH_INDEX = 2;
 constexpr int SD_CH_INDEX = 7;
 constexpr int SD_ON_THRESHOLD_US = 1600;
 constexpr int SD_OFF_THRESHOLD_US = 1400;
@@ -162,8 +162,8 @@ enum BodyMode : uint8_t {
 // Microsecond bands for SB positions (up / mid / down).
 // These values assume ~1000 us = switch fully up, ~1500 us = middle,
 // ~2000 us = fully down. Tweak if your radio outputs different ranges.
-constexpr int SB_UPPER_POS_MAX_US = 1200;
-constexpr int SB_LOWER_POS_MIN_US = 1800;
+constexpr int RIDE_HEIGHT_UPPER_POS_MAX_US = 1200;
+constexpr int RIDE_HEIGHT_LOWER_POS_MIN_US = 1800;
 
 // Offsets from kNeutralZ (mm) for each ride height preset.
 // Positive values move the feet further from the body; negative values
@@ -376,19 +376,19 @@ bool applySwitchDebounce(bool currentState,
 bool updateStandCommand(bool standActive, uint32_t now);
 bool updateSdCommand(bool sdActive, bool controlsEnabled, uint32_t now);
 
-RideHeightPreset detectRideHeightPresetFromSbUs(int sbValueUs) {
-  if (sbValueUs <= SB_UPPER_POS_MAX_US) {
+RideHeightPreset detectRideHeightPresetFromChannelUs(int heightValueUs) {
+  if (heightValueUs <= RIDE_HEIGHT_UPPER_POS_MAX_US) {
     return RIDE_HIGH;
   }
-  if (sbValueUs >= SB_LOWER_POS_MIN_US) {
+  if (heightValueUs >= RIDE_HEIGHT_LOWER_POS_MIN_US) {
     return RIDE_LOW;
   }
   return RIDE_MEDIUM;
 }
 
 RideHeightPreset readRideHeightPreset() {
-  const int sbValueUs = ch_us[SB_CH_INDEX];
-  return detectRideHeightPresetFromSbUs(sbValueUs);
+  const int heightValueUs = ch_us[RIDE_HEIGHT_CH_INDEX];
+  return detectRideHeightPresetFromChannelUs(heightValueUs);
 }
 
 float computeStandTargetZForPreset(RideHeightPreset preset) {
@@ -458,7 +458,9 @@ MenuInputs readMenuInputs(uint32_t now, uint32_t* lastLinkAliveMs, bool* failsaf
     Serial.printf("SC=%d -> balanceRequested=%d\n", scValueUs, inputs.balanceRequested ? 1 : 0);
   }
 
-  // Ride height preset from SB (no debouncing; presets are discrete).
+  // Ride height preset from Boxer left-stick vertical / CRSF CH3. The
+  // firmware intentionally keeps the existing three preset bands so the
+  // same command is deterministic on the physical robot and in SIL.
   inputs.rideRequested = readRideHeightPreset();
 
   return inputs;
@@ -791,9 +793,9 @@ void loop() {
   //    but the selected ride height is retained for the next stand command.
   if (inputs.rideRequested != currentRidePreset) {
     currentRidePreset = inputs.rideRequested;
-    Serial.printf("Ride height preset=%d SB=%d\n",
+    Serial.printf("Ride height preset=%d CH3_HEIGHT=%d\n",
                   static_cast<int>(currentRidePreset),
-                  ch_us[SB_CH_INDEX]);
+                  ch_us[RIDE_HEIGHT_CH_INDEX]);
   }
   menuState.rideHeight = currentRidePreset;
 

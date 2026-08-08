@@ -34,6 +34,7 @@ constexpr uint32_t kFrameIntervalMs = 20;
 constexpr uint32_t kTelemetryIntervalMs = 50;
 constexpr uint32_t kScenarioDurationMs = 11000;
 constexpr uint32_t kLoopPeriodMs = 12000;
+constexpr int kRideHeightChannelIndex = 2;  // Boxer left-stick vertical / CRSF CH3.
 #ifndef CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
 constexpr DWORD CREATE_WAITABLE_TIMER_HIGH_RESOLUTION = 0x00000002;
 #endif
@@ -150,7 +151,8 @@ bool applyScenario(uint32_t scenarioMs, int channelsUs[16]) {
   }
 
   channelsUs[SA_CH_INDEX] = 1000;
-  channelsUs[5] = 1000;
+  channelsUs[kRideHeightChannelIndex] = 1000;
+  channelsUs[5] = 2000;  // Legacy SB must not control ride height anymore.
   channelsUs[SC_CH_INDEX] = 1000;
   channelsUs[7] = 1000;
 
@@ -171,7 +173,7 @@ bool applyScenario(uint32_t scenarioMs, int channelsUs[16]) {
   }
 
   if (scenarioMs >= 6500U) {
-    channelsUs[5] = 1500;
+    channelsUs[kRideHeightChannelIndex] = 1500;
   }
   return true;
 }

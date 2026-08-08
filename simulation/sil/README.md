@@ -22,8 +22,9 @@ Only the hardware boundary is replaced:
 ```
 
 The scenario checks startup stow, CRSF acquisition, debounced stand, tilt
-movement, Boxer left-stick ride-height switching, link loss, automatic failsafe
-stow, finite servo angles, and valid PCA9685 pulse widths.
+movement, continuous Boxer left-stick ride-height control, sinusoidal gait
+stride/lift, the SD tilt interlock, link loss, automatic failsafe stow, finite
+servo angles, and valid PCA9685 pulse widths.
 
 ## Open the live monitor
 

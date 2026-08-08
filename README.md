@@ -27,7 +27,7 @@ Implemented or documented:
 - PCA9685 output for twelve servos across four legs.
 - CAD-derived inverse kinematics for hip, upper-leg, and lower-linkage angles.
 - Custom CRSF/ExpressLRS receiver parser with packed-channel decoding, filtering, switch debouncing, and link-loss handling.
-- Stand, stow, body tilt, ride-height preset, and experimental balance modes.
+- Stand, stow, body tilt, continuous ride height, and a first sinusoidal gait mode.
 - MPU6050 IMU sampling and filtered roll/pitch state.
 - Per-servo safety limits to reduce the chance of driving the mechanism into hard stops.
 - STEP exports for assembly, body, and leg inspection.
@@ -37,7 +37,7 @@ Implemented or documented:
 
 Still in progress:
 
-- Full walking gait generation.
+- Gait tuning beyond the first slow diagonal sinusoidal trot.
 - Dynamic balance tuning.
 - A complete measured BOM.
 - Wiring diagrams and annotated cable-routing photos.
@@ -94,9 +94,9 @@ The firmware is split by responsibility:
 - `src/ik.cpp` / `src/ik.h`: CAD-derived single-leg inverse kinematics.
 - `src/leg_controller.cpp` / `src/leg_controller.h`: PCA9685 channel mapping, direction signs, trims, and servo limit enforcement.
 - `src/imu.cpp` / `src/imu.h`: MPU6050 initialization, sampling, and filtered orientation state.
-- `src/main.cpp`: high-level state machine, body pose model, ride height, tilt mode, balance experiment, and failsafe behavior.
+- `src/main.cpp`: high-level state machine, body pose model, ride height, tilt mode, sinusoidal gait, balance experiment, and failsafe behavior.
 
-High-level behavior generates body/foot pose targets, then passes them through the same IK and servo mapping path. That keeps stand, stow, tilt, balance, and future gait work tied to one low-level geometry model.
+High-level behavior generates body/foot pose targets, then passes them through the same IK and servo mapping path. Stand, stow, tilt, balance, and gait therefore use the same CAD-derived geometry and servo safety limits.
 
 ### Test Firmware Before Hardware
 
@@ -120,7 +120,8 @@ Open the live firmware monitor:
 
 The first stage validates the exact commands that would be sent to the
 PCA9685 without powering a servo. It covers startup stow, valid CRSF parsing,
-debounced mode changes, stand and tilt movement, ride-height switching, link
+debounced mode changes, stand and tilt movement, continuous ride height, gait
+stride/lift, the tilt interlock, link
 loss, failsafe stow, and all 12 output pulse widths. The next integration stage
 will feed those same outputs into the CAD-derived Isaac articulation and accept
 Boxer input over USB.

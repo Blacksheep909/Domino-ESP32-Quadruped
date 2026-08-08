@@ -19,7 +19,7 @@
         <span id="physics-status" data-state="offline">PHYSICS</span>
         <span id="debug-status" data-state="online">REC</span>
         <span id="mode-status">SITTING</span>
-        <span id="height-status">HEIGHT HIGH</span>
+        <span id="height-status">HEIGHT 280 MM</span>
         <span id="fps-status">0 FPS</span>
         <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false" title="Switch to dark theme">
           <span id="theme-icon" aria-hidden="true">&#9788;</span>
@@ -40,12 +40,16 @@
       <div class="toolbar-group pose-control" role="group" aria-label="Body pose">
         <button id="stand-button" type="button" title="Stand Domino">SITTING</button>
         <button id="tilt-button" type="button" title="Tilt Domino">LEVEL</button>
+        <button id="gait-button" type="button" title="Emulate SC fully down">GAIT OFF</button>
       </div>
       <div class="toolbar-group height-control" role="group" aria-label="Ride height">
-        <span>HEIGHT</span>
-        <button type="button" data-height="HIGH">HIGH</button>
-        <button type="button" data-height="MEDIUM">MID</button>
-        <button type="button" data-height="LOW">LOW</button>
+        <span>RIDE HEIGHT<small>CH3 / LEFT Y</small></span>
+        <div class="height-meter" aria-live="polite">
+          <div class="height-meter-track" aria-hidden="true">
+            <div id="height-meter-fill"></div>
+          </div>
+          <output id="height-control-value">280 MM</output>
+        </div>
       </div>
       <div class="toolbar-group reset-control" role="group" aria-label="Reset controls">
         <button id="reset-button" type="button" title="Reset position and return control to the radio">RESET ROBOT</button>
@@ -65,37 +69,33 @@
 
     <aside>
       <section>
-        <h2>INPUT</h2>
+        <h2>COMMAND</h2>
         <dl>
-          <div><dt>Device</dt><dd id="gamepad-name">KEYBOARD</dd></div>
+          <div><dt>Source</dt><dd id="gamepad-name">KEYBOARD</dd></div>
           <div><dt>Pitch</dt><dd id="forward-value">0.00</dd></div>
           <div><dt>Yaw</dt><dd id="turn-value">0.00</dd></div>
           <div><dt>Roll</dt><dd id="roll-value">0.00</dd></div>
-          <div><dt>Height input</dt><dd id="height-input-value">HIGH</dd></div>
+          <div><dt>Ride height</dt><dd id="height-input-value">280 mm</dd></div>
         </dl>
       </section>
       <section>
-        <h2>FIRMWARE</h2>
+        <h2>STATE</h2>
         <dl>
-          <div><dt>Frames</dt><dd id="frame-count">0</dd></div>
-          <div><dt>Target Z</dt><dd id="target-z">0 mm</dd></div>
-          <div><dt>Pose Z</dt><dd id="pose-z">0 mm</dd></div>
-          <div><dt>Ride height</dt><dd id="ride-height">HIGH</dd></div>
-          <div><dt>Servo range</dt><dd id="servo-range">0 deg</dd></div>
+          <div><dt>Commanded height</dt><dd id="ride-height">280 mm</dd></div>
+          <div><dt>Gait</dt><dd id="gait-state" data-state="idle">OFF</dd></div>
+          <div><dt>Body height</dt><dd id="body-height">--</dd></div>
+          <div><dt>Foot contacts</dt><dd id="foot-contacts">0 / 4</dd></div>
+          <div><dt>Actuators</dt><dd>12 LIVE</dd></div>
         </dl>
       </section>
       <section>
-        <h2>MODEL</h2>
+        <h2>MODEL HEALTH</h2>
         <dl>
-          <div><dt>Geometry</dt><dd id="mesh-count">0 / 29</dd></div>
+          <div><dt>CAD meshes</dt><dd id="mesh-count">0 / 29</dd></div>
           <div><dt>Linkages</dt><dd id="linkage-health">CHECKING</dd></div>
           <div><dt>Worst pin</dt><dd id="pin-error">--</dd></div>
           <div><dt>Foot symmetry</dt><dd id="foot-symmetry">--</dd></div>
-          <div><dt>Actuators</dt><dd>12 LIVE</dd></div>
           <div><dt>Physics</dt><dd id="physics-engine">STARTING</dd></div>
-          <div><dt>Body height</dt><dd id="body-height">--</dd></div>
-          <div><dt>Foot contacts</dt><dd id="foot-contacts">0 / 4</dd></div>
-          <div><dt>Feet</dt><dd>TPU / 1.25 MU</dd></div>
         </dl>
       </section>
       <section id="joint-legend" hidden>

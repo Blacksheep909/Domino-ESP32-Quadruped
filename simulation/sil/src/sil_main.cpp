@@ -20,7 +20,11 @@ extern "C" int dominoSilBodyMode();
 extern "C" float dominoSilTargetZ();
 extern "C" float dominoSilPoseZ();
 extern "C" bool dominoSilTiltActive();
-extern "C" int dominoSilRideHeight();
+extern "C" float dominoSilRideHeightMm();
+extern "C" bool dominoSilGaitActive();
+extern "C" float dominoSilGaitPhaseRad();
+extern "C" float dominoSilGaitForwardCommand();
+extern "C" float dominoSilGaitTurnCommand();
 extern "C" float dominoSilLegCommandX(int legIndex);
 extern "C" float dominoSilLegCommandY(int legIndex);
 extern "C" float dominoSilLegCommandZ(int legIndex);
@@ -151,7 +155,7 @@ bool applyScenario(uint32_t scenarioMs, int channelsUs[16]) {
   }
 
   channelsUs[SA_CH_INDEX] = 1000;
-  channelsUs[kRideHeightChannelIndex] = 1000;
+  channelsUs[kRideHeightChannelIndex] = 2000;
   channelsUs[5] = 2000;  // Legacy SB must not control ride height anymore.
   channelsUs[SC_CH_INDEX] = 1000;
   channelsUs[7] = 1000;
@@ -164,16 +168,26 @@ bool applyScenario(uint32_t scenarioMs, int channelsUs[16]) {
     channelsUs[SA_CH_INDEX] = 2000;
   }
 
-  if (scenarioMs >= 4500U && scenarioMs < 6500U) {
+  if (scenarioMs >= 4500U && scenarioMs < 6000U) {
     channelsUs[7] = 2000;
+    channelsUs[SC_CH_INDEX] = 2000;  // Gait request must remain blocked by SD/tilt.
     const float phase = static_cast<float>(scenarioMs - 4500U) * 0.0062831853f / 1000.0f;
     channelsUs[0] = 1500 + static_cast<int>(430.0f * sinf(phase));
     channelsUs[1] = 1500 + static_cast<int>(250.0f * cosf(phase * 0.7f));
     channelsUs[3] = 1500 + static_cast<int>(320.0f * sinf(phase * 0.5f));
   }
 
-  if (scenarioMs >= 6500U) {
-    channelsUs[kRideHeightChannelIndex] = 1500;
+  if (scenarioMs >= 6000U && scenarioMs < 8000U) {
+    channelsUs[SC_CH_INDEX] = 2000;
+    channelsUs[7] = 1000;
+    channelsUs[0] = 1680;  // Right-stick horizontal: gentle turn.
+    channelsUs[1] = 1900;  // Right-stick vertical: forward travel.
+  }
+
+  if (scenarioMs >= 6500U && scenarioMs < 8000U) {
+    const uint32_t heightProgressMs = scenarioMs - 6500U;
+    channelsUs[kRideHeightChannelIndex] =
+        2000 - static_cast<int>((1000U * heightProgressMs) / 1500U);
   }
   return true;
 }
@@ -204,19 +218,8 @@ const char* modeName(int mode) {
       return "TILT";
     case 3:
       return "BALANCE";
-    default:
-      return "UNKNOWN";
-  }
-}
-
-const char* rideHeightName(int preset) {
-  switch (preset) {
-    case 0:
-      return "HIGH";
-    case 1:
-      return "MEDIUM";
-    case 2:
-      return "LOW";
+    case 4:
+      return "GAIT";
     default:
       return "UNKNOWN";
   }
@@ -230,7 +233,12 @@ std::string makeStateJson(uint32_t elapsedMs, uint32_t scenarioMs) {
   output << ",\"mode\":\"" << modeName(dominoSilBodyMode()) << "\"";
   output << ",\"link_alive\":" << (crsfLinkAlive(millis()) ? "true" : "false");
   output << ",\"tilt_active\":" << (dominoSilTiltActive() ? "true" : "false");
-  output << ",\"ride_height\":\"" << rideHeightName(dominoSilRideHeight()) << "\"";
+  output << ",\"gait_active\":" << (dominoSilGaitActive() ? "true" : "false");
+  output << ",\"gait_phase_rad\":" << dominoSilGaitPhaseRad();
+  output << ",\"gait_command\":["
+         << dominoSilGaitForwardCommand() << ','
+         << dominoSilGaitTurnCommand() << ']';
+  output << ",\"ride_height_mm\":" << dominoSilRideHeightMm();
   output << ",\"accepted_frames\":" << crsfAcceptedFrameCount();
   output << ",\"target_z_mm\":" << dominoSilTargetZ();
   output << ",\"pose_z_mm\":" << dominoSilPoseZ();
@@ -329,8 +337,15 @@ Options parseOptions(int argc, char** argv) {
   return options;
 }
 
-bool validateOutputs(bool sawStand, bool sawTilt, bool sawFailsafeStow, const float minAngle[16],
-                     const float maxAngle[16]) {
+bool validateOutputs(bool sawStand, bool sawTilt, bool sawGait,
+                     bool gaitTiltInterlockViolation,
+                     bool gaitSupportViolation,
+                     bool sawGaitSwing,
+                     bool sawGaitSupportOverlap,
+                     float gaitMinX, float gaitMaxX, float gaitMaxLiftMm,
+                     bool sawFailsafeStow,
+                     float minRideHeightMm, float maxRideHeightMm,
+                     const float minAngle[16], const float maxAngle[16]) {
   bool passed = true;
   for (size_t index = 0; index < sizeof(kServoChannels); ++index) {
     const uint8_t channel = kServoChannels[index];
@@ -349,8 +364,28 @@ bool validateOutputs(bool sawStand, bool sawTilt, bool sawFailsafeStow, const fl
     std::cerr << "FAIL: tilt mode was never reached\n";
     passed = false;
   }
+  if (!sawGait) {
+    std::cerr << "FAIL: gait mode was never reached\n";
+    passed = false;
+  }
+  if (gaitTiltInterlockViolation) {
+    std::cerr << "FAIL: gait ran while the SD tilt request was active\n";
+    passed = false;
+  }
+  if (gaitSupportViolation || !sawGaitSwing || !sawGaitSupportOverlap) {
+    std::cerr << "FAIL: gait did not preserve two-foot swing and four-foot transition support\n";
+    passed = false;
+  }
+  if ((gaitMaxX - gaitMinX) < 15.0f || gaitMaxLiftMm < 8.0f) {
+    std::cerr << "FAIL: gait scenario did not produce enough stride and foot lift\n";
+    passed = false;
+  }
   if (!sawFailsafeStow) {
     std::cerr << "FAIL: link-loss failsafe did not return to stow\n";
+    passed = false;
+  }
+  if ((maxRideHeightMm - minRideHeightMm) < 40.0f) {
+    std::cerr << "FAIL: continuous ride-height scenario did not traverse the validated range\n";
     passed = false;
   }
 
@@ -402,7 +437,17 @@ int main(int argc, char** argv) {
 
   bool sawStand = false;
   bool sawTilt = false;
+  bool sawGait = false;
+  bool gaitTiltInterlockViolation = false;
+  bool gaitSupportViolation = false;
+  bool sawGaitSwing = false;
+  bool sawGaitSupportOverlap = false;
   bool sawFailsafeStow = false;
+  float gaitMinX = 10000.0f;
+  float gaitMaxX = -10000.0f;
+  float gaitMaxLiftMm = 0.0f;
+  float minRideHeightMm = 10000.0f;
+  float maxRideHeightMm = -10000.0f;
   uint32_t nextFrameMs = 0;
   uint32_t nextTelemetryMs = 0;
   uint64_t statePublishSequence = 0;
@@ -428,7 +473,31 @@ int main(int argc, char** argv) {
     const int mode = dominoSilBodyMode();
     sawStand = sawStand || mode == 1;
     sawTilt = sawTilt || mode == 2;
+    sawGait = sawGait || mode == 4;
+    gaitTiltInterlockViolation =
+        gaitTiltInterlockViolation || (mode == 4 && ch_us[7] > 1600);
     sawFailsafeStow = sawFailsafeStow || (elapsedMs > 10000U && mode == 0);
+    const float rideHeightMm = dominoSilRideHeightMm();
+    minRideHeightMm = std::min(minRideHeightMm, rideHeightMm);
+    maxRideHeightMm = std::max(maxRideHeightMm, rideHeightMm);
+
+    if (mode == 4) {
+      int stanceLegCount = 0;
+      for (int leg = 0; leg < 4; ++leg) {
+        const float x = dominoSilLegCommandX(leg);
+        const float z = dominoSilLegCommandZ(leg);
+        gaitMinX = std::min(gaitMinX, x);
+        gaitMaxX = std::max(gaitMaxX, x);
+        const float liftMm = dominoSilPoseZ() - z;
+        gaitMaxLiftMm = std::max(gaitMaxLiftMm, liftMm);
+        if (liftMm <= 0.75f) {
+          ++stanceLegCount;
+        }
+      }
+      gaitSupportViolation = gaitSupportViolation || stanceLegCount < 2;
+      sawGaitSwing = sawGaitSwing || stanceLegCount == 2;
+      sawGaitSupportOverlap = sawGaitSupportOverlap || stanceLegCount == 4;
+    }
 
     for (size_t index = 0; index < sizeof(kServoChannels); ++index) {
       const uint8_t channel = kServoChannels[index];
@@ -459,7 +528,15 @@ int main(int argc, char** argv) {
     return 0;
   }
 
-  const bool passed = validateOutputs(sawStand, sawTilt, sawFailsafeStow, minAngle, maxAngle);
+  const bool passed = validateOutputs(sawStand, sawTilt, sawGait,
+                                      gaitTiltInterlockViolation,
+                                      gaitSupportViolation,
+                                      sawGaitSwing,
+                                      sawGaitSupportOverlap,
+                                      gaitMinX, gaitMaxX, gaitMaxLiftMm,
+                                      sawFailsafeStow,
+                                      minRideHeightMm, maxRideHeightMm,
+                                      minAngle, maxAngle);
   std::cout << "SIL " << (passed ? "PASS" : "FAIL")
             << ": frames=" << crsfAcceptedFrameCount()
             << " final_mode=" << modeName(dominoSilBodyMode())

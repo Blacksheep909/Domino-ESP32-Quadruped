@@ -526,7 +526,7 @@ export async function createDominoPhysics() {
       return;
     }
     bodyPoseTorque.set(0, 0, 0);
-    if (firmwareState?.mode !== "STAND") return;
+    if (firmwareState?.mode !== "STAND" && firmwareState?.mode !== "GAIT") return;
 
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion);
     const targetUp = new THREE.Vector3(0, 1, 0);
@@ -624,6 +624,12 @@ export async function createDominoPhysics() {
       (translation.y < 0.18 || up.y < 0.35)
     ) {
       resetReason = "failed-tilt";
+    } else if (
+      elapsed > 2 &&
+      firmwareState?.mode === "GAIT" &&
+      (translation.y < 0.15 || up.y < 0.25)
+    ) {
+      resetReason = "failed-gait";
     }
     if (resetReason) {
       resetCount += 1;

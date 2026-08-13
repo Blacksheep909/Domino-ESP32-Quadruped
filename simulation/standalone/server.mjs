@@ -24,6 +24,10 @@ import {
   validCalibrationAcknowledgement,
   validCalibrationCommand,
 } from "./web/src/live-calibration-protocol.js";
+import {
+  validLiveGaitAcknowledgement,
+  validLiveGaitCommand,
+} from "./web/src/live-gait-protocol.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../..");
@@ -374,6 +378,21 @@ sockets.on("connection", (socket) => {
           Buffer.byteLength(payload) <= 8 * 1024 &&
           validCalibrationAcknowledgement(message)
         ) broadcast(message);
+        return;
+      }
+      if (message.type === "live-gait-command") {
+        // The browser only publishes versioned profiles after local preview.
+        // A robot adapter must independently require DISARMED state, validate
+        // every parameter, store atomically, and acknowledge the applied hash.
+        if (Buffer.byteLength(payload) <= 16 * 1024 && validLiveGaitCommand(message)) {
+          broadcast(message);
+        }
+        return;
+      }
+      if (message.type === "live-gait-ack") {
+        if (Buffer.byteLength(payload) <= 16 * 1024 && validLiveGaitAcknowledgement(message)) {
+          broadcast(message);
+        }
         return;
       }
       if (message.type !== "control" || !Array.isArray(message.channels) || message.channels.length !== 16) {

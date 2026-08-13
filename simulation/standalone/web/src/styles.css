@@ -3255,6 +3255,189 @@ body[data-workspace="real-robot"][data-live-view="calibration"] #scene {
 .live-calibration-page .calibration-jog-control { grid-template-columns: 1fr; }
 .live-calibration-page .calibration-jog-control > div:last-child { flex-wrap: wrap; }
 
+.live-gaits-page { padding-right: 42vw; }
+.live-gaits-page .live-page-heading,
+.live-gaits-page .live-gaits-layout { max-width: none; }
+.live-gaits-layout { width: 100%; }
+.live-gaits-editor { display: grid; gap: 12px; }
+
+.live-gait-preview-caption {
+  position: fixed;
+  right: 3vw;
+  bottom: 70px;
+  width: 34vw;
+  padding: 12px 14px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 14px;
+  color: #d9d9dc;
+  background: rgba(12, 12, 13, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  backdrop-filter: blur(12px);
+  z-index: 9;
+  pointer-events: none;
+}
+
+.live-gait-preview-caption span { color: #79c493; font: 750 8px/1 "Cascadia Mono", Consolas, monospace; }
+.live-gait-preview-caption strong { font: 750 10px/1 "Cascadia Mono", Consolas, monospace; text-align: right; }
+.live-gait-preview-caption strong[data-state="fault"] { color: #ef9182; }
+.live-gait-preview-caption small { grid-column: 1 / -1; color: #8f8f95; font-size: 8px; }
+
+body[data-workspace="real-robot"][data-live-view="gaits"] #scene {
+  inset: 144px 2.5vw 54px auto;
+  width: 36vw;
+  height: auto;
+  background: radial-gradient(circle at 50% 45%, #202024, #0c0c0d 68%);
+  border: 1px solid #303034;
+  border-radius: 8px;
+  z-index: 8;
+}
+
+.live-gait-card {
+  min-width: 0;
+  padding: 14px;
+  background: rgba(250, 250, 248, 0.9);
+  border: 1px solid #d2d2cd;
+  border-radius: 8px;
+}
+
+.live-gait-card > header {
+  position: static;
+  inset: auto;
+  width: auto;
+  height: auto;
+  min-height: 0;
+  padding: 0 0 11px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid #dfdfda;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.live-gait-card > header > div:first-child { display: grid; gap: 6px; }
+.live-gait-card > header span,
+.live-gait-preview-row label,
+.live-gait-preview-row > div > span,
+.live-gait-apply-card > div > span {
+  color: #858781;
+  font: 750 8px/1 "Cascadia Mono", Consolas, monospace;
+  letter-spacing: 0.07em;
+}
+.live-gait-card > header strong { font-size: 9px; }
+
+.live-gait-library-controls {
+  padding-top: 12px;
+  display: grid;
+  grid-template-columns: minmax(150px, 1.4fr) auto minmax(120px, 1fr) auto auto auto;
+  gap: 7px;
+}
+
+.live-gait-library-controls select,
+.live-gait-library-controls input,
+.live-gait-library-controls button,
+.live-gait-card > header button,
+.live-gait-presets button,
+.live-gait-preview-row button,
+.live-gait-apply-card button {
+  height: 32px;
+  min-width: 0;
+  padding: 0 9px;
+  color: #555852;
+  background: #f0f0ec;
+  border: 1px solid #d2d2cd;
+  border-radius: 5px;
+  font-size: 8px;
+  font-weight: 750;
+}
+
+.live-gait-library-controls button:not(:disabled),
+.live-gait-card > header button:not(:disabled),
+.live-gait-preview-row button[aria-pressed="true"],
+.live-gait-presets button[aria-pressed="true"],
+.live-gait-apply-card button:not(:disabled) {
+  color: #225c3a;
+  background: #e4f0e8;
+  border-color: #9ec7ac;
+  cursor: pointer;
+}
+
+.live-gait-preview-controls > header label { display: flex; align-items: center; gap: 6px; color: #555852; font-size: 8px; font-weight: 750; }
+.live-gait-preview-controls > header input { accent-color: #327e4e; }
+.live-gait-preview-row { padding-top: 12px; display: grid; grid-template-columns: auto 1fr 1fr auto auto; align-items: center; gap: 10px; }
+.live-gait-preview-row > div:first-child { display: flex; gap: 4px; }
+.live-gait-preview-row label { display: grid; grid-template-columns: 1fr auto; gap: 5px; }
+.live-gait-preview-row label input { grid-column: 1 / -1; width: 100%; accent-color: #4c9b69; }
+.live-gait-preview-row label output { color: #4b4e48; font: 700 9px/1 "Cascadia Mono", Consolas, monospace; }
+.live-gait-preview-row > div:not(:first-child) { display: grid; gap: 6px; }
+.live-gait-preview-row > div > strong { font: 750 10px/1 "Cascadia Mono", Consolas, monospace; }
+
+.live-gait-presets { display: flex !important; gap: 4px !important; }
+.live-gait-settings { padding-top: 12px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.live-gait-settings label { padding: 10px; display: grid; gap: 7px; background: #f0f0ec; border-radius: 5px; }
+.live-gait-settings label > span { display: flex; justify-content: space-between; gap: 10px; }
+.live-gait-settings label strong,
+.live-gait-settings label output { font: 750 8px/1 "Cascadia Mono", Consolas, monospace; }
+.live-gait-settings label output { color: #2f7b4b; }
+.live-gait-settings label input { width: 100%; accent-color: #4c9b69; }
+.live-gait-settings label small { color: #858781; font-size: 8px; line-height: 1.35; }
+
+.live-gait-compare-table-wrap { max-height: 285px; overflow: auto; }
+.live-gait-compare-table-wrap table { width: 100%; border-collapse: collapse; font: 650 9px/1.2 "Cascadia Mono", Consolas, monospace; }
+.live-gait-compare-table-wrap th,
+.live-gait-compare-table-wrap td { padding: 8px 10px; border-bottom: 1px solid #dfdfda; text-align: right; }
+.live-gait-compare-table-wrap th:first-child,
+.live-gait-compare-table-wrap td:first-child { text-align: left; }
+.live-gait-compare-table-wrap th { color: #858781; font-size: 8px; }
+.live-gait-compare-table-wrap tr[data-changed="true"] td { color: #9b6412; }
+
+.live-gait-risk { padding-top: 10px; display: grid; gap: 5px; }
+.live-gait-risk p { margin: 0; padding: 8px 10px; color: #376847; background: #e7f0e9; border-left: 3px solid #4c9b69; font-size: 9px; }
+.live-gait-risk p[data-severity="warning"] { color: #8b5b13; background: #f8efe1; border-left-color: #cf8c27; }
+
+.live-gait-apply-card { display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; gap: 8px; border-left: 4px solid #4c9b69; }
+.live-gait-apply-card > div { display: grid; gap: 6px; }
+.live-gait-apply-card > div strong { font: 750 11px/1 "Cascadia Mono", Consolas, monospace; }
+.live-gait-apply-card > div p { margin: 0; color: #858781; font-size: 8px; }
+.live-gait-apply-card button:disabled { color: #9b9d98; background: transparent; cursor: default; }
+
+:root[data-theme="dark"] .live-gait-card { background: #121214; border-color: #303034; }
+:root[data-theme="dark"] .live-gait-card > header { border-color: #303034; }
+:root[data-theme="dark"] .live-gait-library-controls select,
+:root[data-theme="dark"] .live-gait-library-controls input,
+:root[data-theme="dark"] .live-gait-library-controls button,
+:root[data-theme="dark"] .live-gait-card > header button,
+:root[data-theme="dark"] .live-gait-presets button,
+:root[data-theme="dark"] .live-gait-preview-row button,
+:root[data-theme="dark"] .live-gait-apply-card button { color: #85858b; background: #202023; border-color: #343438; }
+:root[data-theme="dark"] .live-gait-library-controls button:not(:disabled),
+:root[data-theme="dark"] .live-gait-card > header button:not(:disabled),
+:root[data-theme="dark"] .live-gait-preview-row button[aria-pressed="true"],
+:root[data-theme="dark"] .live-gait-presets button[aria-pressed="true"],
+:root[data-theme="dark"] .live-gait-apply-card button:not(:disabled) { color: #bce8c9; background: rgba(61, 151, 95, 0.14); border-color: rgba(80, 177, 113, 0.35); }
+:root[data-theme="dark"] .live-gait-settings label { background: #18181a; }
+:root[data-theme="dark"] .live-gait-preview-row label output { color: #bce8c9; }
+:root[data-theme="dark"] .live-gait-compare-table-wrap th,
+:root[data-theme="dark"] .live-gait-compare-table-wrap td { border-color: #29292c; }
+:root[data-theme="dark"] .live-gait-compare-table-wrap tr[data-changed="true"] td { color: #e4ad58; }
+:root[data-theme="dark"] .live-gait-risk p { color: #bce8c9; background: rgba(61, 151, 95, 0.12); }
+:root[data-theme="dark"] .live-gait-risk p[data-severity="warning"] { color: #e4ad58; background: rgba(175, 112, 28, 0.10); }
+
+@media (max-width: 1000px) {
+  body[data-workspace="real-robot"][data-live-view="gaits"] #scene { z-index: 0; inset: 0; width: 100%; height: 100%; border: 0; }
+  .live-gaits-page { padding-right: clamp(22px, 4vw, 58px); }
+  .live-gait-preview-caption { display: none; }
+  .live-gait-library-controls { grid-template-columns: 1fr auto; }
+  .live-gait-preview-row { grid-template-columns: 1fr 1fr; }
+  .live-gait-apply-card { grid-template-columns: 1fr 1fr; }
+  .live-gait-apply-card > div { grid-column: 1 / -1; }
+}
+
 .calibration-step-rail {
   padding: 8px;
   display: grid;

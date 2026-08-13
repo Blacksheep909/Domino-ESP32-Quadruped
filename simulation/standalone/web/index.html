@@ -387,7 +387,14 @@
           <div><span>LIVE / CALIBRATION</span><h1 id="live-calibration-title">Servo calibration</h1><p>A guided, joint-by-joint setup for neutral offsets, direction and safe mechanical limits.</p></div>
           <div class="live-page-status"><span id="live-calibration-link-state" data-state="offline">ROBOT NOT READY</span><strong id="live-calibration-save-state">UNSAVED DRAFT</strong></div>
         </header>
-        <div class="calibration-preview-caption"><span>3D NEUTRAL PREVIEW</span><strong id="live-calibration-preview-caption">FL HIP / +0.0&deg;</strong><small>Drag to orbit / double-click a joint to select / preview never drives hardware</small></div>
+        <div class="calibration-preview-caption">
+          <span>3D NEUTRAL PREVIEW</span>
+          <strong id="live-calibration-preview-caption">FL HIP / +0.0&deg;</strong>
+          <button id="live-calibration-float" type="button" aria-pressed="true" aria-label="Show calibration preview on floor" title="Floating preview on — click to show the floor">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 8.5h11v5h-11zM8 13.5v2.25M16 13.5v2.25M5 4.5l2-2 2 2M7 2.75v3.5M15 19.5l2 2 2-2M17 17.75v3.5"/></svg>
+          </button>
+          <small>Drag to orbit / double-click a joint to select / preview never drives hardware</small>
+        </div>
 
         <div class="live-calibration-layout">
           <aside class="calibration-step-rail" aria-label="Calibration steps">

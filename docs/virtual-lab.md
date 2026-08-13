@@ -101,6 +101,13 @@ profile review. It provides a dedicated 3D neutral-pose preview, supports visual
 joint selection by double-clicking the model, bounds preview jogging to 10
 degrees, stores a browser copy, and imports/exports versioned JSON backups.
 
+The calibration preview opens in a floating, floor-free presentation so joint
+motion is easier to inspect without implying that the model is carrying body
+weight. The small suspended-chassis icon beside the preview caption toggles the
+floor back on when stance context is useful. This switch is visual only: it does
+not enter robot bench mode, move a servo, or replace the requirement to support
+the physical chassis before calibration.
+
 ![LIVE guided servo calibration with 3D neutral preview](images/virtual-lab-live-calibration.png)
 
 Physical movement and robot persistence are deliberately locked until a robot

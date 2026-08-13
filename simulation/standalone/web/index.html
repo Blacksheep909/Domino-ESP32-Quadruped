@@ -242,8 +242,12 @@
           <strong id="live-robot-safety-state">DISCONNECTED</strong>
         </div>
         <p id="live-robot-safety-copy">No physical link is configured. Commands are blocked and the CAD is a reference model only.</p>
-        <button type="button" disabled>HOLD TO ARM</button>
-        <button type="button" class="estop" disabled>E-STOP</button>
+        <button id="live-safety-arm" type="button" disabled><span>HOLD TO ARM</span><i aria-hidden="true"></i></button>
+        <button id="live-safety-disarm" type="button" disabled>DISARM</button>
+        <button id="live-safety-reset-estop" type="button" disabled>RESET E-STOP</button>
+        <button id="live-safety-estop" type="button" class="estop" disabled>E-STOP</button>
+        <div class="live-safety-watchdog"><span>WATCHDOG</span><strong id="live-safety-watchdog">INACTIVE</strong></div>
+        <p id="live-safety-status">Connect a robot to inspect its safety state.</p>
       </section>
 
       <aside class="live-comparison-panel" aria-label="Live telemetry comparison">

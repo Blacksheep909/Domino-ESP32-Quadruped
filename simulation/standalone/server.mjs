@@ -34,6 +34,12 @@ import {
   validLiveConnectionCommand,
   validSessionEnvelope,
 } from "./web/src/live-connection-protocol.js";
+import {
+  validLiveSafetyAcknowledgement,
+  validLiveSafetyCommand,
+  validLiveSafetyHeartbeat,
+  validLiveSafetyHeartbeatAcknowledgement,
+} from "./web/src/live-safety-protocol.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../..");
@@ -539,6 +545,40 @@ sockets.on("connection", (socket) => {
         ) {
           broadcast(message);
         }
+        return;
+      }
+      if (message.type === "live-safety-command") {
+        const record = liveAdapterForSession(message);
+        if (Buffer.byteLength(payload) <= 8 * 1024 && validLiveSafetyCommand(message) && record) {
+          rememberAdapterRequest(record.socket, message, "safety");
+          sendSocket(record.socket, message);
+        }
+        return;
+      }
+      if (message.type === "live-safety-ack") {
+        const record = liveAdapterForSession(message);
+        if (
+          Buffer.byteLength(payload) <= 8 * 1024 &&
+          validLiveSafetyAcknowledgement(message) &&
+          record?.socket === socket &&
+          consumeAdapterRequest(socket, message, "safety")
+        ) broadcast(message);
+        return;
+      }
+      if (message.type === "live-safety-heartbeat") {
+        const record = liveAdapterForSession(message);
+        if (Buffer.byteLength(payload) <= 4 * 1024 && validLiveSafetyHeartbeat(message) && record) {
+          sendSocket(record.socket, message);
+        }
+        return;
+      }
+      if (message.type === "live-safety-heartbeat-ack") {
+        const record = liveAdapterForSession(message);
+        if (
+          Buffer.byteLength(payload) <= 4 * 1024 &&
+          validLiveSafetyHeartbeatAcknowledgement(message) &&
+          record?.socket === socket
+        ) broadcast(message);
         return;
       }
       if (message.type !== "control" || !Array.isArray(message.channels) || message.channels.length !== 16) {

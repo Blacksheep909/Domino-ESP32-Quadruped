@@ -2598,7 +2598,7 @@ body[data-workspace="real-robot"] .simulation-only {
   min-height: 128px;
   padding: 15px;
   display: grid;
-  grid-template-columns: 1fr 92px;
+  grid-template-columns: repeat(2, 1fr);
   gap: 11px 8px;
   background: rgba(250, 250, 248, 0.92);
   border: 1px solid #ced8d1;
@@ -2612,6 +2612,7 @@ body[data-workspace="real-robot"] .simulation-only {
 .live-state-heading {
   display: grid;
   gap: 5px;
+  grid-column: 1 / -1;
 }
 
 .live-state-heading strong {
@@ -2628,6 +2629,8 @@ body[data-workspace="real-robot"] .simulation-only {
 }
 
 .live-safety-dock button {
+  position: relative;
+  overflow: hidden;
   height: 30px;
   color: #858781;
   background: #edede9;
@@ -2635,6 +2638,18 @@ body[data-workspace="real-robot"] .simulation-only {
   border-radius: 4px;
   font-size: 8px;
   font-weight: 750;
+  cursor: pointer;
+}
+
+.live-safety-dock button:disabled { cursor: not-allowed; opacity: 0.54; }
+.live-safety-dock button:not(:disabled) { color: #276f47; background: #edf7f0; border-color: #a7cbb4; }
+.live-safety-dock button > span { position: relative; z-index: 2; }
+.live-safety-dock button > i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(var(--arm-progress, 0) * 100%);
+  background: rgba(46, 142, 82, 0.22);
+  transition: width 40ms linear;
 }
 
 .live-safety-dock .estop {
@@ -2642,6 +2657,26 @@ body[data-workspace="real-robot"] .simulation-only {
   background: #faeeeb;
   border-color: #dcb7ae;
 }
+
+.live-safety-dock .estop:not(:disabled) {
+  color: #fff;
+  background: #b94734;
+  border-color: #a53d2c;
+}
+
+.live-safety-watchdog {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 3px;
+  color: #737a75;
+  font: 700 8px/1 "Cascadia Mono", Consolas, monospace;
+}
+
+.live-safety-watchdog strong[data-state="active"] { color: #28784a; }
+.live-safety-watchdog strong[data-state="fault"] { color: #aa402e; }
+#live-safety-status { padding-top: 2px; border-top: 1px solid rgba(65, 74, 68, 0.12); }
 
 .twin-legend {
   margin-top: 13px;

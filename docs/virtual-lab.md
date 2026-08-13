@@ -79,8 +79,23 @@ Physical movement and robot persistence are deliberately locked until a robot
 adapter acknowledges bench mode, safe jogging at no more than 5 degrees per
 second, and persistent profile storage. The localhost relay validates this
 command/acknowledgement contract; the ESP32 adapter that enforces it remains a
-hardware-side task. Gaits and Diagnostics remain visibly disabled until their
-LIVE-specific workflows are implemented.
+hardware-side task. The LIVE Gaits tab remains disabled until its safe preview,
+apply, and profile-transfer workflow is implemented.
+
+Diagnostics traces eight stages from the engineering packet through expected and
+measured poses, ESP32 acknowledgement, gait target, IK, limit checking, and all
+12 servo outputs. It reports packet rate, latency, missing/rejected/stale packet
+counters, ESP32 loop rate, uptime, robot state, and the last sequence number.
+The first fault is called out directly, while state transitions are captured in
+a severity-filtered event log. Expert mode adds the last packet and command
+inspectors. A diagnostic bundle exports those stages, recent events, packet
+summary, active recording summary, and current calibration profile as JSON.
+
+![LIVE command-chain diagnostics using local relay verification data](images/virtual-lab-live-diagnostics.png)
+
+The screenshot above deliberately injects missing packets, low voltage, an IK
+failure, joint clipping, and missing servo channels through the local relay. It
+does not represent a connected physical robot.
 
 Simple mode will present the normal operating workflow. Expert mode will expose
 the detailed signals and settings needed for mechanism, gait, power, and

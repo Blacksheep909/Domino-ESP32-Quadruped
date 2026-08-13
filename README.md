@@ -189,6 +189,11 @@ The firmware can be built with PlatformIO:
 pio run
 ```
 
+The LIVE workspace can connect to firmware `0.3.0` over the ESP32 USB serial
+port through the fail-closed PC companion. See
+[`docs/live-companion-protocol.md`](docs/live-companion-protocol.md) for the
+protocol, startup command, supported capabilities, and hardware safety rules.
+
 Upload to an ESP32 DevKit:
 
 ```powershell

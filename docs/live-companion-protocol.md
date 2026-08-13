@@ -62,35 +62,48 @@ The robot sends this after boot and whenever a link is established:
   "type": "robot-hello",
   "robotId": "domino-1",
   "robotName": "Domino",
-  "firmwareVersion": "0.2.0",
-  "robotState": "disarmed"
+  "firmwareVersion": "0.3.0",
+  "robotState": "disarmed",
+  "capabilities": {
+    "telemetry": true,
+    "calibration": true,
+    "gaitProfiles": false,
+    "persistentProfiles": false,
+    "manualControl": false
+  }
 }
 ```
+
+The companion advertises only capabilities explicitly reported by the physical
+endpoint. Unsupported firmware features therefore stay disabled in LIVE rather
+than being inferred from the PC adapter.
 
 Valid states are `unknown`, `disarmed`, `arming`, `armed`, `disarming`,
 `estopped`, `fault`, and `watchdog`.
 
 ### Telemetry
 
-The robot should publish telemetry at 20-50 Hz. `expected` is the pose accepted
-by the robot controller; `measured` comes from physical feedback/IMU data. Do
-not copy expected into measured when sensors are unavailable—omit measured so
-the browser reports it unavailable.
+The robot publishes telemetry at 20 Hz. `expected` is the pose accepted by the
+robot controller; `measured` comes only from physical feedback. The current
+hardware has IMU attitude but no servo encoders, so firmware sends a partial
+measured body pose and deliberately omits measured servo angles. LIVE can graph
+roll/pitch error but keeps the measured skeleton unavailable instead of copying
+commands and calling them feedback.
 
 ```json
 {
   "protocol": "domino-robot-link-v1",
   "type": "robot-telemetry",
   "robotState": "disarmed",
+  "robotTimeMs": 48250,
   "expected": {
     "timestampMs": 1723600000000,
     "servoAngleDeg": [135,135,135,135,135,135,135,135,135,135,135,135,135,135,135,135],
     "body": {"rollDeg":0,"pitchDeg":0,"yawDeg":0,"heightMm":280}
   },
   "measured": {
-    "timestampMs": 1723600000001,
-    "servoAngleDeg": [135,135,135,135,135,135,135,135,135,135,135,135,135,135,135,135],
-    "body": {"rollDeg":0,"pitchDeg":0,"yawDeg":0,"heightMm":279}
+    "timestampMs": 48250,
+    "body": {"rollDeg":0,"pitchDeg":0}
   },
   "power": {"voltageV":15.8,"currentA":1.1,"powerW":17.38},
   "controller": {
@@ -114,9 +127,10 @@ the browser reports it unavailable.
 }
 ```
 
-Timestamps are Unix milliseconds. If the robot does not have a synchronized
-clock, the endpoint should maintain a host-time offset established during its
-link handshake rather than sending `millis()` as an epoch timestamp.
+An ESP32 may use `millis()` for `robotTimeMs` and each nested timestamp. The
+companion translates those monotonic values into the host clock domain while
+preserving expected/measured alignment. Endpoints with a synchronized clock may
+send Unix millisecond nested timestamps directly.
 
 ## Companion commands
 
@@ -179,7 +193,16 @@ For each `safety-heartbeat`, return the same sequence:
 - PC request timeouts produce explicit rejection; they never produce an
   optimistic success state.
 
-The repository now contains the PC companion and its tested protocol boundary.
-The production ESP32 firmware still needs the matching physical endpoint before
-LIVE can control real hardware. Until that endpoint independently enforces all
-rules above, use the adapter only with a mock or bench-isolated robot.
+## Current ESP32 endpoint
+
+Firmware `0.3.0` implements the matching USB serial endpoint. Build and flash
+the normal PlatformIO `esp32dev` environment, connect the ESP32 over USB, then
+run the companion with `-Transport usb -Device COMx`.
+
+The endpoint boots with every PCA9685 channel fully off. It currently supports
+telemetry, CRSF link statistics, arm/disarm, a latched E-stop, the 400 ms armed
+watchdog, and bounded calibration bench jogs. Arming additionally requires the
+Boxer SA switch low; after arming, the normal Boxer controls remain primary.
+Calibration profile persistence, gait persistence, browser manual driving,
+Wi-Fi TCP, and Bluetooth SPP remain disabled and are advertised as unsupported
+until their independent robot-side enforcement is implemented.

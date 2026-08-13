@@ -24,6 +24,7 @@
         <span id="physics-status" class="simulation-only" data-state="offline">PHYSICS</span>
         <span id="real-drive-status" class="real-robot-only" data-state="offline">DRIVE LINK</span>
         <span id="real-engineering-status" class="real-robot-only" data-state="offline">ENGINEERING</span>
+        <button id="live-connection-open" class="live-connection-open real-robot-only" type="button" aria-haspopup="dialog">CONNECT</button>
         <span id="real-safety-status" class="real-robot-only" data-state="safe">DISARMED</span>
         <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false" title="Switch to dark theme">
           <span id="theme-icon" aria-hidden="true">&#9788;</span>
@@ -238,9 +239,9 @@
       <section class="live-safety-dock" aria-label="Live robot safety state">
         <div class="live-state-heading">
           <span>ROBOT STATE</span>
-          <strong>DISARMED</strong>
+          <strong id="live-robot-safety-state">DISCONNECTED</strong>
         </div>
-        <p>No physical link is configured. Commands are blocked and the CAD is a reference model only.</p>
+        <p id="live-robot-safety-copy">No physical link is configured. Commands are blocked and the CAD is a reference model only.</p>
         <button type="button" disabled>HOLD TO ARM</button>
         <button type="button" class="estop" disabled>E-STOP</button>
       </section>
@@ -561,6 +562,67 @@
         <p id="live-session-list-empty" class="live-session-list-empty">No completed sessions yet. Start a recording from Compare or Data.</p>
       </section>
     </main>
+
+    <dialog id="live-connection-dialog" class="live-connection-dialog" aria-labelledby="live-connection-title">
+      <div class="live-connection-workspace">
+        <header>
+          <div>
+            <span>LIVE / PHYSICAL LINK</span>
+            <h1 id="live-connection-title">Connect Domino</h1>
+            <p>Choose a companion adapter, verify the robot identity, then establish a read-only engineering session.</p>
+          </div>
+          <div class="live-connection-header-actions">
+            <span id="live-connection-phase" data-state="offline">DISCONNECTED</span>
+            <button id="live-connection-close" type="button" aria-label="Close robot connection manager">&times;</button>
+          </div>
+        </header>
+
+        <div class="live-connection-body">
+          <section class="live-connection-discovery" aria-label="Robot adapter discovery">
+            <div class="live-connection-section-heading"><div><span>01</span><strong>Find an adapter</strong></div><small>LOCAL COMPANION SERVICE</small></div>
+            <div class="live-transport-options" role="group" aria-label="Connection transport">
+              <button type="button" data-live-transport="auto" aria-pressed="true">AUTO</button>
+              <button type="button" data-live-transport="wifi" aria-pressed="false">WI-FI</button>
+              <button type="button" data-live-transport="bluetooth" aria-pressed="false">BLUETOOTH</button>
+              <button type="button" data-live-transport="usb" aria-pressed="false">USB</button>
+            </div>
+            <button id="live-connection-discover" class="live-connection-primary" type="button">SEARCH FOR ADAPTERS</button>
+            <div id="live-adapter-list" class="live-adapter-list" role="listbox" aria-label="Available robot adapters"></div>
+            <p id="live-adapter-empty" class="live-adapter-empty">No adapters found yet. Start the Domino Wi-Fi, Bluetooth, or USB companion adapter, then search again.</p>
+          </section>
+
+          <section class="live-connection-detail" aria-label="Selected robot adapter">
+            <div class="live-connection-section-heading"><div><span>02</span><strong>Verify the robot</strong></div><small id="live-adapter-transport">NO ADAPTER</small></div>
+            <div class="live-adapter-identity">
+              <div><span>ROBOT</span><strong id="live-adapter-robot-name">Not selected</strong></div>
+              <div><span>ROBOT ID</span><strong id="live-adapter-robot-id">--</strong></div>
+              <div><span>FIRMWARE</span><strong id="live-adapter-firmware">--</strong></div>
+              <div><span>SIGNAL</span><strong id="live-adapter-signal">--</strong></div>
+              <div><span>ENDPOINT</span><strong id="live-adapter-endpoint">--</strong></div>
+              <div><span>SESSION</span><strong id="live-adapter-session">--</strong></div>
+            </div>
+            <div class="live-adapter-capabilities" aria-label="Adapter capabilities">
+              <span data-live-capability="telemetry">TELEMETRY</span>
+              <span data-live-capability="calibration">CALIBRATION</span>
+              <span data-live-capability="gaitProfiles">GAIT PROFILES</span>
+              <span data-live-capability="persistentProfiles">PERSISTENT STORAGE</span>
+            </div>
+            <div class="live-connection-safety-note">
+              <strong>READ-ONLY HANDSHAKE</strong>
+              <p>Connecting never arms or moves the robot. Calibration, gait, and future motion controls remain locked until their independent safety checks pass.</p>
+            </div>
+          </section>
+        </div>
+
+        <footer>
+          <p id="live-connection-status" role="status">Choose a transport and search for a compatible Domino adapter.</p>
+          <div>
+            <button id="live-connection-disconnect" type="button" disabled>DISCONNECT</button>
+            <button id="live-connection-connect" class="live-connection-primary" type="button" disabled>CONNECT READ-ONLY</button>
+          </div>
+        </footer>
+      </div>
+    </dialog>
 
     <dialog id="firmware-deploy-dialog" class="firmware-deploy-dialog" aria-labelledby="firmware-deploy-title">
       <div class="firmware-workspace">

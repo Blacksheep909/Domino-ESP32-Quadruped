@@ -28,6 +28,12 @@ import {
   validLiveGaitAcknowledgement,
   validLiveGaitCommand,
 } from "./web/src/live-gait-protocol.js";
+import {
+  validLiveAdapterAnnouncement,
+  validLiveConnectionAcknowledgement,
+  validLiveConnectionCommand,
+  validSessionEnvelope,
+} from "./web/src/live-connection-protocol.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../..");
@@ -245,6 +251,7 @@ const sockets = new WebSocketServer({ server, path: "/control" });
 let activeControlSocket = null;
 let browserInput = { source: "none", name: "", axes: [], physics: null };
 let controlsSource = "safe";
+const liveAdapters = new Map();
 
 function broadcast(message) {
   const payload = JSON.stringify(message);
@@ -252,6 +259,68 @@ function broadcast(message) {
     if (socket.readyState === socket.OPEN) socket.send(payload);
   }
 }
+
+function sendSocket(socket, message) {
+  if (socket?.readyState === socket?.OPEN) socket.send(JSON.stringify(message));
+}
+
+function liveAdapterList() {
+  return [...liveAdapters.values()].map(({ announcement }) => announcement);
+}
+
+function liveAdapterForSession(message) {
+  if (!validSessionEnvelope(message)) return null;
+  const record = liveAdapters.get(message.adapterId);
+  if (!record || record.socket.liveSessionId !== message.sessionId) return null;
+  return record;
+}
+
+function rememberAdapterRequest(socket, message, kind) {
+  socket.livePendingRequests ??= new Map();
+  socket.livePendingRequests.set(message.requestId, {
+    action: message.action,
+    kind,
+    sessionId: message.sessionId || "",
+    sentAt: Date.now(),
+  });
+}
+
+function consumeAdapterRequest(socket, message, kind) {
+  const pending = socket?.livePendingRequests?.get(message.requestId);
+  if (
+    !pending ||
+    pending.kind !== kind ||
+    pending.action !== message.action ||
+    (pending.sessionId && pending.sessionId !== message.sessionId)
+  ) return false;
+  socket.livePendingRequests.delete(message.requestId);
+  return true;
+}
+
+function removeLiveAdapter(socket, reason = "offline") {
+  if (!socket?.liveAdapterId) return;
+  const record = liveAdapters.get(socket.liveAdapterId);
+  if (record?.socket !== socket) return;
+  liveAdapters.delete(socket.liveAdapterId);
+  broadcast({
+    type: "live-adapter-removed",
+    adapterId: socket.liveAdapterId,
+    reason,
+    timestampMs: Date.now(),
+  });
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const { socket, receivedAt } of liveAdapters.values()) {
+    if (now - receivedAt > 5_000) removeLiveAdapter(socket, "heartbeat-timeout");
+    if (socket.livePendingRequests) {
+      for (const [requestId, request] of socket.livePendingRequests) {
+        if (now - request.sentAt > 5_000) socket.livePendingRequests.delete(requestId);
+      }
+    }
+  }
+}, 1_000);
 
 function demoClientIsActive() {
   return hasActiveClient(sockets.clients, (socket) => socket.controlMode === "demo");
@@ -333,9 +402,11 @@ setInterval(() => {
 sockets.on("connection", (socket) => {
   releaseClientControl(socket);
   socket.send(JSON.stringify({ type: "ready", channels, input: radioInput }));
+  socket.send(JSON.stringify({ type: "live-adapter-list", adapters: liveAdapterList() }));
   socket.on("close", () => {
     releaseClientControl(socket);
     if (activeControlSocket === socket) activeControlSocket = null;
+    removeLiveAdapter(socket);
   });
   socket.on("message", (payload) => {
     try {
@@ -353,11 +424,70 @@ sockets.on("connection", (socket) => {
         }
         return;
       }
+      if (message.type === "live-adapter-announce") {
+        if (Buffer.byteLength(payload) > 8 * 1024 || !validLiveAdapterAnnouncement(message)) return;
+        const existing = liveAdapters.get(message.adapterId);
+        if (existing && existing.socket !== socket && Date.now() - existing.receivedAt <= 5_000) return;
+        if (socket.liveAdapterId && socket.liveAdapterId !== message.adapterId) {
+          removeLiveAdapter(socket, "identity-changed");
+        }
+        socket.liveAdapterId = message.adapterId;
+        const announcement = { ...message, serverReceivedAt: Date.now() };
+        liveAdapters.set(message.adapterId, { socket, announcement, receivedAt: Date.now() });
+        broadcast(announcement);
+        return;
+      }
+      if (message.type === "live-connection-command") {
+        if (Buffer.byteLength(payload) > 8 * 1024 || !validLiveConnectionCommand(message)) return;
+        if (message.action === "discover") {
+          for (const { socket: adapterSocket } of liveAdapters.values()) sendSocket(adapterSocket, message);
+          sendSocket(socket, {
+            type: "live-connection-ack",
+            action: "discover",
+            requestId: message.requestId,
+            accepted: true,
+          });
+          return;
+        }
+        const record = liveAdapters.get(message.adapterId);
+        if (!record || (message.action === "disconnect" && record.socket.liveSessionId !== message.sessionId)) {
+          sendSocket(socket, {
+            type: "live-connection-ack",
+            action: message.action,
+            requestId: message.requestId,
+            accepted: false,
+            adapterId: message.adapterId,
+            sessionId: message.sessionId,
+            reason: "The selected adapter or session is no longer available.",
+          });
+          return;
+        }
+        rememberAdapterRequest(record.socket, message, "connection");
+        sendSocket(record.socket, message);
+        return;
+      }
+      if (message.type === "live-connection-ack") {
+        if (
+          Buffer.byteLength(payload) > 8 * 1024 ||
+          !validLiveConnectionAcknowledgement(message) ||
+          !socket.liveAdapterId ||
+          (message.adapterId && message.adapterId !== socket.liveAdapterId) ||
+          !consumeAdapterRequest(socket, message, "connection")
+        ) return;
+        if (message.action === "connect" && message.accepted) socket.liveSessionId = message.sessionId;
+        if (
+          message.action === "disconnect" &&
+          message.accepted &&
+          message.sessionId === socket.liveSessionId
+        ) socket.liveSessionId = "";
+        broadcast(message);
+        return;
+      }
       if (message.type === "live-telemetry") {
-        // The server is bound to localhost. A future wireless robot adapter
-        // will validate and translate device packets, then publish this
-        // canonical expected/measured envelope to every open LIVE workspace.
-        if (Buffer.byteLength(payload) <= 64 * 1024) broadcast(message);
+        // Only a registered adapter may publish telemetry, and every packet is
+        // bound to the engineering session negotiated by the browser.
+        const record = liveAdapterForSession(message);
+        if (record?.socket === socket && Buffer.byteLength(payload) <= 64 * 1024) broadcast(message);
         return;
       }
       if (message.type === "live-calibration-command") {
@@ -365,18 +495,26 @@ sockets.on("connection", (socket) => {
         // browser-to-adapter contract. The robot adapter must refuse motion
         // until it has entered bench mode and must enforce the supplied speed
         // and jog limits independently of this browser.
+        const record = liveAdapterForSession(message);
         if (
           Buffer.byteLength(payload) <= 32 * 1024 &&
-          validCalibrationCommand(message)
-        ) broadcast(message);
+          validCalibrationCommand(message) &&
+          record
+        ) {
+          rememberAdapterRequest(record.socket, message, "calibration");
+          sendSocket(record.socket, message);
+        }
         return;
       }
       if (message.type === "live-calibration-ack") {
         // A future wired/Wi-Fi/Bluetooth adapter publishes this response after
         // robot-side bench-mode and persistence checks have actually passed.
+        const record = liveAdapterForSession(message);
         if (
           Buffer.byteLength(payload) <= 8 * 1024 &&
-          validCalibrationAcknowledgement(message)
+          validCalibrationAcknowledgement(message) &&
+          record?.socket === socket &&
+          consumeAdapterRequest(socket, message, "calibration")
         ) broadcast(message);
         return;
       }
@@ -384,13 +522,21 @@ sockets.on("connection", (socket) => {
         // The browser only publishes versioned profiles after local preview.
         // A robot adapter must independently require DISARMED state, validate
         // every parameter, store atomically, and acknowledge the applied hash.
-        if (Buffer.byteLength(payload) <= 16 * 1024 && validLiveGaitCommand(message)) {
-          broadcast(message);
+        const record = liveAdapterForSession(message);
+        if (Buffer.byteLength(payload) <= 16 * 1024 && validLiveGaitCommand(message) && record) {
+          rememberAdapterRequest(record.socket, message, "gait");
+          sendSocket(record.socket, message);
         }
         return;
       }
       if (message.type === "live-gait-ack") {
-        if (Buffer.byteLength(payload) <= 16 * 1024 && validLiveGaitAcknowledgement(message)) {
+        const record = liveAdapterForSession(message);
+        if (
+          Buffer.byteLength(payload) <= 16 * 1024 &&
+          validLiveGaitAcknowledgement(message) &&
+          record?.socket === socket &&
+          consumeAdapterRequest(socket, message, "gait")
+        ) {
           broadcast(message);
         }
         return;

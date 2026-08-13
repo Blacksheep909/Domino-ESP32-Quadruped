@@ -62,6 +62,23 @@ import {
   liveComparisonSnapshot,
 } from "./live-telemetry-state.js";
 import {
+  acceptLiveAdapterAnnouncement,
+  acceptLiveConnectionAcknowledgement,
+  createLiveConnectionCommand,
+  createLiveConnectionState,
+  failLiveConnectionRequest,
+  liveConnectionEnvelope,
+  liveConnectionIsReady,
+  markLiveConnectionPending,
+  pruneLiveAdapters,
+  removeLiveAdapter,
+  selectLiveAdapter,
+  setLiveConnectionBridge,
+  setLiveConnectionTransport,
+  telemetryBelongsToLiveConnection,
+  visibleLiveAdapters,
+} from "./live-connection-state.js";
+import {
   createLiveDiagnosticsState,
   liveDiagnosticBundle,
   liveDiagnosticsSnapshot,
@@ -109,6 +126,7 @@ initializeFirmwareWorkspace();
 const canvas = document.querySelector("#scene");
 const applicationState = createApplicationState();
 const liveTelemetryState = createLiveTelemetryState();
+const liveConnectionState = createLiveConnectionState();
 const liveDiagnosticsState = createLiveDiagnosticsState();
 const liveSessionState = createLiveSessionState();
 const liveSessionArchive = [];
@@ -136,6 +154,7 @@ const liveCalibrationState = createLiveCalibrationState(
 let calibrationPendingRequestId = "";
 let calibrationPendingAction = "";
 let calibrationRequestTimeout = null;
+let liveConnectionRequestTimeout = null;
 let liveDiagnosticFilter = "all";
 const realWorkspace = document.querySelector("#real-workspace");
 const workspaceButtons = {
@@ -255,6 +274,33 @@ document.querySelectorAll("[data-experience]").forEach((button) => {
       candidate.setAttribute("aria-pressed", String(active));
     });
   });
+});
+
+const liveConnectionDialog = document.querySelector("#live-connection-dialog");
+document.querySelector("#live-connection-open").addEventListener("click", () => {
+  renderLiveConnectionUi();
+  if (!liveConnectionDialog.open) liveConnectionDialog.showModal();
+});
+document.querySelector("#live-connection-close").addEventListener("click", () => liveConnectionDialog.close());
+document.querySelectorAll("[data-live-transport]").forEach((button) => {
+  button.addEventListener("click", () => {
+    if (!setLiveConnectionTransport(liveConnectionState, button.dataset.liveTransport)) return;
+    renderLiveConnectionUi();
+  });
+});
+document.querySelector("#live-connection-discover").addEventListener("click", () => {
+  sendLiveConnectionRequest("discover");
+});
+document.querySelector("#live-adapter-list").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-adapter-id]");
+  if (!button || !selectLiveAdapter(liveConnectionState, button.dataset.adapterId)) return;
+  renderLiveConnectionUi();
+});
+document.querySelector("#live-connection-connect").addEventListener("click", () => {
+  sendLiveConnectionRequest("connect");
+});
+document.querySelector("#live-connection-disconnect").addEventListener("click", () => {
+  sendLiveConnectionRequest("disconnect");
 });
 
 const demoSelection = new URLSearchParams(window.location.search).get("demo");
@@ -2039,6 +2085,10 @@ window.addEventListener("pointerdown", claimControl, { capture: true });
 window.addEventListener("keydown", claimControl, { capture: true });
 
 function ingestLiveTelemetry(packet, receivedAt = Date.now()) {
+  if (!telemetryBelongsToLiveConnection(liveConnectionState, packet, receivedAt)) {
+    observeLiveDiagnosticPacket(liveDiagnosticsState, packet, false, receivedAt);
+    return false;
+  }
   const accepted = acceptLiveTelemetryPacket(liveTelemetryState, packet, receivedAt);
   observeLiveDiagnosticPacket(liveDiagnosticsState, packet, accepted, receivedAt);
   if (accepted) {
@@ -2050,6 +2100,7 @@ function ingestLiveTelemetry(packet, receivedAt = Date.now()) {
       const robotState = packet.diagnostics.robotState.toLowerCase();
       gaitStateChanged ||= robotState !== liveGaitState.robotState;
       liveGaitState.robotState = robotState;
+      liveConnectionState.robotState = robotState;
     }
     if (typeof packet.capabilities?.persistentGaitProfiles === "boolean") {
       gaitStateChanged ||= packet.capabilities.persistentGaitProfiles !== liveGaitState.persistentApplySupported;
@@ -2064,11 +2115,14 @@ function connectControlBridge() {
   socket = new WebSocket(`${socketProtocol}://${location.host}/control`);
   socket.addEventListener("open", () => {
     markHeartbeatSocketOpen(bridgeHeartbeat);
+    setLiveConnectionBridge(liveConnectionState, true);
     document.querySelector("#firmware-status").dataset.state = "online";
     sendBridgeHeartbeat();
+    renderLiveConnectionUi();
   });
   socket.addEventListener("close", () => {
     markHeartbeatSocketClosed(bridgeHeartbeat);
+    setLiveConnectionBridge(liveConnectionState, false);
     bridgeInput = { connected: false, channels: null };
     liveCalibrationState.benchModeAcknowledged = false;
     calibrationPendingRequestId = "";
@@ -2081,6 +2135,7 @@ function connectControlBridge() {
     clearTimeout(liveGaitPendingTimeout);
     liveGaitPendingTimeout = null;
     document.querySelector("#firmware-status").dataset.state = "offline";
+    renderLiveConnectionUi();
     setTimeout(connectControlBridge, 800);
   });
   socket.addEventListener("message", (event) => {
@@ -2091,6 +2146,23 @@ function connectControlBridge() {
       }
       if (message.type === "heartbeat-ack") {
         acceptHeartbeatAcknowledgement(bridgeHeartbeat, message);
+      }
+      if (message.type === "live-adapter-list" && Array.isArray(message.adapters)) {
+        message.adapters.forEach((adapter) => acceptLiveAdapterAnnouncement(liveConnectionState, adapter));
+        renderLiveConnectionUi();
+      }
+      if (message.type === "live-adapter-announce") {
+        acceptLiveAdapterAnnouncement(liveConnectionState, message);
+        renderLiveConnectionUi();
+      }
+      if (message.type === "live-adapter-removed") {
+        removeLiveAdapter(liveConnectionState, message.adapterId, message.reason);
+        liveCalibrationState.benchModeAcknowledged = false;
+        liveGaitState.persistentApplySupported = false;
+        renderLiveConnectionUi();
+      }
+      if (message.type === "live-connection-ack") {
+        acceptLiveConnectionAck(message);
       }
       if (message.type === "live-telemetry") {
         ingestLiveTelemetry(message);
@@ -2120,6 +2192,111 @@ function formatPacketAge(age) {
   if (age === null) return "--";
   if (age < 1_000) return `${Math.round(age)} ms`;
   return `${(age / 1_000).toFixed(1)} s`;
+}
+
+function resetLiveCommandPermissions(reason) {
+  liveCalibrationState.benchModeAcknowledged = false;
+  liveGaitState.persistentApplySupported = false;
+  if (reason) liveGaitState.status = reason;
+}
+
+function renderLiveConnectionUi() {
+  const now = Date.now();
+  const connected = liveConnectionIsReady(liveConnectionState, now);
+  const adapters = visibleLiveAdapters(liveConnectionState, now);
+  const selected = liveConnectionState.adapters[liveConnectionState.selectedAdapterId] || null;
+  const phase = document.querySelector("#live-connection-phase");
+  phase.textContent = liveConnectionState.phase.toUpperCase();
+  phase.dataset.state = connected ? "connected" : liveConnectionState.phase;
+  document.querySelector("#live-connection-status").textContent = liveConnectionState.status;
+
+  document.querySelectorAll("[data-live-transport]").forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.dataset.liveTransport === liveConnectionState.transportFilter));
+    button.disabled = Boolean(liveConnectionState.sessionId || liveConnectionState.pendingRequestId);
+  });
+
+  const list = document.querySelector("#live-adapter-list");
+  list.replaceChildren();
+  adapters.forEach((adapter) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "live-adapter-card";
+    button.dataset.adapterId = adapter.adapterId;
+    button.setAttribute("role", "option");
+    button.setAttribute("aria-selected", String(adapter.adapterId === liveConnectionState.selectedAdapterId));
+    button.disabled = Boolean(liveConnectionState.sessionId || liveConnectionState.pendingRequestId);
+    const title = document.createElement("strong");
+    title.textContent = adapter.name;
+    const transport = document.createElement("span");
+    transport.textContent = adapter.transport.toUpperCase();
+    const detail = document.createElement("em");
+    detail.textContent = `${adapter.robot.name || "Domino"} / ${adapter.robot.id || "identity not reported"}`;
+    button.append(title, transport, detail);
+    list.append(button);
+  });
+  document.querySelector("#live-adapter-empty").hidden = adapters.length > 0;
+
+  document.querySelector("#live-adapter-transport").textContent = selected
+    ? `${selected.transport.toUpperCase()} / ${selected.state.toUpperCase()}`
+    : "NO ADAPTER";
+  document.querySelector("#live-adapter-robot-name").textContent = selected?.robot.name || "Not selected";
+  document.querySelector("#live-adapter-robot-id").textContent = selected?.robot.id || "--";
+  document.querySelector("#live-adapter-firmware").textContent = selected?.robot.firmwareVersion || "--";
+  document.querySelector("#live-adapter-signal").textContent = Number.isFinite(selected?.signalPercent)
+    ? `${Math.round(selected.signalPercent)}%`
+    : "--";
+  document.querySelector("#live-adapter-endpoint").textContent = selected?.endpoint || "--";
+  document.querySelector("#live-adapter-session").textContent = liveConnectionState.sessionId
+    ? liveConnectionState.sessionId.slice(0, 12)
+    : "--";
+  document.querySelectorAll("[data-live-capability]").forEach((badge) => {
+    badge.dataset.supported = String(selected?.capabilities?.[badge.dataset.liveCapability] === true);
+  });
+
+  document.querySelector("#live-connection-discover").disabled =
+    !liveConnectionState.bridgeConnected || Boolean(liveConnectionState.pendingRequestId || liveConnectionState.sessionId);
+  document.querySelector("#live-connection-connect").disabled =
+    !liveConnectionState.bridgeConnected || !selected || Boolean(liveConnectionState.pendingRequestId || liveConnectionState.sessionId);
+  document.querySelector("#live-connection-disconnect").disabled =
+    !connected || Boolean(liveConnectionState.pendingRequestId);
+
+  const openButton = document.querySelector("#live-connection-open");
+  openButton.textContent = connected ? "MANAGE" : "CONNECT";
+  openButton.dataset.state = connected ? "connected" : "offline";
+}
+
+function sendLiveConnectionRequest(action) {
+  if (socket?.readyState !== WebSocket.OPEN) return false;
+  const requestId = crypto.randomUUID();
+  const command = createLiveConnectionCommand(liveConnectionState, action, requestId);
+  if (!command) return false;
+  markLiveConnectionPending(liveConnectionState, command);
+  socket.send(JSON.stringify(command));
+  clearTimeout(liveConnectionRequestTimeout);
+  liveConnectionRequestTimeout = setTimeout(() => {
+    if (!failLiveConnectionRequest(
+      liveConnectionState,
+      requestId,
+      "The connection request timed out. Robot commands remain blocked.",
+    )) return;
+    resetLiveCommandPermissions("The engineering session is unavailable. Robot profile changes remain blocked.");
+    renderLiveConnectionUi();
+    updateLiveComparisonUi();
+  }, 4_000);
+  renderLiveConnectionUi();
+  return true;
+}
+
+function acceptLiveConnectionAck(message) {
+  if (!acceptLiveConnectionAcknowledgement(liveConnectionState, message)) return false;
+  clearTimeout(liveConnectionRequestTimeout);
+  liveConnectionRequestTimeout = null;
+  if (!liveConnectionIsReady(liveConnectionState)) {
+    resetLiveCommandPermissions("No engineering session is active. Robot profile changes remain blocked.");
+  }
+  renderLiveConnectionUi();
+  updateLiveComparisonUi();
+  return true;
 }
 
 function updateSimulationLinkHealth() {
@@ -2509,7 +2686,8 @@ function downloadCalibrationJson() {
 }
 
 function sendCalibrationCommand(action) {
-  if (socket?.readyState !== WebSocket.OPEN) return false;
+  const connection = liveConnectionEnvelope(liveConnectionState);
+  if (socket?.readyState !== WebSocket.OPEN || !connection || !liveConnectionIsReady(liveConnectionState)) return false;
   const requestId = crypto.randomUUID();
   const command = createCalibrationBenchCommand(
     liveCalibrationState,
@@ -2517,6 +2695,7 @@ function sendCalibrationCommand(action) {
     requestId,
   );
   if (!command) return false;
+  Object.assign(command, connection);
   calibrationPendingRequestId = requestId;
   calibrationPendingAction = action;
   socket.send(JSON.stringify(command));
@@ -2534,9 +2713,13 @@ function sendCalibrationCommand(action) {
 }
 
 function acceptCalibrationAcknowledgement(message) {
+  const connection = liveConnectionEnvelope(liveConnectionState);
   if (
     !message ||
     message.type !== "live-calibration-ack" ||
+    !connection ||
+    message.adapterId !== connection.adapterId ||
+    message.sessionId !== connection.sessionId ||
     message.requestId !== calibrationPendingRequestId ||
     message.action !== calibrationPendingAction
   ) return false;
@@ -2659,6 +2842,8 @@ function renderLiveGaitComparison() {
 }
 
 function renderLiveGaitUi() {
+  const adapter = liveConnectionState.adapters[liveConnectionState.selectedAdapterId];
+  const gaitLinkReady = liveConnectionIsReady(liveConnectionState) && adapter?.capabilities.gaitProfiles === true;
   liveGaitPreviewLab.setSettings(liveGaitState.draft.settings);
   document.querySelector("#live-gait-name").value = liveGaitState.draft.name;
   document.querySelector("#live-gait-profile-title").textContent = liveGaitState.draft.name.toUpperCase();
@@ -2681,31 +2866,40 @@ function renderLiveGaitUi() {
     button.setAttribute("aria-pressed", String(button.dataset.liveGaitPreset === liveGaitState.draft.settings.preset));
   });
   const link = document.querySelector("#live-gait-link-state");
-  link.textContent = liveGaitState.robotProfile
+  link.textContent = !gaitLinkReady
+    ? "GAIT LINK OFFLINE"
+    : liveGaitState.robotProfile
     ? liveGaitState.persistentApplySupported ? "ROBOT PROFILE READY" : "ROBOT PROFILE READ ONLY"
     : "ROBOT PROFILE UNKNOWN";
-  link.dataset.state = liveGaitState.robotProfile ? "online" : "offline";
+  link.dataset.state = gaitLinkReady && liveGaitState.robotProfile ? "online" : "offline";
   document.querySelector("#live-gait-apply-state").textContent = liveGaitState.pendingRequestId
     ? `WAITING / ${liveGaitState.pendingAction.toUpperCase()}`
     : liveGaitCanApply(liveGaitState) ? "DISARMED / READY TO APPLY" : "PREVIEW ONLY";
   document.querySelector("#live-gait-status").textContent = liveGaitState.status;
-  document.querySelector("#live-gait-apply").disabled = !liveGaitCanApply(liveGaitState);
-  document.querySelector("#live-gait-use-robot").disabled = !liveGaitState.robotProfile || Boolean(liveGaitState.pendingRequestId);
-  document.querySelector("#live-gait-revert").disabled = !liveGaitState.previousRobotProfile || !liveGaitCanApply(liveGaitState);
-  document.querySelector("#live-gait-request-profile").disabled = Boolean(liveGaitState.pendingRequestId);
+  document.querySelector("#live-gait-apply").disabled = !gaitLinkReady || !liveGaitCanApply(liveGaitState);
+  document.querySelector("#live-gait-use-robot").disabled = !gaitLinkReady || !liveGaitState.robotProfile || Boolean(liveGaitState.pendingRequestId);
+  document.querySelector("#live-gait-revert").disabled = !gaitLinkReady || !liveGaitState.previousRobotProfile || !liveGaitCanApply(liveGaitState);
+  document.querySelector("#live-gait-request-profile").disabled = !gaitLinkReady || Boolean(liveGaitState.pendingRequestId);
   syncLiveGaitLibrary(liveGaitState.selectedLibraryName);
   rebuildLiveGaitSettings();
   renderLiveGaitComparison();
 }
 
 function sendLiveGaitCommand(action, profileOverride = null) {
-  if (socket?.readyState !== WebSocket.OPEN || liveGaitState.pendingRequestId) return false;
+  const connection = liveConnectionEnvelope(liveConnectionState);
+  if (
+    socket?.readyState !== WebSocket.OPEN ||
+    !connection ||
+    !liveConnectionIsReady(liveConnectionState) ||
+    liveGaitState.pendingRequestId
+  ) return false;
   const requestId = crypto.randomUUID();
   const originalDraft = liveGaitState.draft;
   if (profileOverride) liveGaitState.draft = profileOverride;
   const command = createLiveGaitCommand(liveGaitState, action, requestId);
   liveGaitState.draft = originalDraft;
   if (!command) return false;
+  Object.assign(command, connection);
   liveGaitState.pendingRequestId = requestId;
   liveGaitState.pendingAction = action;
   liveGaitState.status = "Waiting for the robot adapter acknowledgement...";
@@ -2723,9 +2917,13 @@ function sendLiveGaitCommand(action, profileOverride = null) {
 }
 
 function acceptLiveGaitAcknowledgement(message) {
+  const connection = liveConnectionEnvelope(liveConnectionState);
   if (
     !message ||
     message.type !== "live-gait-ack" ||
+    !connection ||
+    message.adapterId !== connection.adapterId ||
+    message.sessionId !== connection.sessionId ||
     message.requestId !== liveGaitState.pendingRequestId ||
     message.action !== liveGaitState.pendingAction
   ) return false;
@@ -2906,8 +3104,15 @@ function updateLiveSessionUi(snapshot) {
 }
 
 function updateLiveComparisonUi() {
+  if (pruneLiveAdapters(liveConnectionState)) {
+    resetLiveCommandPermissions("The adapter heartbeat was lost. Robot profile changes remain blocked.");
+    renderLiveConnectionUi();
+  }
   const snapshot = liveComparisonSnapshot(liveTelemetryState);
-  const engineeringConnected = snapshot.lastRobotPacketAgeMs !== null &&
+  const sessionConnected = liveConnectionIsReady(liveConnectionState);
+  const connectionAdapter = liveConnectionState.adapters[liveConnectionState.selectedAdapterId];
+  const calibrationSupported = sessionConnected && connectionAdapter?.capabilities.calibration === true;
+  const engineeringConnected = sessionConnected && snapshot.lastRobotPacketAgeMs !== null &&
     snapshot.lastRobotPacketAgeMs <= 1_000;
   const engineeringOutput = document.querySelector("#live-engineering-link");
   engineeringOutput.textContent = engineeringConnected ? "CONNECTED" : "OFFLINE";
@@ -2923,10 +3128,11 @@ function updateLiveComparisonUi() {
       : "ROBOT NOT READY";
   calibrationLinkOutput.dataset.state = liveCalibrationState.benchModeAcknowledged ? "online" : "offline";
   document.querySelector("#live-calibration-apply-robot").disabled =
-    !engineeringConnected || !liveCalibrationState.benchModeAcknowledged || Boolean(calibrationPendingRequestId);
+    !engineeringConnected || !calibrationSupported || !liveCalibrationState.benchModeAcknowledged || Boolean(calibrationPendingRequestId);
   const benchRequest = document.querySelector("#live-calibration-request-bench");
   benchRequest.disabled =
     !engineeringConnected ||
+    !calibrationSupported ||
     !liveCalibrationState.safetyConfirmed ||
     liveCalibrationState.benchModeAcknowledged ||
     Boolean(calibrationPendingRequestId);
@@ -2954,6 +3160,34 @@ function updateLiveComparisonUi() {
   const engineeringBadge = document.querySelector("#real-engineering-status");
   engineeringBadge.dataset.state = engineeringConnected ? "online" : "offline";
   engineeringBadge.textContent = engineeringConnected ? "ENGINEERING" : "ENGINEERING";
+  engineeringBadge.title = !sessionConnected
+    ? "No engineering session"
+    : engineeringConnected
+      ? `Session ${liveConnectionState.sessionId.slice(0, 12)} / telemetry ${formatPacketAge(snapshot.lastRobotPacketAgeMs)} old`
+      : "Engineering session connected but telemetry is stale";
+
+  const driveConnected = engineeringConnected && liveDiagnosticsState.telemetry?.driveLinkAlive === true;
+  const driveOutput = document.querySelector("#live-drive-link");
+  driveOutput.textContent = driveConnected ? "CONNECTED" : "OFFLINE";
+  driveOutput.dataset.state = driveConnected ? "connected" : "disconnected";
+  const driveBadge = document.querySelector("#real-drive-status");
+  driveBadge.dataset.state = driveConnected ? "online" : "offline";
+  driveBadge.title = driveConnected
+    ? "Robot reports a fresh Boxer / ELRS drive link"
+    : "Robot has not reported a fresh Boxer / ELRS drive link";
+
+  const robotState = sessionConnected ? liveConnectionState.robotState : "disconnected";
+  document.querySelector("#live-robot-safety-state").textContent = robotState.toUpperCase();
+  document.querySelector("#live-robot-safety-copy").textContent = !sessionConnected
+    ? "No physical engineering session is active. Commands are blocked and the CAD is a reference model only."
+    : robotState === "disarmed"
+      ? "The robot reports disarmed. Telemetry is available; motion remains blocked until separately armed."
+      : robotState === "armed"
+        ? "The robot reports armed. Motion controls remain unavailable until the safety workflow is implemented."
+        : `The robot reports ${robotState}. Physical commands remain blocked.`;
+  const safetyBadge = document.querySelector("#real-safety-status");
+  safetyBadge.textContent = robotState.toUpperCase();
+  safetyBadge.dataset.state = robotState === "disarmed" || robotState === "disconnected" ? "safe" : "offline";
 
   setLiveStreamState("#live-expected-state", snapshot.expectedFresh);
   setLiveStreamState("#live-measured-state", snapshot.measuredFresh);

@@ -28,6 +28,15 @@ packet order and freshness, computes the 12 driven-joint errors, and renders a
 translucent measured CAD overlay only while physical data is fresh. Power is
 carried in the same envelope but remains an independent freshness-gated signal.
 
+`CONNECT` opens the physical-link manager. Companion adapters announce a stable
+identity, Wi-Fi/Bluetooth/USB transport, robot identity, firmware, signal, and
+capabilities. The browser then requests a read-only handshake and receives a
+short-lived engineering session. All telemetry and hardware command envelopes
+must carry the selected `adapterId` and `sessionId`; the relay rejects stale or
+duplicate adapter identities, mismatched sessions, and unsolicited command
+acknowledgements. Losing the adapter heartbeat immediately locks calibration and
+gait operations without claiming that the physical robot is still connected.
+
 The LIVE comparison scope can record synchronized samples in memory, graph body
 pitch, roll, yaw, or height, survive a link interruption without filling the gap
 with stale values, and export a stopped session as CSV. Exports include capture
@@ -73,6 +82,8 @@ keyboard fallback as proof that a Boxer is connected.
 ![Real Robot workspace](../../docs/images/virtual-lab-real-robot-workspace.png)
 
 ![LIVE gait profile transfer](../../docs/images/virtual-lab-live-gaits.png)
+
+![LIVE physical connection manager](../../docs/images/virtual-lab-live-connection-manager.png)
 
 ## Firmware deployment workspace
 

@@ -47,7 +47,19 @@ computes shortest-path angular errors, and rejects malformed, out-of-order, or
 stale packets. Fresh measured telemetry drives a separate translucent CAD model
 over the expected pose; the overlay disappears if the stream is more than one
 second old. The local WebSocket relay is ready for the future wireless robot
-adapter, while the hardware-specific transport remains to be implemented.
+adapter. A transport-neutral connection manager now discovers companion
+adapters, shows robot identity, firmware, signal, endpoint, and capabilities,
+then negotiates an explicit read-only engineering session. The Wi-Fi,
+Bluetooth, and USB companion implementations remain hardware-side work.
+
+![LIVE physical connection manager using a synthetic local adapter](images/virtual-lab-live-connection-manager.png)
+
+Every accepted adapter must maintain a heartbeat. Telemetry, calibration, and
+gait traffic is bound to the selected adapter and negotiated session; stale
+adapters, mismatched session packets, duplicate adapter identities, and
+unsolicited acknowledgements are rejected. Connecting never arms or moves the
+robot, and losing either the local bridge or adapter heartbeat immediately
+relocks hardware commands.
 
 ![LIVE synchronized recording using local relay verification data](images/virtual-lab-live-recording.png)
 
@@ -130,6 +142,10 @@ The physical implementation will keep two independent wireless paths:
 - Boxer/ExpressLRS/CRSF for driving, essential telemetry, and an operator stop;
 - ESP32 Wi-Fi for high-rate engineering telemetry, calibration, profiles,
   logs, graphs, and diagnostics.
+
+The manager also reserves Bluetooth and USB adapter types for setup, recovery,
+or bench use. These transports publish the same canonical session-bound
+envelopes, so the browser tools do not need transport-specific safety logic.
 
 ## Run locally
 

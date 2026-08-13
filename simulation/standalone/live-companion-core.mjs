@@ -420,7 +420,7 @@ export class LiveCompanionCore {
       } else if (message.kind === "calibration") {
         if (accepted && message.action === "enter") this.benchMode = true;
         if (message.action === "exit") this.benchMode = false;
-        relay.push(this.calibrationAck(pending.message, accepted, reason, message.profile));
+        relay.push(this.calibrationAck(pending.message, accepted, reason, message.profile, message));
       } else if (message.kind === "gait") {
         relay.push(this.gaitAck(pending.message, accepted, reason, message.profile));
       }
@@ -489,8 +489,17 @@ export class LiveCompanionCore {
     };
   }
 
-  calibrationAck(message, accepted, reason = "", profile = undefined) {
-    return { type: "live-calibration-ack", action: message.action, requestId: message.requestId, accepted, adapterId: this.adapterId, sessionId: this.sessionId, ...(reason ? { reason } : {}), ...(profile ? { profile } : {}) };
+  calibrationAck(message, accepted, reason = "", profile = undefined, physical = undefined) {
+    return {
+      type: "live-calibration-ack", action: message.action, requestId: message.requestId, accepted,
+      adapterId: this.adapterId, sessionId: this.sessionId,
+      ...(reason ? { reason } : {}), ...(profile ? { profile } : {}),
+      ...(typeof physical?.benchMode === "boolean" ? { benchMode: physical.benchMode } : {}),
+      ...(typeof physical?.supportsSafeJog === "boolean" ? { supportsSafeJog: physical.supportsSafeJog } : {}),
+      ...(Number(physical?.maxSpeedDegPerSec) > 0 && Number(physical?.maxSpeedDegPerSec) <= 5
+        ? { maxSpeedDegPerSec: Number(physical.maxSpeedDegPerSec) } : {}),
+      ...(typeof physical?.persisted === "boolean" ? { persisted: physical.persisted } : {}),
+    };
   }
 
   gaitAck(message, accepted, reason = "", profile = undefined) {

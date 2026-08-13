@@ -1,6 +1,7 @@
 #include "live_robot_endpoint.h"
 
 #include <ArduinoJson.h>
+#include <Preferences.h>
 #include <math.h>
 
 #include "crsf.h"
@@ -15,6 +16,8 @@ constexpr uint32_t kWatchdogMs = 400;
 constexpr uint32_t kLinkStatsFreshMs = 1000;
 constexpr float kCalibrationMaxSpeedDegPerSec = 5.0f;
 constexpr float kCalibrationJogLimitDeg = 10.0f;
+constexpr uint32_t kCalibrationMagic = 0x4443414c;  // DCAL
+constexpr char kCalibrationNamespace[] = "domino-cal";
 
 LiveRobotState state = LiveRobotState::Disarmed;
 LiveRobotPoseSnapshot expectedPose{};
@@ -26,10 +29,107 @@ bool haveHeartbeatSequence = false;
 bool benchMode = false;
 String inputLine;
 bool calibrationJogActive = false;
+bool calibrationChannelActive = false;
 uint8_t calibrationChannel = 0;
 float calibrationTargetDeg = 135.0f;
 float calibrationCurrentDeg = 135.0f;
 uint32_t calibrationUpdatedMs = 0;
+
+struct StoredCalibrationProfile {
+  uint32_t magic;
+  ServoCalibrationProfile profile;
+  uint32_t checksum;
+};
+
+uint32_t checksumBytes(const uint8_t *bytes, size_t length) {
+  uint32_t hash = 2166136261u;
+  for (size_t index = 0; index < length; ++index) {
+    hash ^= bytes[index];
+    hash *= 16777619u;
+  }
+  return hash;
+}
+
+StoredCalibrationProfile storedProfileFor(const ServoCalibrationProfile &profile) {
+  StoredCalibrationProfile stored{};
+  stored.magic = kCalibrationMagic;
+  stored.profile = profile;
+  stored.checksum = checksumBytes(
+      reinterpret_cast<const uint8_t *>(&stored.profile), sizeof(stored.profile));
+  return stored;
+}
+
+bool storedProfileValid(const StoredCalibrationProfile &stored) {
+  return stored.magic == kCalibrationMagic &&
+         stored.checksum == checksumBytes(
+             reinterpret_cast<const uint8_t *>(&stored.profile), sizeof(stored.profile)) &&
+         validateServoCalibrationProfile(stored.profile);
+}
+
+bool loadCalibrationProfile() {
+  Preferences preferences;
+  if (!preferences.begin(kCalibrationNamespace, true)) return false;
+  StoredCalibrationProfile stored{};
+  const size_t length = preferences.getBytesLength("active");
+  const size_t read = length == sizeof(stored)
+      ? preferences.getBytes("active", &stored, sizeof(stored)) : 0;
+  preferences.end();
+  return read == sizeof(stored) && storedProfileValid(stored) &&
+         setServoCalibrationProfile(stored.profile);
+}
+
+bool persistCalibrationProfile(const ServoCalibrationProfile &profile) {
+  if (!validateServoCalibrationProfile(profile)) return false;
+  const StoredCalibrationProfile candidate = storedProfileFor(profile);
+  Preferences preferences;
+  if (!preferences.begin(kCalibrationNamespace, false)) return false;
+  bool success = preferences.putBytes("candidate", &candidate, sizeof(candidate)) == sizeof(candidate);
+  StoredCalibrationProfile verified{};
+  success = success && preferences.getBytes("candidate", &verified, sizeof(verified)) == sizeof(verified) &&
+            storedProfileValid(verified);
+  success = success && preferences.putBytes("active", &verified, sizeof(verified)) == sizeof(verified);
+  if (success) preferences.remove("candidate");
+  preferences.end();
+  return success && setServoCalibrationProfile(profile);
+}
+
+bool parseCalibrationProfile(JsonObjectConst source, ServoCalibrationProfile *profile) {
+  if (!profile || source.isNull() || (source["schemaVersion"] | 0) != DOMINO_CALIBRATION_SCHEMA_VERSION ||
+      strcmp(source["robot"] | "", "domino-esp32-quadruped")) return false;
+  JsonArrayConst joints = source["joints"].as<JsonArrayConst>();
+  if (joints.size() != DOMINO_DRIVEN_JOINT_COUNT) return false;
+  ServoCalibrationProfile candidate{};
+  candidate.schemaVersion = DOMINO_CALIBRATION_SCHEMA_VERSION;
+  candidate.savedAt = source["savedAt"] | static_cast<uint64_t>(0);
+  uint8_t index = 0;
+  for (JsonObjectConst joint : joints) {
+    candidate.joints[index++] = {
+        static_cast<uint8_t>(joint["channel"] | 255),
+        joint["offsetDeg"] | NAN,
+        static_cast<int8_t>(joint["direction"] | 0),
+        joint["minimumDeg"] | NAN,
+        joint["maximumDeg"] | NAN,
+    };
+  }
+  if (!validateServoCalibrationProfile(candidate)) return false;
+  *profile = candidate;
+  return true;
+}
+
+void addCalibrationProfile(JsonObject target, const ServoCalibrationProfile &profile) {
+  target["schemaVersion"] = profile.schemaVersion;
+  target["robot"] = "domino-esp32-quadruped";
+  target["savedAt"] = profile.savedAt;
+  JsonArray joints = target["joints"].to<JsonArray>();
+  for (const ServoCalibrationJoint &joint : profile.joints) {
+    JsonObject item = joints.add<JsonObject>();
+    item["channel"] = joint.channel;
+    item["offsetDeg"] = joint.offsetDeg;
+    item["direction"] = joint.direction;
+    item["minimumDeg"] = joint.minimumDeg;
+    item["maximumDeg"] = joint.maximumDeg;
+  }
+}
 
 const char* stateName() {
   switch (state) {
@@ -150,9 +250,30 @@ void acknowledge(const char *kind, const char *action, const char *requestId,
   writeDocument(document);
 }
 
+void acknowledgeCalibration(const char *action, const char *requestId, bool accepted,
+                            const char *reason = nullptr, bool persisted = false,
+                            bool includeProfile = false) {
+  JsonDocument document;
+  document["protocol"] = kProtocol;
+  document["type"] = "robot-ack";
+  document["kind"] = "calibration";
+  document["action"] = action;
+  document["requestId"] = requestId;
+  document["accepted"] = accepted;
+  document["robotState"] = stateName();
+  document["benchMode"] = benchMode;
+  document["supportsSafeJog"] = true;
+  document["maxSpeedDegPerSec"] = kCalibrationMaxSpeedDegPerSec;
+  document["persisted"] = persisted;
+  if (reason) document["reason"] = reason;
+  if (includeProfile) addCalibrationProfile(document["profile"].to<JsonObject>(), servoCalibrationProfile());
+  writeDocument(document);
+}
+
 void disableOutputs(Adafruit_PWMServoDriver &driver, LiveRobotState nextState) {
   benchMode = false;
   calibrationJogActive = false;
+  calibrationChannelActive = false;
   setServoOutputsEnabled(driver, false);
   state = nextState;
 }
@@ -219,42 +340,57 @@ void handleCalibration(JsonObjectConst command, JsonObjectConst payload,
   const char *action = command["action"] | "";
   const char *requestId = command["requestId"] | "";
   if (state != LiveRobotState::Disarmed) {
-    acknowledge("calibration", action, requestId, false, "Calibration requires disarmed state.");
+    acknowledgeCalibration(action, requestId, false, "Calibration requires disarmed state.");
     return;
   }
   if (!strcmp(action, "enter")) {
     benchMode = true;
     setServoOutputsEnabled(driver, true);
-    acknowledge("calibration", action, requestId, true);
+    acknowledgeCalibration(action, requestId, true);
     return;
   }
   if (!strcmp(action, "exit")) {
     disableOutputs(driver, LiveRobotState::Disarmed);
-    acknowledge("calibration", action, requestId, true);
+    acknowledgeCalibration(action, requestId, true);
     return;
   }
   if (!benchMode) {
-    acknowledge("calibration", action, requestId, false, "Bench mode has not been acknowledged.");
+    acknowledgeCalibration(action, requestId, false, "Bench mode has not been acknowledged.");
     return;
   }
   if (!strcmp(action, "jog")) {
     const int channel = payload["selectedChannel"] | -1;
     const float jog = payload["jogOffsetDeg"] | 99.0f;
     const float target = payload["targetServoDeg"] | NAN;
-    if (channel < 0 || channel >= 16 || fabsf(jog) > kCalibrationJogLimitDeg || !isfinite(target)) {
-      acknowledge("calibration", action, requestId, false, "Jog exceeds channel or +/-10 degree safety bounds.");
+    const bool drivenChannel = channel >= 0 && channel < 16 &&
+        findServoCalibrationJoint(servoCalibrationProfile(), static_cast<uint8_t>(channel)) != nullptr;
+    const bool targetBounded = drivenChannel && isfinite(target) &&
+        fabsf(target - servoCalibrationNeutralDeg(static_cast<uint8_t>(channel))) <= 40.0f;
+    if (!drivenChannel || fabsf(jog) > kCalibrationJogLimitDeg || !targetBounded) {
+      acknowledgeCalibration(action, requestId, false, "Jog exceeds channel or +/-10 degree safety bounds.");
       return;
     }
+    if (calibrationChannelActive && calibrationChannel != static_cast<uint8_t>(channel)) {
+      disableServoOutputChannel(driver, calibrationChannel);
+    }
     calibrationChannel = static_cast<uint8_t>(channel);
+    calibrationChannelActive = true;
     calibrationCurrentDeg = commandedServoAnglesDeg()[calibrationChannel];
     calibrationTargetDeg = target;
     calibrationUpdatedMs = now;
     calibrationJogActive = true;
-    acknowledge("calibration", action, requestId, true);
+    acknowledgeCalibration(action, requestId, true);
   } else if (!strcmp(action, "save-profile")) {
-    acknowledge("calibration", action, requestId, false, "Persistent calibration is not supported by this firmware yet.");
+    ServoCalibrationProfile profile{};
+    if (!parseCalibrationProfile(payload["profile"].as<JsonObjectConst>(), &profile)) {
+      acknowledgeCalibration(action, requestId, false, "Profile must contain exactly 12 unique, bounded Domino joints.");
+    } else if (!persistCalibrationProfile(profile)) {
+      acknowledgeCalibration(action, requestId, false, "NVS verification failed; previous calibration remains active.");
+    } else {
+      acknowledgeCalibration(action, requestId, true, nullptr, true, true);
+    }
   } else {
-    acknowledge("calibration", action, requestId, false, "Unsupported calibration action.");
+    acknowledgeCalibration(action, requestId, false, "Unsupported calibration action.");
   }
 }
 
@@ -302,6 +438,7 @@ void updateCalibrationJog(Adafruit_PWMServoDriver &driver, uint32_t now) {
 
 void liveRobotEndpointBegin(Adafruit_PWMServoDriver &driver) {
   setServoOutputsEnabled(driver, false);
+  if (!loadCalibrationProfile()) setServoCalibrationProfile(defaultServoCalibrationProfile());
   inputLine.reserve(1024);
   sendHello();
 }

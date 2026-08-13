@@ -201,8 +201,19 @@ run the companion with `-Transport usb -Device COMx`.
 
 The endpoint boots with every PCA9685 channel fully off. It currently supports
 telemetry, CRSF link statistics, arm/disarm, a latched E-stop, the 400 ms armed
-watchdog, and bounded calibration bench jogs. Arming additionally requires the
-Boxer SA switch low; after arming, the normal Boxer controls remain primary.
-Calibration profile persistence, gait persistence, browser manual driving,
-Wi-Fi TCP, and Bluetooth SPP remain disabled and are advertised as unsupported
-until their independent robot-side enforcement is implemented.
+watchdog, bounded calibration bench jogs, and persistent calibration profiles.
+Arming additionally requires the Boxer SA switch low; after arming, the normal
+Boxer controls remain primary.
+
+Calibration saves must contain exactly the 12 driven channels with unique IDs,
+bounded offsets, directions and logical limits. Firmware writes a candidate NVS
+blob, reads it back, validates its checksum and full contents, and only then
+replaces the active profile. At boot, a missing or corrupt active blob falls
+back to the compiled safe defaults. Runtime commands are converted back to a
+neutral-relative logical joint angle, clamped to the saved joint limits, then
+mapped through the saved direction and offset before the existing hard servo
+envelope is applied.
+
+Gait persistence, browser manual driving, Wi-Fi TCP, and Bluetooth SPP remain
+disabled and are advertised as unsupported until their independent robot-side
+enforcement is implemented.

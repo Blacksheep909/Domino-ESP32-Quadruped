@@ -46,13 +46,22 @@ import {
   liveComparisonSnapshot,
 } from "./live-telemetry-state.js";
 import {
+  archiveLiveSession,
   createLiveSessionState,
   liveSessionCsv,
   liveSessionSummary,
   recordLiveComparisonSample,
+  removeArchivedLiveSession,
   startLiveSession,
   stopLiveSession,
 } from "./live-session-state.js";
+import {
+  createLiveViewState,
+  LIVE_VIEW_COMPARE,
+  LIVE_VIEW_DATA,
+  LIVE_VIEW_SESSIONS,
+  selectLiveView,
+} from "./live-view-state.js";
 import "./styles.css";
 
 initializeFirmwareWorkspace();
@@ -61,6 +70,8 @@ const canvas = document.querySelector("#scene");
 const applicationState = createApplicationState();
 const liveTelemetryState = createLiveTelemetryState();
 const liveSessionState = createLiveSessionState();
+const liveSessionArchive = [];
+const liveViewState = createLiveViewState();
 const realWorkspace = document.querySelector("#real-workspace");
 const workspaceButtons = {
   [WORKSPACE_SIMULATION]: document.querySelector("#workspace-simulation"),
@@ -86,6 +97,7 @@ function applyWorkspace(workspace) {
   });
 
   if (workspace === WORKSPACE_REAL_ROBOT) {
+    applyLiveView(liveViewState.selected);
     footTrajectoryGroup.visible = false;
     inspectionGrid.visible = false;
     if (bodyReferenceOverlay) bodyReferenceOverlay.group.visible = false;
@@ -105,8 +117,28 @@ function applyWorkspace(workspace) {
   requestAnimationFrame(resize);
 }
 
+function applyLiveView(view) {
+  if (!selectLiveView(liveViewState, view)) return false;
+  realWorkspace.dataset.view = liveViewState.selected;
+  document.querySelectorAll("[data-live-view]").forEach((button) => {
+    const active = button.dataset.liveView === liveViewState.selected;
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
+  });
+  document.querySelector("#live-view-compare").hidden = liveViewState.selected !== LIVE_VIEW_COMPARE;
+  document.querySelector("#live-view-data").hidden = liveViewState.selected !== LIVE_VIEW_DATA;
+  document.querySelector("#live-view-sessions").hidden = liveViewState.selected !== LIVE_VIEW_SESSIONS;
+  if (liveViewState.selected === LIVE_VIEW_DATA) requestAnimationFrame(renderLiveComparisonChart);
+  if (liveViewState.selected === LIVE_VIEW_SESSIONS) renderLiveSessionArchive();
+  return true;
+}
+
 Object.entries(workspaceButtons).forEach(([workspace, button]) => {
   button.addEventListener("click", () => applyWorkspace(workspace));
+});
+
+document.querySelectorAll("[data-live-view]").forEach((button) => {
+  button.addEventListener("click", () => applyLiveView(button.dataset.liveView));
 });
 
 document.querySelectorAll("[data-experience]").forEach((button) => {
@@ -1992,8 +2024,9 @@ function setLiveStreamState(selector, connected) {
 }
 
 const liveChartCanvas = document.querySelector("#live-comparison-chart");
-const liveChartContext = liveChartCanvas.getContext("2d");
 const liveChartSignal = document.querySelector("#live-chart-signal");
+const liveDataChartCanvas = document.querySelector("#live-data-chart");
+const liveDataChartSignal = document.querySelector("#live-data-chart-signal");
 const liveChartDefinitions = {
   pitchDeg: { title: "Body pitch / degrees", field: "pitchDeg" },
   rollDeg: { title: "Body roll / degrees", field: "rollDeg" },
@@ -2022,28 +2055,29 @@ function drawLiveSeries(context, points, color, width, height, xAt, yAt) {
   context.stroke();
 }
 
-function renderLiveComparisonChart() {
+function renderLiveChart(canvas, signal, emptySelector) {
   if (applicationState.workspace !== WORKSPACE_REAL_ROBOT) return;
-  const bounds = liveChartCanvas.getBoundingClientRect();
+  const bounds = canvas.getBoundingClientRect();
   if (bounds.width < 10 || bounds.height < 10) return;
+  const context = canvas.getContext("2d");
   const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
   const width = Math.round(bounds.width);
   const height = Math.round(bounds.height);
   const renderWidth = Math.round(width * pixelRatio);
   const renderHeight = Math.round(height * pixelRatio);
-  if (liveChartCanvas.width !== renderWidth || liveChartCanvas.height !== renderHeight) {
-    liveChartCanvas.width = renderWidth;
-    liveChartCanvas.height = renderHeight;
+  if (canvas.width !== renderWidth || canvas.height !== renderHeight) {
+    canvas.width = renderWidth;
+    canvas.height = renderHeight;
   }
-  liveChartContext.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-  liveChartContext.clearRect(0, 0, width, height);
+  context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+  context.clearRect(0, 0, width, height);
 
   const samples = liveSessionState.samples.slice(-300);
-  const emptyState = document.querySelector("#live-chart-empty");
+  const emptyState = document.querySelector(emptySelector);
   emptyState.hidden = samples.length > 1;
   if (samples.length < 2) return;
 
-  const definition = liveChartDefinitions[liveChartSignal.value] || liveChartDefinitions.pitchDeg;
+  const definition = liveChartDefinitions[signal.value] || liveChartDefinitions.pitchDeg;
   const expected = samples.map((sample) => ({ sample, value: sample.expectedBody[definition.field] }));
   const measured = samples.map((sample) => ({ sample, value: sample.measuredBody[definition.field] }));
   const error = samples.map((sample) => ({ sample, value: sample.bodyError[definition.field] }));
@@ -2064,25 +2098,131 @@ function renderLiveComparisonChart() {
   const yAt = (value) => plot.bottom - ((value - minimum) / (maximum - minimum)) * (plot.bottom - plot.top);
   const dark = document.documentElement.dataset.theme === "dark";
 
-  liveChartContext.strokeStyle = dark ? "rgba(255,255,255,.08)" : "rgba(40,45,40,.1)";
-  liveChartContext.lineWidth = 1;
+  context.strokeStyle = dark ? "rgba(255,255,255,.08)" : "rgba(40,45,40,.1)";
+  context.lineWidth = 1;
   for (let index = 0; index <= 4; index += 1) {
     const y = plot.top + ((plot.bottom - plot.top) * index) / 4;
-    liveChartContext.beginPath();
-    liveChartContext.moveTo(plot.left, y);
-    liveChartContext.lineTo(plot.right, y);
-    liveChartContext.stroke();
+    context.beginPath();
+    context.moveTo(plot.left, y);
+    context.lineTo(plot.right, y);
+    context.stroke();
   }
   if (minimum <= 0 && maximum >= 0) {
-    liveChartContext.strokeStyle = dark ? "rgba(255,255,255,.2)" : "rgba(40,45,40,.22)";
-    liveChartContext.beginPath();
-    liveChartContext.moveTo(plot.left, yAt(0));
-    liveChartContext.lineTo(plot.right, yAt(0));
-    liveChartContext.stroke();
+    context.strokeStyle = dark ? "rgba(255,255,255,.2)" : "rgba(40,45,40,.22)";
+    context.beginPath();
+    context.moveTo(plot.left, yAt(0));
+    context.lineTo(plot.right, yAt(0));
+    context.stroke();
   }
-  drawLiveSeries(liveChartContext, expected, dark ? "#f0f0f2" : "#343733", width, height, xAt, yAt);
-  drawLiveSeries(liveChartContext, measured, "#63c383", width, height, xAt, yAt);
-  drawLiveSeries(liveChartContext, error, "#e16d5a", width, height, xAt, yAt);
+  drawLiveSeries(context, expected, dark ? "#f0f0f2" : "#343733", width, height, xAt, yAt);
+  drawLiveSeries(context, measured, "#63c383", width, height, xAt, yAt);
+  drawLiveSeries(context, error, "#e16d5a", width, height, xAt, yAt);
+}
+
+function renderLiveComparisonChart() {
+  renderLiveChart(liveChartCanvas, liveChartSignal, "#live-chart-empty");
+  renderLiveChart(liveDataChartCanvas, liveDataChartSignal, "#live-data-chart-empty");
+}
+
+function downloadLiveSessionCsv(session, name = "domino-live-session") {
+  if (!session?.samples?.length) return;
+  const blob = new Blob([liveSessionCsv(session)], { type: "text/csv;charset=utf-8" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `${name}-${new Date().toISOString().replace(/[:.]/g, "-")}.csv`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 0);
+}
+
+function archivedSessionMetrics(session) {
+  const durationMs = session.startedAt && session.stoppedAt
+    ? Math.max(0, session.stoppedAt - session.startedAt)
+    : 0;
+  const errors = session.samples.map((sample) => sample.worstJointErrorDeg).filter(Number.isFinite);
+  const power = session.samples.map((sample) => sample.power?.powerW).filter(Number.isFinite);
+  return {
+    durationMs,
+    peakErrorDeg: errors.length ? Math.max(...errors) : null,
+    averagePowerW: power.length ? power.reduce((total, value) => total + value, 0) / power.length : null,
+  };
+}
+
+function createSessionMetric(label, value) {
+  const metric = document.createElement("div");
+  const caption = document.createElement("span");
+  const output = document.createElement("strong");
+  caption.textContent = label;
+  output.textContent = value;
+  metric.append(caption, output);
+  return metric;
+}
+
+function renderLiveSessionArchive() {
+  const summary = liveSessionSummary(liveSessionState);
+  document.querySelector("#live-sessions-current-state").textContent = summary.status.toUpperCase();
+  document.querySelector("#live-sessions-current-samples").textContent = summary.sampleCount.toLocaleString();
+  document.querySelector("#live-sessions-current-duration").textContent = formatSessionDuration(summary.durationMs);
+  document.querySelector("#live-session-archive-count").textContent = `${liveSessionArchive.length} SAVED`;
+  const list = document.querySelector("#live-session-list");
+  list.replaceChildren();
+  document.querySelector("#live-session-list-empty").hidden = liveSessionArchive.length > 0;
+
+  liveSessionArchive.forEach((session) => {
+    const metrics = archivedSessionMetrics(session);
+    const entry = document.createElement("article");
+    entry.className = "live-session-entry";
+    entry.append(
+      createSessionMetric("RECORDED", new Date(session.startedAt).toLocaleString()),
+      createSessionMetric("DURATION", formatSessionDuration(metrics.durationMs)),
+      createSessionMetric("SAMPLES", session.samples.length.toLocaleString()),
+      createSessionMetric(
+        "PEAK / AVG POWER",
+        `${formatLiveAngle(metrics.peakErrorDeg, "--°")} / ${Number.isFinite(metrics.averagePowerW) ? `${metrics.averagePowerW.toFixed(1)} W` : "-- W"}`,
+      ),
+    );
+    const exportButton = document.createElement("button");
+    exportButton.type = "button";
+    exportButton.textContent = "EXPORT CSV";
+    exportButton.addEventListener("click", () => downloadLiveSessionCsv(session, "domino-live-archive"));
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "delete-session";
+    deleteButton.textContent = "DELETE";
+    deleteButton.addEventListener("click", () => {
+      removeArchivedLiveSession(liveSessionArchive, session.id);
+      renderLiveSessionArchive();
+    });
+    entry.append(exportButton, deleteButton);
+    list.append(entry);
+  });
+}
+
+function renderLiveDataTable() {
+  const body = document.querySelector("#live-data-table-body");
+  const samples = liveSessionState.samples.slice(-20).reverse();
+  body.replaceChildren();
+  if (samples.length === 0) {
+    const row = body.insertRow();
+    const cell = row.insertCell();
+    cell.colSpan = 7;
+    cell.textContent = "No recorded samples.";
+    return;
+  }
+  samples.forEach((sample) => {
+    const row = body.insertRow();
+    [
+      `${(sample.elapsedMs / 1_000).toFixed(2)} s`,
+      `${Math.round(sample.alignmentMs)} ms`,
+      formatLiveAngle(sample.expectedBody.pitchDeg),
+      formatLiveAngle(sample.measuredBody.pitchDeg),
+      formatLiveAngle(sample.bodyError.pitchDeg),
+      Number.isFinite(sample.power?.voltageV) ? `${sample.power.voltageV.toFixed(2)} V` : "--",
+      Number.isFinite(sample.power?.powerW) ? `${sample.power.powerW.toFixed(1)} W` : "--",
+    ].forEach((value) => {
+      const cell = row.insertCell();
+      cell.textContent = value;
+    });
+  });
 }
 
 function updateLiveSessionUi(snapshot) {
@@ -2091,15 +2231,20 @@ function updateLiveSessionUi(snapshot) {
   }
   const summary = liveSessionSummary(liveSessionState);
   const recording = summary.status === "recording";
-  const recordingButton = document.querySelector("#live-recording-toggle");
-  recordingButton.disabled = !recording && !snapshot.paired;
-  recordingButton.textContent = recording
+  const recordingLabel = recording
     ? "STOP RECORDING"
     : summary.sampleCount > 0
       ? "NEW RECORDING"
       : "START RECORDING";
-  recordingButton.dataset.state = recording ? "recording" : "idle";
-  document.querySelector("#live-export-csv").disabled = recording || summary.sampleCount === 0;
+  ["#live-recording-toggle", "#live-data-recording-toggle"].forEach((selector) => {
+    const recordingButton = document.querySelector(selector);
+    recordingButton.disabled = !recording && !snapshot.paired;
+    recordingButton.textContent = recordingLabel;
+    recordingButton.dataset.state = recording ? "recording" : "idle";
+  });
+  ["#live-export-csv", "#live-data-export-csv"].forEach((selector) => {
+    document.querySelector(selector).disabled = recording || summary.sampleCount === 0;
+  });
   document.querySelector("#live-session-state").textContent = recording
     ? snapshot.paired
       ? `RECORDING / ${summary.sampleCount} / ${formatSessionDuration(summary.durationMs)}`
@@ -2109,11 +2254,28 @@ function updateLiveSessionUi(snapshot) {
       : snapshot.paired
         ? "READY TO RECORD"
         : "NO ACTIVE SESSION";
+  document.querySelector("#live-data-recorder-state").textContent = recording
+    ? snapshot.paired
+      ? `RECORDING / ${formatSessionDuration(summary.durationMs)}`
+      : "RECORDING / WAITING FOR SIGNAL"
+    : summary.sampleCount > 0
+      ? `STOPPED / ${formatSessionDuration(summary.durationMs)}`
+      : snapshot.paired
+        ? "READY TO RECORD"
+        : "WAITING FOR BOTH STREAMS";
+  document.querySelector("#live-data-sample-count").textContent = `${summary.sampleCount.toLocaleString()} SAMPLES`;
   document.querySelector("#live-chart-empty").textContent = recording && !snapshot.paired
     ? "Telemetry interrupted. Recording will resume when both streams return."
     : summary.sampleCount > 0
       ? "Waiting for another synchronized sample."
       : "Connect the engineering link, then start recording.";
+  document.querySelector("#live-data-chart-empty").textContent = recording && !snapshot.paired
+    ? "Telemetry interrupted. Recording will resume automatically."
+    : summary.sampleCount > 0
+      ? "Waiting for another synchronized sample."
+      : "Start recording to populate this graph.";
+  renderLiveDataTable();
+  renderLiveSessionArchive();
   renderLiveComparisonChart();
 }
 
@@ -2124,6 +2286,12 @@ function updateLiveComparisonUi() {
   const engineeringOutput = document.querySelector("#live-engineering-link");
   engineeringOutput.textContent = engineeringConnected ? "CONNECTED" : "OFFLINE";
   engineeringOutput.dataset.state = engineeringConnected ? "connected" : "disconnected";
+  const dataLinkOutput = document.querySelector("#live-data-link-state");
+  dataLinkOutput.textContent = engineeringConnected ? "ENGINEERING CONNECTED" : "ENGINEERING OFFLINE";
+  dataLinkOutput.dataset.state = engineeringConnected ? "online" : "offline";
+  document.querySelector("#live-data-current-time").textContent = engineeringConnected
+    ? `PACKET ${formatPacketAge(snapshot.lastRobotPacketAgeMs)} AGO`
+    : "NO TELEMETRY";
   document.querySelector("#live-packet-age").textContent = formatPacketAge(
     snapshot.lastRobotPacketAgeMs,
   );
@@ -2136,7 +2304,13 @@ function updateLiveComparisonUi() {
   document.querySelector("#live-time-alignment").textContent = snapshot.alignmentMs === null
     ? "-- ms"
     : `${snapshot.alignmentMs >= 0 ? "+" : ""}${Math.round(snapshot.alignmentMs)} ms`;
+  document.querySelector("#live-data-alignment").textContent = snapshot.alignmentMs === null
+    ? "-- ms"
+    : `${snapshot.alignmentMs >= 0 ? "+" : ""}${Math.round(snapshot.alignmentMs)} ms`;
   document.querySelector("#live-worst-joint-error").textContent =
+    formatLiveAngle(snapshot.worstJointErrorDeg, "--°");
+
+  document.querySelector("#live-data-joint-error").textContent =
     formatLiveAngle(snapshot.worstJointErrorDeg, "--°");
 
   document.querySelectorAll("[data-live-body]").forEach((output) => {
@@ -2170,21 +2344,34 @@ function updateLiveComparisonUi() {
   document.querySelector("#live-voltage").textContent = snapshot.power
     ? `${snapshot.power.voltageV.toFixed(2)} V`
     : "--.- V";
+  document.querySelector("#live-data-voltage").textContent = snapshot.power
+    ? `${snapshot.power.voltageV.toFixed(2)} V`
+    : "--.- V";
   document.querySelector("#live-current").textContent = snapshot.power
     ? `${snapshot.power.currentA.toFixed(2)} A`
     : "--.- A";
   document.querySelector("#live-power").textContent = snapshot.power
     ? `${snapshot.power.powerW.toFixed(1)} W`
     : "--- W";
+  document.querySelector("#live-data-power").textContent = snapshot.power
+    ? `${snapshot.power.powerW.toFixed(1)} W`
+    : "--- W";
   updateLiveSessionUi(snapshot);
 }
 
-document.querySelector("#live-recording-toggle").addEventListener("click", () => {
+function toggleLiveRecording() {
   const snapshot = liveComparisonSnapshot(liveTelemetryState);
-  if (liveSessionState.status === "recording") stopLiveSession(liveSessionState);
-  else if (snapshot.paired) startLiveSession(liveSessionState);
+  if (liveSessionState.status === "recording") {
+    stopLiveSession(liveSessionState);
+    archiveLiveSession(liveSessionArchive, liveSessionState, `live-${liveSessionState.stoppedAt}`);
+  } else if (snapshot.paired) {
+    startLiveSession(liveSessionState);
+  }
   updateLiveComparisonUi();
-});
+}
+
+document.querySelector("#live-recording-toggle").addEventListener("click", toggleLiveRecording);
+document.querySelector("#live-data-recording-toggle").addEventListener("click", toggleLiveRecording);
 
 liveChartSignal.addEventListener("change", () => {
   const definition = liveChartDefinitions[liveChartSignal.value] || liveChartDefinitions.pitchDeg;
@@ -2192,14 +2379,20 @@ liveChartSignal.addEventListener("change", () => {
   renderLiveComparisonChart();
 });
 
+liveDataChartSignal.addEventListener("change", () => {
+  const definition = liveChartDefinitions[liveDataChartSignal.value] || liveChartDefinitions.pitchDeg;
+  document.querySelector("#live-data-chart-title").textContent = definition.title;
+  renderLiveComparisonChart();
+});
+
 document.querySelector("#live-export-csv").addEventListener("click", () => {
-  if (liveSessionState.samples.length === 0) return;
-  const blob = new Blob([liveSessionCsv(liveSessionState)], { type: "text/csv;charset=utf-8" });
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(blob);
-  link.download = `domino-live-session-${new Date().toISOString().replace(/[:.]/g, "-")}.csv`;
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(link.href), 0);
+  downloadLiveSessionCsv(liveSessionState);
+});
+document.querySelector("#live-data-export-csv").addEventListener("click", () => {
+  downloadLiveSessionCsv(liveSessionState);
+});
+document.querySelector("#live-sessions-open-data").addEventListener("click", () => {
+  applyLiveView(LIVE_VIEW_DATA);
 });
 
 window.addEventListener("resize", renderLiveComparisonChart);

@@ -58,7 +58,7 @@ values. Stopped sessions export analysis-ready CSV containing timestamps, time
 alignment, body pose, power, and all 12 driven-joint errors. The screenshot
 above uses local relay verification data, not a connected physical robot.
 
-The Live navigation now has four working views. Compare keeps the digital twin,
+The Live navigation now has six working views. Compare keeps the digital twin,
 pose deltas, power readings, and compact scope together. Data provides a larger
 signal graph, recorder controls, live engineering metrics, and a newest-first
 table of synchronized samples. Sessions keeps completed recordings for the
@@ -79,8 +79,22 @@ Physical movement and robot persistence are deliberately locked until a robot
 adapter acknowledges bench mode, safe jogging at no more than 5 degrees per
 second, and persistent profile storage. The localhost relay validates this
 command/acknowledgement contract; the ESP32 adapter that enforces it remains a
-hardware-side task. The LIVE Gaits tab remains disabled until its safe preview,
-apply, and profile-transfer workflow is implemented.
+hardware-side task.
+
+Gaits is now a separate LIVE profile-transfer workspace. It shares the same
+versioned profile library and JSON format as the Simulation gait lab, but edits
+remain a local draft until explicitly applied. A moving 3D kinematic preview,
+reachability result, parameter-by-parameter robot comparison, and bounded risk
+warnings make the differences visible before hardware is involved.
+
+![LIVE gait profile transfer using local relay verification data](images/virtual-lab-live-gaits.png)
+
+The apply path requires the adapter to advertise persistent-profile support and
+report the robot disarmed. The relay validates a two-stage apply contract, the
+adapter must acknowledge validation and persistent storage, and the previous
+robot profile remains available for explicit rollback. The screenshot uses a
+synthetic local adapter; implementing this acknowledgement and persistence on
+the physical ESP32 transport remains a hardware-side task.
 
 Diagnostics traces eight stages from the engineering packet through expected and
 measured poses, ESP32 acknowledgement, gait target, IK, limit checking, and all

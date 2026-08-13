@@ -224,7 +224,7 @@
           <button type="button" role="tab" data-live-view="compare" aria-selected="true" aria-controls="live-view-compare">COMPARE</button>
           <button type="button" role="tab" data-live-view="data" aria-selected="false" aria-controls="live-view-data">DATA</button>
           <button type="button" role="tab" data-live-view="calibration" aria-selected="false" aria-controls="live-view-calibration">CALIBRATION</button>
-          <button type="button" role="tab" aria-selected="false" disabled>GAITS</button>
+          <button type="button" role="tab" data-live-view="gaits" aria-selected="false" aria-controls="live-view-gaits">GAITS</button>
           <button type="button" role="tab" data-live-view="diagnostics" aria-selected="false" aria-controls="live-view-diagnostics">DIAGNOSTICS</button>
           <button type="button" role="tab" data-live-view="sessions" aria-selected="false" aria-controls="live-view-sessions">SESSIONS</button>
         </div>
@@ -453,6 +453,59 @@
               <div><span id="live-calibration-progress-label">STEP 1 / 5</span><i><b id="live-calibration-progress"></b></i></div>
               <button id="live-calibration-next" type="button" disabled>NEXT: SELECT JOINT</button>
             </footer>
+          </div>
+        </div>
+      </section>
+
+      <section id="live-view-gaits" class="live-view-page live-gaits-page" aria-labelledby="live-gaits-title" hidden>
+        <header class="live-page-heading">
+          <div><span>LIVE / GAITS</span><h1 id="live-gaits-title">Gait profile transfer</h1><p>Review Simulation profiles in the 3D preview, compare them with the robot, then apply through an explicit disarmed handshake.</p></div>
+          <div class="live-page-status"><span id="live-gait-link-state" data-state="offline">ROBOT PROFILE UNKNOWN</span><strong id="live-gait-draft-state">LOCAL DRAFT</strong></div>
+        </header>
+        <div class="live-gait-preview-caption"><span>3D GAIT PREVIEW</span><strong id="live-gait-preview-health">4 / 4 REACHABLE</strong><small>Local kinematics only / never drives hardware</small></div>
+        <div class="live-gaits-layout">
+          <div class="live-gaits-editor">
+            <section class="live-gait-card live-gait-library-card">
+              <header><div><span>PROFILE LIBRARY</span><strong>SHARED WITH SIMULATION</strong></div></header>
+              <div class="live-gait-library-controls">
+                <select id="live-gait-library" aria-label="Shared gait profiles"><option value="">SELECT A SAVED PROFILE</option></select>
+                <button id="live-gait-load" type="button" disabled>OPEN</button>
+                <input id="live-gait-name" type="text" maxlength="32" value="Balanced" aria-label="Gait profile name">
+                <button id="live-gait-save" type="button">SAVE COPY</button>
+                <button id="live-gait-import" type="button">IMPORT JSON</button>
+                <button id="live-gait-export" type="button">EXPORT JSON</button>
+                <input id="live-gait-import-file" type="file" accept="application/json,.json" hidden>
+              </div>
+            </section>
+
+            <section class="live-gait-card live-gait-preview-controls">
+              <header><div><span>SAFE LOCAL PREVIEW</span><strong id="live-gait-preview-mode-label">TROT / 65% FORWARD</strong></div><label><input id="live-gait-preview-enabled" type="checkbox" checked> ENABLED</label></header>
+              <div class="live-gait-preview-row">
+                <div role="group" aria-label="Preview gait mode"><button type="button" data-live-gait-mode="careful" aria-pressed="false">CAREFUL</button><button type="button" data-live-gait-mode="trot" aria-pressed="true">TROT</button></div>
+                <label>FORWARD <input id="live-gait-preview-forward" type="range" min="-1" max="1" step="0.05" value="0.65"><output id="live-gait-preview-forward-value">+0.65</output></label>
+                <label>TURN <input id="live-gait-preview-turn" type="range" min="-1" max="1" step="0.05" value="0"><output id="live-gait-preview-turn-value">0.00</output></label>
+                <div><span>EST. SPEED</span><strong id="live-gait-preview-speed">0 mm/s</strong></div>
+                <div><span>SUPPORT</span><strong id="live-gait-preview-support">4 / 4</strong></div>
+              </div>
+            </section>
+
+            <section class="live-gait-card live-gait-settings-card">
+              <header><div><span>PROFILE PARAMETERS</span><strong id="live-gait-profile-title">BALANCED</strong></div><div class="live-gait-presets" role="group" aria-label="Known gait presets"><button type="button" data-live-gait-preset="stable">STABLE</button><button type="button" data-live-gait-preset="balanced" aria-pressed="true">BALANCED</button><button type="button" data-live-gait-preset="fast">FAST</button></div></header>
+              <div id="live-gait-settings" class="live-gait-settings"></div>
+            </section>
+
+            <section class="live-gait-card live-gait-compare-card">
+              <header><div><span>DRAFT VS ROBOT</span><strong id="live-gait-compare-summary">ROBOT PROFILE NOT REPORTED</strong></div><button id="live-gait-request-profile" type="button">REQUEST ROBOT PROFILE</button></header>
+              <div class="live-gait-compare-table-wrap"><table><thead><tr><th>PARAMETER</th><th>LOCAL DRAFT</th><th>ROBOT</th><th>DELTA</th></tr></thead><tbody id="live-gait-compare-body"></tbody></table></div>
+              <div id="live-gait-risk" class="live-gait-risk"></div>
+            </section>
+
+            <section class="live-gait-card live-gait-apply-card">
+              <div><span>TWO-STAGE APPLY</span><strong id="live-gait-apply-state">PREVIEW ONLY</strong><p id="live-gait-status">A compatible robot adapter must report a disarmed state and persistent gait-profile support.</p></div>
+              <button id="live-gait-use-robot" type="button" disabled>LOAD ROBOT INTO DRAFT</button>
+              <button id="live-gait-revert" type="button" disabled>REVERT ROBOT</button>
+              <button id="live-gait-apply" type="button" disabled>APPLY DRAFT TO ROBOT</button>
+            </section>
           </div>
         </div>
       </section>

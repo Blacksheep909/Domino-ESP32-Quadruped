@@ -18,6 +18,22 @@ import {
   gaitLabPresets,
   sanitizeGaitLabSettings,
 } from "./gait-lab.js";
+import {
+  acceptRobotGaitProfile,
+  createLiveGaitCommand,
+  createLiveGaitProfile,
+  createLiveGaitState,
+  liveGaitCanApply,
+  liveGaitDiff,
+  liveGaitProfileJson,
+  liveGaitRiskAssessment,
+  LIVE_GAIT_LIBRARY_KEY,
+  parseLiveGaitProfileJson,
+  readLiveGaitLibrary,
+  replaceLiveGaitDraft,
+  selectLiveGaitPreset,
+  updateLiveGaitDraft,
+} from "./live-gait-state.js";
 import { contactSurfaceError, createDominoPhysics } from "./physics.js";
 import { environmentBallSpecs, logSpecs, terrainSpecs } from "./course-config.js";
 import { createVoronoiTerrain } from "./voronoi-terrain.js";
@@ -82,6 +98,7 @@ import {
   LIVE_VIEW_COMPARE,
   LIVE_VIEW_DATA,
   LIVE_VIEW_DIAGNOSTICS,
+  LIVE_VIEW_GAITS,
   LIVE_VIEW_SESSIONS,
   selectLiveView,
 } from "./live-view-state.js";
@@ -96,6 +113,16 @@ const liveDiagnosticsState = createLiveDiagnosticsState();
 const liveSessionState = createLiveSessionState();
 const liveSessionArchive = [];
 const liveViewState = createLiveViewState();
+const liveGaitState = createLiveGaitState(createLiveGaitProfile(defaultGaitLabSettings, "Balanced"));
+const liveGaitPreviewLab = createGaitLab(liveGaitState.draft.settings);
+let liveGaitLibrary = {};
+try {
+  liveGaitLibrary = readLiveGaitLibrary(JSON.parse(localStorage.getItem(LIVE_GAIT_LIBRARY_KEY) || "{}"));
+} catch {
+  liveGaitLibrary = {};
+}
+let liveGaitPendingTimeout = null;
+let liveGaitPreviewOutput = null;
 let storedCalibrationProfile = null;
 try {
   const storedCalibrationJson = localStorage.getItem(LIVE_CALIBRATION_STORAGE_KEY);
@@ -158,6 +185,8 @@ function applyWorkspace(workspace) {
 function applyLiveView(view) {
   const leavingCalibration = liveViewState.selected === LIVE_VIEW_CALIBRATION && view !== LIVE_VIEW_CALIBRATION;
   const enteringCalibration = liveViewState.selected !== LIVE_VIEW_CALIBRATION && view === LIVE_VIEW_CALIBRATION;
+  const leavingGaits = liveViewState.selected === LIVE_VIEW_GAITS && view !== LIVE_VIEW_GAITS;
+  const enteringGaits = liveViewState.selected !== LIVE_VIEW_GAITS && view === LIVE_VIEW_GAITS;
   if (!selectLiveView(liveViewState, view)) return false;
   if (leavingCalibration) {
     if (liveCalibrationState.benchModeAcknowledged) sendCalibrationCommand("exit");
@@ -165,6 +194,12 @@ function applyLiveView(view) {
     liveCalibrationState.jogOffsetDeg = 0;
     liveExpectedServoAngles = [...standServoReference];
     if (linkageRuntimesReady()) applyServoAnglesToRuntimes(linkageRuntimes, liveExpectedServoAngles);
+    resetCameraView();
+  }
+  if (leavingGaits) {
+    liveGaitPreviewLab.reset();
+    liveGaitPreviewOutput = null;
+    liveExpectedServoAngles = [...standServoReference];
     resetCameraView();
   }
   realWorkspace.dataset.view = liveViewState.selected;
@@ -177,17 +212,22 @@ function applyLiveView(view) {
   document.querySelector("#live-view-compare").hidden = liveViewState.selected !== LIVE_VIEW_COMPARE;
   document.querySelector("#live-view-data").hidden = liveViewState.selected !== LIVE_VIEW_DATA;
   document.querySelector("#live-view-calibration").hidden = liveViewState.selected !== LIVE_VIEW_CALIBRATION;
+  document.querySelector("#live-view-gaits").hidden = liveViewState.selected !== LIVE_VIEW_GAITS;
   document.querySelector("#live-view-diagnostics").hidden = liveViewState.selected !== LIVE_VIEW_DIAGNOSTICS;
   document.querySelector("#live-view-sessions").hidden = liveViewState.selected !== LIVE_VIEW_SESSIONS;
   if (liveViewState.selected === LIVE_VIEW_DATA) requestAnimationFrame(renderLiveComparisonChart);
   if (liveViewState.selected === LIVE_VIEW_CALIBRATION) renderLiveCalibrationUi();
+  if (liveViewState.selected === LIVE_VIEW_GAITS) renderLiveGaitUi();
   if (liveViewState.selected === LIVE_VIEW_DIAGNOSTICS) updateLiveComparisonUi();
   if (liveViewState.selected === LIVE_VIEW_SESSIONS) renderLiveSessionArchive();
   requestAnimationFrame(() => {
     resize();
-    if (enteringCalibration) {
+    if (enteringCalibration || enteringGaits) {
       resetCameraView();
-      perspectiveCamera.position.copy(robotCameraAnchor).addScaledVector(defaultCameraOffset, 0.58);
+      perspectiveCamera.position.copy(robotCameraAnchor).addScaledVector(
+        defaultCameraOffset,
+        enteringCalibration ? 0.58 : 0.72,
+      );
       perspectiveCamera.lookAt(controls.target);
       controls.update();
     }
@@ -1140,7 +1180,10 @@ function loadGaitProfiles() {
       .filter(([name, settings]) =>
         typeof name === "string" && name.trim() && settings && typeof settings === "object")
       .slice(0, 40)
-      .map(([name, settings]) => [name.trim().slice(0, 32), sanitizeGaitLabSettings(settings)]),
+      .map(([name, settings]) => [
+        name.trim().slice(0, 32),
+        sanitizeGaitLabSettings(settings.schemaVersion === 1 && settings.settings ? settings.settings : settings),
+      ]),
   );
 }
 
@@ -1998,6 +2041,22 @@ window.addEventListener("keydown", claimControl, { capture: true });
 function ingestLiveTelemetry(packet, receivedAt = Date.now()) {
   const accepted = acceptLiveTelemetryPacket(liveTelemetryState, packet, receivedAt);
   observeLiveDiagnosticPacket(liveDiagnosticsState, packet, accepted, receivedAt);
+  if (accepted) {
+    let gaitStateChanged = false;
+    if (packet.gaitProfile) {
+      gaitStateChanged = acceptRobotGaitProfile(liveGaitState, packet.gaitProfile);
+    }
+    if (typeof packet.diagnostics?.robotState === "string") {
+      const robotState = packet.diagnostics.robotState.toLowerCase();
+      gaitStateChanged ||= robotState !== liveGaitState.robotState;
+      liveGaitState.robotState = robotState;
+    }
+    if (typeof packet.capabilities?.persistentGaitProfiles === "boolean") {
+      gaitStateChanged ||= packet.capabilities.persistentGaitProfiles !== liveGaitState.persistentApplySupported;
+      liveGaitState.persistentApplySupported = packet.capabilities.persistentGaitProfiles;
+    }
+    if (gaitStateChanged && liveViewState.selected === LIVE_VIEW_GAITS) renderLiveGaitUi();
+  }
   return accepted;
 }
 
@@ -2016,6 +2075,11 @@ function connectControlBridge() {
     calibrationPendingAction = "";
     clearTimeout(calibrationRequestTimeout);
     calibrationRequestTimeout = null;
+    liveGaitState.pendingRequestId = "";
+    liveGaitState.pendingAction = "";
+    liveGaitState.persistentApplySupported = false;
+    clearTimeout(liveGaitPendingTimeout);
+    liveGaitPendingTimeout = null;
     document.querySelector("#firmware-status").dataset.state = "offline";
     setTimeout(connectControlBridge, 800);
   });
@@ -2033,6 +2097,9 @@ function connectControlBridge() {
       }
       if (message.type === "live-calibration-ack") {
         acceptCalibrationAcknowledgement(message);
+      }
+      if (message.type === "live-gait-ack") {
+        acceptLiveGaitAcknowledgement(message);
       }
     } catch {
       // Ignore malformed local bridge packets.
@@ -2507,6 +2574,184 @@ function formatDiagnosticUptime(value) {
   ].map((part) => String(part).padStart(2, "0")).join(":");
 }
 
+function formatLiveGaitValue(entry, value) {
+  if (!Number.isFinite(value)) return "--";
+  const suffix = entry.unit ? ` ${entry.unit}` : "";
+  return `${(value * (entry.scale || 1)).toFixed(entry.decimals)}${suffix}`;
+}
+
+function persistLiveGaitLibrary(selectedName = "") {
+  gaitProfiles = Object.fromEntries(Object.entries(liveGaitLibrary).map(([name, profile]) => [
+    name,
+    sanitizeGaitLabSettings(profile.settings),
+  ]));
+  persistGaitProfiles();
+  syncGaitProfileUi(selectedName);
+}
+
+function syncLiveGaitLibrary(selectedName = "") {
+  const select = document.querySelector("#live-gait-library");
+  const selection = selectedName || select.value;
+  select.replaceChildren(new Option("SELECT A SAVED PROFILE", ""));
+  Object.keys(liveGaitLibrary).sort((a, b) => a.localeCompare(b)).forEach((name) => {
+    const source = liveGaitLibrary[name].source === "simulation" ? "SIM" : "LIVE";
+    select.add(new Option(`${name} / ${source}`, name));
+  });
+  select.value = Object.hasOwn(liveGaitLibrary, selection) ? selection : "";
+  document.querySelector("#live-gait-load").disabled = !select.value;
+}
+
+function rebuildLiveGaitSettings() {
+  const container = document.querySelector("#live-gait-settings");
+  container.replaceChildren();
+  gaitLabControls.forEach((control) => {
+    const label = document.createElement("label");
+    label.dataset.gaitKey = control.key;
+    const heading = document.createElement("span");
+    const name = document.createElement("strong");
+    const output = document.createElement("output");
+    name.textContent = control.label.toUpperCase();
+    output.textContent = formatGaitSetting(control, liveGaitState.draft.settings[control.key]);
+    heading.append(name, output);
+    const input = document.createElement("input");
+    input.type = "range";
+    input.min = control.min;
+    input.max = control.max;
+    input.step = control.step;
+    input.value = liveGaitState.draft.settings[control.key];
+    input.setAttribute("aria-label", control.label);
+    const description = document.createElement("small");
+    description.textContent = control.description;
+    label.append(heading, input, description);
+    container.append(label);
+  });
+}
+
+function renderLiveGaitComparison() {
+  const difference = liveGaitDiff(liveGaitState);
+  const body = document.querySelector("#live-gait-compare-body");
+  body.replaceChildren();
+  difference.forEach((entry) => {
+    const row = body.insertRow();
+    row.dataset.changed = String(entry.changed === true);
+    [
+      entry.label.toUpperCase(),
+      formatLiveGaitValue(entry, entry.draft),
+      formatLiveGaitValue(entry, entry.robot),
+      entry.delta === null ? "--" : formatLiveGaitValue(entry, entry.delta),
+    ].forEach((value) => {
+      const cell = row.insertCell();
+      cell.textContent = value;
+    });
+  });
+  const changes = difference.filter((entry) => entry.changed).length;
+  document.querySelector("#live-gait-compare-summary").textContent = liveGaitState.robotProfile
+    ? `${changes} PARAMETER${changes === 1 ? "" : "S"} DIFFER`
+    : "ROBOT PROFILE NOT REPORTED";
+  const risk = document.querySelector("#live-gait-risk");
+  risk.replaceChildren();
+  liveGaitRiskAssessment(liveGaitState.draft).forEach((finding) => {
+    const row = document.createElement("p");
+    row.dataset.severity = finding.severity;
+    row.textContent = finding.message;
+    risk.append(row);
+  });
+}
+
+function renderLiveGaitUi() {
+  liveGaitPreviewLab.setSettings(liveGaitState.draft.settings);
+  document.querySelector("#live-gait-name").value = liveGaitState.draft.name;
+  document.querySelector("#live-gait-profile-title").textContent = liveGaitState.draft.name.toUpperCase();
+  document.querySelector("#live-gait-draft-state").textContent = liveGaitState.dirty
+    ? "UNSAVED DRAFT"
+    : `${liveGaitState.draft.source.toUpperCase()} PROFILE`;
+  document.querySelector("#live-gait-preview-enabled").checked = liveGaitState.previewEnabled;
+  document.querySelector("#live-gait-preview-forward").value = String(liveGaitState.previewForward);
+  document.querySelector("#live-gait-preview-turn").value = String(liveGaitState.previewTurn);
+  document.querySelector("#live-gait-preview-forward-value").textContent =
+    `${liveGaitState.previewForward >= 0 ? "+" : ""}${liveGaitState.previewForward.toFixed(2)}`;
+  document.querySelector("#live-gait-preview-turn-value").textContent =
+    `${liveGaitState.previewTurn >= 0 ? "+" : ""}${liveGaitState.previewTurn.toFixed(2)}`;
+  document.querySelector("#live-gait-preview-mode-label").textContent =
+    `${liveGaitState.previewMode.toUpperCase()} / ${Math.round(Math.abs(liveGaitState.previewForward) * 100)}% ${liveGaitState.previewForward < 0 ? "REVERSE" : "FORWARD"}`;
+  document.querySelectorAll("[data-live-gait-mode]").forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.dataset.liveGaitMode === liveGaitState.previewMode));
+  });
+  document.querySelectorAll("[data-live-gait-preset]").forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.dataset.liveGaitPreset === liveGaitState.draft.settings.preset));
+  });
+  const link = document.querySelector("#live-gait-link-state");
+  link.textContent = liveGaitState.robotProfile
+    ? liveGaitState.persistentApplySupported ? "ROBOT PROFILE READY" : "ROBOT PROFILE READ ONLY"
+    : "ROBOT PROFILE UNKNOWN";
+  link.dataset.state = liveGaitState.robotProfile ? "online" : "offline";
+  document.querySelector("#live-gait-apply-state").textContent = liveGaitState.pendingRequestId
+    ? `WAITING / ${liveGaitState.pendingAction.toUpperCase()}`
+    : liveGaitCanApply(liveGaitState) ? "DISARMED / READY TO APPLY" : "PREVIEW ONLY";
+  document.querySelector("#live-gait-status").textContent = liveGaitState.status;
+  document.querySelector("#live-gait-apply").disabled = !liveGaitCanApply(liveGaitState);
+  document.querySelector("#live-gait-use-robot").disabled = !liveGaitState.robotProfile || Boolean(liveGaitState.pendingRequestId);
+  document.querySelector("#live-gait-revert").disabled = !liveGaitState.previousRobotProfile || !liveGaitCanApply(liveGaitState);
+  document.querySelector("#live-gait-request-profile").disabled = Boolean(liveGaitState.pendingRequestId);
+  syncLiveGaitLibrary(liveGaitState.selectedLibraryName);
+  rebuildLiveGaitSettings();
+  renderLiveGaitComparison();
+}
+
+function sendLiveGaitCommand(action, profileOverride = null) {
+  if (socket?.readyState !== WebSocket.OPEN || liveGaitState.pendingRequestId) return false;
+  const requestId = crypto.randomUUID();
+  const originalDraft = liveGaitState.draft;
+  if (profileOverride) liveGaitState.draft = profileOverride;
+  const command = createLiveGaitCommand(liveGaitState, action, requestId);
+  liveGaitState.draft = originalDraft;
+  if (!command) return false;
+  liveGaitState.pendingRequestId = requestId;
+  liveGaitState.pendingAction = action;
+  liveGaitState.status = "Waiting for the robot adapter acknowledgement...";
+  socket.send(JSON.stringify(command));
+  clearTimeout(liveGaitPendingTimeout);
+  liveGaitPendingTimeout = setTimeout(() => {
+    if (liveGaitState.pendingRequestId !== requestId) return;
+    liveGaitState.pendingRequestId = "";
+    liveGaitState.pendingAction = "";
+    liveGaitState.status = "Robot acknowledgement timed out. No profile change was assumed.";
+    renderLiveGaitUi();
+  }, 3_000);
+  renderLiveGaitUi();
+  return true;
+}
+
+function acceptLiveGaitAcknowledgement(message) {
+  if (
+    !message ||
+    message.type !== "live-gait-ack" ||
+    message.requestId !== liveGaitState.pendingRequestId ||
+    message.action !== liveGaitState.pendingAction
+  ) return false;
+  clearTimeout(liveGaitPendingTimeout);
+  liveGaitPendingTimeout = null;
+  const action = liveGaitState.pendingAction;
+  liveGaitState.pendingRequestId = "";
+  liveGaitState.pendingAction = "";
+  liveGaitState.robotState = String(message.robotState || liveGaitState.robotState).toLowerCase();
+  liveGaitState.persistentApplySupported = message.supportsPersistentProfiles === true;
+  if (message.profile) acceptRobotGaitProfile(liveGaitState, message.profile);
+  if (message.accepted) {
+    liveGaitState.status = action === "apply-profile"
+      ? message.persisted === true
+        ? "Robot confirmed the gait profile was validated and saved persistently."
+        : "Robot accepted the profile but did not confirm persistent storage."
+      : action === "revert-profile"
+        ? "Robot confirmed the previous gait profile was restored."
+        : "Robot profile and apply capabilities received.";
+  } else {
+    liveGaitState.status = `Robot rejected ${action}${message.reason ? `: ${message.reason}` : "."}`;
+  }
+  renderLiveGaitUi();
+  return true;
+}
+
 function renderDiagnosticPipeline(snapshot) {
   const pipeline = document.querySelector("#live-diagnostics-pipeline");
   pipeline.replaceChildren();
@@ -2909,6 +3154,119 @@ document.querySelector("#live-calibration-import-file").addEventListener("change
   }
   event.target.value = "";
   renderLiveCalibrationUi();
+});
+
+document.querySelector("#live-gait-library").addEventListener("change", (event) => {
+  liveGaitState.selectedLibraryName = event.target.value;
+  document.querySelector("#live-gait-load").disabled = !event.target.value;
+});
+document.querySelector("#live-gait-load").addEventListener("click", () => {
+  const profile = liveGaitLibrary[liveGaitState.selectedLibraryName];
+  if (!profile) return;
+  replaceLiveGaitDraft(liveGaitState, profile, profile.source);
+  liveGaitPreviewLab.reset();
+  liveGaitState.status = `Opened ${profile.name} from the shared Simulation/LIVE library.`;
+  renderLiveGaitUi();
+});
+document.querySelector("#live-gait-name").addEventListener("change", (event) => {
+  const name = event.target.value.trim().slice(0, 32) || "Untitled gait";
+  liveGaitState.draft.name = name;
+  liveGaitState.dirty = true;
+  renderLiveGaitUi();
+});
+document.querySelector("#live-gait-save").addEventListener("click", () => {
+  const name = document.querySelector("#live-gait-name").value.trim().slice(0, 32) || "Untitled gait";
+  liveGaitState.draft = createLiveGaitProfile({
+    ...liveGaitState.draft,
+    name,
+    updatedAt: Date.now(),
+    source: "live",
+  }, name);
+  liveGaitState.dirty = false;
+  liveGaitLibrary[name] = liveGaitState.draft;
+  liveGaitState.selectedLibraryName = name;
+  persistLiveGaitLibrary(name);
+  liveGaitState.status = `${name} saved to the shared Simulation/LIVE profile library.`;
+  renderLiveGaitUi();
+});
+document.querySelector("#live-gait-import").addEventListener("click", () => {
+  document.querySelector("#live-gait-import-file").click();
+});
+document.querySelector("#live-gait-import-file").addEventListener("change", async (event) => {
+  const [file] = event.target.files || [];
+  if (!file) return;
+  try {
+    const profile = parseLiveGaitProfileJson(await file.text());
+    replaceLiveGaitDraft(liveGaitState, profile, "import");
+    liveGaitPreviewLab.reset();
+    liveGaitState.status = `Imported ${file.name}. Preview and review the profile before applying.`;
+  } catch (error) {
+    liveGaitState.status = error instanceof Error ? error.message : "Gait import failed.";
+  }
+  event.target.value = "";
+  renderLiveGaitUi();
+});
+document.querySelector("#live-gait-export").addEventListener("click", () => {
+  const blob = new Blob([liveGaitProfileJson(liveGaitState.draft)], { type: "application/json;charset=utf-8" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `domino-gait-${liveGaitState.draft.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.json`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 0);
+});
+document.querySelector("#live-gait-settings").addEventListener("input", (event) => {
+  const input = event.target.closest("input[type=range]");
+  const setting = input?.closest("[data-gait-key]");
+  if (!input || !setting) return;
+  updateLiveGaitDraft(liveGaitState, { [setting.dataset.gaitKey]: input.value });
+  liveGaitPreviewLab.setSettings(liveGaitState.draft.settings);
+  const control = gaitLabControls.find((candidate) => candidate.key === setting.dataset.gaitKey);
+  setting.querySelector("output").textContent = formatGaitSetting(control, liveGaitState.draft.settings[control.key]);
+  document.querySelector("#live-gait-draft-state").textContent = "UNSAVED DRAFT";
+  renderLiveGaitComparison();
+});
+document.querySelectorAll("[data-live-gait-preset]").forEach((button) => {
+  button.addEventListener("click", () => {
+    selectLiveGaitPreset(liveGaitState, button.dataset.liveGaitPreset);
+    liveGaitState.draft.name = button.dataset.liveGaitPreset[0].toUpperCase() + button.dataset.liveGaitPreset.slice(1);
+    liveGaitPreviewLab.reset();
+    renderLiveGaitUi();
+  });
+});
+document.querySelector("#live-gait-preview-enabled").addEventListener("change", (event) => {
+  liveGaitState.previewEnabled = event.target.checked;
+  liveGaitPreviewLab.reset();
+});
+document.querySelectorAll("[data-live-gait-mode]").forEach((button) => {
+  button.addEventListener("click", () => {
+    liveGaitState.previewMode = button.dataset.liveGaitMode;
+    liveGaitPreviewLab.reset();
+    renderLiveGaitUi();
+  });
+});
+document.querySelector("#live-gait-preview-forward").addEventListener("input", (event) => {
+  liveGaitState.previewForward = Number(event.target.value);
+  document.querySelector("#live-gait-preview-forward-value").textContent =
+    `${liveGaitState.previewForward >= 0 ? "+" : ""}${liveGaitState.previewForward.toFixed(2)}`;
+});
+document.querySelector("#live-gait-preview-turn").addEventListener("input", (event) => {
+  liveGaitState.previewTurn = Number(event.target.value);
+  document.querySelector("#live-gait-preview-turn-value").textContent =
+    `${liveGaitState.previewTurn >= 0 ? "+" : ""}${liveGaitState.previewTurn.toFixed(2)}`;
+});
+document.querySelector("#live-gait-request-profile").addEventListener("click", () => sendLiveGaitCommand("request-profile"));
+document.querySelector("#live-gait-use-robot").addEventListener("click", () => {
+  if (!liveGaitState.robotProfile) return;
+  replaceLiveGaitDraft(liveGaitState, liveGaitState.robotProfile, "robot");
+  liveGaitState.status = "Robot profile loaded into the local draft for preview. Nothing was sent.";
+  liveGaitPreviewLab.reset();
+  renderLiveGaitUi();
+});
+document.querySelector("#live-gait-apply").addEventListener("click", () => {
+  if (liveGaitCanApply(liveGaitState)) sendLiveGaitCommand("apply-profile");
+});
+document.querySelector("#live-gait-revert").addEventListener("click", () => {
+  if (liveGaitCanApply(liveGaitState) && liveGaitState.previousRobotProfile) sendLiveGaitCommand("revert-profile");
 });
 
 document.querySelectorAll("[data-diagnostic-filter]").forEach((button) => {
@@ -3757,6 +4115,54 @@ function updateLiveTwinPose(delta) {
     canvas.dataset.liveMeasuredPose = "unavailable";
     return;
   }
+  if (liveViewState.selected === LIVE_VIEW_GAITS && linkageRuntimesReady()) {
+    const height = liveGaitState.draft.settings.bodyHeightMm;
+    const source = {
+      mode: liveGaitState.previewMode === "careful" ? "CAREFUL" : "GAIT",
+      tilt_active: false,
+      body_pose_rpy_deg: [0, 0, 0],
+      pose_z_mm: height,
+      target_z_mm: height,
+      ride_height_mm: height,
+      servo_angle_deg: [...standServoReference],
+      leg_command_xyz_mm: [
+        [-15.75, 38, height],
+        [-15.75, -38, height],
+        [-15.75, 38, height],
+        [-15.75, -38, height],
+      ],
+    };
+    liveGaitPreviewOutput = liveGaitState.previewEnabled
+      ? liveGaitPreviewLab.update(delta, source, {
+          forward: liveGaitState.previewForward,
+          turn: liveGaitState.previewTurn,
+        })
+      : source;
+    liveExpectedServoAngles = smoothLiveServoAngles(
+      liveExpectedServoAngles,
+      liveGaitPreviewOutput.servo_angle_deg,
+      delta,
+    );
+    applyServoAnglesToRuntimes(linkageRuntimes, liveExpectedServoAngles);
+    applyLiveBodyPose(robotWorld, {
+      rollDeg: 0,
+      pitchDeg: 0,
+      yawDeg: 0,
+      heightMm: liveGaitPreviewOutput.pose_z_mm,
+    });
+    if (measuredRobotWorld) measuredRobotWorld.visible = false;
+    canvas.dataset.liveExpectedPose = "gait-preview";
+    canvas.dataset.liveMeasuredPose = "unavailable";
+    if (telemetryDatasetDue) {
+      const preview = liveGaitPreviewLab.getTelemetry();
+      document.querySelector("#live-gait-preview-speed").textContent = `${Math.round(preview.speedMmPerSec || 0)} mm/s`;
+      document.querySelector("#live-gait-preview-support").textContent = `${preview.stanceCount ?? 4} / 4`;
+      const previewHealth = document.querySelector("#live-gait-preview-health");
+      previewHealth.textContent = `${preview.reachableCount ?? 4} / 4 REACHABLE`;
+      previewHealth.dataset.state = preview.reachableCount === 4 ? "ok" : "fault";
+    }
+    return;
+  }
   const snapshot = liveComparisonSnapshot(liveTelemetryState);
   canvas.dataset.liveExpectedPose = snapshot.expected ? "fresh" : "unavailable";
   if (snapshot.expected && linkageRuntimesReady()) {
@@ -4194,6 +4600,9 @@ function updateGaitLabState(delta) {
 function animate(now) {
   const delta = Math.min(0.05, (now - lastFrame) / 1000);
   lastFrame = now;
+  telemetryDatasetElapsed += delta;
+  telemetryDatasetDue = telemetryDatasetElapsed >= 0.1;
+  if (telemetryDatasetDue) telemetryDatasetElapsed = 0;
   if (applicationState.workspace !== WORKSPACE_SIMULATION) {
     updateLiveTwinPose(delta);
     ground.visible = true;
@@ -4204,9 +4613,6 @@ function animate(now) {
     requestAnimationFrame(animate);
     return;
   }
-  telemetryDatasetElapsed += delta;
-  telemetryDatasetDue = telemetryDatasetElapsed >= 0.1;
-  if (telemetryDatasetDue) telemetryDatasetElapsed = 0;
   updateInput();
   updateGaitLabState(delta);
   updateRobot(delta);

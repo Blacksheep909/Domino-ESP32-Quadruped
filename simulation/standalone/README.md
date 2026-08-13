@@ -37,6 +37,15 @@ duplicate adapter identities, mismatched sessions, and unsolicited command
 acknowledgements. Losing the adapter heartbeat immediately locks calibration and
 gait operations without claiming that the physical robot is still connected.
 
+The runnable PC adapter is `live-companion-adapter.mjs`, with the PowerShell
+wrapper `start-live-companion.ps1`. It connects the localhost relay to either a
+robot Wi-Fi TCP endpoint, wired USB serial, or paired Bluetooth SPP serial port.
+It advertises the robot only while that physical link is fresh, reconnects both
+sides independently, and forwards telemetry, safety, manual-control,
+calibration, and gait traffic through the same session-bound contracts used by
+the UI. See [the LIVE companion protocol](../../docs/live-companion-protocol.md)
+for launch commands and the required ESP32 JSONL endpoint.
+
 The safety dock adds a separate `live-safety-command` contract for arm, disarm,
 E-stop, and physical-latch reset. Arm requires a 1.5-second uninterrupted hold,
 fresh expected/measured telemetry, a robot-reported Boxer/ELRS drive link, and a

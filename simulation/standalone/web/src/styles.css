@@ -3963,8 +3963,93 @@ body[data-workspace="real-robot"][data-live-view="gaits"] #scene {
 
 .diagnostics-pipeline-card { grid-column: span 8; }
 .diagnostics-metrics-card { grid-column: span 4; }
+.diagnostics-controller-card,
 .diagnostics-log-card,
 .diagnostics-packet-card { grid-column: 1 / -1; }
+
+.diagnostics-controller-card > header > span {
+  padding: 7px 10px;
+  color: #8a8d87;
+  border: 1px solid #d7d8d3;
+  border-radius: 999px;
+  font: 750 8px/1 "Cascadia Mono", Consolas, monospace;
+}
+
+.diagnostics-controller-card > header > span[data-state="good"] { color: #267447; border-color: #a8ceb5; background: #eaf5ed; }
+.diagnostics-controller-card > header > span[data-state="degraded"] { color: #9b671c; border-color: #d7b77f; background: #fbf3e6; }
+.diagnostics-controller-card > header > span[data-state="poor"],
+.diagnostics-controller-card > header > span[data-state="failsafe"] { color: #a24634; border-color: #d9aaa0; background: #faece9; }
+
+.controller-overview {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 7px;
+  padding: 13px 0;
+}
+
+.controller-overview > div {
+  min-width: 0;
+  padding: 11px;
+  display: grid;
+  gap: 7px;
+  background: #f0f0ec;
+  border-radius: 5px;
+}
+
+.controller-overview span,
+.controller-subheading span {
+  color: #878a84;
+  font: 750 8px/1 "Cascadia Mono", Consolas, monospace;
+}
+
+.controller-overview strong {
+  overflow: hidden;
+  font: 750 10px/1 "Cascadia Mono", Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.controller-detail-grid {
+  display: grid;
+  grid-template-columns: 1.25fr 0.75fr;
+  gap: 14px;
+  padding-top: 13px;
+  border-top: 1px solid #dedfd9;
+}
+
+.controller-detail-grid > section { min-width: 0; }
+.controller-subheading { display: flex; justify-content: space-between; margin-bottom: 10px; }
+.controller-subheading strong { color: #737670; font: 700 8px/1 "Cascadia Mono", Consolas, monospace; }
+
+.controller-channels {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.controller-channel {
+  min-width: 0;
+  padding: 9px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid #dedfd9;
+  border-radius: 5px;
+}
+
+.controller-channel span,
+.controller-channel strong { font: 700 8px/1 "Cascadia Mono", Consolas, monospace; }
+.controller-channel i { position: relative; height: 3px; background: #d9dbd5; border-radius: 2px; overflow: hidden; }
+.controller-channel i::after { content: ""; position: absolute; inset: 0 auto 0 0; width: var(--channel-level); background: #4aa069; }
+
+.controller-events { max-height: 150px; overflow: auto; }
+.controller-events article { display: grid; grid-template-columns: 68px 50px 1fr; gap: 7px; padding: 8px 0; border-bottom: 1px solid #e4e5df; font-size: 8px; }
+.controller-events time { color: #858781; font-family: "Cascadia Mono", Consolas, monospace; }
+.controller-events strong { color: #477d59; }
+.controller-events article[data-severity="warning"] strong { color: #a26916; }
+.controller-events article[data-severity="fault"] strong { color: #a34835; }
+.controller-events p { margin: 0; }
 
 .diagnostics-pipeline {
   padding: 13px 0;
@@ -4068,7 +4153,16 @@ body[data-experience="simple"] [data-expert-only] { display: none !important; }
 :root[data-theme="dark"] .diagnostics-pipeline article,
 :root[data-theme="dark"] .diagnostics-first-break,
 :root[data-theme="dark"] .diagnostics-metrics > div,
+:root[data-theme="dark"] .controller-overview > div,
 :root[data-theme="dark"] .diagnostics-packet-grid pre { color: #d9d9dc; background: #18181a; }
+:root[data-theme="dark"] .controller-detail-grid,
+:root[data-theme="dark"] .controller-channel,
+:root[data-theme="dark"] .controller-events article { border-color: #303034; }
+:root[data-theme="dark"] .diagnostics-controller-card > header > span { border-color: #36363a; }
+:root[data-theme="dark"] .diagnostics-controller-card > header > span[data-state="good"] { color: #8bd5a5; border-color: rgba(80,177,113,.3); background: rgba(61,151,95,.12); }
+:root[data-theme="dark"] .diagnostics-controller-card > header > span[data-state="degraded"] { color: #e4ad58; border-color: rgba(207,140,39,.35); background: rgba(207,140,39,.1); }
+:root[data-theme="dark"] .diagnostics-controller-card > header > span[data-state="poor"],
+:root[data-theme="dark"] .diagnostics-controller-card > header > span[data-state="failsafe"] { color: #ef9182; border-color: rgba(201,90,69,.4); background: rgba(201,90,69,.1); }
 :root[data-theme="dark"] .diagnostics-pipeline article[data-state="warning"] { border-color: rgba(207, 140, 39, 0.44); }
 :root[data-theme="dark"] .diagnostics-pipeline article[data-state="fault"] { border-color: rgba(201, 90, 69, 0.46); }
 :root[data-theme="dark"] .diagnostics-events article { border-color: #29292c; }
@@ -4083,6 +4177,9 @@ body[data-experience="simple"] [data-expert-only] { display: none !important; }
   .diagnostics-events article { grid-template-columns: 72px 60px 1fr; }
   .diagnostics-events p { grid-column: 1 / -1; }
   .diagnostics-packet-grid { grid-template-columns: 1fr; }
+  .controller-overview { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .controller-detail-grid { grid-template-columns: 1fr; }
+  .controller-channels { grid-template-columns: repeat(2, 1fr); }
 }
 
 :root[data-theme="dark"] .live-view-page {

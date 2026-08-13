@@ -30,6 +30,17 @@ test("tracks accepted, rejected, missing and rate-window packets", () => {
   assert.equal(snapshot.packetRateHz, 10);
 });
 
+test("rejected packet bursts increment counters without flooding the event log", () => {
+  const state = createLiveDiagnosticsState();
+  observeLiveDiagnosticPacket(state, packet(1), false, 1_000);
+  observeLiveDiagnosticPacket(state, packet(2), false, 1_020);
+  observeLiveDiagnosticPacket(state, packet(3), false, 1_040);
+  assert.equal(state.rejectedPackets, 3);
+  assert.equal(state.events.filter((event) => event.message.startsWith("Rejected one or more")).length, 1);
+  observeLiveDiagnosticPacket(state, packet(4), false, 2_001);
+  assert.equal(state.events.filter((event) => event.message.startsWith("Rejected one or more")).length, 2);
+});
+
 test("identifies the first broken command-chain stage", () => {
   const state = createLiveDiagnosticsState();
   observeLiveDiagnosticPacket(state, packet(1, {

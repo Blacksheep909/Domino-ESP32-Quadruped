@@ -1897,6 +1897,49 @@ dd {
   background: #8b8b92;
 }
 
+.live-manual-dialog {
+  width: min(620px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 0;
+  color: #30322f; background: #f5f5f1; border: 1px solid #cfd1ca; border-radius: 10px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.34);
+}
+.live-manual-dialog::backdrop { background: rgba(10, 11, 10, 0.66); backdrop-filter: blur(3px); }
+.live-manual-shell { display: grid; gap: 14px; padding: 18px; }
+.live-manual-shell > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.live-manual-shell > header span, .live-manual-state span, .live-manual-controls label > span, .live-manual-emergency span {
+  color: #777a74; font: 750 8px/1.35 "Cascadia Mono", Consolas, monospace; letter-spacing: .07em;
+}
+.live-manual-shell h2 { margin: 5px 0 0; font-size: 22px; }
+.live-manual-shell button { min-height: 34px; color: #3d403b; background: #fff; border: 1px solid #d2d4cd; border-radius: 5px; font-size: 9px; }
+.live-manual-shell button:not(:disabled) { cursor: pointer; }
+.live-manual-shell button:disabled { opacity: .42; cursor: not-allowed; }
+.live-manual-state { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; padding: 12px; background: #e9ebe5; border-radius: 7px; }
+.live-manual-state > div { display: flex; justify-content: space-between; gap: 12px; }
+.live-manual-state strong { color: #276f47; font: 800 10px/1.2 "Cascadia Mono", Consolas, monospace; }
+.live-manual-state p { grid-column: 1 / -1; margin: 2px 0 0; color: #62655f; font-size: 11px; line-height: 1.45; }
+.live-manual-consent { display: flex; align-items: flex-start; gap: 10px; color: #555852; font-size: 11px; line-height: 1.45; }
+.live-manual-consent input { margin-top: 2px; accent-color: #35875a; }
+.live-manual-authority-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.live-manual-authority-actions button:not(:disabled), .live-manual-modes button[aria-pressed="true"] { color: #23603e; background: #e2f0e7; border-color: #9fc7ad; }
+.live-manual-controls { display: grid; gap: 10px; padding: 13px; border: 1px solid #d8dad3; border-radius: 7px; }
+.live-manual-modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+.live-manual-controls label { display: grid; gap: 5px; }
+.live-manual-controls label > span { display: flex; justify-content: space-between; }
+.live-manual-controls output { color: #3e413c; }
+.live-manual-controls input[type="range"] { width: 100%; accent-color: #35875a; }
+.live-manual-controls p { margin: 1px 0 0; color: #747770; font-size: 10px; line-height: 1.45; }
+.live-manual-deadman { min-height: 58px !important; font-size: 12px !important; font-weight: 850; letter-spacing: .08em; }
+.live-manual-deadman:not(:disabled) { color: #e9f8ee !important; background: #276f47 !important; border-color: #3b8d5e !important; }
+.live-manual-deadman[data-active="true"] { color: #fff !important; background: #a94937 !important; border-color: #d16a55 !important; }
+.live-manual-emergency { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.live-manual-emergency button:not(:disabled) { color: #9e3827; background: #fff0ed; border-color: #d99a8e; }
+:root[data-theme="dark"] #real-workspace .live-manual-open { color: #bce8c9; background: rgba(61, 151, 95, .12); border-color: rgba(80, 177, 113, .3); }
+:root[data-theme="dark"] .live-manual-dialog { color: #e4e4e7; background: #141416; border-color: #303034; }
+:root[data-theme="dark"] .live-manual-state { background: #1d1d20; }
+:root[data-theme="dark"] .live-manual-state p, :root[data-theme="dark"] .live-manual-consent, :root[data-theme="dark"] .live-manual-controls p { color: #9b9ba1; }
+:root[data-theme="dark"] .live-manual-shell button { color: #b8b8bd; background: #202023; border-color: #36363b; }
+:root[data-theme="dark"] .live-manual-controls { border-color: #303034; }
+:root[data-theme="dark"] .live-manual-controls output { color: #dedee2; }
+
 /* Application workspaces: simulation and physical robot never share controls. */
 body[data-workspace="simulation"] .real-robot-only,
 body[data-workspace="real-robot"] .simulation-only {
@@ -2563,15 +2606,35 @@ body[data-workspace="real-robot"] .simulation-only {
   gap: 4px;
 }
 
+#real-workspace .live-manual-open {
+  height: 34px;
+  padding: 0 13px;
+  color: #1f5537;
+  background: #edf5ef;
+  border: 1px solid #b9d6c3;
+  border-radius: 5px;
+  font-size: 9px;
+  white-space: nowrap;
+}
+
 #real-workspace .live-view-tabs button {
   min-width: 78px;
   height: 34px;
   padding: 0 12px;
-  color: #747771;
-  background: transparent;
-  border: 1px solid transparent;
+  color: #555852;
+  background: rgba(255, 255, 255, 0.34);
+  border: 1px solid #dedfd9;
   border-radius: 5px;
   font-size: 9px;
+  cursor: pointer;
+  transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease;
+}
+
+#real-workspace .live-view-tabs button:hover:not(:disabled):not([aria-selected="true"]),
+#real-workspace .live-view-tabs button:focus-visible:not([aria-selected="true"]) {
+  color: #1f5537;
+  background: #edf5ef;
+  border-color: #b9d6c3;
 }
 
 #real-workspace .live-view-tabs button[aria-selected="true"] {
@@ -4243,7 +4306,17 @@ body[data-experience="simple"] [data-expert-only] { display: none !important; }
   border-bottom-color: #29292c;
 }
 
-:root[data-theme="dark"] #real-workspace .live-view-tabs button { color: #85858b; }
+:root[data-theme="dark"] #real-workspace .live-view-tabs button {
+  color: #b9b9bf;
+  background: #1c1c1f;
+  border-color: #303034;
+}
+:root[data-theme="dark"] #real-workspace .live-view-tabs button:hover:not(:disabled):not([aria-selected="true"]),
+:root[data-theme="dark"] #real-workspace .live-view-tabs button:focus-visible:not([aria-selected="true"]) {
+  color: #c9eed4;
+  background: rgba(61, 151, 95, 0.10);
+  border-color: rgba(80, 177, 113, 0.34);
+}
 :root[data-theme="dark"] #real-workspace .live-view-tabs button[aria-selected="true"] {
   color: #bce8c9;
   background: rgba(61, 151, 95, 0.14);

@@ -40,6 +40,11 @@ import {
   validLiveSafetyHeartbeat,
   validLiveSafetyHeartbeatAcknowledgement,
 } from "./web/src/live-safety-protocol.js";
+import {
+  validLiveManualAuthorityAcknowledgement,
+  validLiveManualAuthorityCommand,
+  validLiveManualControlFrame,
+} from "./web/src/live-manual-control-protocol.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../..");
@@ -486,6 +491,7 @@ sockets.on("connection", (socket) => {
           message.accepted &&
           message.sessionId === socket.liveSessionId
         ) socket.liveSessionId = "";
+        if (message.action === "disconnect" && message.accepted) socket.liveManualAuthority = null;
         broadcast(message);
         return;
       }
@@ -579,6 +585,52 @@ sockets.on("connection", (socket) => {
           validLiveSafetyHeartbeatAcknowledgement(message) &&
           record?.socket === socket
         ) broadcast(message);
+        return;
+      }
+      if (message.type === "live-manual-authority-command") {
+        const record = liveAdapterForSession(message);
+        if (
+          Buffer.byteLength(payload) <= 8 * 1024 &&
+          validLiveManualAuthorityCommand(message) &&
+          record &&
+          (message.action !== "release-authority" || record.socket.liveManualAuthority?.token === message.authorityToken)
+        ) {
+          rememberAdapterRequest(record.socket, message, "manual-authority");
+          sendSocket(record.socket, message);
+        }
+        return;
+      }
+      if (message.type === "live-manual-authority-ack") {
+        const record = liveAdapterForSession(message);
+        if (
+          Buffer.byteLength(payload) <= 8 * 1024 &&
+          validLiveManualAuthorityAcknowledgement(message) &&
+          record?.socket === socket &&
+          consumeAdapterRequest(socket, message, "manual-authority")
+        ) {
+          if (message.action === "request-authority" && message.accepted) {
+            socket.liveManualAuthority = {
+              token: message.authorityToken,
+              sessionId: message.sessionId,
+              expiresAt: Date.now() + message.leaseMs,
+            };
+          }
+          if (message.action === "release-authority" && message.accepted) socket.liveManualAuthority = null;
+          broadcast(message);
+        }
+        return;
+      }
+      if (message.type === "live-manual-control-frame") {
+        const record = liveAdapterForSession(message);
+        const authority = record?.socket.liveManualAuthority;
+        if (
+          Buffer.byteLength(payload) <= 8 * 1024 &&
+          validLiveManualControlFrame(message) &&
+          record &&
+          authority?.token === message.authorityToken &&
+          authority.sessionId === message.sessionId &&
+          Date.now() < authority.expiresAt
+        ) sendSocket(record.socket, message);
         return;
       }
       if (message.type !== "control" || !Array.isArray(message.channels) || message.channels.length !== 16) {

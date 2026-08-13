@@ -28,6 +28,7 @@ function sanitizeAdapter(message, receivedAt) {
       calibration: message.capabilities?.calibration === true,
       gaitProfiles: message.capabilities?.gaitProfiles === true,
       persistentProfiles: message.capabilities?.persistentProfiles === true,
+      manualControl: message.capabilities?.manualControl === true,
     },
     receivedAt,
   };

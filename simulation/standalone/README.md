@@ -73,6 +73,17 @@ Expert shows all RF fields, all 16 channels, and controller transition history.
 The link is arm-ready only while a fresh `boxer-elrs` frame is failsafe-clear,
 link quality is at least 50%, and RSSI is at least -105 dBm.
 
+`MANUAL CONTROL` adds a separate, guarded browser-driving path for compatible
+adapters. It remains inspectable offline, but requesting authority requires an
+armed robot, fresh expected/measured telemetry, a healthy Boxer/ELRS link, and
+an explicit physical-E-stop confirmation. A robot-granted authority token lasts
+at most 30 seconds. Bounded controls stream at 20 Hz only while HOLD TO DRIVE is
+pressed, release sends a neutral stand frame, and every frame declares a 250 ms
+robot-side expiry. Leaving LIVE, hiding the tab, stale telemetry, controller
+failsafe, disarm, bridge loss, or adapter loss revokes browser control. The
+adapter must independently enforce the token, armed state, deadman, bounds,
+timeout, neutralization, and physical E-stop.
+
 The LIVE Gaits tab reads and writes the same browser profile library used by the
 Simulation gait lab. It supports versioned JSON import/export, a moving local 3D
 preview, reachability and risk checks, and a parameter diff against the robot's

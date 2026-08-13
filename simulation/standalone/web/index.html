@@ -229,6 +229,7 @@
           <button type="button" role="tab" data-live-view="diagnostics" aria-selected="false" aria-controls="live-view-diagnostics">DIAGNOSTICS</button>
           <button type="button" role="tab" data-live-view="sessions" aria-selected="false" aria-controls="live-view-sessions">SESSIONS</button>
         </div>
+        <button id="live-manual-open" class="live-manual-open" type="button">MANUAL CONTROL</button>
         <div class="experience-toggle" role="group" aria-label="Interface detail">
           <button type="button" data-experience="simple" class="active" aria-pressed="true">SIMPLE</button>
           <button type="button" data-experience="expert" aria-pressed="false">EXPERT</button>
@@ -638,6 +639,7 @@
               <span data-live-capability="calibration">CALIBRATION</span>
               <span data-live-capability="gaitProfiles">GAIT PROFILES</span>
               <span data-live-capability="persistentProfiles">PERSISTENT STORAGE</span>
+              <span data-live-capability="manualControl">MANUAL CONTROL</span>
             </div>
             <div class="live-connection-safety-note">
               <strong>READ-ONLY HANDSHAKE</strong>
@@ -654,6 +656,42 @@
           </div>
         </footer>
       </div>
+    </dialog>
+
+    <dialog id="live-manual-dialog" class="live-manual-dialog" aria-labelledby="live-manual-title">
+      <form method="dialog" class="live-manual-shell">
+        <header>
+          <div><span>LIVE / GUARDED CONTROL</span><h2 id="live-manual-title">Browser manual control</h2></div>
+          <button id="live-manual-close" type="submit" aria-label="Close manual control">CLOSE</button>
+        </header>
+        <section class="live-manual-state">
+          <div><span>AUTHORITY</span><strong id="live-manual-phase">UNAVAILABLE</strong></div>
+          <div><span>LEASE</span><strong id="live-manual-lease">--</strong></div>
+          <p id="live-manual-status">Connect an armed, compatible robot to request browser control.</p>
+        </section>
+        <label class="live-manual-consent"><input id="live-manual-consent" type="checkbox"> <span>I have the physical E-stop ready. While the deadman is held, browser commands temporarily override the Boxer.</span></label>
+        <div class="live-manual-authority-actions">
+          <button id="live-manual-request" type="button" disabled>REQUEST 30 S AUTHORITY</button>
+          <button id="live-manual-release" type="button" disabled>RELEASE AUTHORITY</button>
+        </div>
+        <section class="live-manual-controls" aria-label="Manual command controls">
+          <div class="live-manual-modes" role="group" aria-label="Manual gait mode">
+            <button type="button" data-live-manual-mode="stand" aria-pressed="true">STAND</button>
+            <button type="button" data-live-manual-mode="careful" aria-pressed="false">CAREFUL</button>
+            <button type="button" data-live-manual-mode="trot" aria-pressed="false">TROT</button>
+          </div>
+          <label><span>FORWARD <output data-live-manual-output="forward">0.00</output></span><input data-live-manual-axis="forward" type="range" min="-1" max="1" step="0.01" value="0"></label>
+          <label><span>TURN <output data-live-manual-output="turn">0.00</output></span><input data-live-manual-axis="turn" type="range" min="-1" max="1" step="0.01" value="0"></label>
+          <label class="expert-only"><span>BODY ROLL <output data-live-manual-output="roll">0.00</output></span><input data-live-manual-axis="roll" type="range" min="-1" max="1" step="0.01" value="0"></label>
+          <label class="expert-only"><span>BODY HEIGHT <output data-live-manual-output="height">0.00</output></span><input data-live-manual-axis="height" type="range" min="-1" max="1" step="0.01" value="0"></label>
+          <p>The 3D expected pose follows robot-acknowledged telemetry, never an optimistic local preview.</p>
+        </section>
+        <button id="live-manual-deadman" class="live-manual-deadman" type="button" disabled>HOLD TO DRIVE</button>
+        <div class="live-manual-emergency">
+          <span>Commands stream at 20 Hz and expire robot-side after 250 ms.</span>
+          <button id="live-manual-estop" type="button" disabled>E-STOP</button>
+        </div>
+      </form>
     </dialog>
 
     <dialog id="firmware-deploy-dialog" class="firmware-deploy-dialog" aria-labelledby="firmware-deploy-title">

@@ -1,4 +1,78 @@
-# Domino Standalone 3D Sandbox
+# Domino Virtual Lab
+
+The Virtual Lab is Domino's standalone, computer-game-like 3D environment for
+testing the real firmware controller against the real CAD before connecting
+the physical robot. It is a separate project track from the ESP32 firmware
+and from the Isaac Sim / Isaac Lab training work.
+
+The program now has two top-level workspaces:
+
+- **Simulation** owns the firmware-in-the-loop 3D environment, Boxer heartbeat,
+  physics, joint inspection, and experimental gait tools.
+- **Live** is an isolated, safely disarmed real-robot digital twin. It shares
+  the 3D CAD viewport for visual comparison while keeping physical telemetry,
+  data recording, calibration, gait, and diagnostics state separate from the
+  simulator.
+
+Changing to **Live** immediately revokes simulation command ownership.
+The real workspace does not reuse simulated connection or telemetry state.
+Simulation and physics updates freeze, leaving the CAD as a reference until
+independent expected-command and measured-robot streams are available. The
+comparison panel is structured to show body-pose deltas, all 12 joint errors,
+power, timing, and synchronized expected/measured graphs.
+
+LIVE telemetry uses a canonical `live-telemetry` envelope relayed by the local
+WebSocket bridge. Expected and measured poses carry independent timestamps,
+16-channel servo arrays, and body roll/pitch/yaw/height. The browser validates
+packet order and freshness, computes the 12 driven-joint errors, and renders a
+translucent measured CAD overlay only while physical data is fresh. Power is
+carried in the same envelope but remains an independent freshness-gated signal.
+
+The LIVE comparison scope can record synchronized samples in memory, graph body
+pitch, roll, yaw, or height, survive a link interruption without filling the gap
+with stale values, and export a stopped session as CSV. Exports include capture
+and source timestamps, alignment, expected/measured/error body values, voltage,
+current, power, worst joint error, and every driven servo-channel error.
+
+The Simulation link panel reports each part of the control path separately:
+
+- **Local bridge** is driven by a browser-to-server heartbeat, including
+  acknowledgement age and round-trip latency;
+- **Boxer input** becomes connected only when fresh RadioMaster HID/gamepad
+  packets are actually arriving;
+- **CRSF to firmware** reflects accepted frames and the SIL firmware's own
+  link-alive state.
+
+These indicators deliberately avoid treating a healthy local server or
+keyboard fallback as proof that a Boxer is connected.
+
+![Simulation workspace](../../docs/images/virtual-lab-simulation-workspace.png)
+
+![Real Robot workspace](../../docs/images/virtual-lab-real-robot-workspace.png)
+
+## Firmware deployment workspace
+
+Open **UPLOAD** in the Real Robot header to review, build, and deploy the
+real root PlatformIO project. The workspace lists every included file from
+`platformio.ini`, `src/`, `include/`, and `lib/`, shows a package SHA-256, and
+provides a read-only source viewer before hardware operations are enabled.
+
+The deployment sequence is intentionally gated:
+
+1. Run **BUILD & VALIDATE**. Upload remains disabled unless the current package
+   hash has compiled successfully for the `esp32dev` environment.
+2. Connect the ESP32 and select its serial port, or leave **AUTO DETECT** when
+   only the target USB serial device is connected.
+3. Safely support Domino, hold the ESP32 **BOOT** button when required, and
+   confirm the hardware checkbox.
+4. Select **UPLOAD TO ESP32**. PlatformIO output, flash progress, verification,
+   errors, and the final exit state are retained in the deployment log.
+
+Firmware jobs run in the local simulator server, so closing the deployment
+window does not terminate an active build. Only repository-scoped firmware
+files can be reviewed, only the fixed `esp32dev` PlatformIO target can run, and
+the upload API independently enforces both a matching successful build and the
+explicit BOOT confirmation.
 
 This local application runs separately from Isaac Sim and Isaac Lab. It combines:
 
@@ -22,10 +96,32 @@ single tree articulation. The proxy includes the four shoulder actuators and
 the eight linkage actuators, realistic mass distribution, servo stiffness,
 joint limits, and high-friction 24 mm TPU foot spheres.
 
+The mass proxy currently totals 2.966 kg. It includes two
+[CNHL Black Series 1500 mAh 4S packs](https://chinahobbyline.com/collections/uk-warehouse/products/cnhl-black-series-1500mah-14-8v-4s-100c-lipo-battery-with-xt60-plug-4-packs)
+at 183 g each, positioned independently in the front and rear electronics bays
+using the manufacturer's 75 x 37 x 35 mm envelope.
+Keeping the packs as separate colliders preserves their contribution to body
+pitch inertia instead of folding their weight into one central chassis mass.
+
 The CAD datum is aligned once against the validated neutral contact pose. It is
 not snapped to the floor every frame.
 
 ## Launch
+
+This repository contains the application source. It is not a hosted website.
+The current launcher targets Windows because the firmware SIL build uses the
+PlatformIO MinGW toolchain and PowerShell process management.
+
+Install dependencies after cloning:
+
+```powershell
+cd simulation\standalone
+pnpm install
+cd ..\..
+pio pkg install --global --tool platformio/toolchain-gccmingw32
+```
+
+Then launch the local application:
 
 ```powershell
 .\simulation\standalone\launch.ps1
@@ -60,6 +156,23 @@ The first gait is a deliberately slow diagonal sinusoidal trot. Right-stick
 vertical commands forward/reverse travel and right-stick horizontal commands
 turning. Gait cannot run while SD/tilt is active. The renderer and physics proxy
 consume the same 12 firmware-authored servo outputs.
+
+### Website gait lab
+
+`TUNE` opens a simulator-only gait lab for evaluating candidate walking values
+without rebuilding or changing the ESP32 firmware. Its Stable, Balanced, and
+Fast presets expose cadence, stride, foot clearance, ground-contact duty factor,
+gait height, stance width, turn gain, command response, swing shape, and diagonal
+phase. The footer reports estimated commanded speed, the current support-foot
+count, and whether all four CAD foot targets are reachable.
+
+When `OVERRIDE` is enabled, the browser replaces the displayed gait trajectory
+only while the firmware is in CAREFUL or TROT mode. Radio mode selection,
+interlocks, stand/sit, CRSF handling, and the firmware process continue to run
+normally. The override feeds both the real CAD linkage renderer and Rapier, but
+it is never sent back to the SIL process or written to `src/main.cpp`. Settings
+are stored in the browser so a useful candidate can be compared across runs
+before it is deliberately ported to the physical robot firmware.
 
 Each launch records Boxer HID axes, mapped channels, outgoing controls, firmware
 mode, target pose, all servo outputs, body height, reset count, and per-foot

@@ -2,19 +2,130 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 
-import { assemblyOrigin, expectedMeshCount, legs, standServoReference } from "./domino-config.js";
+import {
+  assemblyOrigin,
+  dominoMassModel,
+  expectedMeshCount,
+  legs,
+  standServoReference,
+} from "./domino-config.js";
 import { point2, solveLinkagePose } from "./linkage.js";
-import { createDominoPhysics, targetBodyQuaternion } from "./physics.js";
+import {
+  createGaitLab,
+  defaultGaitLabSettings,
+  GAIT_LAB_STORAGE_KEY,
+  gaitLabControls,
+  gaitLabPresets,
+  sanitizeGaitLabSettings,
+} from "./gait-lab.js";
+import { contactSurfaceError, createDominoPhysics } from "./physics.js";
+import { environmentBallSpecs, logSpecs, terrainSpecs } from "./course-config.js";
+import { createVoronoiTerrain } from "./voronoi-terrain.js";
+import { initializeFirmwareWorkspace } from "./firmware-ui.js";
+import {
+  createApplicationState,
+  selectExperience,
+  selectWorkspace,
+  simulationCanOwnControl,
+  WORKSPACE_REAL_ROBOT,
+  WORKSPACE_SIMULATION,
+} from "./app-state.js";
+import {
+  acceptHeartbeatAcknowledgement,
+  createHeartbeatMessage,
+  createHeartbeatState,
+  HEARTBEAT_INTERVAL_MS,
+  heartbeatStatus,
+  markHeartbeatSocketClosed,
+  markHeartbeatSocketOpen,
+  packetAgeMs,
+} from "./heartbeat-state.js";
+import {
+  acceptLiveTelemetryPacket,
+  createLiveTelemetryState,
+  liveComparisonSnapshot,
+} from "./live-telemetry-state.js";
+import {
+  createLiveSessionState,
+  liveSessionCsv,
+  liveSessionSummary,
+  recordLiveComparisonSample,
+  startLiveSession,
+  stopLiveSession,
+} from "./live-session-state.js";
 import "./styles.css";
 
+initializeFirmwareWorkspace();
+
 const canvas = document.querySelector("#scene");
+const applicationState = createApplicationState();
+const liveTelemetryState = createLiveTelemetryState();
+const liveSessionState = createLiveSessionState();
+const realWorkspace = document.querySelector("#real-workspace");
+const workspaceButtons = {
+  [WORKSPACE_SIMULATION]: document.querySelector("#workspace-simulation"),
+  [WORKSPACE_REAL_ROBOT]: document.querySelector("#workspace-real-robot"),
+};
+
+function applyWorkspace(workspace) {
+  selectWorkspace(applicationState, workspace);
+  document.body.dataset.workspace = workspace;
+  canvas.dataset.workspace = workspace;
+  realWorkspace.hidden = workspace !== WORKSPACE_REAL_ROBOT;
+  document.querySelector("#workspace-subtitle").textContent = workspace === WORKSPACE_SIMULATION
+    ? "VIRTUAL LAB / 3D CODE TESTING"
+    : "LIVE / DIGITAL TWIN";
+  document.title = workspace === WORKSPACE_SIMULATION
+    ? "Domino Virtual Lab"
+    : "Domino Live Digital Twin";
+
+  Object.entries(workspaceButtons).forEach(([name, button]) => {
+    const active = name === workspace;
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
+  });
+
+  if (workspace === WORKSPACE_REAL_ROBOT) {
+    footTrajectoryGroup.visible = false;
+    inspectionGrid.visible = false;
+    if (bodyReferenceOverlay) bodyReferenceOverlay.group.visible = false;
+    linkageRuntimes.forEach((runtime) => {
+      if (!runtime) return;
+      Object.values(runtime.annotations).forEach((annotation) => {
+        annotation.group.visible = false;
+      });
+      Object.values(runtime.pins).forEach((pin) => {
+        pin.visible = false;
+      });
+    });
+  } else {
+    if (measuredRobotWorld) measuredRobotWorld.visible = false;
+    updateJointOverlay();
+  }
+  requestAnimationFrame(resize);
+}
+
+Object.entries(workspaceButtons).forEach(([workspace, button]) => {
+  button.addEventListener("click", () => applyWorkspace(workspace));
+});
+
+document.querySelectorAll("[data-experience]").forEach((button) => {
+  button.addEventListener("click", () => {
+    selectExperience(applicationState, button.dataset.experience);
+    document.querySelectorAll("[data-experience]").forEach((candidate) => {
+      const active = candidate.dataset.experience === applicationState.experience;
+      candidate.classList.toggle("active", active);
+      candidate.setAttribute("aria-pressed", String(active));
+    });
+  });
+});
+
 const demoSelection = new URLSearchParams(window.location.search).get("demo");
 const demoMode = ["1", "tilt", "roll", "roll-negative", "gait", "gait-reverse"].includes(demoSelection);
-const THEME_STORAGE_KEY = "domino-theme";
+const THEME_STORAGE_KEY = "domino-theme-v2";
+const MAX_RENDER_PIXEL_RATIO = 1.5;
 let currentTheme = localStorage.getItem(THEME_STORAGE_KEY);
-if (currentTheme !== "light" && currentTheme !== "dark") {
-  currentTheme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-}
+if (currentTheme !== "light" && currentTheme !== "dark") currentTheme = "dark";
 document.documentElement.dataset.theme = currentTheme;
 const SERVO_TRAVEL_DEG = 45;
 const CAD_FOOT_RADIUS = 0.012;
@@ -25,8 +136,17 @@ const VISUAL_GROUND_SYNC_MAX_RATE = 0.08;
 const VISUAL_FLOOR_CLEARANCE = 0.0002;
 const VISUAL_BASE_POSITION_RESPONSE = 22;
 const VISUAL_BASE_ROTATION_RESPONSE = 24;
+const FOOT_TRAIL_DURATION_SECONDS = 2;
+const FOOT_TRAIL_SAMPLE_INTERVAL_SECONDS = 1 / 60;
+const FOOT_TRAIL_MAX_SAMPLES = 128;
+const FOOT_TRAIL_SUBDIVISIONS = 3;
+const FOOT_TRAIL_MAX_VERTICES =
+  ((FOOT_TRAIL_MAX_SAMPLES - 1) * FOOT_TRAIL_SUBDIVISIONS) + 1;
+const FLOAT_FALLBACK_BODY_HEIGHT = 0.32;
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+// A capped pixel ratio keeps high-DPI laptops and mobile browsers from
+// multiplying the CAD/shadow workload without changing the scene geometry.
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_RENDER_PIXEL_RATIO));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -81,6 +201,7 @@ const cameraInverseQuaternion = new THREE.Quaternion();
 let cameraSnap = null;
 let inspectionGrid = null;
 let orthographicAxisDirection = null;
+const environmentBallMeshes = new Map();
 cameraGizmo.dataset.projection = "perspective";
 
 function updateOrthographicProjection() {
@@ -191,7 +312,11 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
 function finishMiddleButtonPan(event) {
   if (event.button !== 1 || !middleButtonPanning) return;
   middleButtonPanning = false;
-  robotCameraAnchor.set(robotWorld.position.x, 0.32, robotWorld.position.z);
+  robotCameraAnchor.set(
+    robotWorld.position.x,
+    floatModeEnabled ? robotWorld.position.y : 0.32,
+    robotWorld.position.z,
+  );
   cameraTargetOffset.copy(controls.target).sub(robotCameraAnchor);
 }
 window.addEventListener("pointerup", finishMiddleButtonPan, { capture: true });
@@ -261,7 +386,7 @@ scene.add(new THREE.HemisphereLight(0xf4f7f8, 0x485159, 2.1));
 const sun = new THREE.DirectionalLight(0xffffff, 3.3);
 sun.position.set(-3, 6, 4);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.mapSize.set(1024, 1024);
 sun.shadow.camera.left = -5;
 sun.shadow.camera.right = 5;
 sun.shadow.camera.top = 5;
@@ -280,6 +405,10 @@ grid.material.opacity = 0.32;
 grid.material.transparent = true;
 scene.add(grid);
 
+const courseVisuals = new THREE.Group();
+courseVisuals.name = "course-visuals";
+scene.add(courseVisuals);
+
 inspectionGrid = new THREE.GridHelper(20, 100, 0x777a74, 0xa9aaa5);
 inspectionGrid.material.opacity = 0.24;
 inspectionGrid.material.transparent = true;
@@ -291,11 +420,11 @@ function applyTheme(theme, persist = true) {
   currentTheme = theme === "dark" ? "dark" : "light";
   document.documentElement.dataset.theme = currentTheme;
   const dark = currentTheme === "dark";
-  const sceneColor = dark ? 0x30312f : 0xdededa;
+  const sceneColor = dark ? 0x0b0b0c : 0xdededa;
   scene.background.set(sceneColor);
   scene.fog.color.set(sceneColor);
-  groundMaterial.color.set(dark ? 0x656661 : 0xbdbdb8);
-  renderer.toneMappingExposure = dark ? 1.18 : 1.05;
+  groundMaterial.color.set(dark ? 0x252527 : 0xbdbdb8);
+  renderer.toneMappingExposure = dark ? 1.08 : 1.05;
 
   const toggle = document.querySelector("#theme-toggle");
   toggle.setAttribute("aria-pressed", String(dark));
@@ -311,49 +440,181 @@ document.querySelector("#theme-toggle").addEventListener("click", () => {
 });
 applyTheme(currentTheme, false);
 
-function addObstacle(size, position, rotationY = 0) {
+function addObstacle(
+  size,
+  position,
+  rotationY = 0,
+  rotationZ = 0,
+  materialOptions = {},
+) {
   const mesh = new THREE.Mesh(
     new THREE.BoxGeometry(...size),
-    new THREE.MeshStandardMaterial({ color: 0x59656c, roughness: 0.78 }),
+    new THREE.MeshStandardMaterial({
+      color: materialOptions.color ?? 0x59656c,
+      roughness: materialOptions.roughness ?? 0.78,
+      metalness: materialOptions.metalness ?? 0.02,
+    }),
   );
   mesh.position.set(...position);
-  mesh.rotation.y = rotationY;
+  mesh.rotation.set(0, rotationY, rotationZ);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
-  scene.add(mesh);
+  courseVisuals.add(mesh);
 }
 
-addObstacle([1.4, 0.12, 0.8], [2.4, 0.06, -1.8], 0.2);
-addObstacle([0.9, 0.24, 0.9], [-2.2, 0.12, -2.1], -0.15);
-addObstacle([1.8, 0.07, 0.55], [-1.8, 0.035, 1.9], 0.45);
+// Keep the origin clear for resets. The course is arranged in distinct lanes
+// around it so each surface or obstacle can be tested deliberately.
+const terrainObjects = terrainSpecs;
+
+terrainObjects.forEach((terrain) => {
+  if (terrain.kind === "voronoi") return;
+  addObstacle(
+    terrain.size,
+    terrain.position,
+    terrain.yaw ?? 0,
+    terrain.slope ?? 0,
+    terrain,
+  );
+});
+
+function addVoronoiSurface() {
+  const patch = terrainObjects.find((terrain) => terrain.kind === "voronoi");
+  if (!patch) return;
+  const terrain = createVoronoiTerrain(patch);
+  const palette = [0xc5b9a4, 0xada391, 0xd0c4ae, 0xb7ac99, 0xc0b39d];
+  addObstacle(
+    patch.size,
+    patch.position,
+    patch.yaw ?? 0,
+    0,
+    { ...patch, color: 0x8e8679, roughness: 1 },
+  );
+  terrain.cellRanges.forEach(({ cellIndex, indexStart, indexCount }) => {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(terrain.vertices, 3));
+    geometry.setIndex(new THREE.BufferAttribute(terrain.indices.slice(indexStart, indexStart + indexCount), 1));
+    geometry.computeVertexNormals();
+    const cell = new THREE.Mesh(
+      geometry,
+      new THREE.MeshStandardMaterial({
+        color: palette[cellIndex % palette.length],
+        roughness: 1,
+        metalness: 0,
+        side: THREE.DoubleSide,
+      }),
+    );
+    cell.position.set(patch.position[0], 0, patch.position[2]);
+    cell.rotation.y = patch.yaw ?? 0;
+    cell.castShadow = true;
+    cell.receiveShadow = true;
+    courseVisuals.add(cell);
+  });
+}
+
+addVoronoiSurface();
+
+function addLog(spec) {
+  const mesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(spec.radius, spec.radius, spec.length, 14),
+    new THREE.MeshStandardMaterial({ color: 0x694a34, roughness: 0.96, metalness: 0 }),
+  );
+  mesh.position.set(...spec.position);
+  mesh.quaternion.setFromEuler(
+    spec.axis === "x"
+      ? new THREE.Euler(0, spec.yaw ?? 0, Math.PI / 2)
+      : new THREE.Euler(Math.PI / 2, spec.yaw ?? 0, 0),
+  );
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  courseVisuals.add(mesh);
+}
+
+logSpecs.forEach(addLog);
+
+environmentBallSpecs.forEach((spec) => {
+  const mesh = new THREE.Mesh(
+    new THREE.SphereGeometry(spec.radius, 20, 12),
+    new THREE.MeshStandardMaterial({
+      color: spec.color,
+      roughness: 0.42,
+      metalness: 0.08,
+    }),
+  );
+  mesh.position.set(...spec.position);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  environmentBallMeshes.set(spec.id, mesh);
+  courseVisuals.add(mesh);
+});
 
 const frameMaterial = new THREE.MeshStandardMaterial({
-  color: 0x252d32,
-  roughness: 0.35,
-  metalness: 0.58,
+  color: 0x20282d,
+  roughness: 0.42,
+  metalness: 0.3,
 });
 const legMaterial = new THREE.MeshStandardMaterial({
-  color: 0x11171a,
+  color: 0x303a40,
+  roughness: 0.55,
+  metalness: 0.16,
+});
+const drivenLinkMaterial = new THREE.MeshStandardMaterial({
+  color: 0x414c52,
   roughness: 0.48,
-  metalness: 0.28,
+  metalness: 0.22,
+});
+const passiveLinkMaterial = new THREE.MeshStandardMaterial({
+  color: 0x525d62,
+  roughness: 0.58,
+  metalness: 0.1,
 });
 const tpuMaterial = new THREE.MeshStandardMaterial({
   color: 0x090d0f,
   roughness: 0.96,
   metalness: 0.0,
 });
+const legMaterialByRole = {
+  ground: legMaterial,
+  lower_driver: drivenLinkMaterial,
+  upper_driver: drivenLinkMaterial,
+  coupler: passiveLinkMaterial,
+  lower_diagonal: passiveLinkMaterial,
+  upper_closure: passiveLinkMaterial,
+  lower_closure: tpuMaterial,
+};
 const pinMaterial = new THREE.MeshStandardMaterial({
   color: 0x818b90,
   roughness: 0.32,
   metalness: 0.78,
   transparent: true,
 });
-const ACTIVE_JOINT_COLOR = 0xf07d46;
-const PASSIVE_JOINT_COLOR = 0x55c3d7;
+const ACTIVE_JOINT_COLOR = 0xf4f4f5;
+const PASSIVE_JOINT_COLOR = 0x8b8b92;
 let jointOverlayVisible = false;
-const jointOverlayOpacity = 0.78;
+let jointOverlayOpacity = 0.78;
 let selectedJointLeg = "FR";
+let selectedDriveJoint = "upper";
 let bodyReferenceOverlay = null;
+let floatModeEnabled = false;
+const floatAnchorPosition = new THREE.Vector3(0, FLOAT_FALLBACK_BODY_HEIGHT, 0);
+const floatAnchorQuaternion = new THREE.Quaternion();
+const cameraRecenterDelta = new THREE.Vector3();
+const footTrajectoryGroup = new THREE.Group();
+footTrajectoryGroup.name = "foot-trajectories";
+footTrajectoryGroup.visible = false;
+scene.add(footTrajectoryGroup);
+const footTrajectories = new Map();
+let footTrailSampleElapsed = FOOT_TRAIL_SAMPLE_INTERVAL_SECONDS;
+const LEG_COMMAND_INDEX_BY_LABEL = { FR: 1, FL: 0, BL: 2, BR: 3 };
+const ACTIVE_ANNOTATION_BY_CHANNEL = {
+  shoulder: "hip_origin",
+  upper: "upper_drive",
+  lower: "lower_drive",
+};
+const DRIVE_META = {
+  shoulder: { label: "q1", title: "SHOULDER", axis: "X" },
+  upper: { label: "q2", title: "UPPER", axis: "Y" },
+  lower: { label: "q3", title: "LOWER", axis: "Y" },
+};
 
 const robotWorld = new THREE.Group();
 robotWorld.position.y = 0.34;
@@ -368,8 +629,13 @@ cadAlignment.add(cadRoot);
 
 const loader = new STLLoader();
 const linkageRuntimes = [];
+let measuredRobotWorld = null;
+let measuredLinkageRuntimes = [];
+let liveExpectedServoAngles = null;
+let liveMeasuredServoAngles = null;
 let loadedMeshCount = 0;
 let firmwareState = null;
+let effectiveFirmwareState = null;
 let visualServoAngles = null;
 const neutralServoAngles = [...standServoReference];
 const SERVO_VISUAL_RESPONSE = 24;
@@ -377,19 +643,21 @@ const RIDE_HEIGHT_MIN_MM = 220;
 const RIDE_HEIGHT_MAX_MM = 280;
 let standRequested = false;
 let tiltRequested = false;
-let gaitRequested = false;
+let walkModeRequested = 0;
 let manualStandOverride = null;
 let manualTiltOverride = null;
-let manualGaitOverride = null;
+let manualWalkModeOverride = null;
 let observedPhysicalStand = null;
 let observedPhysicalTilt = null;
-let observedPhysicalGait = null;
+let observedPhysicalWalkMode = null;
 let forwardInput = 0;
 let turnInput = 0;
 let rollInput = 0;
 let robotYaw = 0;
 let clientInputSnapshot = { source: "keyboard", name: "KEYBOARD", axes: [] };
 let physics = null;
+const walkModeFromChannel = (value) => value < 1250 ? 0 : value > 1750 ? 2 : 1;
+const channelFromWalkMode = (mode) => [1000, 1500, 2000][THREE.MathUtils.clamp(mode, 0, 2)];
 let physicsState = null;
 const visualBasePosition = new THREE.Vector3();
 const visualBaseQuaternion = new THREE.Quaternion();
@@ -401,6 +669,589 @@ const PIN_TOLERANCE_MM = 0.5;
 const FOOT_SYMMETRY_TOLERANCE_MM = 1.0;
 let previousPinClosureHealthy = null;
 let previousFootSymmetryHealthy = null;
+
+function createFootGlowTexture() {
+  const textureCanvas = document.createElement("canvas");
+  textureCanvas.width = 64;
+  textureCanvas.height = 64;
+  const context = textureCanvas.getContext("2d");
+  const gradient = context.createRadialGradient(32, 32, 2, 32, 32, 30);
+  gradient.addColorStop(0, "rgba(255,255,255,1)");
+  gradient.addColorStop(0.28, "rgba(255,255,255,0.88)");
+  gradient.addColorStop(1, "rgba(255,255,255,0)");
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, 64, 64);
+  const texture = new THREE.CanvasTexture(textureCanvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+const footGlowTexture = createFootGlowTexture();
+
+function ensureFootTrajectory(runtime) {
+  const label = runtime.spec.label;
+  if (footTrajectories.has(label)) return footTrajectories.get(label);
+  const positions = new Float32Array(FOOT_TRAIL_MAX_VERTICES * 3);
+  const colors = new Float32Array(FOOT_TRAIL_MAX_VERTICES * 3);
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  geometry.setDrawRange(0, 0);
+  const line = new THREE.Line(
+    geometry,
+    new THREE.LineBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.92,
+      blending: THREE.AdditiveBlending,
+      depthTest: false,
+      depthWrite: false,
+    }),
+  );
+  line.frustumCulled = false;
+  line.renderOrder = 28;
+  const marker = new THREE.Sprite(
+    new THREE.SpriteMaterial({
+      map: footGlowTexture,
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.95,
+      blending: THREE.AdditiveBlending,
+      depthTest: false,
+      depthWrite: false,
+    }),
+  );
+  marker.scale.setScalar(0.035);
+  marker.renderOrder = 29;
+  footTrajectoryGroup.add(line, marker);
+  const trajectory = {
+    label,
+    samples: [],
+    line,
+    marker,
+    positions,
+    colors,
+    curve: new THREE.CatmullRomCurve3([], false, "centripetal"),
+    smoothPoint: new THREE.Vector3(),
+  };
+  footTrajectories.set(label, trajectory);
+  return trajectory;
+}
+
+function clearFootTrajectories() {
+  footTrajectories.forEach((trajectory) => {
+    trajectory.samples.length = 0;
+    trajectory.line.geometry.setDrawRange(0, 0);
+  });
+  footTrailSampleElapsed = FOOT_TRAIL_SAMPLE_INTERVAL_SECONDS;
+}
+
+function updateFootTrajectories(deltaSeconds) {
+  footTrajectoryGroup.visible = jointOverlayVisible;
+  if (!jointOverlayVisible || !linkageRuntimesReady()) return;
+  scene.updateMatrixWorld(true);
+  const nowSeconds = performance.now() / 1000;
+  footTrailSampleElapsed += Math.max(0, deltaSeconds);
+  const shouldSample = footTrailSampleElapsed >= FOOT_TRAIL_SAMPLE_INTERVAL_SECONDS;
+  if (shouldSample) footTrailSampleElapsed %= FOOT_TRAIL_SAMPLE_INTERVAL_SECONDS;
+
+  linkageRuntimes.forEach((runtime) => {
+    if (!runtime) return;
+    const trajectory = ensureFootTrajectory(runtime);
+    const selected = selectedJointLeg === "ALL" || selectedJointLeg === runtime.spec.label;
+    trajectory.line.visible = selected;
+    trajectory.marker.visible = selected;
+    runtime.footProbe.getWorldPosition(visualFootPosition);
+    trajectory.marker.position.copy(visualFootPosition);
+    if (shouldSample) {
+      const previousSample = trajectory.samples.at(-1);
+      const previous = previousSample?.position;
+      if (previous && previous.distanceTo(visualFootPosition) > 0.25) {
+        trajectory.samples.length = 0;
+      }
+      if (previousSample && previous.distanceToSquared(visualFootPosition) < 4e-8) {
+        previousSample.time = nowSeconds;
+        previous.copy(visualFootPosition);
+      } else {
+        trajectory.samples.push({
+          time: nowSeconds,
+          position: visualFootPosition.clone(),
+        });
+      }
+    }
+    trajectory.samples = trajectory.samples
+      .filter((sample) => nowSeconds - sample.time <= FOOT_TRAIL_DURATION_SECONDS)
+      .slice(-FOOT_TRAIL_MAX_SAMPLES);
+
+    const sampleCount = trajectory.samples.length;
+    const vertexCount = sampleCount < 2
+      ? sampleCount
+      : Math.min(
+          FOOT_TRAIL_MAX_VERTICES,
+          ((sampleCount - 1) * FOOT_TRAIL_SUBDIVISIONS) + 1,
+        );
+    trajectory.curve.points.length = sampleCount;
+    trajectory.samples.forEach((sample, index) => {
+      trajectory.curve.points[index] = sample.position;
+    });
+    for (let index = 0; index < vertexCount; index += 1) {
+      const curveFraction = vertexCount > 1 ? index / (vertexCount - 1) : 0;
+      const samplePosition = curveFraction * Math.max(0, sampleCount - 1);
+      const lowerSampleIndex = Math.min(sampleCount - 1, Math.floor(samplePosition));
+      const upperSampleIndex = Math.min(sampleCount - 1, lowerSampleIndex + 1);
+      const sampleBlend = samplePosition - lowerSampleIndex;
+      const interpolatedTime = THREE.MathUtils.lerp(
+        trajectory.samples[lowerSampleIndex].time,
+        trajectory.samples[upperSampleIndex].time,
+        sampleBlend,
+      );
+      const point = sampleCount > 2
+        ? trajectory.curve.getPoint(curveFraction, trajectory.smoothPoint)
+        : trajectory.smoothPoint.copy(
+            trajectory.samples[lowerSampleIndex].position,
+          ).lerp(
+            trajectory.samples[upperSampleIndex].position,
+            sampleBlend,
+          );
+      const ageFraction = THREE.MathUtils.clamp(
+        1 - (nowSeconds - interpolatedTime) / FOOT_TRAIL_DURATION_SECONDS,
+        0,
+        1,
+      );
+      const brightness = ageFraction ** 1.8;
+      trajectory.positions[(index * 3) + 0] = point.x;
+      trajectory.positions[(index * 3) + 1] = point.y;
+      trajectory.positions[(index * 3) + 2] = point.z;
+      trajectory.colors[(index * 3) + 0] = brightness;
+      trajectory.colors[(index * 3) + 1] = brightness;
+      trajectory.colors[(index * 3) + 2] = brightness;
+    }
+    trajectory.line.geometry.attributes.position.needsUpdate = true;
+    trajectory.line.geometry.attributes.color.needsUpdate = true;
+    trajectory.line.geometry.setDrawRange(0, vertexCount);
+  });
+}
+
+const GAIT_PROFILE_STORAGE_KEY = "domino-gait-profiles-v1";
+const GAIT_PANEL_LAYOUT_KEY = "domino-gait-panel-layout-v3";
+const INSPECT_PANEL_LAYOUT_KEY = "domino-inspect-panel-layout-v2";
+const PANEL_VIEWPORT_MARGIN = 10;
+let gaitPanelController = null;
+let inspectorPanelController = null;
+
+function readStoredObject(storageKey, fallback) {
+  try {
+    const value = JSON.parse(localStorage.getItem(storageKey) || "null");
+    return value && typeof value === "object" ? value : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function panelViewportIsStable() {
+  return !document.hidden && window.innerWidth >= 320 && window.innerHeight >= 240;
+}
+
+function clampPanelToViewport(panel) {
+  if (!panelViewportIsStable()) return false;
+  const bounds = panel.getBoundingClientRect();
+  const maximumWidth = Math.max(240, window.innerWidth - PANEL_VIEWPORT_MARGIN * 2);
+  const maximumHeight = Math.max(180, window.innerHeight - PANEL_VIEWPORT_MARGIN * 2);
+  const width = Math.min(bounds.width, maximumWidth);
+  const height = Math.min(bounds.height, maximumHeight);
+  const left = THREE.MathUtils.clamp(
+    bounds.left,
+    PANEL_VIEWPORT_MARGIN,
+    Math.max(PANEL_VIEWPORT_MARGIN, window.innerWidth - width - PANEL_VIEWPORT_MARGIN),
+  );
+  const top = THREE.MathUtils.clamp(
+    bounds.top,
+    PANEL_VIEWPORT_MARGIN,
+    Math.max(PANEL_VIEWPORT_MARGIN, window.innerHeight - height - PANEL_VIEWPORT_MARGIN),
+  );
+  panel.style.width = `${Math.round(width)}px`;
+  panel.style.height = `${Math.round(height)}px`;
+  panel.style.left = `${Math.round(left)}px`;
+  panel.style.top = `${Math.round(top)}px`;
+  panel.style.right = "auto";
+  panel.style.bottom = "auto";
+  return true;
+}
+
+function createFloatingPanelController({
+  panel,
+  handle,
+  storageKey,
+  activeClass = "floating-panel-active",
+  clearWhenInactive = false,
+}) {
+  let active = false;
+  let customized = false;
+  let dragging = false;
+  let dragStart = null;
+  let persistenceTimer = null;
+  let savedLayout = readStoredObject(storageKey, null);
+
+  function persist() {
+    if (!active || !customized || !panelViewportIsStable()) return;
+    if (persistenceTimer !== null) clearTimeout(persistenceTimer);
+    persistenceTimer = setTimeout(() => {
+      persistenceTimer = null;
+      if (!active || !customized || !panelViewportIsStable()) return;
+      const bounds = panel.getBoundingClientRect();
+      savedLayout = {
+        left: Math.round(bounds.left),
+        top: Math.round(bounds.top),
+        width: Math.round(bounds.width),
+        height: Math.round(bounds.height),
+      };
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(savedLayout));
+      } catch {
+        console.warn(`Panel layout could not be persisted: ${storageKey}`);
+      }
+    }, 100);
+  }
+
+  function applyLayout(layout) {
+    if (!layout) return false;
+    for (const key of ["left", "top", "width", "height"]) {
+      if (!Number.isFinite(Number(layout[key]))) return false;
+    }
+    panel.style.left = `${layout.left}px`;
+    panel.style.top = `${layout.top}px`;
+    panel.style.width = `${layout.width}px`;
+    panel.style.height = `${layout.height}px`;
+    panel.style.right = "auto";
+    panel.style.bottom = "auto";
+    customized = true;
+    clampPanelToViewport(panel);
+    return true;
+  }
+
+  handle.addEventListener("pointerdown", (event) => {
+    if (!active || event.button !== 0) return;
+    if (event.target.closest("button, input, select, label")) return;
+    if (panel.id === "gait-lab-panel") closeGaitSettingInfo();
+    const bounds = panel.getBoundingClientRect();
+    customized = true;
+    dragging = true;
+    dragStart = {
+      pointerX: event.clientX,
+      pointerY: event.clientY,
+      left: bounds.left,
+      top: bounds.top,
+    };
+    panel.style.width = `${Math.round(bounds.width)}px`;
+    panel.style.height = `${Math.round(bounds.height)}px`;
+    panel.style.left = `${Math.round(bounds.left)}px`;
+    panel.style.top = `${Math.round(bounds.top)}px`;
+    panel.style.right = "auto";
+    panel.style.bottom = "auto";
+    handle.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+  });
+
+  panel.addEventListener("pointerdown", (event) => {
+    if (!active || event.button !== 0 || event.target === handle) return;
+    const bounds = panel.getBoundingClientRect();
+    const onResizeGrip =
+      bounds.right - event.clientX <= 18 &&
+      bounds.bottom - event.clientY <= 18;
+    if (!onResizeGrip) return;
+    customized = true;
+    panel.style.left = `${Math.round(bounds.left)}px`;
+    panel.style.top = `${Math.round(bounds.top)}px`;
+    panel.style.right = "auto";
+    panel.style.bottom = "auto";
+  }, { capture: true });
+
+  handle.addEventListener("pointermove", (event) => {
+    if (!dragging || !dragStart) return;
+    const width = panel.getBoundingClientRect().width;
+    const height = panel.getBoundingClientRect().height;
+    const left = THREE.MathUtils.clamp(
+      dragStart.left + event.clientX - dragStart.pointerX,
+      PANEL_VIEWPORT_MARGIN,
+      Math.max(PANEL_VIEWPORT_MARGIN, window.innerWidth - width - PANEL_VIEWPORT_MARGIN),
+    );
+    const top = THREE.MathUtils.clamp(
+      dragStart.top + event.clientY - dragStart.pointerY,
+      PANEL_VIEWPORT_MARGIN,
+      Math.max(PANEL_VIEWPORT_MARGIN, window.innerHeight - height - PANEL_VIEWPORT_MARGIN),
+    );
+    panel.style.left = `${Math.round(left)}px`;
+    panel.style.top = `${Math.round(top)}px`;
+  });
+
+  function finishDrag(event) {
+    if (!dragging) return;
+    dragging = false;
+    dragStart = null;
+    if (event?.pointerId !== undefined && handle.hasPointerCapture?.(event.pointerId)) {
+      handle.releasePointerCapture(event.pointerId);
+    }
+    persist();
+  }
+  handle.addEventListener("pointerup", finishDrag);
+  handle.addEventListener("pointercancel", finishDrag);
+
+  if (typeof ResizeObserver === "function") {
+    new ResizeObserver(() => {
+      if (!active || dragging || !customized || panel.hidden || !panelViewportIsStable()) return;
+      if (clampPanelToViewport(panel)) persist();
+    }).observe(panel);
+  }
+
+  return {
+    setActive(nextActive) {
+      active = Boolean(nextActive);
+      panel.classList.toggle(activeClass, active);
+      if (active) {
+        if (!customized) applyLayout(savedLayout);
+      } else if (clearWhenInactive) {
+        panel.style.removeProperty("left");
+        panel.style.removeProperty("top");
+        panel.style.removeProperty("width");
+        panel.style.removeProperty("height");
+        panel.style.removeProperty("right");
+        panel.style.removeProperty("bottom");
+        customized = false;
+      }
+    },
+    clamp() {
+      if (active && customized && !panel.hidden && panelViewportIsStable()) {
+        clampPanelToViewport(panel);
+      }
+    },
+    isCustomized: () => customized,
+  };
+}
+
+function loadGaitLabSettings() {
+  try {
+    return sanitizeGaitLabSettings(JSON.parse(localStorage.getItem(GAIT_LAB_STORAGE_KEY) || "{}"));
+  } catch {
+    return { ...defaultGaitLabSettings };
+  }
+}
+
+function loadGaitProfiles() {
+  const storedProfiles = readStoredObject(GAIT_PROFILE_STORAGE_KEY, {});
+  return Object.fromEntries(
+    Object.entries(storedProfiles)
+      .filter(([name, settings]) =>
+        typeof name === "string" && name.trim() && settings && typeof settings === "object")
+      .slice(0, 40)
+      .map(([name, settings]) => [name.trim().slice(0, 32), sanitizeGaitLabSettings(settings)]),
+  );
+}
+
+let gaitLabSettings = loadGaitLabSettings();
+const gaitLab = createGaitLab(gaitLabSettings);
+let gaitLabPersistenceTimer = null;
+let gaitProfiles = loadGaitProfiles();
+
+function setGaitProfileStatus(message = "", state = "") {
+  const output = document.querySelector("#gait-profile-status");
+  output.textContent = message;
+  output.dataset.state = state;
+}
+
+function persistGaitProfiles() {
+  try {
+    localStorage.setItem(GAIT_PROFILE_STORAGE_KEY, JSON.stringify(gaitProfiles));
+    return true;
+  } catch {
+    setGaitProfileStatus("PROFILES COULD NOT BE SAVED", "error");
+    return false;
+  }
+}
+
+function syncGaitProfileUi(selectedName = "") {
+  const select = document.querySelector("#gait-profile-select");
+  const previousSelection = selectedName || select.value;
+  select.replaceChildren(new Option("SAVED PROFILES", ""));
+  Object.keys(gaitProfiles)
+    .sort((a, b) => a.localeCompare(b))
+    .forEach((name) => select.add(new Option(name, name)));
+  select.value = Object.hasOwn(gaitProfiles, previousSelection) ? previousSelection : "";
+  const hasSelection = Boolean(select.value);
+  document.querySelector("#gait-profile-load").disabled = !hasSelection;
+  document.querySelector("#gait-profile-delete").disabled = !hasSelection;
+}
+
+function selectedGaitProfileName() {
+  return document.querySelector("#gait-profile-select").value;
+}
+
+function formatGaitSetting(control, value) {
+  const displayValue = value * (control.scale || 1);
+  const suffix = control.unit ? ` ${control.unit}` : "";
+  return `${displayValue.toFixed(control.decimals)}${suffix}`;
+}
+
+const gaitSettingInfoPopover = document.querySelector("#gait-setting-info");
+const gaitSettingInfoButton = document.querySelector("#gait-setting-info-button");
+
+function positionGaitSettingInfo() {
+  if (!panelViewportIsStable() || gaitSettingInfoPopover.hidden) return;
+  const anchor = gaitSettingInfoButton.getBoundingClientRect();
+  const popover = gaitSettingInfoPopover.getBoundingClientRect();
+  let left = anchor.left + anchor.width / 2 - popover.width / 2;
+  let top = anchor.bottom + 7;
+  left = THREE.MathUtils.clamp(
+    left,
+    PANEL_VIEWPORT_MARGIN,
+    Math.max(PANEL_VIEWPORT_MARGIN, window.innerWidth - popover.width - PANEL_VIEWPORT_MARGIN),
+  );
+  if (top + popover.height > window.innerHeight - PANEL_VIEWPORT_MARGIN) {
+    top = anchor.top - popover.height - 7;
+  }
+  top = THREE.MathUtils.clamp(
+    top,
+    PANEL_VIEWPORT_MARGIN,
+    Math.max(PANEL_VIEWPORT_MARGIN, window.innerHeight - popover.height - PANEL_VIEWPORT_MARGIN),
+  );
+  gaitSettingInfoPopover.style.left = `${Math.round(left)}px`;
+  gaitSettingInfoPopover.style.top = `${Math.round(top)}px`;
+}
+
+function closeGaitSettingInfo() {
+  gaitSettingInfoButton.classList.remove("active");
+  gaitSettingInfoButton.setAttribute("aria-expanded", "false");
+  gaitSettingInfoPopover.hidden = true;
+}
+
+function toggleGaitSettingInfo() {
+  if (!gaitSettingInfoPopover.hidden) {
+    closeGaitSettingInfo();
+    return;
+  }
+  gaitSettingInfoButton.classList.add("active");
+  gaitSettingInfoButton.setAttribute("aria-expanded", "true");
+  gaitSettingInfoPopover.hidden = false;
+  positionGaitSettingInfo();
+}
+
+gaitLabControls.forEach((control) => {
+  const term = document.createElement("dt");
+  const description = document.createElement("dd");
+  term.textContent = control.label;
+  description.textContent = control.description;
+  document.querySelector("#gait-setting-info-list").append(term, description);
+});
+
+gaitSettingInfoButton.addEventListener("click", toggleGaitSettingInfo);
+document.querySelector("#gait-setting-info-close").addEventListener("click", closeGaitSettingInfo);
+document.addEventListener("pointerdown", (event) => {
+  if (gaitSettingInfoPopover.hidden) return;
+  if (gaitSettingInfoPopover.contains(event.target)) return;
+  if (gaitSettingInfoButton.contains(event.target)) return;
+  closeGaitSettingInfo();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeGaitSettingInfo();
+});
+document.querySelector("#gait-lab-panel").addEventListener("scroll", positionGaitSettingInfo);
+
+function updateGaitPresetButtons() {
+  document.querySelectorAll("[data-gait-preset]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.gaitPreset === gaitLabSettings.preset);
+  });
+}
+
+function syncGaitLabUi() {
+  document.querySelector("#gait-lab-enabled").checked = gaitLabSettings.enabled;
+  document.querySelector("#gait-lab-button").dataset.enabled = String(gaitLabSettings.enabled);
+  document.querySelector("#gait-lab-button").textContent = "TUNE";
+  gaitLabControls.forEach((control) => {
+    const field = document.querySelector(`[data-gait-setting="${control.key}"]`);
+    const input = field.querySelector("input");
+    input.min = control.min;
+    input.max = control.max;
+    input.step = control.step;
+    input.value = gaitLabSettings[control.key];
+    input.disabled = !gaitLabSettings.enabled;
+    field.querySelector("output").textContent = formatGaitSetting(control, gaitLabSettings[control.key]);
+  });
+  updateGaitPresetButtons();
+}
+
+function commitGaitLabSettings(nextSettings, preset = "custom") {
+  gaitLabSettings = sanitizeGaitLabSettings({ ...nextSettings, preset });
+  gaitLab.setSettings(gaitLabSettings);
+  if (gaitLabPersistenceTimer !== null) clearTimeout(gaitLabPersistenceTimer);
+  gaitLabPersistenceTimer = setTimeout(() => {
+    gaitLabPersistenceTimer = null;
+    try {
+      localStorage.setItem(GAIT_LAB_STORAGE_KEY, JSON.stringify(gaitLabSettings));
+    } catch {
+      console.warn("Gait Lab settings could not be persisted in this browser.");
+    }
+  }, 120);
+  syncGaitLabUi();
+}
+
+gaitPanelController = createFloatingPanelController({
+  panel: document.querySelector("#gait-lab-panel"),
+  handle: document.querySelector("#gait-lab-panel .gait-lab-heading"),
+  storageKey: GAIT_PANEL_LAYOUT_KEY,
+});
+inspectorPanelController = createFloatingPanelController({
+  panel: document.querySelector("#telemetry-panel"),
+  handle: document.querySelector("#joint-legend > h2"),
+  storageKey: INSPECT_PANEL_LAYOUT_KEY,
+  activeClass: "inspect-floating",
+  clearWhenInactive: true,
+});
+
+function updateGaitLabMinimumSize() {
+  const panel = document.querySelector("#gait-lab-panel");
+  if (document.hidden || panel.hidden) return;
+  const maximumHeight = Math.max(300, window.innerHeight - PANEL_VIEWPORT_MARGIN * 2);
+  panel.style.minHeight = "0";
+  const contentHeight = Math.min(panel.scrollHeight, maximumHeight);
+  panel.style.minHeight = `${Math.ceil(contentHeight)}px`;
+  return contentHeight;
+}
+
+function positionGaitLabPanel() {
+  const panel = document.querySelector("#gait-lab-panel");
+  if (document.hidden || panel.hidden) return;
+  const contentHeight = updateGaitLabMinimumSize();
+  if (gaitPanelController?.isCustomized()) return;
+  const toolbarBounds = document.querySelector("nav").getBoundingClientRect();
+  const top = Math.max(
+    PANEL_VIEWPORT_MARGIN,
+    Math.min(
+      Math.ceil(toolbarBounds.bottom + 8),
+      window.innerHeight - contentHeight - PANEL_VIEWPORT_MARGIN,
+    ),
+  );
+  panel.style.top = `${top}px`;
+  panel.style.left = `${Math.max(10, Math.round(toolbarBounds.left))}px`;
+  panel.style.maxHeight = `${Math.max(300, window.innerHeight - top - PANEL_VIEWPORT_MARGIN)}px`;
+}
+
+function setGaitLabPanelOpen(open) {
+  const panel = document.querySelector("#gait-lab-panel");
+  panel.hidden = !open;
+  gaitPanelController?.setActive(open);
+  const button = document.querySelector("#gait-lab-button");
+  button.setAttribute("aria-expanded", String(open));
+  button.classList.toggle("open", open);
+  if (!open) closeGaitSettingInfo();
+  if (open) {
+    updateGaitLabMinimumSize();
+    if (!gaitPanelController?.isCustomized()) positionGaitLabPanel();
+    gaitPanelController?.clamp();
+  }
+}
+
+if (typeof ResizeObserver === "function") {
+  new ResizeObserver(positionGaitLabPanel).observe(document.querySelector("nav"));
+}
 
 const loading = document.querySelector("#loading");
 const loadingProgress = document.querySelector("#loading-progress");
@@ -451,36 +1302,138 @@ function bodyGroup(legRoot, anchor) {
   return group;
 }
 
-function createJointLabel(text, color, active) {
-  const canvas = document.createElement("canvas");
-  canvas.width = 64;
-  canvas.height = 64;
-  const context = canvas.getContext("2d");
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  context.beginPath();
-  context.arc(32, 32, 28, 0, Math.PI * 2);
-  context.fillStyle = "rgba(16, 23, 27, 0.86)";
-  context.fill();
-  context.strokeStyle = color;
-  context.lineWidth = 4;
-  context.stroke();
-  context.fillStyle = "#f2f5f6";
-  context.font = "700 21px Cascadia Mono, Consolas, monospace";
-  context.textAlign = "center";
-  context.textBaseline = "middle";
-  context.fillText(text, 32, 33);
+function motionPlanePoint(axisDirection, angle, radius) {
+  return Math.abs(axisDirection.x) > 0.5
+    ? new THREE.Vector3(0, Math.cos(angle) * radius, Math.sin(angle) * radius)
+    : new THREE.Vector3(Math.cos(angle) * radius, 0, -Math.sin(angle) * radius);
+}
 
-  const material = new THREE.SpriteMaterial({
-    map: new THREE.CanvasTexture(canvas),
-    transparent: true,
-    opacity: jointOverlayOpacity,
-    depthTest: false,
-    depthWrite: false,
+function createMotionLine(points, color, opacity = jointOverlayOpacity) {
+  const line = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(points),
+    new THREE.LineBasicMaterial({
+      color,
+      transparent: true,
+      opacity,
+      depthTest: false,
+      depthWrite: false,
+    }),
+  );
+  line.renderOrder = 19;
+  return line;
+}
+
+function createJointCallout(color) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 480;
+  canvas.height = 128;
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  const sprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+    }),
+  );
+  sprite.position.set(0.044, 0, 0.040);
+  sprite.scale.set(0.105, 0.028, 1);
+  sprite.center.set(0, 0.5);
+  sprite.renderOrder = 24;
+  sprite.visible = false;
+  sprite.userData.calloutAspect = canvas.height / canvas.width;
+  return { canvas, context: canvas.getContext("2d"), texture, sprite, color, lastText: "" };
+}
+
+function drawJointCallout(callout, meta, deltaDegrees, absoluteDegrees) {
+  if (!callout) return;
+  const deltaSign = deltaDegrees >= 0 ? "+" : "";
+  const degree = String.fromCharCode(176);
+  const plusMinus = String.fromCharCode(177);
+  const textKey = `${meta.label}:${deltaDegrees.toFixed(1)}:${absoluteDegrees.toFixed(1)}`;
+  if (callout.lastText === textKey) return;
+  callout.lastText = textKey;
+
+  const { canvas, context } = callout;
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  const accent = `#${callout.color.toString(16).padStart(6, "0")}`;
+  context.fillStyle = "rgba(16, 16, 18, 0.94)";
+  context.strokeStyle = "rgba(255, 255, 255, 0.20)";
+  context.lineWidth = 2;
+  context.beginPath();
+  if (typeof context.roundRect === "function") {
+    context.roundRect(2, 2, canvas.width - 4, canvas.height - 4, 14);
+  } else {
+    context.rect(2, 2, canvas.width - 4, canvas.height - 4);
+  }
+  context.fill();
+  context.stroke();
+
+  context.fillStyle = accent;
+  if (typeof context.roundRect === "function") {
+    context.beginPath();
+    context.roundRect(15, 14, 4, 20, 2);
+    context.fill();
+  } else {
+    context.fillRect(15, 14, 4, 20);
+  }
+
+  context.fillStyle = "#f3f4f1";
+  context.font = "750 19px Cascadia Mono, Consolas, monospace";
+  context.fillText(meta.label, 31, 29);
+  context.fillStyle = "#d0d0d4";
+  context.font = "650 17px Segoe UI, Arial, sans-serif";
+  context.fillText(meta.title, 72, 29);
+  context.fillStyle = "#85858c";
+  context.font = "750 12px Cascadia Mono, Consolas, monospace";
+  context.fillText(`AXIS ${meta.axis}`, 393, 28);
+
+  context.strokeStyle = "rgba(255, 255, 255, 0.10)";
+  context.lineWidth = 2;
+  context.beginPath();
+  context.moveTo(20, 42);
+  context.lineTo(canvas.width - 20, 42);
+  context.stroke();
+
+  context.fillStyle = "#85858c";
+  context.font = "750 11px Cascadia Mono, Consolas, monospace";
+  context.fillText("OFFSET", 21, 62);
+  context.fillStyle = accent;
+  context.font = "750 28px Cascadia Mono, Consolas, monospace";
+  context.fillText(`${deltaSign}${deltaDegrees.toFixed(1)}${degree}`, 21, 96);
+
+  context.fillStyle = "#b9b9be";
+  context.font = "650 13px Cascadia Mono, Consolas, monospace";
+  context.fillText(`SERVO ${absoluteDegrees.toFixed(1)}${degree}`, 224, 66);
+  context.fillStyle = "#85858c";
+  context.font = "650 12px Cascadia Mono, Consolas, monospace";
+  context.fillText(`LIMIT ${plusMinus}45${degree}`, 224, 91);
+  callout.texture.needsUpdate = true;
+}
+
+function updateJointCalloutScale() {
+  if (!jointOverlayVisible) return;
+  const viewportHeight = Math.max(1, renderer.domElement.clientHeight);
+  const worldHeight = camera === perspectiveCamera
+    ? 2 * camera.position.distanceTo(controls.target) *
+      Math.tan(THREE.MathUtils.degToRad(PERSPECTIVE_FOV_DEG / 2))
+    : orthographicViewHeight / orthographicCamera.zoom;
+  const targetPixels = 190;
+  const targetWidth = THREE.MathUtils.clamp(
+    worldHeight * targetPixels / viewportHeight,
+    0.075,
+    0.160,
+  );
+  linkageRuntimes.forEach((runtime) => {
+    Object.values(runtime?.annotations || {}).forEach((annotation) => {
+      if (!annotation.callout) return;
+      const { sprite } = annotation.callout;
+      const nextScale = targetWidth;
+      if (Math.abs(sprite.scale.x - nextScale) < 0.0002) return;
+      sprite.scale.set(nextScale, nextScale * sprite.userData.calloutAspect, 1);
+    });
   });
-  const sprite = new THREE.Sprite(material);
-  sprite.scale.set(0.016, 0.016, 1);
-  sprite.renderOrder = 20;
-  return sprite;
 }
 
 function createJointAnnotation(parent, position, text, active, axisDirection) {
@@ -491,42 +1444,70 @@ function createJointAnnotation(parent, position, text, active, axisDirection) {
   parent.add(group);
 
   const marker = new THREE.Mesh(
-    new THREE.SphereGeometry(active ? 0.006 : 0.0048, 14, 10),
+    new THREE.TorusGeometry(
+      active ? 0.010 : 0.0045,
+      active ? 0.0015 : 0.00055,
+      8,
+      32,
+    ),
     new THREE.MeshBasicMaterial({
       color,
       transparent: true,
-      opacity: jointOverlayOpacity,
+      opacity: active ? jointOverlayOpacity : jointOverlayOpacity * 0.58,
       depthTest: false,
+      depthWrite: false,
     }),
   );
+  marker.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), axisDirection);
   marker.renderOrder = 18;
   group.add(marker);
 
-  const axis = new THREE.ArrowHelper(
-    axisDirection,
-    axisDirection.clone().multiplyScalar(-0.035),
-    0.07,
-    color,
-    0.012,
-    0.007,
-  );
-  axis.line.material.transparent = true;
-  axis.cone.material.transparent = true;
-  axis.line.material.depthTest = false;
-  axis.cone.material.depthTest = false;
-  axis.line.material.opacity = jointOverlayOpacity;
-  axis.cone.material.opacity = jointOverlayOpacity;
-  axis.renderOrder = 19;
-  group.add(axis);
+  const sweep = active
+    ? createMotionLine(
+        Array.from({ length: 25 }, (_, index) =>
+          motionPlanePoint(
+            axisDirection,
+            THREE.MathUtils.lerp(-Math.PI / 4, Math.PI / 4, index / 24),
+            0.013,
+          ),
+        ),
+        color,
+        jointOverlayOpacity * 0.5,
+      )
+    : null;
+  if (sweep) group.add(sweep);
 
-  const label = createJointLabel(
-    text,
-    `#${color.toString(16).padStart(6, "0")}`,
+  const indicator = active
+    ? createMotionLine(
+        [new THREE.Vector3(), motionPlanePoint(axisDirection, 0, 0.016)],
+        color,
+      )
+    : null;
+  if (indicator) group.add(indicator);
+
+  const leader = active
+    ? createMotionLine(
+        [new THREE.Vector3(0.011, 0, 0.008), new THREE.Vector3(0.044, 0, 0.040)],
+        color,
+        jointOverlayOpacity * 0.7,
+      )
+    : null;
+  if (leader) group.add(leader);
+
+  const callout = active ? createJointCallout(color) : null;
+  if (callout) group.add(callout.sprite);
+
+  return {
+    group,
+    marker,
+    sweep,
+    indicator,
+    leader,
+    callout,
     active,
-  );
-  label.position.set(0.013, active ? 0.019 : 0.014, 0);
-  group.add(label);
-  return { group, marker, axis, label };
+    axisDirection,
+    text,
+  };
 }
 
 function createBodyReferenceOverlay() {
@@ -535,13 +1516,18 @@ function createBodyReferenceOverlay() {
   group.visible = jointOverlayVisible;
   cadRoot.add(group);
 
-  const plane = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.38, 0.18),
-    new THREE.MeshBasicMaterial({
-      color: 0x78a9b8,
+  const plane = new THREE.LineLoop(
+    new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(-0.19, -0.09, 0),
+      new THREE.Vector3(0.19, -0.09, 0),
+      new THREE.Vector3(0.19, 0.09, 0),
+      new THREE.Vector3(-0.19, 0.09, 0),
+    ]),
+    new THREE.LineBasicMaterial({
+      color: 0x8ea4a7,
       transparent: true,
-      opacity: jointOverlayOpacity * 0.16,
-      side: THREE.DoubleSide,
+      opacity: jointOverlayOpacity * 0.52,
+      depthTest: false,
       depthWrite: false,
     }),
   );
@@ -556,10 +1542,10 @@ function createBodyReferenceOverlay() {
     const arrow = new THREE.ArrowHelper(
       definition.direction,
       new THREE.Vector3(),
-      0.16,
+      0.075,
       definition.color,
-      0.025,
-      0.014,
+      0.010,
+      0.006,
     );
     arrow.line.material.transparent = true;
     arrow.cone.material.transparent = true;
@@ -569,15 +1555,7 @@ function createBodyReferenceOverlay() {
     arrow.cone.material.opacity = jointOverlayOpacity;
     group.add(arrow);
 
-    const label = createJointLabel(
-      definition.name,
-      `#${definition.color.toString(16).padStart(6, "0")}`,
-      true,
-    );
-    label.position.copy(definition.direction).multiplyScalar(0.18);
-    label.scale.set(0.020, 0.020, 1);
-    group.add(label);
-    return { arrow, label };
+    return { arrow };
   });
 
   return { group, plane, axes };
@@ -614,10 +1592,9 @@ async function buildLeg(spec, runtimeIndex) {
     const correctedSourceTranslation = spec.sourceTranslation.map(
       (value, axis) => value + meshCorrection[axis],
     );
-    const material = role === "lower_closure" ? tpuMaterial : legMaterial;
     return loadMesh(
       spec.meshes[role],
-      material,
+      legMaterialByRole[role],
       correctedSourceTranslation,
       anchorByRole[role],
       group,
@@ -691,7 +1668,67 @@ async function buildRobot() {
   cadRoot.add(baseGroup);
   await loadMesh("base_link", frameMaterial, [0, 0, 0], assemblyOrigin, baseGroup);
   await Promise.all(legs.map((spec, index) => buildLeg(spec, index)));
+  createMeasuredPoseOverlay();
   loading.classList.add("hidden");
+}
+
+function createMeasuredPoseOverlay() {
+  const clonedAlignment = cadAlignment.clone(true);
+  const sourceNodes = [];
+  const clonedNodes = [];
+  cadAlignment.traverse((object) => sourceNodes.push(object));
+  clonedAlignment.traverse((object) => clonedNodes.push(object));
+  const cloneBySource = new Map(
+    sourceNodes.map((object, index) => [object, clonedNodes[index]]),
+  );
+  const measuredMaterial = new THREE.MeshStandardMaterial({
+    color: 0x62d18a,
+    emissive: 0x143d24,
+    emissiveIntensity: 0.45,
+    roughness: 0.42,
+    metalness: 0.08,
+    transparent: true,
+    opacity: 0.34,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  clonedAlignment.traverse((object) => {
+    if (object.isMesh) {
+      object.material = measuredMaterial;
+      object.castShadow = false;
+      object.receiveShadow = false;
+      object.renderOrder = 6;
+    }
+    if (object.isLine || object.isSprite) object.visible = false;
+  });
+
+  measuredLinkageRuntimes = linkageRuntimes.map((runtime) => {
+    const measuredRuntime = {
+      spec: runtime.spec,
+      legRoot: cloneBySource.get(runtime.legRoot),
+      groups: Object.fromEntries(
+        Object.entries(runtime.groups).map(([name, group]) => [name, cloneBySource.get(group)]),
+      ),
+      footProbe: cloneBySource.get(runtime.footProbe),
+      pins: {},
+      annotations: {},
+    };
+    Object.values(runtime.pins).forEach((pin) => {
+      const clonedPin = cloneBySource.get(pin);
+      if (clonedPin) clonedPin.visible = false;
+    });
+    Object.values(runtime.annotations).forEach((annotation) => {
+      const clonedAnnotation = cloneBySource.get(annotation.group);
+      if (clonedAnnotation) clonedAnnotation.visible = false;
+    });
+    return measuredRuntime;
+  });
+
+  measuredRobotWorld = new THREE.Group();
+  measuredRobotWorld.name = "live-measured-pose";
+  measuredRobotWorld.visible = false;
+  measuredRobotWorld.add(clonedAlignment);
+  scene.add(measuredRobotWorld);
 }
 
 function updateLinkage(runtime, shoulderDeltaDeg, upperDeltaDeg, lowerDeltaDeg) {
@@ -773,13 +1810,13 @@ channels[6] = 1000;
 channels[7] = 1000;
 
 const channelDefinitions = [
-  { name: "ROLL / GAIT TURN", switch: false },
+  { name: "ROLL / TILT", switch: false },
   { name: "PITCH / GAIT FWD", switch: false },
   { name: "HEIGHT / LEFT Y", switch: false, height: true },
-  { name: "YAW", switch: false },
+  { name: "YAW / WALK TURN", switch: false },
   { name: "SA / STAND", switch: true },
   { name: "SB / UNBOUND", switch: false, unbound: true },
-  { name: "SC / GAIT", switch: true },
+  { name: "SC / WALK", switch: true, walkMode: true },
   { name: "SD / TILT", switch: true },
 ];
 
@@ -806,14 +1843,23 @@ const channelBars = channelDefinitions.map((definition, index) => {
     <div class="channel-reading"><output>1500</output><span class="channel-position">MID</span></div>
   `;
   document.querySelector("#channel-bars").append(element);
-  return element;
+  return {
+    element,
+    output: element.querySelector("output"),
+    position: element.querySelector(".channel-position"),
+  };
 });
+const renderedChannelValues = Array(16).fill(Number.NaN);
 
 function updateChannelBars() {
-  channelBars.forEach((element, index) => {
+  channelBars.forEach(({ element, output, position: positionElement }, index) => {
     const value = Math.max(1000, Math.min(2000, channels[index]));
+    if (renderedChannelValues[index] === value) return;
+    renderedChannelValues[index] = value;
     const position = value < 1250 ? "LOW" : value > 1750 ? "HIGH" : "MID";
-    const positionLabel = channelDefinitions[index].height
+    const positionLabel = channelDefinitions[index].walkMode
+      ? position === "LOW" ? "STAND" : position === "MID" ? "CAREFUL" : "TROT"
+      : channelDefinitions[index].height
       ? `${heightMillimetersFromChannel(value).toFixed(0)} MM`
       : channelDefinitions[index].unbound
         ? "UNBOUND"
@@ -822,8 +1868,8 @@ function updateChannelBars() {
     element.classList.toggle("low", position === "LOW");
     element.classList.toggle("mid", position === "MID");
     element.classList.toggle("high", position === "HIGH");
-    element.querySelector("output").textContent = Math.round(value);
-    element.querySelector(".channel-position").textContent =
+    output.textContent = Math.round(value);
+    positionElement.textContent =
       channelDefinitions[index].switch || channelDefinitions[index].height || channelDefinitions[index].unbound
         ? positionLabel
         : "";
@@ -833,9 +1879,13 @@ function updateChannelBars() {
 const socketProtocol = location.protocol === "https:" ? "wss" : "ws";
 let socket;
 let bridgeInput = { connected: false, channels: null };
+const bridgeHeartbeat = createHeartbeatState();
+let boxerHeartbeat = { connected: false, name: "", updatedAt: 0 };
 let controlClaimUntil = performance.now() + 1000;
+applyWorkspace(WORKSPACE_SIMULATION);
 
 function claimControl() {
+  if (!simulationCanOwnControl(applicationState, document.visibilityState)) return;
   controlClaimUntil = performance.now() + 2000;
 }
 
@@ -845,9 +1895,12 @@ window.addEventListener("keydown", claimControl, { capture: true });
 function connectControlBridge() {
   socket = new WebSocket(`${socketProtocol}://${location.host}/control`);
   socket.addEventListener("open", () => {
+    markHeartbeatSocketOpen(bridgeHeartbeat);
     document.querySelector("#firmware-status").dataset.state = "online";
+    sendBridgeHeartbeat();
   });
   socket.addEventListener("close", () => {
+    markHeartbeatSocketClosed(bridgeHeartbeat);
     bridgeInput = { connected: false, channels: null };
     document.querySelector("#firmware-status").dataset.state = "offline";
     setTimeout(connectControlBridge, 800);
@@ -858,6 +1911,12 @@ function connectControlBridge() {
       if ((message.type === "ready" || message.type === "input") && message.input) {
         bridgeInput = message.input;
       }
+      if (message.type === "heartbeat-ack") {
+        acceptHeartbeatAcknowledgement(bridgeHeartbeat, message);
+      }
+      if (message.type === "live-telemetry") {
+        acceptLiveTelemetryPacket(liveTelemetryState, message);
+      }
     } catch {
       // Ignore malformed local bridge packets.
     }
@@ -865,24 +1924,353 @@ function connectControlBridge() {
 }
 connectControlBridge();
 
+function sendBridgeHeartbeat() {
+  if (!simulationCanOwnControl(applicationState, document.visibilityState)) return;
+  if (socket?.readyState !== WebSocket.OPEN) return;
+  socket.send(JSON.stringify(createHeartbeatMessage(bridgeHeartbeat)));
+}
+
+setInterval(sendBridgeHeartbeat, HEARTBEAT_INTERVAL_MS);
+
+function formatPacketAge(age) {
+  if (age === null) return "--";
+  if (age < 1_000) return `${Math.round(age)} ms`;
+  return `${(age / 1_000).toFixed(1)} s`;
+}
+
+function updateSimulationLinkHealth() {
+  const now = Date.now();
+  const bridgeState = heartbeatStatus(bridgeHeartbeat, now);
+  const bridgeStateOutput = document.querySelector("#sim-bridge-state");
+  bridgeStateOutput.textContent = bridgeState.toUpperCase();
+  bridgeStateOutput.dataset.state = bridgeState;
+  document.querySelector("#sim-heartbeat-rtt").textContent = bridgeHeartbeat.roundTripMs === null
+    ? "-- ms"
+    : `${Math.round(bridgeHeartbeat.roundTripMs)} ms`;
+  document.querySelector("#sim-heartbeat-age").textContent = formatPacketAge(
+    packetAgeMs(bridgeHeartbeat.lastAckAt, now),
+  );
+
+  const boxerAge = packetAgeMs(boxerHeartbeat.updatedAt, now);
+  const boxerConnected = boxerHeartbeat.connected && boxerAge !== null && boxerAge < 1_000;
+  const boxerStateOutput = document.querySelector("#sim-boxer-state");
+  boxerStateOutput.textContent = boxerConnected ? "CONNECTED" : "OFFLINE";
+  boxerStateOutput.dataset.state = boxerConnected ? "connected" : "disconnected";
+  boxerStateOutput.title = boxerHeartbeat.name || "No RadioMaster Boxer detected";
+  document.querySelector("#sim-boxer-age").textContent = formatPacketAge(boxerAge);
+  const boxerBadge = document.querySelector("#link-status");
+  boxerBadge.dataset.state = boxerConnected ? "online" : "offline";
+  boxerBadge.title = boxerConnected
+    ? `${boxerHeartbeat.name} / packet ${formatPacketAge(boxerAge)} old`
+    : "RadioMaster Boxer not connected";
+
+  const crsfConnected = firmwareState?.link_alive === true;
+  const crsfStateOutput = document.querySelector("#sim-crsf-state");
+  crsfStateOutput.textContent = crsfConnected ? "CONNECTED" : "OFFLINE";
+  crsfStateOutput.dataset.state = crsfConnected ? "connected" : "disconnected";
+  document.querySelector("#sim-crsf-frames").textContent = Number(
+    firmwareState?.accepted_frames || 0,
+  ).toLocaleString();
+}
+
+setInterval(updateSimulationLinkHealth, 100);
+
+function formatLiveAngle(value, fallback = "--.-°") {
+  if (!Number.isFinite(value)) return fallback;
+  return `${value >= 0 ? "+" : ""}${value.toFixed(1)}°`;
+}
+
+function formatLiveHeight(value, fallback = "--- mm") {
+  if (!Number.isFinite(value)) return fallback;
+  return `${Math.round(value)} mm`;
+}
+
+function setLiveStreamState(selector, connected) {
+  const output = document.querySelector(selector);
+  output.textContent = connected ? "STREAMING" : "NO STREAM";
+  output.dataset.state = connected ? "connected" : "disconnected";
+}
+
+const liveChartCanvas = document.querySelector("#live-comparison-chart");
+const liveChartContext = liveChartCanvas.getContext("2d");
+const liveChartSignal = document.querySelector("#live-chart-signal");
+const liveChartDefinitions = {
+  pitchDeg: { title: "Body pitch / degrees", field: "pitchDeg" },
+  rollDeg: { title: "Body roll / degrees", field: "rollDeg" },
+  yawDeg: { title: "Body yaw / degrees", field: "yawDeg" },
+  heightMm: { title: "Body height / millimetres", field: "heightMm" },
+};
+
+function formatSessionDuration(durationMs) {
+  if (durationMs < 10_000) return `${(durationMs / 1_000).toFixed(1)} S`;
+  return `${Math.floor(durationMs / 60_000)}:${String(Math.floor(durationMs / 1_000) % 60).padStart(2, "0")}`;
+}
+
+function drawLiveSeries(context, points, color, width, height, xAt, yAt) {
+  if (points.length < 2) return;
+  context.beginPath();
+  points.forEach((point, index) => {
+    const x = xAt(point.sample.elapsedMs);
+    const y = yAt(point.value);
+    if (index === 0) context.moveTo(x, y);
+    else context.lineTo(x, y);
+  });
+  context.strokeStyle = color;
+  context.lineWidth = 1.6;
+  context.lineJoin = "round";
+  context.lineCap = "round";
+  context.stroke();
+}
+
+function renderLiveComparisonChart() {
+  if (applicationState.workspace !== WORKSPACE_REAL_ROBOT) return;
+  const bounds = liveChartCanvas.getBoundingClientRect();
+  if (bounds.width < 10 || bounds.height < 10) return;
+  const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+  const width = Math.round(bounds.width);
+  const height = Math.round(bounds.height);
+  const renderWidth = Math.round(width * pixelRatio);
+  const renderHeight = Math.round(height * pixelRatio);
+  if (liveChartCanvas.width !== renderWidth || liveChartCanvas.height !== renderHeight) {
+    liveChartCanvas.width = renderWidth;
+    liveChartCanvas.height = renderHeight;
+  }
+  liveChartContext.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+  liveChartContext.clearRect(0, 0, width, height);
+
+  const samples = liveSessionState.samples.slice(-300);
+  const emptyState = document.querySelector("#live-chart-empty");
+  emptyState.hidden = samples.length > 1;
+  if (samples.length < 2) return;
+
+  const definition = liveChartDefinitions[liveChartSignal.value] || liveChartDefinitions.pitchDeg;
+  const expected = samples.map((sample) => ({ sample, value: sample.expectedBody[definition.field] }));
+  const measured = samples.map((sample) => ({ sample, value: sample.measuredBody[definition.field] }));
+  const error = samples.map((sample) => ({ sample, value: sample.bodyError[definition.field] }));
+  const values = [...expected, ...measured, ...error].map((point) => point.value).filter(Number.isFinite);
+  let minimum = Math.min(0, ...values);
+  let maximum = Math.max(0, ...values);
+  if (Math.abs(maximum - minimum) < 1e-6) {
+    minimum -= 1;
+    maximum += 1;
+  }
+  const verticalPadding = (maximum - minimum) * 0.12;
+  minimum -= verticalPadding;
+  maximum += verticalPadding;
+  const firstTime = samples[0].elapsedMs;
+  const lastTime = Math.max(firstTime + 1, samples.at(-1).elapsedMs);
+  const plot = { left: 10, right: width - 10, top: 30, bottom: height - 10 };
+  const xAt = (time) => plot.left + ((time - firstTime) / (lastTime - firstTime)) * (plot.right - plot.left);
+  const yAt = (value) => plot.bottom - ((value - minimum) / (maximum - minimum)) * (plot.bottom - plot.top);
+  const dark = document.documentElement.dataset.theme === "dark";
+
+  liveChartContext.strokeStyle = dark ? "rgba(255,255,255,.08)" : "rgba(40,45,40,.1)";
+  liveChartContext.lineWidth = 1;
+  for (let index = 0; index <= 4; index += 1) {
+    const y = plot.top + ((plot.bottom - plot.top) * index) / 4;
+    liveChartContext.beginPath();
+    liveChartContext.moveTo(plot.left, y);
+    liveChartContext.lineTo(plot.right, y);
+    liveChartContext.stroke();
+  }
+  if (minimum <= 0 && maximum >= 0) {
+    liveChartContext.strokeStyle = dark ? "rgba(255,255,255,.2)" : "rgba(40,45,40,.22)";
+    liveChartContext.beginPath();
+    liveChartContext.moveTo(plot.left, yAt(0));
+    liveChartContext.lineTo(plot.right, yAt(0));
+    liveChartContext.stroke();
+  }
+  drawLiveSeries(liveChartContext, expected, dark ? "#f0f0f2" : "#343733", width, height, xAt, yAt);
+  drawLiveSeries(liveChartContext, measured, "#63c383", width, height, xAt, yAt);
+  drawLiveSeries(liveChartContext, error, "#e16d5a", width, height, xAt, yAt);
+}
+
+function updateLiveSessionUi(snapshot) {
+  if (liveSessionState.status === "recording") {
+    recordLiveComparisonSample(liveSessionState, snapshot);
+  }
+  const summary = liveSessionSummary(liveSessionState);
+  const recording = summary.status === "recording";
+  const recordingButton = document.querySelector("#live-recording-toggle");
+  recordingButton.disabled = !recording && !snapshot.paired;
+  recordingButton.textContent = recording
+    ? "STOP RECORDING"
+    : summary.sampleCount > 0
+      ? "NEW RECORDING"
+      : "START RECORDING";
+  recordingButton.dataset.state = recording ? "recording" : "idle";
+  document.querySelector("#live-export-csv").disabled = recording || summary.sampleCount === 0;
+  document.querySelector("#live-session-state").textContent = recording
+    ? snapshot.paired
+      ? `RECORDING / ${summary.sampleCount} / ${formatSessionDuration(summary.durationMs)}`
+      : `RECORDING / SIGNAL LOST / ${summary.sampleCount}`
+    : summary.sampleCount > 0
+      ? `STOPPED / ${summary.sampleCount} / ${formatSessionDuration(summary.durationMs)}`
+      : snapshot.paired
+        ? "READY TO RECORD"
+        : "NO ACTIVE SESSION";
+  document.querySelector("#live-chart-empty").textContent = recording && !snapshot.paired
+    ? "Telemetry interrupted. Recording will resume when both streams return."
+    : summary.sampleCount > 0
+      ? "Waiting for another synchronized sample."
+      : "Connect the engineering link, then start recording.";
+  renderLiveComparisonChart();
+}
+
+function updateLiveComparisonUi() {
+  const snapshot = liveComparisonSnapshot(liveTelemetryState);
+  const engineeringConnected = snapshot.lastRobotPacketAgeMs !== null &&
+    snapshot.lastRobotPacketAgeMs <= 1_000;
+  const engineeringOutput = document.querySelector("#live-engineering-link");
+  engineeringOutput.textContent = engineeringConnected ? "CONNECTED" : "OFFLINE";
+  engineeringOutput.dataset.state = engineeringConnected ? "connected" : "disconnected";
+  document.querySelector("#live-packet-age").textContent = formatPacketAge(
+    snapshot.lastRobotPacketAgeMs,
+  );
+  const engineeringBadge = document.querySelector("#real-engineering-status");
+  engineeringBadge.dataset.state = engineeringConnected ? "online" : "offline";
+  engineeringBadge.textContent = engineeringConnected ? "ENGINEERING" : "ENGINEERING";
+
+  setLiveStreamState("#live-expected-state", snapshot.expectedFresh);
+  setLiveStreamState("#live-measured-state", snapshot.measuredFresh);
+  document.querySelector("#live-time-alignment").textContent = snapshot.alignmentMs === null
+    ? "-- ms"
+    : `${snapshot.alignmentMs >= 0 ? "+" : ""}${Math.round(snapshot.alignmentMs)} ms`;
+  document.querySelector("#live-worst-joint-error").textContent =
+    formatLiveAngle(snapshot.worstJointErrorDeg, "--°");
+
+  document.querySelectorAll("[data-live-body]").forEach((output) => {
+    const stream = snapshot[output.dataset.stream];
+    const field = output.dataset.liveBody;
+    output.textContent = field === "heightMm"
+      ? formatLiveHeight(stream?.body?.[field])
+      : formatLiveAngle(stream?.body?.[field]);
+  });
+  document.querySelectorAll("[data-live-body-error]").forEach((output) => {
+    const field = output.dataset.liveBodyError;
+    output.textContent = field === "heightMm"
+      ? Number.isFinite(snapshot.bodyError?.[field])
+        ? `${snapshot.bodyError[field] >= 0 ? "+" : ""}${Math.round(snapshot.bodyError[field])} mm`
+        : "-- mm"
+      : formatLiveAngle(snapshot.bodyError?.[field]);
+  });
+  document.querySelectorAll("[data-live-joint-error]").forEach((output) => {
+    const channel = Number(output.dataset.liveJointError);
+    output.textContent = formatLiveAngle(snapshot.jointErrorsDeg[channel]);
+    const magnitude = Math.abs(snapshot.jointErrorsDeg[channel]);
+    output.dataset.state = !Number.isFinite(magnitude)
+      ? "unavailable"
+      : magnitude >= 8
+        ? "fault"
+        : magnitude >= 3
+          ? "warning"
+          : "ok";
+  });
+
+  document.querySelector("#live-voltage").textContent = snapshot.power
+    ? `${snapshot.power.voltageV.toFixed(2)} V`
+    : "--.- V";
+  document.querySelector("#live-current").textContent = snapshot.power
+    ? `${snapshot.power.currentA.toFixed(2)} A`
+    : "--.- A";
+  document.querySelector("#live-power").textContent = snapshot.power
+    ? `${snapshot.power.powerW.toFixed(1)} W`
+    : "--- W";
+  updateLiveSessionUi(snapshot);
+}
+
+document.querySelector("#live-recording-toggle").addEventListener("click", () => {
+  const snapshot = liveComparisonSnapshot(liveTelemetryState);
+  if (liveSessionState.status === "recording") stopLiveSession(liveSessionState);
+  else if (snapshot.paired) startLiveSession(liveSessionState);
+  updateLiveComparisonUi();
+});
+
+liveChartSignal.addEventListener("change", () => {
+  const definition = liveChartDefinitions[liveChartSignal.value] || liveChartDefinitions.pitchDeg;
+  document.querySelector("#live-chart-title").textContent = definition.title;
+  renderLiveComparisonChart();
+});
+
+document.querySelector("#live-export-csv").addEventListener("click", () => {
+  if (liveSessionState.samples.length === 0) return;
+  const blob = new Blob([liveSessionCsv(liveSessionState)], { type: "text/csv;charset=utf-8" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `domino-live-session-${new Date().toISOString().replace(/[:.]/g, "-")}.csv`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 0);
+});
+
+window.addEventListener("resize", renderLiveComparisonChart);
+
+window.dominoLiveTelemetry = Object.freeze({
+  ingest(packet) {
+    const accepted = acceptLiveTelemetryPacket(liveTelemetryState, packet);
+    updateLiveComparisonUi();
+    return accepted;
+  },
+  snapshot() {
+    return liveComparisonSnapshot(liveTelemetryState);
+  },
+});
+window.addEventListener("domino-live-telemetry", (event) => {
+  if (event instanceof CustomEvent) {
+    acceptLiveTelemetryPacket(liveTelemetryState, event.detail);
+    updateLiveComparisonUi();
+  }
+});
+
+setInterval(updateLiveComparisonUi, 100);
+updateLiveComparisonUi();
+
 function sendChannels() {
   if (socket?.readyState === WebSocket.OPEN) {
+    const physicsSummary = physicsState
+      ? {
+          engine: physicsState.engine,
+          bodyHeight: physicsState.bodyClearance ?? physicsState.bodyHeight,
+          contactCount: physicsState.contactCount,
+          footContacts: physicsState.footContacts,
+          resetCount: physicsState.resetCount,
+        }
+      : null;
     socket.send(JSON.stringify({
       type: "control",
       channels,
       mode: demoMode ? "demo" : "interactive",
-      active: document.visibilityState === "visible",
+      active: simulationCanOwnControl(applicationState, document.visibilityState),
       claimControl: performance.now() < controlClaimUntil,
       manualOverride:
         manualStandOverride !== null ||
         manualTiltOverride !== null ||
-        manualGaitOverride !== null,
+        manualWalkModeOverride !== null,
       clientInput: clientInputSnapshot,
-      physics: physicsState,
+      physics: physicsSummary,
     }));
   }
 }
 setInterval(sendChannels, 25);
+
+function requestStand(nextStand) {
+  manualStandOverride = Boolean(nextStand);
+  standRequested = Boolean(nextStand);
+  if (!standRequested) requestTilt(false);
+}
+
+function requestTilt(nextTilt) {
+  manualTiltOverride = Boolean(nextTilt);
+  tiltRequested = Boolean(nextTilt);
+  if (tiltRequested) {
+    manualStandOverride = true;
+    standRequested = true;
+  }
+}
+
+function requestWalkMode(nextMode) {
+  walkModeRequested = THREE.MathUtils.clamp(Number(nextMode) || 0, 0, 2);
+  manualWalkModeOverride = walkModeRequested;
+}
 
 const keys = new Set();
 window.addEventListener("keydown", (event) => {
@@ -890,26 +2278,85 @@ window.addEventListener("keydown", (event) => {
   if (event.repeat) return;
   if (event.code === "Space") {
     event.preventDefault();
-    standRequested = !standRequested;
+    requestStand(!standRequested);
   }
-  if (event.code === "KeyT") tiltRequested = !tiltRequested;
-  if (event.code === "KeyG") gaitRequested = !gaitRequested;
+  if (event.code === "KeyT") requestTilt(!tiltRequested);
+  if (event.code === "KeyG") {
+    requestWalkMode((walkModeRequested + 1) % 3);
+  }
   if (event.code === "KeyR") resetRobot();
 });
 window.addEventListener("keyup", (event) => keys.delete(event.code));
 
 function resetRobot() {
   physics?.reset();
+  gaitLab.reset();
+  clearFootTrajectories();
+  cadAlignment.position.set(0, 0, 0);
+  cadAlignment.rotation.set(0, 0, 0);
   robotYaw = 0;
+  standRequested = false;
+  tiltRequested = false;
   manualStandOverride = null;
   manualTiltOverride = null;
-  manualGaitOverride = null;
-  gaitRequested = false;
+  manualWalkModeOverride = null;
+  walkModeRequested = 0;
   channels[RIDE_HEIGHT_CHANNEL_INDEX] = 2000;
+  channels[4] = 1000;
   channels[6] = 1000;
+  channels[7] = 1000;
   observedPhysicalStand = null;
   observedPhysicalTilt = null;
-  observedPhysicalGait = null;
+  observedPhysicalWalkMode = null;
+  if (floatModeEnabled) {
+    floatAnchorPosition.set(0, floatAnchorPosition.y, 0);
+    floatAnchorQuaternion.identity();
+    visualBasePosition.copy(floatAnchorPosition);
+    visualBaseQuaternion.copy(floatAnchorQuaternion);
+    centerCameraOnRobot(floatAnchorPosition);
+  }
+}
+
+function centerCameraOnRobot(position) {
+  cameraSnap = null;
+  cameraTargetOffset.set(0, 0, 0);
+  cameraRecenterDelta.copy(position).sub(controls.target);
+  controls.target.copy(position);
+  camera.position.add(cameraRecenterDelta);
+  camera.lookAt(controls.target);
+  controls.update();
+}
+
+function setFloatMode(enabled) {
+  const nextEnabled = Boolean(enabled);
+  if (floatModeEnabled === nextEnabled) return;
+  floatModeEnabled = nextEnabled;
+  clearFootTrajectories();
+  if (floatModeEnabled) {
+    // Capture the exact visible pose. Float mode is an inspection constraint,
+    // not a reset, so entering it must not lift or level the robot.
+    floatAnchorPosition.copy(robotWorld.position);
+    floatAnchorQuaternion.copy(robotWorld.quaternion);
+    visualBasePosition.copy(floatAnchorPosition);
+    visualBaseQuaternion.copy(floatAnchorQuaternion);
+    visualBaseInitialized = true;
+    centerCameraOnRobot(floatAnchorPosition);
+  } else {
+    cadAlignment.position.set(0, 0, 0);
+    cadAlignment.rotation.set(0, 0, 0);
+    physics?.reset();
+    visualBaseInitialized = false;
+    visualPhysicsResetCount = -1;
+  }
+  courseVisuals.visible = !floatModeEnabled;
+  const button = document.querySelector("#float-button");
+  button.classList.toggle("active", floatModeEnabled);
+  button.setAttribute("aria-pressed", String(floatModeEnabled));
+  button.textContent = floatModeEnabled ? "FLOAT ON" : "FLOAT";
+  button.title = floatModeEnabled
+    ? "Restore ground physics"
+    : "Suspend Domino and disable ground physics";
+  canvas.dataset.floatMode = String(floatModeEnabled);
 }
 
 function resetCameraView() {
@@ -917,7 +2364,11 @@ function resetCameraView() {
   controls.enabled = true;
   usePerspectiveCamera();
   cameraTargetOffset.set(0, 0, 0);
-  robotCameraAnchor.set(robotWorld.position.x, 0.32, robotWorld.position.z);
+  robotCameraAnchor.set(
+    robotWorld.position.x,
+    floatModeEnabled ? robotWorld.position.y : 0.32,
+    robotWorld.position.z,
+  );
   controls.target.copy(robotCameraAnchor);
   perspectiveCamera.position.copy(robotCameraAnchor).add(defaultCameraOffset);
   perspectiveCamera.up.set(0, 1, 0);
@@ -931,79 +2382,219 @@ function resetCameraView() {
 function updateJointOverlay() {
   linkageRuntimes.forEach((runtime) => {
     if (!runtime) return;
-    Object.values(runtime.annotations).forEach((annotation) => {
-      annotation.group.visible = jointOverlayVisible;
+    Object.entries(runtime.annotations).forEach(([annotationName, annotation]) => {
       annotation.group.visible =
         jointOverlayVisible &&
         (selectedJointLeg === "ALL" || runtime.spec.label === selectedJointLeg);
-      annotation.marker.material.opacity = jointOverlayOpacity;
-      annotation.axis.line.material.opacity = jointOverlayOpacity;
-      annotation.axis.cone.material.opacity = jointOverlayOpacity;
-      annotation.label.material.opacity = jointOverlayOpacity;
+      const selectedAnnotation = ACTIVE_ANNOTATION_BY_CHANNEL[selectedDriveJoint];
+      const isSelected =
+        annotation.active &&
+        selectedJointLeg !== "ALL" &&
+        runtime.spec.label === selectedJointLeg &&
+        annotationName === selectedAnnotation;
+      annotation.marker.material.opacity = annotation.active
+        ? isSelected ? jointOverlayOpacity : jointOverlayOpacity * 0.28
+        : jointOverlayOpacity * 0.42;
+      if (annotation.sweep) {
+        annotation.sweep.visible = isSelected;
+        annotation.sweep.material.opacity = jointOverlayOpacity * 0.72;
+      }
+      if (annotation.indicator) {
+        annotation.indicator.visible = isSelected;
+        annotation.indicator.material.opacity = jointOverlayOpacity;
+      }
+      if (annotation.leader) {
+        annotation.leader.visible = isSelected;
+      }
+      if (annotation.callout) {
+        annotation.callout.sprite.visible = isSelected;
+        annotation.callout.sprite.material.opacity = Math.max(0.42, jointOverlayOpacity);
+      }
     });
   });
   const button = document.querySelector("#joints-button");
   const control = button.closest(".inspection-control");
   button.classList.toggle("active", jointOverlayVisible);
   button.setAttribute("aria-pressed", String(jointOverlayVisible));
-  button.textContent = jointOverlayVisible ? "JOINTS ON" : "JOINTS";
+  button.textContent = jointOverlayVisible ? "INSPECT ON" : "INSPECT";
   control.classList.toggle("active", jointOverlayVisible);
   document.querySelector("#joint-legend").hidden = !jointOverlayVisible;
+  inspectorPanelController?.setActive(jointOverlayVisible);
+  if (jointOverlayVisible) inspectorPanelController?.clamp();
   document.querySelector("#joint-legend-leg").textContent = selectedJointLeg;
+  document.querySelectorAll("[data-drive-joint]").forEach((driveButton) => {
+    const selected = driveButton.dataset.driveJoint === selectedDriveJoint;
+    driveButton.classList.toggle("active", selected);
+    driveButton.setAttribute("aria-pressed", String(selected));
+  });
   if (bodyReferenceOverlay) {
     bodyReferenceOverlay.group.visible = jointOverlayVisible;
-    bodyReferenceOverlay.plane.material.opacity = jointOverlayOpacity * 0.16;
-    bodyReferenceOverlay.axes.forEach(({ arrow, label }) => {
+    bodyReferenceOverlay.plane.material.opacity = jointOverlayOpacity * 0.52;
+    bodyReferenceOverlay.axes.forEach(({ arrow }) => {
       arrow.line.material.opacity = jointOverlayOpacity;
       arrow.cone.material.opacity = jointOverlayOpacity;
-      label.material.opacity = jointOverlayOpacity;
     });
   }
 }
 
+function updateMotionIndicator(annotation, deltaDegrees) {
+  if (!annotation?.indicator) return;
+  const endpoint = motionPlanePoint(
+    annotation.axisDirection,
+    THREE.MathUtils.degToRad(THREE.MathUtils.clamp(deltaDegrees, -45, 45)),
+    0.016,
+  );
+  const positions = annotation.indicator.geometry.attributes.position;
+  positions.setXYZ(0, 0, 0, 0);
+  positions.setXYZ(1, endpoint.x, endpoint.y, endpoint.z);
+  positions.needsUpdate = true;
+}
+
 function updateJointLegendValues() {
+  if (!jointOverlayVisible) return;
+  const displayState = effectiveFirmwareState || firmwareState;
   const selectedLeg = legs.find((leg) => leg.label === selectedJointLeg);
   const values = ["#joint-q1-value", "#joint-q2-value", "#joint-q3-value"];
-  if (!firmwareState || !selectedLeg) {
+  const footTarget = document.querySelector("#joint-foot-target");
+  const footState = document.querySelector("#joint-foot-state");
+  if (!displayState || !selectedLeg) {
     values.forEach((selector) => {
       document.querySelector(selector).textContent = selectedJointLeg === "ALL" ? "MULTI" : "--";
     });
+    footTarget.textContent = selectedJointLeg === "ALL" ? "MULTI" : "--";
+    footState.textContent = selectedJointLeg === "ALL" ? "MULTI" : "--";
+    footState.dataset.state = "unknown";
     return;
   }
+  const selectedRuntime = linkageRuntimes.find(
+    (runtime) => runtime?.spec.label === selectedJointLeg,
+  );
   const channelNames = ["shoulder", "upper", "lower"];
   channelNames.forEach((name, index) => {
     const channel = selectedLeg.channels[name];
-    const absolute = firmwareState.servo_angle_deg[channel];
+    const absolute = displayState.servo_angle_deg[channel];
     const delta = (absolute - neutralServoAngles[channel]) / selectedLeg.directions[name];
     const sign = delta >= 0 ? "+" : "";
     document.querySelector(values[index]).textContent =
       `${sign}${delta.toFixed(1)}° / ${absolute.toFixed(1)}°`;
   });
+
+  channelNames.forEach((name) => {
+    const channel = selectedLeg.channels[name];
+    const absolute = displayState.servo_angle_deg[channel];
+    const delta = (absolute - neutralServoAngles[channel]) / selectedLeg.directions[name];
+    updateMotionIndicator(
+      selectedRuntime?.annotations[ACTIVE_ANNOTATION_BY_CHANNEL[name]],
+      delta,
+    );
+    drawJointCallout(
+      selectedRuntime?.annotations[ACTIVE_ANNOTATION_BY_CHANNEL[name]]?.callout,
+      DRIVE_META[name],
+      delta,
+      absolute,
+    );
+  });
+
+  const commandIndex = LEG_COMMAND_INDEX_BY_LABEL[selectedJointLeg];
+  const command = displayState.leg_command_xyz_mm?.[commandIndex];
+  footTarget.textContent = Array.isArray(command)
+    ? `${command.map((value) => Number(value).toFixed(0)).join(" / ")} mm`
+    : "--";
+  const legIndex = legs.indexOf(selectedLeg);
+  const planted = Boolean(physicsState?.footContacts?.[legIndex]);
+  footState.textContent = planted ? "PLANTED" : "AIR";
+  footState.dataset.state = planted ? "ok" : "air";
+
+  const closure = document.querySelector("#joint-closure-value");
+  const pinHealth = document.querySelector("#pin-error");
+  const closureHealthy = pinHealth.dataset.state === "ok";
+  closure.textContent = closureHealthy ? "6 / 6 LOCKED" : "CHECK PINS";
+  closure.dataset.state = closureHealthy ? "ok" : "fault";
 }
 
 document.querySelector("#stand-button").addEventListener("click", () => {
-  const nextStand = !standRequested;
-  manualStandOverride = nextStand;
-  standRequested = nextStand;
-  if (!nextStand) {
-    manualTiltOverride = false;
-    tiltRequested = false;
-  }
+  requestStand(!standRequested);
 });
 document.querySelector("#tilt-button").addEventListener("click", () => {
-  const nextTilt = !tiltRequested;
-  manualTiltOverride = nextTilt;
-  tiltRequested = nextTilt;
-  if (nextTilt) {
-    manualStandOverride = true;
-    standRequested = true;
+  requestTilt(!tiltRequested);
+});
+document.querySelectorAll("[data-walk-mode]").forEach((button) => {
+  button.addEventListener("click", () => {
+    requestWalkMode(Number(button.dataset.walkMode));
+  });
+});
+document.querySelector("#gait-lab-button").addEventListener("click", (event) => {
+  setGaitLabPanelOpen(event.currentTarget.getAttribute("aria-expanded") !== "true");
+});
+document.querySelector("#gait-lab-close").addEventListener("click", () => {
+  setGaitLabPanelOpen(false);
+});
+document.querySelector("#gait-lab-enabled").addEventListener("change", (event) => {
+  commitGaitLabSettings({ ...gaitLabSettings, enabled: event.currentTarget.checked }, gaitLabSettings.preset);
+});
+document.querySelectorAll("[data-gait-preset]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const preset = button.dataset.gaitPreset;
+    setGaitProfileStatus();
+    commitGaitLabSettings(
+      { ...gaitLabSettings, ...gaitLabPresets[preset], enabled: true },
+      preset,
+    );
+  });
+});
+gaitLabControls.forEach((control) => {
+  const input = document.querySelector(`[data-gait-setting="${control.key}"] input`);
+  input.addEventListener("input", (event) => {
+    commitGaitLabSettings({ ...gaitLabSettings, [control.key]: Number(event.currentTarget.value) });
+  });
+});
+document.querySelector("#gait-profile-select").addEventListener("change", (event) => {
+  const name = event.currentTarget.value;
+  document.querySelector("#gait-profile-name").value = name;
+  syncGaitProfileUi(name);
+  setGaitProfileStatus();
+});
+document.querySelector("#gait-profile-save").addEventListener("click", () => {
+  const input = document.querySelector("#gait-profile-name");
+  const name = (input.value.trim() || selectedGaitProfileName()).slice(0, 32);
+  if (!name) {
+    setGaitProfileStatus("ENTER A PROFILE NAME", "error");
+    input.focus();
+    return;
   }
+  gaitProfiles[name] = sanitizeGaitLabSettings({ ...gaitLabSettings, preset: "custom" });
+  if (!persistGaitProfiles()) return;
+  input.value = name;
+  syncGaitProfileUi(name);
+  setGaitProfileStatus(`SAVED ${name}`, "ok");
 });
-document.querySelector("#gait-button").addEventListener("click", () => {
-  const nextGait = !gaitRequested;
-  manualGaitOverride = nextGait;
-  gaitRequested = nextGait;
+document.querySelector("#gait-profile-load").addEventListener("click", () => {
+  const name = selectedGaitProfileName();
+  const profile = gaitProfiles[name];
+  if (!profile) {
+    setGaitProfileStatus("SELECT A SAVED PROFILE", "error");
+    return;
+  }
+  commitGaitLabSettings({ ...profile }, "custom");
+  document.querySelector("#gait-profile-name").value = name;
+  setGaitProfileStatus(`LOADED ${name}`, "ok");
 });
+document.querySelector("#gait-profile-delete").addEventListener("click", () => {
+  const name = selectedGaitProfileName();
+  if (!name || !Object.hasOwn(gaitProfiles, name)) return;
+  delete gaitProfiles[name];
+  if (!persistGaitProfiles()) return;
+  document.querySelector("#gait-profile-name").value = "";
+  syncGaitProfileUi();
+  setGaitProfileStatus(`DELETED ${name}`, "ok");
+});
+document.querySelector("#gait-lab-reset").addEventListener("click", () => {
+  gaitLab.reset();
+  commitGaitLabSettings({ ...defaultGaitLabSettings }, "balanced");
+  setGaitProfileStatus();
+});
+syncGaitLabUi();
+syncGaitProfileUi();
 document.querySelector("#reset-button").addEventListener("click", resetRobot);
 document.querySelector("#reset-view-button").addEventListener("click", resetCameraView);
 document.querySelector("#joints-button").addEventListener("click", () => {
@@ -1014,6 +2605,20 @@ document.querySelector("#joint-leg").addEventListener("change", (event) => {
   selectedJointLeg = event.currentTarget.value;
   updateJointOverlay();
   updateJointLegendValues();
+});
+document.querySelectorAll("[data-drive-joint]").forEach((button) => {
+  button.addEventListener("click", () => {
+    selectedDriveJoint = button.dataset.driveJoint;
+    updateJointOverlay();
+    updateJointLegendValues();
+  });
+});
+document.querySelector("#joint-opacity").addEventListener("input", (event) => {
+  jointOverlayOpacity = Number(event.currentTarget.value);
+  updateJointOverlay();
+});
+document.querySelector("#float-button").addEventListener("click", () => {
+  setFloatMode(!floatModeEnabled);
 });
 
 const gamepadButtonState = new Map();
@@ -1036,7 +2641,7 @@ function axisToChannel(axis) {
 function applyPhysicalModeChannels() {
   const physicalStand = channels[4] > 1600;
   const physicalTilt = channels[7] > 1600;
-  const physicalGait = channels[6] > 1750;
+  const physicalWalkMode = walkModeFromChannel(channels[6]);
 
   if (observedPhysicalStand !== null && physicalStand !== observedPhysicalStand) {
     manualStandOverride = null;
@@ -1044,21 +2649,21 @@ function applyPhysicalModeChannels() {
   if (observedPhysicalTilt !== null && physicalTilt !== observedPhysicalTilt) {
     manualTiltOverride = null;
   }
-  if (observedPhysicalGait !== null && physicalGait !== observedPhysicalGait) {
-    manualGaitOverride = null;
+  if (observedPhysicalWalkMode !== null && physicalWalkMode !== observedPhysicalWalkMode) {
+    manualWalkModeOverride = null;
   }
   observedPhysicalStand = physicalStand;
   observedPhysicalTilt = physicalTilt;
-  observedPhysicalGait = physicalGait;
+  observedPhysicalWalkMode = physicalWalkMode;
 
   standRequested = manualStandOverride ?? physicalStand;
   tiltRequested = manualTiltOverride ?? physicalTilt;
-  gaitRequested = manualGaitOverride ?? physicalGait;
+  walkModeRequested = manualWalkModeOverride ?? physicalWalkMode;
   if (!standRequested) tiltRequested = false;
 
   if (manualStandOverride !== null) channels[4] = standRequested ? 2000 : 1000;
   if (manualTiltOverride !== null || !standRequested) channels[7] = tiltRequested ? 2000 : 1000;
-  if (manualGaitOverride !== null) channels[6] = gaitRequested ? 2000 : 1000;
+  if (manualWalkModeOverride !== null) channels[6] = channelFromWalkMode(walkModeRequested);
 }
 
 function updateInput() {
@@ -1066,24 +2671,29 @@ function updateInput() {
   const gamepad = [...(globalThis.navigator?.getGamepads?.() || [])].find(Boolean);
 
   if (demoMode) {
+    boxerHeartbeat = { connected: false, name: "", updatedAt: 0 };
     const tiltDiagnostic = demoSelection === "tilt";
     const rollDiagnostic = demoSelection === "roll" || demoSelection === "roll-negative";
     const gaitDiagnostic = demoSelection === "gait" || demoSelection === "gait-reverse";
+    const diagnosticModeReady = gaitDiagnostic
+      ? firmwareState?.mode === "GAIT" && firmwareState?.motion_input_armed !== false
+      : tiltDiagnostic || rollDiagnostic
+        ? firmwareState?.mode === "TILT" && firmwareState?.motion_input_armed !== false
+        : true;
     document.querySelector("#gamepad-name").textContent =
       gaitDiagnostic ? "GAIT DIAGNOSTIC" :
         rollDiagnostic ? "ROLL DIAGNOSTIC" :
           tiltDiagnostic ? "TILT DIAGNOSTIC" : "AUTOMATIC DEMO";
     standRequested = true;
     tiltRequested = tiltDiagnostic || rollDiagnostic;
-    gaitRequested = gaitDiagnostic;
-    forwardInput = gaitDiagnostic
+    walkModeRequested = gaitDiagnostic ? 2 : 0;
+    forwardInput = diagnosticModeReady && gaitDiagnostic
       ? demoSelection === "gait-reverse" ? -0.55 : 0.55
-      : tiltDiagnostic ? -0.25 : 0;
-    turnInput = tiltDiagnostic ? 0.30 : 0;
-    rollInput = rollDiagnostic
+      : diagnosticModeReady && tiltDiagnostic ? -0.25 : 0;
+    turnInput = diagnosticModeReady && tiltDiagnostic ? 0.30 : 0;
+    rollInput = diagnosticModeReady && rollDiagnostic
       ? demoSelection === "roll-negative" ? -1 : 1
-      : gaitDiagnostic ? 0
-        : tiltDiagnostic ? 0.35 : 0;
+      : diagnosticModeReady && tiltDiagnostic ? 0.35 : 0;
     clientInputSnapshot = {
       source: "diagnostic",
       name: gaitDiagnostic ? "GAIT DIAGNOSTIC" :
@@ -1097,6 +2707,11 @@ function updateInput() {
       channels[index] = bridgeInput.channels[index];
     }
     document.querySelector("#gamepad-name").textContent = `USB / ${bridgeInput.name}`;
+    boxerHeartbeat = {
+      connected: true,
+      name: bridgeInput.name || "RadioMaster Boxer",
+      updatedAt: Number(bridgeInput.updatedAt) || Date.now(),
+    };
     rollInput = deadzone((channels[0] - 1500) / 500);
     forwardInput = deadzone((channels[1] - 1500) / 500);
     turnInput = deadzone((channels[3] - 1500) / 500);
@@ -1110,6 +2725,9 @@ function updateInput() {
     const axes = [...gamepad.axes];
     const isEdgeTxRadio =
       axes.length >= 8 && /radiomaster|boxer|edgetx|open.?tx/i.test(gamepad.id);
+    boxerHeartbeat = isEdgeTxRadio
+      ? { connected: true, name: gamepad.id, updatedAt: Date.now() }
+      : { connected: false, name: "", updatedAt: 0 };
     document.querySelector("#gamepad-name").textContent =
       `${isEdgeTxRadio ? "BROWSER HID" : "GAMEPAD"} / ${gamepad.id}`;
     clientInputSnapshot = {
@@ -1131,11 +2749,12 @@ function updateInput() {
       rollInput = deadzone(axes[0] || 0);
       forwardInput = -deadzone(axes[1] || 0);
       turnInput = deadzone(axes[2] ?? axes[0] ?? 0);
-      pressedOnce(gamepad, 0, () => { standRequested = !standRequested; });
-      pressedOnce(gamepad, 1, () => { tiltRequested = !tiltRequested; });
+      pressedOnce(gamepad, 0, () => requestStand(!standRequested));
+      pressedOnce(gamepad, 1, () => requestTilt(!tiltRequested));
       pressedOnce(gamepad, 3, resetRobot);
     }
   } else {
+    boxerHeartbeat = { connected: false, name: "", updatedAt: 0 };
     document.querySelector("#gamepad-name").textContent = "KEYBOARD";
     clientInputSnapshot = { source: "keyboard", name: "KEYBOARD", axes: [] };
     forwardInput = Number(keys.has("KeyW")) - Number(keys.has("KeyS"));
@@ -1148,10 +2767,25 @@ function updateInput() {
     channels[1] = 1500 + Math.round(forwardInput * 500);
     channels[3] = 1500 + Math.round(turnInput * 500);
     channels[4] = standRequested ? 2000 : 1000;
-    channels[6] = gaitRequested ? 2000 : 1000;
+    channels[6] = channelFromWalkMode(walkModeRequested);
     channels[7] = tiltRequested ? 2000 : 1000;
   }
 
+  const manualOverrideActive =
+    manualStandOverride !== null ||
+    manualTiltOverride !== null ||
+    manualWalkModeOverride !== null;
+  const inputUiNow = performance.now();
+  const inputUiKey = [
+    forwardInput.toFixed(2),
+    turnInput.toFixed(2),
+    rollInput.toFixed(2),
+    ...channels.slice(0, 8).map((value) => Math.round(value / 2) * 2),
+    manualOverrideActive ? "manual" : "radio",
+  ].join("|");
+  if (inputUiNow - lastInputUiUpdate < 40 && inputUiKey === lastInputUiKey) return;
+  lastInputUiUpdate = inputUiNow;
+  lastInputUiKey = inputUiKey;
   document.querySelector("#forward-value").textContent = forwardInput.toFixed(2);
   document.querySelector("#turn-value").textContent = turnInput.toFixed(2);
   document.querySelector("#roll-value").textContent = rollInput.toFixed(2);
@@ -1162,17 +2796,17 @@ function updateInput() {
     `${heightMillimeters.toFixed(0)} MM`;
   document.querySelector("#height-meter-fill").style.width =
     `${heightFractionFromMillimeters(heightMillimeters) * 100}%`;
-  const manualOverrideActive =
-    manualStandOverride !== null ||
-    manualTiltOverride !== null ||
-    manualGaitOverride !== null;
   document.querySelector("#channel-source").textContent = manualOverrideActive ? "MANUAL" : "ELRS";
   document.querySelector("#channel-source-detail").textContent =
     manualOverrideActive ? "SIM OVERRIDE" : "CRSF INPUT";
   updateChannelBars();
 }
 
+let firmwarePollInFlight = false;
+
 async function pollFirmware() {
+  if (firmwarePollInFlight) return;
+  firmwarePollInFlight = true;
   try {
     const response = await fetch(`/runtime/state.json?t=${Date.now()}`, { cache: "no-store" });
     if (!response.ok) throw new Error("Firmware state unavailable");
@@ -1181,7 +2815,6 @@ async function pollFirmware() {
       visualServoAngles = [...firmwareState.servo_angle_deg];
     }
     document.querySelector("#firmware-status").dataset.state = "online";
-    document.querySelector("#link-status").dataset.state = firmwareState.link_alive ? "online" : "offline";
     const stance = firmwareState.tilt_active
       ? "TILTING"
       : firmwareState.mode === "STOW"
@@ -1191,12 +2824,11 @@ async function pollFirmware() {
           : firmwareState.mode;
     const sitting = stance === "SITTING";
     const tilting = stance === "TILTING";
-    const gaitActive = firmwareState.mode === "GAIT";
-    const gaitSwitchDown = channels[6] > 1750;
-    const gaitBlockedByTilt = gaitSwitchDown && (channels[7] > 1600 || tilting);
+    const motionInputArmed = firmwareState.motion_input_armed !== false;
+    const activeWalkMode = firmwareState.mode === "CAREFUL" ? 1 : firmwareState.mode === "GAIT" ? 2 : 0;
+    const selectedWalkMode = walkModeFromChannel(channels[6]);
     const standButton = document.querySelector("#stand-button");
     const tiltButton = document.querySelector("#tilt-button");
-    const gaitButton = document.querySelector("#gait-button");
     const gaitState = document.querySelector("#gait-state");
     const rideHeightMm = Number.isFinite(Number(firmwareState.ride_height_mm))
       ? Number(firmwareState.ride_height_mm)
@@ -1204,13 +2836,20 @@ async function pollFirmware() {
     const commandedHeightMm = Number.isFinite(Number(firmwareState.target_z_mm))
       ? Number(firmwareState.target_z_mm)
       : rideHeightMm;
-    document.querySelector("#mode-status").textContent = stance;
-    document.querySelector("#height-status").textContent = `HEIGHT ${rideHeightMm.toFixed(0)} MM`;
-    document.querySelector("#ride-height").textContent = `${commandedHeightMm.toFixed(0)} mm`;
+    const effectiveCommandedHeightMm = gaitLab.getTelemetry().active &&
+      Number.isFinite(Number(effectiveFirmwareState?.target_z_mm))
+      ? Number(effectiveFirmwareState.target_z_mm)
+      : commandedHeightMm;
+    document.querySelector("#ride-height").textContent =
+      `${effectiveCommandedHeightMm.toFixed(0)} mm`;
     const requestedStanding = manualStandOverride ?? standRequested;
     const poseTransitionPending =
       Math.abs(firmwareState.pose_z_mm - firmwareState.target_z_mm) > 0.5;
     const transitionPending = requestedStanding === sitting || poseTransitionPending;
+    const walkBlockedByTilt =
+      selectedWalkMode > 0 && (channels[7] > 1600 || tilting);
+    const walkArmedByPose =
+      selectedWalkMode > 0 && (sitting || transitionPending);
     standButton.textContent = transitionPending
       ? requestedStanding
         ? "STANDING..."
@@ -1228,26 +2867,42 @@ async function pollFirmware() {
     tiltButton.textContent = tilting ? "TILTING" : "LEVEL";
     tiltButton.title = tilting ? "Return Domino to level" : "Tilt Domino";
     tiltButton.classList.toggle("active", tilting);
-    gaitButton.textContent = gaitActive
-      ? "GAIT ACTIVE"
-      : gaitBlockedByTilt
-        ? "GAIT BLOCKED"
-        : gaitSwitchDown
-          ? "GAIT READY"
-          : "GAIT OFF";
-    gaitButton.dataset.state = gaitBlockedByTilt ? "blocked" : gaitActive ? "active" : "idle";
-    gaitButton.classList.toggle("active", gaitActive);
-    gaitState.textContent = gaitActive
-      ? "ACTIVE"
-      : gaitBlockedByTilt
-        ? "BLOCKED BY TILT"
-        : gaitSwitchDown
-          ? "READY"
-          : "OFF";
-    gaitState.dataset.state = gaitBlockedByTilt ? "blocked" : gaitActive ? "active" : "idle";
+    document.querySelectorAll("[data-walk-mode]").forEach((button) => {
+      const buttonMode = Number(button.dataset.walkMode);
+      button.classList.toggle("active", buttonMode === selectedWalkMode);
+      button.dataset.state = buttonMode !== selectedWalkMode
+        ? "idle"
+        : walkBlockedByTilt
+          ? "blocked"
+          : walkArmedByPose
+            ? "armed"
+            : buttonMode === activeWalkMode && firmwareState.mode !== "STOW"
+              ? "active"
+              : "ready";
+    });
+    const walkLabels = ["STAND", "CAREFUL", "TROT"];
+    gaitState.textContent = walkBlockedByTilt
+      ? `${walkLabels[selectedWalkMode]} BLOCKED BY TILT`
+      : walkArmedByPose
+        ? `${walkLabels[selectedWalkMode]} ARMED`
+        : activeWalkMode === selectedWalkMode
+          ? walkLabels[activeWalkMode]
+          : `${walkLabels[selectedWalkMode]} READY`;
+    gaitState.dataset.state = walkBlockedByTilt
+      ? "blocked"
+      : walkArmedByPose
+        ? "armed"
+        : activeWalkMode > 0
+          ? "active"
+          : "idle";
+    gaitState.title = walkArmedByPose
+      ? "Walk switch selected; gait starts after Domino reaches the standing pose"
+      : "";
     updateJointLegendValues();
   } catch {
     document.querySelector("#firmware-status").dataset.state = "offline";
+  } finally {
+    firmwarePollInFlight = false;
   }
 }
 // Follow the firmware's 20 ms control clock without phase-locking reads to its
@@ -1255,37 +2910,98 @@ async function pollFirmware() {
 setInterval(pollFirmware, 23);
 
 function updateRobot(delta) {
-  if (!firmwareState || !linkageRuntimesReady()) return;
-  const servoReference = neutralServoAngles;
+  const displayState = effectiveFirmwareState || firmwareState;
+  if (!displayState || !linkageRuntimesReady()) return;
 
   if (!visualServoAngles) {
-    visualServoAngles = [...firmwareState.servo_angle_deg];
+    visualServoAngles = [...displayState.servo_angle_deg];
   }
   const blend = 1 - Math.exp(-SERVO_VISUAL_RESPONSE * Math.max(delta, 0));
-  visualServoAngles = visualServoAngles.map((current, channel) => {
-    const target = Number(firmwareState.servo_angle_deg[channel]);
-    return Number.isFinite(target)
-      ? THREE.MathUtils.lerp(current, target, blend)
-      : current;
+  visualServoAngles.forEach((current, channel) => {
+    const target = Number(displayState.servo_angle_deg[channel]);
+    if (Number.isFinite(target)) {
+      visualServoAngles[channel] = THREE.MathUtils.lerp(current, target, blend);
+    }
   });
 
-  linkageRuntimes.forEach((runtime, index) => {
+  applyServoAnglesToRuntimes(linkageRuntimes, visualServoAngles);
+
+  if (telemetryDatasetDue) {
+    canvas.dataset.robotX = robotWorld.position.x.toFixed(4);
+    canvas.dataset.robotZ = robotWorld.position.z.toFixed(4);
+  }
+}
+
+function applyServoAnglesToRuntimes(runtimes, servoAngles) {
+  const servoReference = neutralServoAngles;
+
+  runtimes.forEach((runtime) => {
     const { channels: legChannels, directions } = runtime.spec;
     const shoulderDelta =
-      (visualServoAngles[legChannels.shoulder] - servoReference[legChannels.shoulder]) /
+      (servoAngles[legChannels.shoulder] - servoReference[legChannels.shoulder]) /
       directions.shoulder;
-    let upperDelta =
-      (visualServoAngles[legChannels.upper] - servoReference[legChannels.upper]) /
+    const upperDelta =
+      (servoAngles[legChannels.upper] - servoReference[legChannels.upper]) /
       directions.upper;
-    let lowerDelta =
-      (visualServoAngles[legChannels.lower] - servoReference[legChannels.lower]) /
+    const lowerDelta =
+      (servoAngles[legChannels.lower] - servoReference[legChannels.lower]) /
       directions.lower;
 
     updateLinkage(runtime, shoulderDelta, upperDelta, lowerDelta);
   });
+}
 
-  canvas.dataset.robotX = robotWorld.position.x.toFixed(4);
-  canvas.dataset.robotZ = robotWorld.position.z.toFixed(4);
+function smoothLiveServoAngles(current, target, delta) {
+  if (!current) return [...target];
+  const blend = 1 - Math.exp(-SERVO_VISUAL_RESPONSE * Math.max(delta, 0));
+  current.forEach((angle, channel) => {
+    const next = Number(target[channel]);
+    if (Number.isFinite(next)) current[channel] = THREE.MathUtils.lerp(angle, next, blend);
+  });
+  return current;
+}
+
+function applyLiveBodyPose(group, body) {
+  if (!group || !body) return;
+  group.position.y = body.heightMm / 1_000;
+  group.quaternion.setFromEuler(new THREE.Euler(
+    THREE.MathUtils.degToRad(body.rollDeg),
+    THREE.MathUtils.degToRad(body.yawDeg),
+    THREE.MathUtils.degToRad(-body.pitchDeg),
+    "YXZ",
+  ));
+}
+
+function updateLiveTwinPose(delta) {
+  const snapshot = liveComparisonSnapshot(liveTelemetryState);
+  canvas.dataset.liveExpectedPose = snapshot.expected ? "fresh" : "unavailable";
+  if (snapshot.expected && linkageRuntimesReady()) {
+    liveExpectedServoAngles = smoothLiveServoAngles(
+      liveExpectedServoAngles,
+      snapshot.expected.servoAngleDeg,
+      delta,
+    );
+    applyServoAnglesToRuntimes(linkageRuntimes, liveExpectedServoAngles);
+    applyLiveBodyPose(robotWorld, snapshot.expected.body);
+  }
+
+  if (measuredRobotWorld) {
+    measuredRobotWorld.visible = Boolean(
+      snapshot.measured && measuredLinkageRuntimes.length === linkageRuntimes.length,
+    );
+    if (measuredRobotWorld.visible) {
+      liveMeasuredServoAngles = smoothLiveServoAngles(
+        liveMeasuredServoAngles,
+        snapshot.measured.servoAngleDeg,
+        delta,
+      );
+      applyServoAnglesToRuntimes(measuredLinkageRuntimes, liveMeasuredServoAngles);
+      measuredRobotWorld.position.x = robotWorld.position.x;
+      measuredRobotWorld.position.z = robotWorld.position.z;
+      applyLiveBodyPose(measuredRobotWorld, snapshot.measured.body);
+    }
+    canvas.dataset.liveMeasuredPose = measuredRobotWorld.visible ? "fresh" : "unavailable";
+  }
 }
 
 function pointOnBody(group, point, anchor) {
@@ -1293,8 +3009,7 @@ function pointOnBody(group, point, anchor) {
 }
 
 function updatePinClosureHealth() {
-  if (!linkageRuntimesReady()) return;
-  scene.updateMatrixWorld(true);
+  if (!telemetryDatasetDue || !linkageRuntimesReady()) return;
 
   const residuals = linkageRuntimes.flatMap((runtime) => {
     const { spec, groups } = runtime;
@@ -1333,7 +3048,7 @@ function updatePinClosureHealth() {
     residuals,
   };
   globalThis.dominoPinClosureState = state;
-  canvas.dataset.pinClosure = JSON.stringify(state);
+  if (telemetryDatasetDue) canvas.dataset.pinClosure = JSON.stringify(state);
 
   const linkageHealth = document.querySelector("#linkage-health");
   const pinError = document.querySelector("#pin-error");
@@ -1351,8 +3066,7 @@ function updatePinClosureHealth() {
 }
 
 function updateFootSymmetryHealth() {
-  if (!linkageRuntimesReady()) return;
-  scene.updateMatrixWorld(true);
+  if (!telemetryDatasetDue || !linkageRuntimesReady()) return;
 
   const cadFeet = Object.fromEntries(linkageRuntimes.map((runtime) => {
     const position = new THREE.Vector3();
@@ -1369,9 +3083,10 @@ function updateFootSymmetryHealth() {
     pairs[0],
   );
   const intentionalAsymmetry =
-    firmwareState?.tilt_active ||
-    firmwareState?.mode === "BALANCE" ||
-    firmwareState?.mode === "GAIT";
+    effectiveFirmwareState?.tilt_active ||
+    effectiveFirmwareState?.mode === "BALANCE" ||
+    effectiveFirmwareState?.mode === "GAIT" ||
+    effectiveFirmwareState?.mode === "CAREFUL";
   const healthy = intentionalAsymmetry || worst.errorMm <= FOOT_SYMMETRY_TOLERANCE_MM;
   const state = {
     healthy,
@@ -1381,7 +3096,7 @@ function updateFootSymmetryHealth() {
     pairs,
   };
   globalThis.dominoFootSymmetryState = state;
-  canvas.dataset.footSymmetry = JSON.stringify(state);
+  if (telemetryDatasetDue) canvas.dataset.footSymmetry = JSON.stringify(state);
 
   const output = document.querySelector("#foot-symmetry");
   output.textContent = intentionalAsymmetry
@@ -1401,9 +3116,53 @@ function updateFootSymmetryHealth() {
 
 function updatePhysics(delta) {
   if (!physics || loadedMeshCount !== expectedMeshCount) return;
-  physicsState = physics.update(delta, firmwareState, legs, neutralServoAngles);
+  const displayState = effectiveFirmwareState || firmwareState;
+  if (floatModeEnabled) {
+    robotWorld.position.copy(floatAnchorPosition);
+    robotWorld.quaternion.copy(floatAnchorQuaternion);
+    visualBasePosition.copy(floatAnchorPosition);
+    visualBaseQuaternion.copy(floatAnchorQuaternion);
+    physicsState = {
+      engine: "Kinematic float",
+      proxy: "Suspended CAD inspection",
+      massModel: dominoMassModel,
+      basePosition: floatAnchorPosition.toArray(),
+      baseQuaternion: floatAnchorQuaternion.toArray(),
+      linearVelocity: [0, 0, 0],
+      angularVelocity: [0, 0, 0],
+      footContacts: [false, false, false, false],
+      footPositions: [],
+      footSupportHeights: [null, null, null, null],
+      footRadius: CAD_FOOT_RADIUS,
+      contactCount: 0,
+      bodyHeight: floatAnchorPosition.y,
+      bodyClearance: floatAnchorPosition.y,
+      bodyAltitude: floatAnchorPosition.y,
+      supportHeight: 0,
+      baseTiltDegrees: 0,
+      commandedBodyHeight: floatAnchorPosition.y,
+      resetCount: visualPhysicsResetCount,
+      lastResetReason: "float-mode",
+      floatMode: true,
+      environmentBalls: [],
+    };
+    globalThis.dominoPhysicsState = physicsState;
+    if (telemetryDatasetDue) {
+      canvas.dataset.physics = JSON.stringify(physicsState);
+      document.querySelector("#physics-status").dataset.state = "online";
+      document.querySelector("#physics-engine").textContent = "FLOAT / NO GROUND";
+      document.querySelector("#body-height").textContent = "SUSPENDED";
+      document.querySelector("#foot-contacts").textContent = "0 / 4";
+      document.querySelector("#body-plane-tilt").textContent = "0.00Â°";
+      document.querySelector("#body-roll").textContent = "+0.00Â°";
+      document.querySelector("#body-pitch").textContent = "+0.00Â°";
+      document.querySelector("#body-yaw").textContent = "+0.00Â°";
+    }
+    return;
+  }
+  physicsState = physics.update(delta, displayState, legs, neutralServoAngles);
   globalThis.dominoPhysicsState = physicsState;
-  canvas.dataset.physics = JSON.stringify(physicsState);
+  if (telemetryDatasetDue) canvas.dataset.physics = JSON.stringify(physicsState);
   const [x, y, z] = physicsState.basePosition;
   const [qx, qy, qz, qw] = physicsState.baseQuaternion;
   const targetPosition = new THREE.Vector3(x, y, z);
@@ -1413,9 +3172,11 @@ function updatePhysics(delta) {
   // slower torque response made the feet lift during Q/E roll transitions.
   // Keep the rendered CAD on the firmware clock; Rapier still supplies world
   // translation, contacts, failure detection, and the underlying dynamics.
-  const commandedTiltQuaternion = firmwareState?.mode === "TILT"
-    ? targetBodyQuaternion(firmwareState)
-    : null;
+  const commandedTiltQuaternion =
+    displayState?.mode === "TILT" &&
+    Array.isArray(physicsState.bodyPoseTargetQuaternion)
+      ? new THREE.Quaternion(...physicsState.bodyPoseTargetQuaternion).normalize()
+      : null;
   const targetQuaternion = commandedTiltQuaternion || physicsQuaternion;
   const physicsWasReset = visualPhysicsResetCount !== physicsState.resetCount;
   if (!visualBaseInitialized || physicsWasReset) {
@@ -1439,6 +3200,13 @@ function updatePhysics(delta) {
   }
   robotWorld.position.copy(visualBasePosition);
   robotWorld.quaternion.copy(visualBaseQuaternion);
+  physicsState.environmentBalls?.forEach((ball) => {
+    const mesh = environmentBallMeshes.get(ball.id);
+    if (!mesh) return;
+    mesh.position.set(...ball.position);
+    mesh.quaternion.set(...ball.quaternion);
+  });
+  if (!telemetryDatasetDue) return;
   bodyEuler.setFromQuaternion(robotWorld.quaternion, "YXZ");
   const rollDeg = THREE.MathUtils.radToDeg(bodyEuler.x);
   // Three.js uses world +Z to the viewer's side, while Domino CAD +Y points
@@ -1449,7 +3217,13 @@ function updatePhysics(delta) {
 
   document.querySelector("#physics-status").dataset.state = "online";
   document.querySelector("#physics-engine").textContent = "RAPIER + CAD";
-  document.querySelector("#body-height").textContent = `${(physicsState.bodyHeight * 1000).toFixed(0)} mm`;
+  const massModel = physicsState.massModel || dominoMassModel;
+  const massReadout = document.querySelector("#mass-model");
+  massReadout.textContent = `${massModel.totalMassKg.toFixed(2)} kg / 2x 4S`;
+  massReadout.title =
+    `Two CNHL 1500 mAh 4S packs at ${(massModel.packMassKg * 1000).toFixed(0)} g each`;
+  const bodyClearance = physicsState.bodyClearance ?? physicsState.bodyHeight;
+  document.querySelector("#body-height").textContent = `${(bodyClearance * 1000).toFixed(0)} mm`;
   document.querySelector("#foot-contacts").textContent = `${physicsState.contactCount} / 4`;
   document.querySelector("#body-plane-tilt").textContent =
     `${physicsState.baseTiltDegrees.toFixed(2)}°`;
@@ -1459,7 +3233,7 @@ function updatePhysics(delta) {
 }
 
 function syncVisibleCadToPhysicsFeet(delta) {
-  if (!physicsState || !linkageRuntimesReady()) return;
+  if (floatModeEnabled || !physicsState || !linkageRuntimesReady()) return;
   scene.updateMatrixWorld(true);
 
   const visualFeet = linkageRuntimes.map((runtime) => {
@@ -1468,12 +3242,23 @@ function syncVisibleCadToPhysicsFeet(delta) {
   });
   const contactSamples = visualFeet.flatMap((foot, index) => {
     if (!physicsState.footContacts[index]) return [];
+    const proxyFoot = physicsState.footPositions[index];
+    if (!Array.isArray(proxyFoot)) return [];
+    const proxyRadius = Number(physicsState.footRadius) || CAD_FOOT_RADIUS;
+    const supportHeight = Number.isFinite(physicsState.footSupportHeights?.[index])
+      ? physicsState.footSupportHeights[index]
+      : proxyFoot[1] - proxyRadius;
     return [{
       x: foot.x,
       z: foot.z,
-      // A contacting TPU foot belongs on the fixed world plane. Following the
-      // proxy collider's tiny solver motion made the whole CAD assembly bounce.
-      errorY: CAD_FOOT_RADIUS - foot.y,
+      // Register against the proxy's contacted surface, not world zero. This
+      // keeps CAD feet planted on stairs, ramps, and movable props in tilt.
+      errorY: -contactSurfaceError(
+        foot.y,
+        CAD_FOOT_RADIUS,
+        supportHeight + proxyRadius,
+        proxyRadius,
+      ),
     }];
   });
 
@@ -1551,37 +3336,112 @@ function syncVisibleCadToPhysicsFeet(delta) {
     footCenters: syncedFeet,
     footSurfaceHeights: syncedFeet.map((position) => position[1] - CAD_FOOT_RADIUS),
     contactErrors: syncedFeet.map((position, index) => {
-      return physicsState.footContacts[index]
-        ? position[1] - CAD_FOOT_RADIUS
-        : 0;
+      const proxyFoot = physicsState.footPositions[index];
+      const proxyRadius = Number(physicsState.footRadius) || CAD_FOOT_RADIUS;
+      const supportHeight = Number.isFinite(physicsState.footSupportHeights?.[index])
+        ? physicsState.footSupportHeights[index]
+        : proxyFoot?.[1] - proxyRadius;
+      return physicsState.footContacts[index] && Array.isArray(proxyFoot)
+        ? contactSurfaceError(
+            position[1],
+            CAD_FOOT_RADIUS,
+            supportHeight + proxyRadius,
+            proxyRadius,
+          )
+        : null;
     }),
   };
   visualState.groundedCount = visualState.contactErrors.filter(
-    (error, index) => physicsState.footContacts[index] && Math.abs(error) <= 0.004,
+    (error) => Number.isFinite(error) && Math.abs(error) <= 0.004,
   ).length;
   globalThis.dominoVisualState = visualState;
-  canvas.dataset.visual = JSON.stringify(visualState);
-  document.querySelector("#foot-contacts").textContent =
-    `${Math.min(physicsState.contactCount, visualState.groundedCount)} / 4`;
+  if (telemetryDatasetDue) {
+    canvas.dataset.visual = JSON.stringify(visualState);
+    document.querySelector("#foot-contacts").textContent =
+      `${Math.min(physicsState.contactCount, visualState.groundedCount)} / 4`;
+  }
 }
 
 let lastFrame = performance.now();
-let fpsSampleTime = lastFrame;
-let fpsFrames = 0;
+let lastInputUiUpdate = 0;
+let lastInputUiKey = "";
+let telemetryDatasetElapsed = 0;
+let telemetryDatasetDue = true;
+let cameraGizmoElapsed = 0;
+const previousControlsTarget = new THREE.Vector3();
+const desiredControlsTarget = new THREE.Vector3();
+
+function updateGaitLabState(delta) {
+  effectiveFirmwareState = gaitLab.update(delta, firmwareState, {
+    forward: forwardInput,
+    turn: turnInput,
+  });
+  const telemetry = gaitLab.getTelemetry();
+  if (!telemetryDatasetDue) return;
+  const runtimeStatus = document.querySelector("#gait-lab-runtime-status");
+  const walkingMode = firmwareState?.mode === "GAIT" || firmwareState?.mode === "CAREFUL";
+  if (!gaitLabSettings.enabled) {
+    runtimeStatus.textContent = "SIM ONLY / OVERRIDE OFF";
+    runtimeStatus.dataset.state = "idle";
+  } else if (firmwareState?.tilt_active) {
+    runtimeStatus.textContent = "BLOCKED / TILT ACTIVE";
+    runtimeStatus.dataset.state = "blocked";
+  } else if (!walkingMode) {
+    runtimeStatus.textContent = firmwareState?.mode === "STOW"
+      ? "ARMED / STAND DOMINO FIRST"
+      : "ARMED / SELECT WALK MODE";
+    runtimeStatus.dataset.state = "armed";
+  } else {
+    runtimeStatus.textContent = `LIVE / ${firmwareState.mode === "GAIT" ? "TROT" : "CAREFUL"}`;
+    runtimeStatus.dataset.state = "live";
+  }
+  document.querySelector("#gait-lab-speed").textContent =
+    `${Math.round(telemetry.speedMmPerSec || 0)} mm/s`;
+  document.querySelector("#gait-lab-support").textContent =
+    `${telemetry.stanceCount ?? 4} / 4`;
+  document.querySelector("#gait-lab-reach").textContent =
+    `${telemetry.reachableCount ?? 4} / 4`;
+  document.querySelector("#gait-lab-reach").dataset.state =
+    telemetry.reachableCount === 4 ? "ok" : "fault";
+  document.querySelector("#gait-lab-button").dataset.running = telemetry.active ? "true" : "false";
+  canvas.dataset.gaitLab = JSON.stringify({ ...telemetry, settings: gaitLabSettings });
+}
+
 function animate(now) {
   const delta = Math.min(0.05, (now - lastFrame) / 1000);
   lastFrame = now;
+  if (applicationState.workspace !== WORKSPACE_SIMULATION) {
+    updateLiveTwinPose(delta);
+    ground.visible = true;
+    grid.visible = true;
+    courseVisuals.visible = false;
+    controls.update();
+    renderer.render(scene, camera);
+    requestAnimationFrame(animate);
+    return;
+  }
+  telemetryDatasetElapsed += delta;
+  telemetryDatasetDue = telemetryDatasetElapsed >= 0.1;
+  if (telemetryDatasetDue) telemetryDatasetElapsed = 0;
   updateInput();
+  updateGaitLabState(delta);
   updateRobot(delta);
+  if (linkageRuntimesReady()) scene.updateMatrixWorld(true);
   updatePinClosureHealth();
   updateFootSymmetryHealth();
   updatePhysics(delta);
   syncVisibleCadToPhysicsFeet(delta);
-  const previousTarget = controls.target.clone();
-  robotCameraAnchor.set(robotWorld.position.x, 0.32, robotWorld.position.z);
+  updateFootTrajectories(delta);
+  previousControlsTarget.copy(controls.target);
+  robotCameraAnchor.set(
+    robotWorld.position.x,
+    floatModeEnabled ? robotWorld.position.y : 0.32,
+    robotWorld.position.z,
+  );
   if (!middleButtonPanning) {
-    controls.target.lerp(robotCameraAnchor.clone().add(cameraTargetOffset), 0.08);
-    camera.position.add(controls.target.clone().sub(previousTarget));
+    desiredControlsTarget.copy(robotCameraAnchor).add(cameraTargetOffset);
+    controls.target.lerp(desiredControlsTarget, 0.08);
+    camera.position.add(controls.target).sub(previousControlsTarget);
   }
   if (orthographicAxisDirection && inspectionGrid.visible) {
     inspectionGrid.position.copy(controls.target)
@@ -1589,18 +3449,17 @@ function animate(now) {
   }
   if (!updateCameraSnap(now)) controls.update();
   const viewingFromBelow = camera.position.y < 0;
-  ground.visible = !viewingFromBelow;
-  grid.visible = !viewingFromBelow;
-  updateCameraGizmo();
+  ground.visible = !floatModeEnabled && !viewingFromBelow;
+  grid.visible = !floatModeEnabled && !viewingFromBelow;
+  courseVisuals.visible = !floatModeEnabled;
+  updateJointCalloutScale();
+  cameraGizmoElapsed += delta;
+  if (cameraGizmoElapsed >= 1 / 30) {
+    cameraGizmoElapsed = 0;
+    updateCameraGizmo();
+  }
   renderer.render(scene, camera);
 
-  fpsFrames += 1;
-  if (now - fpsSampleTime > 500) {
-    document.querySelector("#fps-status").textContent =
-      `${Math.round((fpsFrames * 1000) / (now - fpsSampleTime))} FPS`;
-    fpsFrames = 0;
-    fpsSampleTime = now;
-  }
   requestAnimationFrame(animate);
 }
 
@@ -1611,13 +3470,29 @@ function resize() {
   perspectiveCamera.aspect = width / height;
   perspectiveCamera.updateProjectionMatrix();
   updateOrthographicProjection();
-  const pixelRatio = Math.min(window.devicePixelRatio, 2);
+  const pixelRatio = Math.min(window.devicePixelRatio, MAX_RENDER_PIXEL_RATIO);
   cameraGizmoCanvas.width = CAMERA_GIZMO_SIZE * pixelRatio;
   cameraGizmoCanvas.height = CAMERA_GIZMO_SIZE * pixelRatio;
   cameraGizmoContext.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+  updateGaitLabMinimumSize();
+  positionGaitLabPanel();
+  gaitPanelController?.clamp();
+  inspectorPanelController?.clamp();
+  positionGaitSettingInfo();
 }
 
 window.addEventListener("resize", resize);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) return;
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      positionGaitLabPanel();
+      gaitPanelController?.clamp();
+      inspectorPanelController?.clamp();
+      positionGaitSettingInfo();
+    });
+  });
+});
 resize();
 buildRobot().catch((error) => {
   loadingDetail.textContent = error.message;

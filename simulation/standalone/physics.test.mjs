@@ -1,8 +1,139 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { legs, standServoReference } from "./web/src/domino-config.js";
-import { createDominoPhysics } from "./web/src/physics.js";
+import {
+  batteryPacks,
+  dominoMassModel,
+  legs,
+  standServoReference,
+} from "./web/src/domino-config.js";
+import { contactSurfaceError, createDominoPhysics } from "./web/src/physics.js";
+import { logSpecs, terrainSpecs } from "./web/src/course-config.js";
+import { createVoronoiTerrain } from "./web/src/voronoi-terrain.js";
+
+test("course obstacles fit Domino's nominal gait envelope", () => {
+  const ramp = terrainSpecs.find((spec) => spec.id === "ramp");
+  const platform = terrainSpecs.find((spec) => spec.id === "ramp-platform");
+  const rampHighEdge = ramp.position[1] +
+    Math.sin(ramp.slope) * ramp.size[0] / 2 +
+    Math.cos(ramp.slope) * ramp.size[1] / 2;
+  const platformTop = platform.position[1] + platform.size[1] / 2;
+  assert.ok(
+    Math.abs(rampHighEdge - platformTop) < 0.004,
+    `ramp/platform seam differs by ${Math.abs(rampHighEdge - platformTop) * 1000} mm`,
+  );
+  const steps = terrainSpecs.filter((spec) => spec.id.startsWith("step-"));
+  assert.equal(steps.length, 4);
+  const stepTops = steps.map((step) => step.position[1] + step.size[1] / 2);
+  stepTops.forEach((height, index) => {
+    const previousHeight = index === 0 ? 0 : stepTops[index - 1];
+    assert.ok(
+      height - previousHeight <= 0.03,
+      `step ${index + 1} rises ${(height - previousHeight) * 1000} mm`,
+    );
+  });
+  assert.ok(Math.max(...logSpecs.map((spec) => spec.radius)) <= 0.045);
+  assert.ok(
+    terrainSpecs
+      .filter((spec) => spec.id.startsWith("stepping-block"))
+      .every((spec) => spec.position[1] + spec.size[1] / 2 <= 0.10),
+  );
+});
+
+test("Voronoi terrain has physical relief within the gait envelope", () => {
+  const spec = terrainSpecs.find((terrain) => terrain.kind === "voronoi");
+  const terrain = createVoronoiTerrain(spec);
+  const heights = [];
+  for (let index = 1; index < terrain.vertices.length; index += 3) {
+    heights.push(terrain.vertices[index]);
+  }
+  const baseTop = spec.position[1] + spec.size[1] / 2;
+  assert.equal(terrain.cellRanges.length, 12);
+  assert.ok(Math.max(...heights) - baseTop >= 0.06);
+  assert.ok(Math.max(...heights) - baseTop <= 0.075);
+  assert.ok(Math.min(...heights) >= baseTop - 1e-6);
+  assert.ok(terrain.indices.length >= 72);
+});
+
+test("CAD contact error is relative to elevated terrain, not world zero", () => {
+  assert.ok(Math.abs(contactSurfaceError(0.142, 0.012, 0.154, 0.024)) < 1e-12);
+  assert.ok(
+    Math.abs(contactSurfaceError(0.137, 0.012, 0.154, 0.024) + 0.005) < 1e-12,
+  );
+});
+
+test("mass model includes two CNHL 1500 mAh 4S packs", async () => {
+  assert.equal(batteryPacks.length, 2);
+  assert.equal(dominoMassModel.packMassKg, 0.183);
+  assert.equal(dominoMassModel.batteryMassKg, 0.366);
+  assert.ok(Math.abs(dominoMassModel.totalMassKg - 2.966) < 1e-9);
+
+  const physics = await createDominoPhysics();
+  const state = physics.update(0, null, legs, standServoReference);
+  assert.equal(state.massModel, dominoMassModel);
+});
+
+test("dynamic course balls settle and remain stable across robot resets", async () => {
+  const physics = await createDominoPhysics();
+  const neutralStand = {
+    mode: "STAND",
+    servo_angle_deg: [...standServoReference],
+    leg_command_xyz_mm: [
+      [-15.75, 38, 280],
+      [-15.75, -38, 280],
+      [-15.75, 38, 280],
+      [-15.75, -38, 280],
+    ],
+  };
+  const expectedBalls = new Map([
+    ["ball-a", { radius: 0.10, x: 0.55, z: 1.12 }],
+    ["ball-b", { radius: 0.075, x: -0.45, z: 1.12 }],
+  ]);
+
+  let state;
+  for (let frame = 0; frame < 600; frame += 1) {
+    state = physics.update(1 / 120, neutralStand, legs, standServoReference);
+  }
+
+  assert.equal(state.environmentBalls.length, 2);
+  const settledPositions = new Map();
+  for (const ball of state.environmentBalls) {
+    const expected = expectedBalls.get(ball.id);
+    assert.ok(expected, `unexpected environment ball ${ball.id}`);
+    assert.ok(ball.position.every(Number.isFinite), `${ball.id} position became non-finite`);
+    assert.ok(
+      Math.abs(ball.position[1] - expected.radius) < 0.01,
+      `${ball.id} settled at y=${ball.position[1]} instead of radius ${expected.radius}`,
+    );
+    assert.ok(
+      Math.hypot(ball.position[0] - expected.x, ball.position[2] - expected.z) < 0.03,
+      `${ball.id} drifted from its spawn: ${JSON.stringify(ball.position)}`,
+    );
+    assert.ok(
+      Math.abs(ball.linearVelocity[1]) < 0.01,
+      `${ball.id} retained ${ball.linearVelocity[1]} m/s vertical velocity`,
+    );
+    settledPositions.set(ball.id, [...ball.position]);
+  }
+
+  for (let resetIndex = 0; resetIndex < 3; resetIndex += 1) {
+    physics.reset(`ball-persistence-${resetIndex}`);
+    state = physics.update(1 / 120, neutralStand, legs, standServoReference);
+    for (const ball of state.environmentBalls) {
+      const previous = settledPositions.get(ball.id);
+      const displacement = Math.hypot(
+        ball.position[0] - previous[0],
+        ball.position[1] - previous[1],
+        ball.position[2] - previous[2],
+      );
+      assert.ok(
+        displacement < 0.002,
+        `${ball.id} jumped ${displacement} m during robot reset`,
+      );
+      settledPositions.set(ball.id, [...ball.position]);
+    }
+  }
+});
 
 test("neutral stand settles level on four feet", async () => {
   const physics = await createDominoPhysics();
@@ -29,6 +160,67 @@ test("neutral stand settles level on four feet", async () => {
   );
   assert.equal(state.resetCount, 0);
   assert.ok(state.baseTiltDegrees < 0.75, `base tilt was ${state.baseTiltDegrees} deg`);
+});
+
+test("tilt entry preserves elevated foot endpoints and support-relative height", async () => {
+  const platform = terrainSpecs.find((spec) => spec.id === "ramp-platform");
+  const platformTop = platform.position[1] + platform.size[1] / 2;
+  const physics = await createDominoPhysics({
+    initialBasePosition: [platform.position[0], 0.304 + platformTop, platform.position[2]],
+  });
+  const firmwareState = {
+    mode: "STAND",
+    pose_z_mm: 280,
+    body_pose_rpy_deg: [0, 0, 0],
+    servo_angle_deg: [...standServoReference],
+    leg_command_xyz_mm: [
+      [-15.75, 38, 280],
+      [-15.75, -38, 280],
+      [-15.75, 38, 280],
+      [-15.75, -38, 280],
+    ],
+  };
+
+  let state;
+  for (let frame = 0; frame < 600; frame += 1) {
+    state = physics.update(1 / 120, firmwareState, legs, standServoReference);
+  }
+  assert.equal(state.contactCount, 4);
+  const standBaseHeight = state.basePosition[1];
+  const standFeet = state.footPositions.map((position) => [...position]);
+
+  firmwareState.mode = "TILT";
+  firmwareState.body_pose_rpy_deg = [0, 6, 0];
+  state = physics.update(1 / 120, firmwareState, legs, standServoReference);
+  assert.ok(state.tiltFootAnchors, "tilt did not capture foot endpoints");
+  state.tiltFootAnchors.forEach((anchor, index) => {
+    assert.ok(anchor[1] > platformTop, `foot ${index} anchor fell below platform top`);
+    assert.ok(
+      Math.abs(anchor[1] - standFeet[index][1]) < 0.003,
+      `foot ${index} anchor moved on tilt entry`,
+    );
+  });
+  assert.ok(
+    Math.abs(state.commandedBodyHeight - standBaseHeight) < 0.004,
+    `tilt rebased body height from ${standBaseHeight} to ${state.commandedBodyHeight}`,
+  );
+
+  for (let frame = 0; frame < 360; frame += 1) {
+    state = physics.update(1 / 120, firmwareState, legs, standServoReference);
+  }
+  assert.equal(state.resetCount, 0, `unexpected ${state.lastResetReason} reset`);
+  assert.ok(state.basePosition[1] > platformTop + 0.24);
+  assert.ok(
+    state.bodyClearance > 0.26 && state.bodyClearance < 0.34,
+    `support-relative body height was ${state.bodyClearance}`,
+  );
+  assert.ok(Math.abs(state.supportHeight - platformTop) < 0.01);
+  state.footPositions.forEach((position, index) => {
+    assert.ok(
+      position[1] > platformTop + state.footRadius * 0.65,
+      `foot ${index} dropped through the elevated platform`,
+    );
+  });
 });
 
 test("deep sit lowers the chassis onto four stable feet", async () => {
@@ -149,6 +341,59 @@ test("diagonal sinusoidal gait stays supported and produces planar travel", asyn
   assert.ok(meanPlantedSlipSpeed < 0.04, `planted-foot slip reached ${meanPlantedSlipSpeed} m/s`);
   assert.ok(pathEfficiency > 0.20, `gait path efficiency was only ${pathEfficiency}`);
   assert.ok(state.drivenTargets.every(Number.isFinite));
+});
+
+test("careful walk swings one foot while keeping a three-foot support polygon", async () => {
+  const physics = await createDominoPhysics();
+  const firmwareState = {
+    mode: "STAND",
+    pose_z_mm: 265,
+    servo_angle_deg: [...standServoReference],
+    leg_command_xyz_mm: [
+      [-15.75, 38, 265], [-15.75, -38, 265],
+      [-15.75, 38, 265], [-15.75, -38, 265],
+    ],
+  };
+  let state;
+  for (let frame = 0; frame < 480; frame += 1) {
+    state = physics.update(1 / 120, firmwareState, legs, standServoReference);
+  }
+
+  const swingOrder = [0, 3, 1, 2];
+  let minimumCommandedSupport = 4;
+  let minimumPhysicalContacts = 4;
+  let sawSingleSwing = false;
+  firmwareState.mode = "CAREFUL";
+  for (let frame = 0; frame < 1440; frame += 1) {
+    const cycle = (0.36 * (frame / 120)) % 1;
+    firmwareState.leg_command_xyz_mm = [0, 1, 2, 3].map((legIndex) => {
+      const orderIndex = swingOrder.indexOf(legIndex);
+      const legCycle = (cycle - 0.25 * orderIndex + 1) % 1;
+      const swingFraction = 0.19;
+      let xOffset;
+      let zOffset = 0;
+      if (legCycle < swingFraction) {
+        const swing = legCycle / swingFraction;
+        xOffset = 18 * (-1 + 2 * (0.5 - 0.5 * Math.cos(Math.PI * swing)));
+        zOffset = -18 * Math.sin(Math.PI * swing) ** 2;
+      } else {
+        const stance = (legCycle - swingFraction) / (1 - swingFraction);
+        xOffset = 18 * (1 - 2 * stance);
+      }
+      return [-15.75 + xOffset, legIndex === 0 || legIndex === 2 ? 38 : -38, 265 + zOffset];
+    });
+    const commandedSupport = firmwareState.leg_command_xyz_mm
+      .filter((command) => Math.abs(command[2] - 265) <= 0.75).length;
+    minimumCommandedSupport = Math.min(minimumCommandedSupport, commandedSupport);
+    sawSingleSwing ||= commandedSupport === 3;
+    state = physics.update(1 / 120, firmwareState, legs, standServoReference);
+    minimumPhysicalContacts = Math.min(minimumPhysicalContacts, state.contactCount);
+  }
+
+  assert.equal(minimumCommandedSupport, 3);
+  assert.ok(sawSingleSwing, "careful walk never lifted exactly one foot");
+  assert.ok(minimumPhysicalContacts >= 3, `careful walk dropped to ${minimumPhysicalContacts} contacts`);
+  assert.equal(state.resetCount, 0, `unexpected ${state.lastResetReason} reset`);
 });
 
 test("tilt command remains finite and physically supported", async () => {
@@ -417,6 +662,69 @@ test("negative yaw transition keeps the planted feet supported", async () => {
     maximumBodyHeight < 0.31,
     `negative yaw raised the body to ${maximumBodyHeight} m`,
   );
+});
+
+test("tilt re-entry preserves the heading reached before the mode switch", async () => {
+  const physics = await createDominoPhysics();
+  const yawCase = isolatedAxisCases.find(
+    (axisCase) => axisCase.axis === "yaw" && axisCase.targetDegrees > 0,
+  );
+  const yawTilt = {
+    mode: "TILT",
+    pose_z_mm: 280,
+    body_pose_rpy_deg: [0, 0, yawCase.targetDegrees],
+    servo_angle_deg: yawCase.servo_angle_deg,
+    leg_command_xyz_mm: yawCase.leg_command_xyz_mm,
+  };
+  const neutralStand = {
+    mode: "STAND",
+    pose_z_mm: 280,
+    body_pose_rpy_deg: [0, 0, 0],
+    servo_angle_deg: [...standServoReference],
+    leg_command_xyz_mm: [
+      [-15.75, 38, 280],
+      [-15.75, -38, 280],
+      [-15.75, 38, 280],
+      [-15.75, -38, 280],
+    ],
+  };
+
+  const headingDegrees = (state) => {
+    const [x, y, z, w] = state.baseQuaternion;
+    const forwardX = 1 - 2 * (y * y + z * z);
+    const forwardZ = 2 * (x * z - w * y);
+    return Math.atan2(-forwardZ, forwardX) * 180 / Math.PI;
+  };
+
+  let state;
+  for (let frame = 0; frame < 720; frame += 1) {
+    state = physics.update(1 / 120, yawTilt, legs, standServoReference);
+  }
+  for (let frame = 0; frame < 360; frame += 1) {
+    state = physics.update(1 / 120, neutralStand, legs, standServoReference);
+  }
+  const headingBeforeReentry = headingDegrees(state);
+  const positionBeforeReentry = [...state.basePosition];
+
+  const neutralTilt = { ...neutralStand, mode: "TILT" };
+  let minimumContacts = 4;
+  for (let frame = 0; frame < 480; frame += 1) {
+    state = physics.update(1 / 120, neutralTilt, legs, standServoReference);
+    minimumContacts = Math.min(minimumContacts, state.contactCount);
+  }
+
+  const headingAfterReentry = headingDegrees(state);
+  const planarDrift = Math.hypot(
+    state.basePosition[0] - positionBeforeReentry[0],
+    state.basePosition[2] - positionBeforeReentry[2],
+  );
+  assert.equal(state.resetCount, 0, `unexpected ${state.lastResetReason} reset`);
+  assert.ok(minimumContacts >= 3, `tilt re-entry dropped to ${minimumContacts} contacts`);
+  assert.ok(
+    Math.abs(headingAfterReentry - headingBeforeReentry) < 3,
+    `tilt re-entry changed heading from ${headingBeforeReentry} to ${headingAfterReentry} deg`,
+  );
+  assert.ok(planarDrift < 0.02, `tilt re-entry moved ${planarDrift} m in the plane`);
 });
 
 test("repeated tilt reversals settle without residual jitter", async () => {

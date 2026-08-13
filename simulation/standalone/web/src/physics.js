@@ -1,9 +1,21 @@
 import RAPIER from "@dimforge/rapier3d-compat";
 import * as THREE from "three";
 
+import { batteryPacks, dominoMassModel } from "./domino-config.js";
+import { environmentBallSpecs, logSpecs, terrainSpecs } from "./course-config.js";
+import { createVoronoiTerrain } from "./voronoi-terrain.js";
+
 const FIXED_TIMESTEP = 1 / 120;
-const ROBOT_GROUP = (0x0001 << 16) | 0x0002;
-const WORLD_GROUP = (0x0002 << 16) | 0x0001;
+const ROBOT_MEMBERSHIP = 0x0001;
+const WORLD_MEMBERSHIP = 0x0002;
+const PROP_MEMBERSHIP = 0x0004;
+const ROBOT_GROUP =
+  (ROBOT_MEMBERSHIP << 16) | (WORLD_MEMBERSHIP | PROP_MEMBERSHIP);
+const WORLD_GROUP =
+  (WORLD_MEMBERSHIP << 16) | (ROBOT_MEMBERSHIP | PROP_MEMBERSHIP);
+const PROP_GROUP =
+  (PROP_MEMBERSHIP << 16) |
+  (ROBOT_MEMBERSHIP | WORLD_MEMBERSHIP | PROP_MEMBERSHIP);
 const SHOULDER_LIMIT = THREE.MathUtils.degToRad(45);
 const SERVO_TRAVEL = THREE.MathUtils.degToRad(45);
 const LEG_LENGTHS = { upper: 0.16, lower: 0.153 };
@@ -32,6 +44,9 @@ const FOOT_PLANAR_HOLD_STIFFNESS = 480;
 const FOOT_PLANAR_HOLD_DAMPING = 34;
 const FOOT_PLANAR_HOLD_MAX_FORCE = 55;
 const FOOT_PLANAR_HOLD_MAX_FORCE_RATE = 600;
+const FOOT_VERTICAL_HOLD_STIFFNESS = 260;
+const FOOT_VERTICAL_HOLD_DAMPING = 24;
+const FOOT_VERTICAL_HOLD_MAX_FORCE = 32;
 const GAIT_FOOT_HOLD_STIFFNESS = 320;
 const GAIT_FOOT_HOLD_DAMPING = 28;
 const GAIT_FOOT_HOLD_MAX_FORCE = 42;
@@ -80,12 +95,6 @@ const LEG_SPECS = [
     defaults: [0, NEUTRAL_HIP_ANGLE, NEUTRAL_KNEE_ANGLE],
     limits: [[-SHOULDER_LIMIT, SHOULDER_LIMIT], [-0.523599, 1.047198], [-2.094395, 0]],
   },
-];
-
-const obstacleSpecs = [
-  { size: [1.4, 0.12, 0.8], position: [2.4, 0.06, -1.8], yaw: 0.2 },
-  { size: [0.9, 0.24, 0.9], position: [-2.2, 0.12, -2.1], yaw: -0.15 },
-  { size: [1.8, 0.07, 0.55], position: [-1.8, 0.035, 1.9], yaw: 0.45 },
 ];
 
 function vector(values) {
@@ -149,6 +158,25 @@ export function targetBodyQuaternion(firmwareState) {
     );
 }
 
+export function contactSurfaceError(
+  visualFootCenterY,
+  visualFootRadius,
+  proxyFootCenterY,
+  proxyFootRadius,
+) {
+  return (Number(visualFootCenterY) - Number(visualFootRadius)) -
+    (Number(proxyFootCenterY) - Number(proxyFootRadius));
+}
+
+function levelHeadingQuaternion(quaternion) {
+  const forward = new THREE.Vector3(1, 0, 0).applyQuaternion(quaternion);
+  forward.y = 0;
+  if (forward.lengthSq() < 1e-8) return new THREE.Quaternion();
+  forward.normalize();
+  const yaw = Math.atan2(-forward.z, forward.x);
+  return new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+}
+
 function solveSagittalLeg(xMillimeters, yMillimeters, zMillimeters) {
   const x = -xMillimeters / 1000;
   const y = yMillimeters / 1000;
@@ -177,8 +205,12 @@ function solveSagittalLeg(xMillimeters, yMillimeters, zMillimeters) {
   return [hip, knee];
 }
 
-export async function createDominoPhysics() {
-  await RAPIER.init({});
+export async function createDominoPhysics(options = {}) {
+  await RAPIER.init();
+
+  const initialBasePosition = Array.isArray(options.initialBasePosition)
+    ? new THREE.Vector3(...options.initialBasePosition)
+    : new THREE.Vector3(0, INITIAL_BASE_HEIGHT, 0);
 
   let world;
   let base;
@@ -193,14 +225,18 @@ export async function createDominoPhysics() {
   let commandedBodyHeight = INITIAL_BASE_HEIGHT;
   let tiltPlanarAnchor = null;
   let tiltFootAnchors = null;
+  let tiltHeightReference = null;
   let gaitFootAnchors = Array(LEG_SPECS.length).fill(null);
   let gaitHeadingForward = null;
   let previousMode = null;
   let assistedBodyQuaternion = new THREE.Quaternion();
+  let tiltReferenceQuaternion = new THREE.Quaternion();
+  let bodyPoseTargetQuaternion = null;
   const bodyPoseTorque = new THREE.Vector3();
+  let environmentBalls = [];
 
-  function createStaticBox(size, position, yaw = 0) {
-    const rotation = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+  function createStaticBox(size, position, yaw = 0, slope = 0, friction = 0.9) {
+    const rotation = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, slope));
     const body = world.createRigidBody(
       RAPIER.RigidBodyDesc.fixed()
         .setTranslation(position[0], position[1], position[2])
@@ -208,15 +244,118 @@ export async function createDominoPhysics() {
     );
     return world.createCollider(
       RAPIER.ColliderDesc.cuboid(size[0] / 2, size[1] / 2, size[2] / 2)
-        .setFriction(0.9)
+        .setFriction(friction)
         .setRestitution(0)
         .setCollisionGroups(WORLD_GROUP),
       body,
     );
   }
 
+  function createStaticVoronoi(spec) {
+    const terrain = createVoronoiTerrain(spec);
+    createStaticBox(
+      spec.size,
+      spec.position,
+      spec.yaw ?? 0,
+      0,
+      spec.friction ?? 0.9,
+    );
+    const rotation = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, spec.yaw ?? 0, 0));
+    const body = world.createRigidBody(
+      RAPIER.RigidBodyDesc.fixed()
+        .setTranslation(spec.position[0], 0, spec.position[2])
+        .setRotation(quaternionToRapier(rotation)),
+    );
+    return world.createCollider(
+      RAPIER.ColliderDesc.trimesh(terrain.vertices, terrain.indices)
+        .setFriction(spec.friction ?? 0.9)
+        .setRestitution(0)
+        .setCollisionGroups(WORLD_GROUP),
+      body,
+    );
+  }
+
+  function createStaticCylinder(spec) {
+    const rotation = new THREE.Quaternion().setFromEuler(
+      spec.axis === "x"
+        ? new THREE.Euler(0, spec.yaw ?? 0, Math.PI / 2)
+        : new THREE.Euler(Math.PI / 2, spec.yaw ?? 0, 0),
+    );
+    const body = world.createRigidBody(
+      RAPIER.RigidBodyDesc.fixed()
+        .setTranslation(spec.position[0], spec.position[1], spec.position[2])
+        .setRotation(quaternionToRapier(rotation)),
+    );
+    return world.createCollider(
+      RAPIER.ColliderDesc.cylinder(spec.length / 2, spec.radius)
+        .setFriction(0.94)
+        .setRestitution(0)
+        .setCollisionGroups(WORLD_GROUP),
+      body,
+    );
+  }
+
+  function createDynamicBall(spec, preservedState = null) {
+    const spawnPosition = preservedState?.position ?? spec.position;
+    const descriptor = RAPIER.RigidBodyDesc.dynamic()
+      .setTranslation(spawnPosition[0], spawnPosition[1], spawnPosition[2])
+      .setLinearDamping(0.12)
+      .setAngularDamping(0.12)
+      .setAdditionalSolverIterations(4)
+      .setCcdEnabled(true);
+    if (preservedState?.quaternion) {
+      descriptor.setRotation({
+        x: preservedState.quaternion[0],
+        y: preservedState.quaternion[1],
+        z: preservedState.quaternion[2],
+        w: preservedState.quaternion[3],
+      });
+    }
+    const body = world.createRigidBody(
+      descriptor,
+    );
+    const collider = world.createCollider(
+      RAPIER.ColliderDesc.ball(spec.radius)
+        .setMass(spec.mass)
+        .setFriction(0.62)
+        .setRestitution(0)
+        .setCollisionGroups(PROP_GROUP),
+      body,
+    );
+    return { ...spec, body, collider };
+  }
+
+  function captureEnvironmentBallStates() {
+    const states = new Map();
+    environmentBalls.forEach((ball) => {
+      const position = ball.body.translation();
+      const rotation = ball.body.rotation();
+      const values = [
+        position.x,
+        position.y,
+        position.z,
+        rotation.x,
+        rotation.y,
+        rotation.z,
+        rotation.w,
+      ];
+      if (
+        values.every(Number.isFinite) &&
+        position.y >= ball.radius * 0.8 &&
+        Math.abs(position.x) <= 5 &&
+        Math.abs(position.z) <= 5
+      ) {
+        states.set(ball.id, {
+          position: [position.x, position.y, position.z],
+          quaternion: [rotation.x, rotation.y, rotation.z, rotation.w],
+        });
+      }
+    });
+    return states;
+  }
+
   function buildLeg(spec) {
-    const basePosition = new THREE.Vector3(0, INITIAL_BASE_HEIGHT, 0);
+    const basePosition = initialBasePosition.clone();
     const shoulderAnchor = new THREE.Vector3(...spec.shoulderAnchor);
     const upperAnchor = new THREE.Vector3(...spec.upperAnchor);
     const shoulderAxis = new THREE.Vector3(...spec.shoulderAxis);
@@ -226,7 +365,10 @@ export async function createDominoPhysics() {
     const hipPosition = basePosition.clone().add(shoulderAnchor);
     const hip = world.createRigidBody(bodyDescriptor(hipPosition, hipRotation));
     world.createCollider(
-      robotCollider(RAPIER.ColliderDesc.cuboid(0.03, 0.015, 0.0275), 0.1),
+      robotCollider(
+        RAPIER.ColliderDesc.cuboid(0.03, 0.015, 0.0275),
+        dominoMassModel.hipKg,
+      ),
       hip,
     );
 
@@ -239,7 +381,10 @@ export async function createDominoPhysics() {
     );
     const upper = world.createRigidBody(bodyDescriptor(upperPosition, upperRotation));
     world.createCollider(
-      robotCollider(RAPIER.ColliderDesc.capsule(0.066, 0.014), 0.12),
+      robotCollider(
+        RAPIER.ColliderDesc.capsule(0.066, 0.014),
+        dominoMassModel.upperLinkKg,
+      ),
       upper,
     );
 
@@ -254,13 +399,16 @@ export async function createDominoPhysics() {
     );
     const lower = world.createRigidBody(bodyDescriptor(lowerPosition, lowerRotation));
     world.createCollider(
-      robotCollider(RAPIER.ColliderDesc.capsule(0.0645, 0.012), 0.1),
+      robotCollider(
+        RAPIER.ColliderDesc.capsule(0.0645, 0.012),
+        dominoMassModel.lowerLinkKg,
+      ),
       lower,
     );
     const footCollider = world.createCollider(
       robotCollider(
         RAPIER.ColliderDesc.ball(FOOT_RADIUS).setTranslation(0, -LEG_LENGTHS.lower / 2, 0),
-        0.03,
+        dominoMassModel.footKg,
         1.25,
       ),
       lower,
@@ -303,7 +451,10 @@ export async function createDominoPhysics() {
     };
   }
 
-  function buildWorld() {
+  function buildWorld({ preserveEnvironment = false } = {}) {
+    const preservedBallStates = preserveEnvironment
+      ? captureEnvironmentBallStates()
+      : new Map();
     if (world) world.free();
     world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
     world.timestep = FIXED_TIMESTEP;
@@ -311,17 +462,46 @@ export async function createDominoPhysics() {
     world.numAdditionalFrictionIterations = 8;
     world.numInternalPgsIterations = 2;
     createStaticBox([40, 0.04, 40], [0, -0.02, 0]);
-    obstacleSpecs.forEach((obstacle) =>
-      createStaticBox(obstacle.size, obstacle.position, obstacle.yaw),
+    terrainSpecs.forEach((terrain) =>
+      terrain.kind === "voronoi" ? createStaticVoronoi(terrain) : createStaticBox(
+        terrain.size,
+        terrain.position,
+        terrain.yaw ?? 0,
+        terrain.slope ?? 0,
+        terrain.friction ?? 0.9,
+      ),
+    );
+    logSpecs.forEach(createStaticCylinder);
+    environmentBalls = environmentBallSpecs.map((spec) =>
+      createDynamicBall(spec, preservedBallStates.get(spec.id)),
     );
 
     base = world.createRigidBody(
-      bodyDescriptor(new THREE.Vector3(0, INITIAL_BASE_HEIGHT, 0), new THREE.Quaternion(), 20),
+      bodyDescriptor(initialBasePosition, new THREE.Quaternion(), 20),
     );
     world.createCollider(
-      robotCollider(RAPIER.ColliderDesc.cuboid(0.215, 0.025, 0.1025), 1.2, 0.55),
+      robotCollider(
+        RAPIER.ColliderDesc.cuboid(0.215, 0.025, 0.1025),
+        dominoMassModel.chassisWithoutBatteriesKg,
+        0.55,
+      ),
       base,
     );
+    batteryPacks.forEach((pack) => {
+      // CAD uses X forward, Y left, Z up; Rapier uses X forward, Y up, Z right.
+      world.createCollider(
+        robotCollider(
+          RAPIER.ColliderDesc.cuboid(
+            pack.size[0] / 2,
+            pack.size[2] / 2,
+            pack.size[1] / 2,
+          ).setTranslation(pack.center[0], pack.center[2], -pack.center[1]),
+          pack.massKg,
+          0.55,
+        ),
+        base,
+      );
+    });
     legRuntimes = LEG_SPECS.map(buildLeg);
     latestTargets = LEG_SPECS.flatMap((spec) => spec.defaults);
     drivenTargets = [...latestTargets];
@@ -330,10 +510,13 @@ export async function createDominoPhysics() {
     neutralStandTime = 0;
     tiltPlanarAnchor = null;
     tiltFootAnchors = null;
+    tiltHeightReference = null;
     gaitFootAnchors = Array(LEG_SPECS.length).fill(null);
     gaitHeadingForward = null;
     previousMode = null;
     assistedBodyQuaternion.identity();
+    tiltReferenceQuaternion.identity();
+    bodyPoseTargetQuaternion = null;
     bodyPoseTorque.set(0, 0, 0);
   }
 
@@ -424,7 +607,11 @@ export async function createDominoPhysics() {
     const commandedReach = Number.isFinite(firmwarePoseZ)
       ? firmwarePoseZ / 1000
       : averageFootReach;
-    commandedBodyHeight = commandedReach + BODY_HEIGHT_FROM_FOOT_REACH_OFFSET;
+    const nominalBodyHeight = commandedReach + BODY_HEIGHT_FROM_FOOT_REACH_OFFSET;
+    commandedBodyHeight = firmwareState?.mode === "TILT" && tiltHeightReference
+      ? tiltHeightReference.baseHeight +
+        (commandedReach - tiltHeightReference.commandedReach)
+      : nominalBodyHeight;
     const translation = base.translation();
     const velocity = base.linvel();
     const force = THREE.MathUtils.clamp(
@@ -483,7 +670,14 @@ export async function createDominoPhysics() {
       const velocity = runtime.lower.linvel();
       const correction = new THREE.Vector3(
         xScale * (stiffness * (anchor.x - position.x) - damping * velocity.x),
-        0,
+        Number.isFinite(anchor.y)
+          ? THREE.MathUtils.clamp(
+              FOOT_VERTICAL_HOLD_STIFFNESS * (anchor.y - position.y) -
+                FOOT_VERTICAL_HOLD_DAMPING * velocity.y,
+              -FOOT_VERTICAL_HOLD_MAX_FORCE,
+              FOOT_VERTICAL_HOLD_MAX_FORCE,
+            )
+          : 0,
         zScale * (stiffness * (anchor.z - position.z) - damping * velocity.z),
       );
       if (correction.length() > maximumForce) {
@@ -497,7 +691,11 @@ export async function createDominoPhysics() {
       runtime.planarHoldForce.add(forceStep);
       runtime.lower.resetForces(true);
       runtime.lower.addForce(
-        { x: runtime.planarHoldForce.x, y: 0, z: runtime.planarHoldForce.z },
+        {
+          x: runtime.planarHoldForce.x,
+          y: runtime.planarHoldForce.y,
+          z: runtime.planarHoldForce.z,
+        },
         true,
       );
   }
@@ -512,6 +710,32 @@ export async function createDominoPhysics() {
     return touching;
   }
 
+  function readFootContact(runtime) {
+    let touching = false;
+    const supportHeights = [];
+    world.contactPairsWith(runtime.footCollider, (otherCollider) => {
+      world.contactPair(runtime.footCollider, otherCollider, (manifold) => {
+        const solverContacts = manifold.numSolverContacts();
+        if (solverContacts <= 0) return;
+        touching = true;
+        const normal = manifold.normal();
+        if (Math.abs(normal.y) < 0.45) return;
+        for (let index = 0; index < solverContacts; index += 1) {
+          const point = manifold.solverContactPoint(index);
+          if (Number.isFinite(point?.y)) supportHeights.push(point.y);
+        }
+      });
+    });
+    supportHeights.sort((a, b) => a - b);
+    const middle = Math.floor(supportHeights.length / 2);
+    const supportHeight = supportHeights.length === 0
+      ? null
+      : supportHeights.length % 2 === 0
+        ? 0.5 * (supportHeights[middle - 1] + supportHeights[middle])
+        : supportHeights[middle];
+    return { touching, supportHeight };
+  }
+
   function gaitLegIsInStance(firmwareState, runtimeIndex) {
     const commandIndex = SIL_COMMAND_INDEX[LEG_SPECS[runtimeIndex].id];
     const command = firmwareState?.leg_command_xyz_mm?.[commandIndex];
@@ -521,8 +745,16 @@ export async function createDominoPhysics() {
       Math.abs((Number(command[2]) || 0) - poseZ) <= GAIT_STANCE_COMMAND_TOLERANCE_MM;
   }
 
+  function isWalkingMode(mode) {
+    return mode === "GAIT" || mode === "CAREFUL";
+  }
+
+  function clearPlanarHoldForces() {
+    legRuntimes.forEach((runtime) => runtime.planarHoldForce.set(0, 0, 0));
+  }
+
   function driveGaitStanceAnchors(firmwareState) {
-    if (firmwareState?.mode !== "GAIT") return;
+    if (!isWalkingMode(firmwareState?.mode)) return;
     legRuntimes.forEach((runtime, index) => {
       if (!gaitLegIsInStance(firmwareState, index)) {
         gaitFootAnchors[index] = null;
@@ -561,8 +793,12 @@ export async function createDominoPhysics() {
     );
 
     if (firmwareState?.mode === "TILT") {
-      const requestedTarget = targetBodyQuaternion(firmwareState);
-      if (!requestedTarget) return;
+      const requestedDelta = targetBodyQuaternion(firmwareState);
+      if (!requestedDelta) return;
+      const requestedTarget = tiltReferenceQuaternion.clone()
+        .multiply(requestedDelta)
+        .normalize();
+      bodyPoseTargetQuaternion = requestedTarget.clone();
       const targetDistance = assistedBodyQuaternion.angleTo(requestedTarget);
       const targetBlend = targetDistance > 1e-6
         ? Math.min(1, (BODY_POSE_TARGET_SPEED * FIXED_TIMESTEP) / targetDistance)
@@ -603,7 +839,7 @@ export async function createDominoPhysics() {
       return;
     }
     bodyPoseTorque.set(0, 0, 0);
-    if (firmwareState?.mode !== "STAND" && firmwareState?.mode !== "GAIT") return;
+    if (firmwareState?.mode !== "STAND" && !isWalkingMode(firmwareState?.mode)) return;
 
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion);
     const targetUp = new THREE.Vector3(0, 1, 0);
@@ -613,7 +849,7 @@ export async function createDominoPhysics() {
     correction.x -= angularVelocity.x * BODY_UPRIGHT_ASSIST_DAMPING;
     correction.z -= angularVelocity.z * BODY_UPRIGHT_ASSIST_DAMPING;
     correction.y = 0;
-    if (firmwareState?.mode === "GAIT" && gaitHeadingForward) {
+    if (isWalkingMode(firmwareState?.mode) && gaitHeadingForward) {
       const currentForward = new THREE.Vector3(1, 0, 0).applyQuaternion(quaternion);
       currentForward.y = 0;
       if (currentForward.lengthSq() > 1e-8) {
@@ -636,33 +872,56 @@ export async function createDominoPhysics() {
   function update(deltaSeconds, firmwareState, visualLegs, servoReference) {
     setTargets(firmwareState, visualLegs, servoReference);
     const mode = firmwareState?.mode || null;
+    const modeChanged = mode !== previousMode;
+    if (modeChanged) {
+      // Foot holds are rate-limited, so carrying the previous mode's force
+      // into the next controller produces a visible kick. Every mode owns a
+      // fresh set of anchors and force history.
+      clearPlanarHoldForces();
+    }
     if (mode === "TILT" && previousMode !== "TILT") {
       const translation = base.translation();
       const rotation = base.rotation();
       assistedBodyQuaternion.set(rotation.x, rotation.y, rotation.z, rotation.w).normalize();
+      tiltReferenceQuaternion.copy(levelHeadingQuaternion(assistedBodyQuaternion));
+      bodyPoseTargetQuaternion = tiltReferenceQuaternion.clone();
       tiltPlanarAnchor = { x: translation.x, z: translation.z };
       tiltFootAnchors = legRuntimes.map((runtime) => {
         const position = runtime.footCollider.translation();
-        return { x: position.x, z: position.z };
+        return { x: position.x, y: position.y, z: position.z };
       });
+      const commandedReach = Number(firmwareState?.pose_z_mm) / 1000;
+      tiltHeightReference = {
+        baseHeight: translation.y,
+        commandedReach: Number.isFinite(commandedReach)
+          ? commandedReach
+          : tiltFootAnchors.reduce(
+              (sum, anchor) => sum + Math.max(0, translation.y - anchor.y + FOOT_RADIUS),
+              0,
+            ) / tiltFootAnchors.length,
+      };
     } else if (mode !== "TILT") {
       tiltPlanarAnchor = null;
       tiltFootAnchors = null;
+      tiltHeightReference = null;
+      bodyPoseTargetQuaternion = null;
     }
-    if (mode === "GAIT" && previousMode !== "GAIT") {
+    if (isWalkingMode(mode) && (!isWalkingMode(previousMode) || modeChanged)) {
       gaitFootAnchors = Array(LEG_SPECS.length).fill(null);
-      const rotation = base.rotation();
-      gaitHeadingForward = new THREE.Vector3(1, 0, 0).applyQuaternion(
-        new THREE.Quaternion(rotation.x, rotation.y, rotation.z, rotation.w),
-      );
-      gaitHeadingForward.y = 0;
-      gaitHeadingForward.normalize();
-    } else if (mode !== "GAIT") {
+      if (!isWalkingMode(previousMode) || !gaitHeadingForward) {
+        const rotation = base.rotation();
+        gaitHeadingForward = new THREE.Vector3(1, 0, 0).applyQuaternion(
+          new THREE.Quaternion(rotation.x, rotation.y, rotation.z, rotation.w),
+        );
+        gaitHeadingForward.y = 0;
+        gaitHeadingForward.normalize();
+      }
+    } else if (!isWalkingMode(mode)) {
       gaitFootAnchors = Array(LEG_SPECS.length).fill(null);
       gaitHeadingForward = null;
     }
-    if (mode !== "TILT" && mode !== "GAIT") {
-      legRuntimes.forEach((runtime) => runtime.planarHoldForce.set(0, 0, 0));
+    if (mode !== "TILT" && !isWalkingMode(mode)) {
+      clearPlanarHoldForces();
     }
     previousMode = mode;
     if (
@@ -687,6 +946,25 @@ export async function createDominoPhysics() {
       driveGaitStanceAnchors(firmwareState);
       driveBodyAttitude(firmwareState);
       world.step();
+      environmentBalls.forEach((ball) => {
+        const position = ball.body.translation();
+        if (
+          position.y < -0.25 ||
+          Math.abs(position.x) > 5 ||
+          Math.abs(position.z) > 5
+        ) {
+          ball.body.setTranslation(
+            {
+              x: ball.position[0],
+              y: ball.position[1],
+              z: ball.position[2],
+            },
+            true,
+          );
+          ball.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+          ball.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+        }
+      });
       accumulator -= FIXED_TIMESTEP;
       elapsed += FIXED_TIMESTEP;
     }
@@ -695,19 +973,25 @@ export async function createDominoPhysics() {
     const rotation = base.rotation();
     const linearVelocity = base.linvel();
     const angularVelocity = base.angvel();
-    const footContacts = legRuntimes.map((runtime) => {
-      let touching = false;
-      world.contactPairsWith(runtime.footCollider, (otherCollider) => {
-        world.contactPair(runtime.footCollider, otherCollider, (manifold) => {
-          if (manifold.numSolverContacts() > 0) touching = true;
-        });
-      });
-      return touching;
-    });
+    const footContactStates = legRuntimes.map(readFootContact);
+    const footContacts = footContactStates.map((contact) => contact.touching);
+    const footSupportHeights = footContactStates.map((contact) => contact.supportHeight);
     const footPositions = legRuntimes.map((runtime) => {
       const position = runtime.footCollider.translation();
       return [position.x, position.y, position.z];
     });
+    const supportSurfaceHeights = footSupportHeights.filter(Number.isFinite);
+    supportSurfaceHeights.sort((a, b) => a - b);
+    const supportMiddle = Math.floor(supportSurfaceHeights.length / 2);
+    const supportHeight = supportSurfaceHeights.length === 0
+      ? 0
+      : supportSurfaceHeights.length % 2 === 0
+        ? 0.5 * (
+            supportSurfaceHeights[supportMiddle - 1] +
+            supportSurfaceHeights[supportMiddle]
+          )
+        : supportSurfaceHeights[supportMiddle];
+    const bodyClearance = translation.y - supportHeight;
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(
       new THREE.Quaternion(rotation.x, rotation.y, rotation.z, rotation.w),
     );
@@ -732,7 +1016,7 @@ export async function createDominoPhysics() {
       resetReason = "failed-tilt";
     } else if (
       elapsed > 2 &&
-      firmwareState?.mode === "GAIT" &&
+      isWalkingMode(firmwareState?.mode) &&
       (translation.y < 0.15 || up.y < 0.25)
     ) {
       resetReason = "failed-gait";
@@ -740,21 +1024,38 @@ export async function createDominoPhysics() {
     if (resetReason) {
       resetCount += 1;
       lastResetReason = resetReason;
-      buildWorld();
+      buildWorld({ preserveEnvironment: true });
       return update(0, firmwareState, visualLegs, servoReference);
     }
 
     return {
       engine: "Rapier 3D",
       proxy: "12-joint Domino URDF geometry",
+      massModel: dominoMassModel,
       basePosition: [translation.x, translation.y, translation.z],
       baseQuaternion: [rotation.x, rotation.y, rotation.z, rotation.w],
+      bodyPoseTargetQuaternion: bodyPoseTargetQuaternion
+        ? [
+            bodyPoseTargetQuaternion.x,
+            bodyPoseTargetQuaternion.y,
+            bodyPoseTargetQuaternion.z,
+            bodyPoseTargetQuaternion.w,
+          ]
+        : null,
       linearVelocity: [linearVelocity.x, linearVelocity.y, linearVelocity.z],
       angularVelocity: [angularVelocity.x, angularVelocity.y, angularVelocity.z],
       footContacts,
       footPositions,
+      footSupportHeights,
+      footRadius: FOOT_RADIUS,
+      tiltFootAnchors: tiltFootAnchors
+        ? tiltFootAnchors.map((anchor) => [anchor.x, anchor.y, anchor.z])
+        : null,
       contactCount: footContacts.filter(Boolean).length,
       bodyHeight: translation.y,
+      bodyClearance,
+      bodyAltitude: translation.y,
+      supportHeight,
       baseTiltDegrees: THREE.MathUtils.radToDeg(
         Math.acos(THREE.MathUtils.clamp(up.y, -1, 1)),
       ),
@@ -773,13 +1074,25 @@ export async function createDominoPhysics() {
       lastResetReason,
       neutralStandTime,
       simTime: elapsed,
+      environmentBalls: environmentBalls.map((ball) => {
+        const position = ball.body.translation();
+        const rotation = ball.body.rotation();
+        const linearVelocity = ball.body.linvel();
+        return {
+          id: ball.id,
+          position: [position.x, position.y, position.z],
+          quaternion: [rotation.x, rotation.y, rotation.z, rotation.w],
+          linearVelocity: [linearVelocity.x, linearVelocity.y, linearVelocity.z],
+          sleeping: ball.body.isSleeping(),
+        };
+      }),
     };
   }
 
   function reset(reason = "manual") {
     resetCount += 1;
     lastResetReason = reason;
-    buildWorld();
+    buildWorld({ preserveEnvironment: true });
   }
 
   buildWorld();

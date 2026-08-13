@@ -31,6 +31,7 @@ $arguments = @(
     (Join-Path $repoRoot "src\main.cpp"),
     (Join-Path $repoRoot "src\crsf.cpp"),
     (Join-Path $repoRoot "src\leg_controller.cpp"),
+    (Join-Path $repoRoot "src\servo_calibration.cpp"),
     (Join-Path $repoRoot "src\ik.cpp"),
     (Join-Path $PSScriptRoot "src\arduino_sim.cpp"),
     (Join-Path $PSScriptRoot "src\pwm_sim.cpp"),

@@ -169,6 +169,25 @@ test("calibration and gait writes fail closed while armed", () => {
   assert.equal(gait.robot.length, 0);
 });
 
+test("physical calibration safety and persistence evidence reaches the wizard", () => {
+  const core = connectedCore();
+  const request = {
+    type: "live-calibration-command", action: "enter", requestId: "cal-enter",
+    adapterId, sessionId: core.sessionId,
+    safety: { benchModeRequired: true, maxSpeedDegPerSec: 5, jogLimitDeg: 10 },
+  };
+  assert.equal(core.handleRelay(request, 1_050).robot.length, 1);
+  const result = core.handleRobot({
+    protocol: DOMINO_ROBOT_LINK_PROTOCOL, type: "robot-ack", kind: "calibration",
+    action: "enter", requestId: "cal-enter", accepted: true, robotState: "disarmed",
+    benchMode: true, supportsSafeJog: true, maxSpeedDegPerSec: 5, persisted: false,
+  }, 1_060);
+  assert.equal(result.relay[0].benchMode, true);
+  assert.equal(result.relay[0].supportsSafeJog, true);
+  assert.equal(result.relay[0].maxSpeedDegPerSec, 5);
+  assert.equal(result.relay[0].persisted, false);
+});
+
 test("physical request timeouts return explicit rejection acknowledgements", () => {
   const core = connectedCore();
   core.handleRelay({

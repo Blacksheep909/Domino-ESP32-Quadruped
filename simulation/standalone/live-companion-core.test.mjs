@@ -7,6 +7,7 @@ const adapterId = "adapter-test";
 const hello = (robotState = "disarmed") => ({
   type: "robot-hello", protocol: DOMINO_ROBOT_LINK_PROTOCOL,
   robotId: "domino-test", robotName: "Domino test", firmwareVersion: "test", robotState,
+  capabilities: { telemetry: true, calibration: true, gaitProfiles: true, persistentProfiles: true, manualControl: true },
 });
 const pose = (timestampMs) => ({
   timestampMs,
@@ -22,6 +23,7 @@ const controller = (timestampMs) => ({
 });
 const telemetry = (timestampMs, robotState = "disarmed") => ({
   type: "robot-telemetry", protocol: DOMINO_ROBOT_LINK_PROTOCOL, robotState,
+  robotTimeMs: timestampMs,
   expected: pose(timestampMs), measured: pose(timestampMs), controller: controller(timestampMs),
   power: { voltageV: 15.8, currentA: 1.2, powerW: 18.96 },
   diagnostics: { robotState },
@@ -46,6 +48,7 @@ test("announces only a fresh physical robot and negotiates a read-only session",
   core.handleRobot(hello(), 1_000);
   core.handleRobot(telemetry(1_000), 1_000);
   assert.equal(core.announcement(1_100).state, "available");
+  assert.equal(core.announcement(1_100).capabilities.manualControl, true);
   const connected = connectedCore();
   assert.ok(connected.sessionId);
   assert.equal(connected.announcement(1_050).state, "connected");
@@ -58,6 +61,13 @@ test("telemetry is published only after session negotiation", () => {
   const result = connected.handleRobot(telemetry(1_100), 1_100);
   assert.equal(result.relay[0].type, "live-telemetry");
   assert.equal(result.relay[0].sessionId, connected.sessionId);
+});
+
+test("robot monotonic timestamps are translated into the host clock domain", () => {
+  const core = connectedCore(10_000);
+  const result = core.handleRobot(telemetry(10_020), 1_720_000_000_000);
+  assert.equal(result.relay[0].expected.timestampMs, 1_720_000_000_000);
+  assert.equal(result.relay[0].controller.frameTimestampMs, 1_720_000_000_000);
 });
 
 test("arming is rejected without a fresh healthy controller link", () => {

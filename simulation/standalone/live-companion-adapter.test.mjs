@@ -47,6 +47,7 @@ test("the runnable adapter bridges relay commands and physical acknowledgements"
     socket.write(`${JSON.stringify({
       type: "robot-hello", protocol: DOMINO_ROBOT_LINK_PROTOCOL,
       robotId: "domino-e2e", robotName: "Domino integration", firmwareVersion: "test", robotState: "disarmed",
+      capabilities: { telemetry: true, calibration: true, gaitProfiles: true, persistentProfiles: true, manualControl: true },
     })}\n`);
     socket.write(`${JSON.stringify(robotTelemetry(now))}\n`);
     socket.setEncoding("utf8");

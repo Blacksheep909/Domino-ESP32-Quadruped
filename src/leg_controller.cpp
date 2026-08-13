@@ -92,6 +92,9 @@ constexpr CadGeometry kLeftCad{
 
 float gCadUpperSeedDeg[kLegCount] = {};
 float gCadLowerSeedDeg[kLegCount] = {};
+float gCommandedServoAnglesDeg[kPcaChannelCount] = {};
+bool gServoOutputsEnabled = false;
+uint32_t gServoSafetyClipCount = 0;
 
 struct ServoAngleLimit {
   float minDeg;
@@ -398,7 +401,9 @@ float applyServoSafetyLimit(uint8_t channel, float angleDegrees) {
     return clamped;
   }
   const ServoAngleLimit &limit = kServoAngleLimits[channel];
-  return constrain(clamped, limit.minDeg, limit.maxDeg);
+  const float limited = constrain(clamped, limit.minDeg, limit.maxDeg);
+  if (fabsf(limited - angleDegrees) > 0.001f) ++gServoSafetyClipCount;
+  return limited;
 }
 
 uint16_t angleToPulse(float angleDegrees) {
@@ -409,7 +414,13 @@ uint16_t angleToPulse(float angleDegrees) {
 }
 
 void write270(Adafruit_PWMServoDriver &driver, uint8_t channel, float angleDegrees) {
-  driver.writeMicroseconds(channel, angleToPulse(applyServoSafetyLimit(channel, angleDegrees)));
+  const float safeAngle = applyServoSafetyLimit(channel, angleDegrees);
+  if (channel < kPcaChannelCount) gCommandedServoAnglesDeg[channel] = safeAngle;
+#ifdef DOMINO_SIL
+  driver.writeMicroseconds(channel, angleToPulse(safeAngle));
+#else
+  if (gServoOutputsEnabled) driver.writeMicroseconds(channel, angleToPulse(safeAngle));
+#endif
 }
 
 // Leg channel assignments:
@@ -534,4 +545,28 @@ void moveLegBL(Adafruit_PWMServoDriver &driver, float x, float y, float z) { mov
 // Stub: future body pose handling (keep feet fixed, move body)
 void setBodyPose(const BodyPose & /*pose*/, Adafruit_PWMServoDriver & /*driver*/) {
   // Intentionally empty for now.
+}
+
+void setServoOutputsEnabled(Adafruit_PWMServoDriver &driver, bool enabled) {
+  gServoOutputsEnabled = enabled;
+#ifdef DOMINO_SIL
+  (void)driver;
+#endif
+  if (!enabled) {
+#ifndef DOMINO_SIL
+    for (uint8_t channel = 0; channel < kPcaChannelCount; ++channel) {
+      driver.setPWM(channel, 0, 4096);
+    }
+#endif
+  }
+}
+
+bool servoOutputsEnabled() { return gServoOutputsEnabled; }
+const float* commandedServoAnglesDeg() { return gCommandedServoAnglesDeg; }
+uint32_t servoSafetyClipCount() { return gServoSafetyClipCount; }
+
+bool commandCalibrationServoAngle(Adafruit_PWMServoDriver &driver, uint8_t channel, float angleDeg) {
+  if (!gServoOutputsEnabled || channel >= kPcaChannelCount) return false;
+  write270(driver, channel, angleDeg);
+  return true;
 }

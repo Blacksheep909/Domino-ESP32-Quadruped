@@ -13,6 +13,10 @@ namespace {
 
 bool hasReceivedCrsfFrame = false;
 uint32_t acceptedCrsfFrameCount = 0;
+CrsfLinkStatistics linkStatistics{};
+float packetRateHz = 0.0f;
+unsigned long packetRateWindowStartedMs = 0;
+uint32_t packetRateWindowFrames = 0;
 
 uint8_t crc8_dvb_s2_buf(const uint8_t* buf, int len) {
   uint8_t crc = 0;
@@ -103,6 +107,10 @@ void initCrsfState() {
   lastCrsfMs = 0;
   hasReceivedCrsfFrame = false;
   acceptedCrsfFrameCount = 0;
+  linkStatistics = {};
+  packetRateHz = 0.0f;
+  packetRateWindowStartedMs = 0;
+  packetRateWindowFrames = 0;
 }
 
 void processCrsfFrames(unsigned long now) {
@@ -126,6 +134,25 @@ void processCrsfFrames(unsigned long now) {
       lastCrsfMs = now;
       hasReceivedCrsfFrame = true;
       ++acceptedCrsfFrameCount;
+      ++packetRateWindowFrames;
+      if (packetRateWindowStartedMs == 0) packetRateWindowStartedMs = now;
+      const unsigned long rateWindowMs = now - packetRateWindowStartedMs;
+      if (rateWindowMs >= 500) {
+        packetRateHz = static_cast<float>(packetRateWindowFrames) * 1000.0f /
+                       static_cast<float>(rateWindowMs);
+        packetRateWindowFrames = 0;
+        packetRateWindowStartedMs = now;
+      }
+    } else if (type == CRSF_TYPE_LINK_STATISTICS && plen >= 10) {
+      linkStatistics.valid = true;
+      linkStatistics.rssi1Dbm = -static_cast<int16_t>(payload[0]);
+      linkStatistics.rssi2Dbm = -static_cast<int16_t>(payload[1]);
+      linkStatistics.linkQualityPercent = payload[2] > 100 ? 100 : payload[2];
+      linkStatistics.snrDb = static_cast<int8_t>(payload[3]);
+      linkStatistics.activeAntenna = payload[4];
+      linkStatistics.rfMode = payload[5];
+      linkStatistics.txPowerCode = payload[6];
+      linkStatistics.timestampMs = now;
     }
   }
 }
@@ -141,3 +168,7 @@ bool crsfHasReceivedFrame() {
 uint32_t crsfAcceptedFrameCount() {
   return acceptedCrsfFrameCount;
 }
+
+CrsfLinkStatistics crsfLinkStatistics() { return linkStatistics; }
+
+float crsfPacketRateHz() { return packetRateHz; }

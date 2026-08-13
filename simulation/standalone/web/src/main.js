@@ -79,6 +79,23 @@ import {
   visibleLiveAdapters,
 } from "./live-connection-state.js";
 import {
+  acceptLiveSafetyAcknowledgement,
+  acceptLiveSafetyHeartbeatAcknowledgement,
+  beginLiveArmHold,
+  cancelLiveArmHold,
+  createLiveSafetyCommand,
+  createLiveSafetyHeartbeat,
+  createLiveSafetyState,
+  failLiveSafetyRequest,
+  liveSafetyCanArm,
+  lockLiveSafetyState,
+  markLiveSafetyPending,
+  setLiveSafetyRobotState,
+  tickLiveSafetyWatchdog,
+  updateLiveArmHold,
+} from "./live-safety-state.js";
+import { LIVE_SAFETY_HEARTBEAT_INTERVAL_MS } from "./live-safety-protocol.js";
+import {
   createLiveDiagnosticsState,
   liveDiagnosticBundle,
   liveDiagnosticsSnapshot,
@@ -127,6 +144,7 @@ const canvas = document.querySelector("#scene");
 const applicationState = createApplicationState();
 const liveTelemetryState = createLiveTelemetryState();
 const liveConnectionState = createLiveConnectionState();
+const liveSafetyState = createLiveSafetyState();
 const liveDiagnosticsState = createLiveDiagnosticsState();
 const liveSessionState = createLiveSessionState();
 const liveSessionArchive = [];
@@ -155,6 +173,7 @@ let calibrationPendingRequestId = "";
 let calibrationPendingAction = "";
 let calibrationRequestTimeout = null;
 let liveConnectionRequestTimeout = null;
+let liveSafetyRequestTimeout = null;
 let liveDiagnosticFilter = "all";
 const realWorkspace = document.querySelector("#real-workspace");
 const workspaceButtons = {
@@ -302,6 +321,33 @@ document.querySelector("#live-connection-connect").addEventListener("click", () 
 document.querySelector("#live-connection-disconnect").addEventListener("click", () => {
   sendLiveConnectionRequest("disconnect");
 });
+
+const liveArmButton = document.querySelector("#live-safety-arm");
+liveArmButton.addEventListener("pointerdown", (event) => {
+  if (!beginLiveArmHold(liveSafetyState, liveSafetyContext())) return;
+  liveArmButton.setPointerCapture?.(event.pointerId);
+  renderLiveSafetyUi();
+});
+const cancelArmHold = () => {
+  if (!liveSafetyState.armHoldStartedAt) return;
+  cancelLiveArmHold(liveSafetyState);
+  renderLiveSafetyUi();
+};
+liveArmButton.addEventListener("pointerup", cancelArmHold);
+liveArmButton.addEventListener("pointercancel", cancelArmHold);
+liveArmButton.addEventListener("lostpointercapture", cancelArmHold);
+liveArmButton.addEventListener("keydown", (event) => {
+  if ((event.key === " " || event.key === "Enter") && !event.repeat) {
+    event.preventDefault();
+    beginLiveArmHold(liveSafetyState, liveSafetyContext());
+  }
+});
+liveArmButton.addEventListener("keyup", (event) => {
+  if (event.key === " " || event.key === "Enter") cancelArmHold();
+});
+document.querySelector("#live-safety-disarm").addEventListener("click", () => sendLiveSafetyCommand("disarm"));
+document.querySelector("#live-safety-estop").addEventListener("click", () => sendLiveSafetyCommand("estop"));
+document.querySelector("#live-safety-reset-estop").addEventListener("click", () => sendLiveSafetyCommand("reset-estop"));
 
 const demoSelection = new URLSearchParams(window.location.search).get("demo");
 const demoMode = ["1", "tilt", "roll", "roll-negative", "gait", "gait-reverse"].includes(demoSelection);
@@ -2101,6 +2147,7 @@ function ingestLiveTelemetry(packet, receivedAt = Date.now()) {
       gaitStateChanged ||= robotState !== liveGaitState.robotState;
       liveGaitState.robotState = robotState;
       liveConnectionState.robotState = robotState;
+      setLiveSafetyRobotState(liveSafetyState, robotState);
     }
     if (typeof packet.capabilities?.persistentGaitProfiles === "boolean") {
       gaitStateChanged ||= packet.capabilities.persistentGaitProfiles !== liveGaitState.persistentApplySupported;
@@ -2123,6 +2170,7 @@ function connectControlBridge() {
   socket.addEventListener("close", () => {
     markHeartbeatSocketClosed(bridgeHeartbeat);
     setLiveConnectionBridge(liveConnectionState, false);
+    lockLiveSafetyState(liveSafetyState, "The local bridge disconnected. Robot-side outputs must fail safe.");
     bridgeInput = { connected: false, channels: null };
     liveCalibrationState.benchModeAcknowledged = false;
     calibrationPendingRequestId = "";
@@ -2157,12 +2205,22 @@ function connectControlBridge() {
       }
       if (message.type === "live-adapter-removed") {
         removeLiveAdapter(liveConnectionState, message.adapterId, message.reason);
+        lockLiveSafetyState(liveSafetyState, "The adapter heartbeat was lost. Robot-side outputs must fail safe.");
         liveCalibrationState.benchModeAcknowledged = false;
         liveGaitState.persistentApplySupported = false;
         renderLiveConnectionUi();
       }
       if (message.type === "live-connection-ack") {
         acceptLiveConnectionAck(message);
+      }
+      if (message.type === "live-safety-ack") {
+        acceptLiveSafetyAck(message);
+      }
+      if (message.type === "live-safety-heartbeat-ack") {
+        const connection = liveConnectionEnvelope(liveConnectionState);
+        if (acceptLiveSafetyHeartbeatAcknowledgement(liveSafetyState, message, connection)) {
+          renderLiveSafetyUi();
+        }
       }
       if (message.type === "live-telemetry") {
         ingestLiveTelemetry(message);
@@ -2199,6 +2257,100 @@ function resetLiveCommandPermissions(reason) {
   liveGaitState.persistentApplySupported = false;
   if (reason) liveGaitState.status = reason;
 }
+
+function liveSafetyContext() {
+  const snapshot = liveComparisonSnapshot(liveTelemetryState);
+  return {
+    connectionReady: liveConnectionIsReady(liveConnectionState),
+    telemetryFresh: snapshot.expectedFresh && snapshot.measuredFresh,
+    driveLinkAlive: liveDiagnosticsState.telemetry?.driveLinkAlive === true,
+  };
+}
+
+function renderLiveSafetyUi() {
+  const context = liveSafetyContext();
+  const connected = context.connectionReady;
+  const canArm = liveSafetyCanArm(liveSafetyState, context);
+  const stateLabel = connected ? liveSafetyState.robotState : "disconnected";
+  const armButton = document.querySelector("#live-safety-arm");
+  armButton.disabled = !canArm || Boolean(liveSafetyState.pendingRequestId);
+  armButton.style.setProperty("--arm-progress", String(liveSafetyState.armHoldProgress));
+  armButton.querySelector("span").textContent = liveSafetyState.armHoldStartedAt
+    ? `KEEP HOLDING ${Math.round(liveSafetyState.armHoldProgress * 100)}%`
+    : "HOLD TO ARM";
+  document.querySelector("#live-safety-disarm").disabled =
+    liveSafetyState.robotState !== "armed" || Boolean(liveSafetyState.pendingRequestId);
+  document.querySelector("#live-safety-estop").disabled =
+    !connected || Boolean(liveSafetyState.pendingRequestId) || ["estopped", "watchdog"].includes(liveSafetyState.robotState);
+  document.querySelector("#live-safety-reset-estop").disabled =
+    liveSafetyState.robotState !== "estopped" || Boolean(liveSafetyState.pendingRequestId);
+  document.querySelector("#live-safety-status").textContent = liveSafetyState.status;
+  const watchdog = document.querySelector("#live-safety-watchdog");
+  watchdog.textContent = liveSafetyState.robotState === "armed"
+    ? `${Math.round(liveSafetyState.watchdogRemainingMs)} MS`
+    : liveSafetyState.watchdogTripped ? "TRIPPED" : "INACTIVE";
+  watchdog.dataset.state = liveSafetyState.watchdogTripped
+    ? "fault"
+    : liveSafetyState.robotState === "armed" ? "active" : "inactive";
+  document.querySelector("#live-robot-safety-state").textContent = stateLabel.toUpperCase();
+}
+
+function sendLiveSafetyCommand(action) {
+  const connection = liveConnectionEnvelope(liveConnectionState);
+  if (socket?.readyState !== WebSocket.OPEN || !connection || !liveConnectionIsReady(liveConnectionState)) return false;
+  const requestId = crypto.randomUUID();
+  const command = createLiveSafetyCommand(liveSafetyState, action, connection, requestId);
+  if (!command) return false;
+  markLiveSafetyPending(liveSafetyState, command);
+  socket.send(JSON.stringify(command));
+  clearTimeout(liveSafetyRequestTimeout);
+  liveSafetyRequestTimeout = setTimeout(() => {
+    if (!failLiveSafetyRequest(
+      liveSafetyState,
+      requestId,
+      `${action.toUpperCase()} acknowledgement timed out. Treat the robot state as unverified.`,
+    )) return;
+    if (action === "arm") setLiveSafetyRobotState(liveSafetyState, "unknown", "timeout");
+    renderLiveSafetyUi();
+  }, 2_000);
+  renderLiveSafetyUi();
+  return true;
+}
+
+function acceptLiveSafetyAck(message) {
+  const connection = liveConnectionEnvelope(liveConnectionState);
+  if (!acceptLiveSafetyAcknowledgement(liveSafetyState, message, connection)) return false;
+  clearTimeout(liveSafetyRequestTimeout);
+  liveSafetyRequestTimeout = null;
+  liveConnectionState.robotState = liveSafetyState.robotState;
+  liveGaitState.robotState = liveSafetyState.robotState;
+  if (liveSafetyState.robotState !== "disarmed") resetLiveCommandPermissions();
+  renderLiveSafetyUi();
+  updateLiveComparisonUi();
+  return true;
+}
+
+function sendLiveSafetyHeartbeat() {
+  if (liveSafetyState.armHoldStartedAt) {
+    const hold = updateLiveArmHold(liveSafetyState, liveSafetyContext());
+    if (hold.complete) sendLiveSafetyCommand("arm");
+  }
+  const connection = liveConnectionEnvelope(liveConnectionState);
+  const heartbeat = createLiveSafetyHeartbeat(
+    liveSafetyState,
+    connection,
+    applicationState.workspace === WORKSPACE_REAL_ROBOT && document.visibilityState === "visible",
+  );
+  if (heartbeat && socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(heartbeat));
+  if (tickLiveSafetyWatchdog(liveSafetyState)) {
+    liveConnectionState.robotState = "watchdog";
+    liveGaitState.robotState = "watchdog";
+    resetLiveCommandPermissions("Safety watchdog tripped. Profile changes remain blocked until the robot reports disarmed.");
+  }
+  renderLiveSafetyUi();
+}
+
+setInterval(sendLiveSafetyHeartbeat, LIVE_SAFETY_HEARTBEAT_INTERVAL_MS);
 
 function renderLiveConnectionUi() {
   const now = Date.now();
@@ -2258,7 +2410,7 @@ function renderLiveConnectionUi() {
   document.querySelector("#live-connection-connect").disabled =
     !liveConnectionState.bridgeConnected || !selected || Boolean(liveConnectionState.pendingRequestId || liveConnectionState.sessionId);
   document.querySelector("#live-connection-disconnect").disabled =
-    !connected || Boolean(liveConnectionState.pendingRequestId);
+    !connected || liveSafetyState.robotState === "armed" || Boolean(liveConnectionState.pendingRequestId);
 
   const openButton = document.querySelector("#live-connection-open");
   openButton.textContent = connected ? "MANAGE" : "CONNECT";
@@ -2292,9 +2444,14 @@ function acceptLiveConnectionAck(message) {
   clearTimeout(liveConnectionRequestTimeout);
   liveConnectionRequestTimeout = null;
   if (!liveConnectionIsReady(liveConnectionState)) {
+    lockLiveSafetyState(liveSafetyState, "No engineering session is active. Robot-side outputs must fail safe.");
     resetLiveCommandPermissions("No engineering session is active. Robot profile changes remain blocked.");
+  } else {
+    setLiveSafetyRobotState(liveSafetyState, liveConnectionState.robotState);
+    liveSafetyState.status = "Engineering session connected. Verify telemetry and drive link before arming.";
   }
   renderLiveConnectionUi();
+  renderLiveSafetyUi();
   updateLiveComparisonUi();
   return true;
 }
@@ -3105,6 +3262,7 @@ function updateLiveSessionUi(snapshot) {
 
 function updateLiveComparisonUi() {
   if (pruneLiveAdapters(liveConnectionState)) {
+    lockLiveSafetyState(liveSafetyState, "The adapter heartbeat was lost. Robot-side outputs must fail safe.");
     resetLiveCommandPermissions("The adapter heartbeat was lost. Robot profile changes remain blocked.");
     renderLiveConnectionUi();
   }
@@ -3176,7 +3334,7 @@ function updateLiveComparisonUi() {
     ? "Robot reports a fresh Boxer / ELRS drive link"
     : "Robot has not reported a fresh Boxer / ELRS drive link";
 
-  const robotState = sessionConnected ? liveConnectionState.robotState : "disconnected";
+  const robotState = sessionConnected ? liveSafetyState.robotState : "disconnected";
   document.querySelector("#live-robot-safety-state").textContent = robotState.toUpperCase();
   document.querySelector("#live-robot-safety-copy").textContent = !sessionConnected
     ? "No physical engineering session is active. Commands are blocked and the CAD is a reference model only."
@@ -3188,6 +3346,7 @@ function updateLiveComparisonUi() {
   const safetyBadge = document.querySelector("#real-safety-status");
   safetyBadge.textContent = robotState.toUpperCase();
   safetyBadge.dataset.state = robotState === "disarmed" || robotState === "disconnected" ? "safe" : "offline";
+  renderLiveSafetyUi();
 
   setLiveStreamState("#live-expected-state", snapshot.expectedFresh);
   setLiveStreamState("#live-measured-state", snapshot.measuredFresh);

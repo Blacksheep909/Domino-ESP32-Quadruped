@@ -61,6 +61,22 @@ unsolicited acknowledgements are rejected. Connecting never arms or moves the
 robot, and losing either the local bridge or adapter heartbeat immediately
 relocks hardware commands.
 
+The LIVE safety dock now reflects the robot-reported state and implements an
+independent safety command protocol. Arming requires a continuous 1.5-second
+hold while the engineering session, expected/measured telemetry, and robot-side
+Boxer/ELRS drive link all remain fresh. Arm, disarm, E-stop, and E-stop reset do
+not update optimistically: the UI waits for a session-bound robot
+acknowledgement and preserves the reported state on rejection or timeout.
+
+![LIVE latched E-stop using a synthetic local adapter](images/virtual-lab-live-safety.png)
+
+While armed, the browser sends a 10 Hz safety heartbeat and requires robot
+acknowledgements inside a 400 ms window. Leaving LIVE, hiding the browser,
+losing the local bridge, or losing the adapter stops that heartbeat; the
+physical adapter must independently disable outputs when its watchdog expires.
+The screenshot above verifies the protocol with a synthetic adapter, not a
+powered robot. A physical E-stop remains the primary power-isolation control.
+
 ![LIVE synchronized recording using local relay verification data](images/virtual-lab-live-recording.png)
 
 The comparison scope records each synchronized source pair once and graphs body

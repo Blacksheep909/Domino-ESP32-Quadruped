@@ -64,6 +64,15 @@ The optional `diagnostics` object on a `live-telemetry` packet may report
 fields with browser-observed packet order and freshness to find the first broken
 stage, retain a severity-tagged event log, and export a JSON diagnostic bundle.
 
+The optional `controller` object carries the robot-side CRSF evidence used for
+the LIVE drive badge and arm interlock: exactly 16 bounded channel values, frame
+timestamp/rate/loss, failsafe state/count, link quality, dual RSSI, SNR, RF mode,
+transmitter power, active antenna, receiver voltage, and Boxer/receiver names.
+Simple diagnostics shows the operating essentials and eight mapped controls;
+Expert shows all RF fields, all 16 channels, and controller transition history.
+The link is arm-ready only while a fresh `boxer-elrs` frame is failsafe-clear,
+link quality is at least 50%, and RSSI is at least -105 dBm.
+
 The LIVE Gaits tab reads and writes the same browser profile library used by the
 Simulation gait lab. It supports versioned JSON import/export, a moving local 3D
 preview, reachability and risk checks, and a parameter diff against the robot's
@@ -94,6 +103,8 @@ keyboard fallback as proof that a Boxer is connected.
 ![LIVE physical connection manager](../../docs/images/virtual-lab-live-connection-manager.png)
 
 ![LIVE latched E-stop](../../docs/images/virtual-lab-live-safety.png)
+
+![LIVE Boxer and ELRS controller diagnostics](../../docs/images/virtual-lab-live-controller-diagnostics.png)
 
 ## Firmware deployment workspace
 

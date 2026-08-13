@@ -62,6 +62,12 @@ import {
   liveComparisonSnapshot,
 } from "./live-telemetry-state.js";
 import {
+  acceptLiveControllerTelemetry,
+  createLiveControllerState,
+  liveControllerDiagnosticExport,
+  liveControllerSnapshot,
+} from "./live-controller-state.js";
+import {
   acceptLiveAdapterAnnouncement,
   acceptLiveConnectionAcknowledgement,
   createLiveConnectionCommand,
@@ -145,6 +151,7 @@ const applicationState = createApplicationState();
 const liveTelemetryState = createLiveTelemetryState();
 const liveConnectionState = createLiveConnectionState();
 const liveSafetyState = createLiveSafetyState();
+const liveControllerState = createLiveControllerState();
 const liveDiagnosticsState = createLiveDiagnosticsState();
 const liveSessionState = createLiveSessionState();
 const liveSessionArchive = [];
@@ -2138,6 +2145,7 @@ function ingestLiveTelemetry(packet, receivedAt = Date.now()) {
   const accepted = acceptLiveTelemetryPacket(liveTelemetryState, packet, receivedAt);
   observeLiveDiagnosticPacket(liveDiagnosticsState, packet, accepted, receivedAt);
   if (accepted) {
+    acceptLiveControllerTelemetry(liveControllerState, packet, receivedAt);
     let gaitStateChanged = false;
     if (packet.gaitProfile) {
       gaitStateChanged = acceptRobotGaitProfile(liveGaitState, packet.gaitProfile);
@@ -2260,10 +2268,11 @@ function resetLiveCommandPermissions(reason) {
 
 function liveSafetyContext() {
   const snapshot = liveComparisonSnapshot(liveTelemetryState);
+  const controller = liveControllerSnapshot(liveControllerState);
   return {
     connectionReady: liveConnectionIsReady(liveConnectionState),
     telemetryFresh: snapshot.expectedFresh && snapshot.measuredFresh,
-    driveLinkAlive: liveDiagnosticsState.telemetry?.driveLinkAlive === true,
+    driveLinkAlive: controller.linkReady,
   };
 }
 
@@ -3154,19 +3163,86 @@ function renderDiagnosticEvents(snapshot) {
   });
 }
 
-function updateLiveDiagnosticsUi(snapshot, liveSnapshot) {
+const liveControllerChannelNames = Object.freeze([
+  "ROLL", "FORWARD", "HEIGHT", "TURN", "STAND", "AUX 1", "GAIT", "TILT",
+  "CH 9", "CH 10", "CH 11", "CH 12", "CH 13", "CH 14", "CH 15", "CH 16",
+]);
+
+function renderLiveControllerDiagnostics(snapshot) {
+  const telemetry = snapshot.telemetry;
+  const quality = document.querySelector("#live-controller-quality");
+  quality.textContent = snapshot.quality.toUpperCase();
+  quality.dataset.state = snapshot.quality;
+  document.querySelector("#live-controller-summary").textContent = !snapshot.fresh
+    ? "NO FRESH RECEIVER TELEMETRY"
+    : `${telemetry.transmitterName.toUpperCase()} / ${telemetry.receiverName.toUpperCase()}`;
+  document.querySelector("#live-controller-frame-age").textContent = Number.isFinite(snapshot.frameAgeMs)
+    ? `${Math.round(snapshot.frameAgeMs)} ms`
+    : "-- ms";
+  document.querySelector("#live-controller-rate").textContent = telemetry ? `${telemetry.packetRateHz.toFixed(1)} Hz` : "-- Hz";
+  document.querySelector("#live-controller-lq").textContent = telemetry ? `${telemetry.linkQualityPercent.toFixed(0)} %` : "-- %";
+  document.querySelector("#live-controller-rssi").textContent = telemetry
+    ? `${telemetry.rssi1Dbm.toFixed(0)} / ${Number.isFinite(telemetry.rssi2Dbm) ? telemetry.rssi2Dbm.toFixed(0) : "--"} dBm`
+    : "-- / -- dBm";
+  document.querySelector("#live-controller-voltage").textContent = Number.isFinite(telemetry?.receiverVoltageV)
+    ? `${telemetry.receiverVoltageV.toFixed(2)} V`
+    : "-- V";
+  document.querySelector("#live-controller-failsafe").textContent = telemetry ? telemetry.failsafe ? "ACTIVE" : "CLEAR" : "UNKNOWN";
+  document.querySelector("#live-controller-snr").textContent = Number.isFinite(telemetry?.snrDb) ? `${telemetry.snrDb.toFixed(1)} dB` : "-- dB";
+  document.querySelector("#live-controller-rf-mode").textContent = telemetry?.rfMode || "--";
+  document.querySelector("#live-controller-tx-power").textContent = Number.isFinite(telemetry?.txPowerMw) ? `${telemetry.txPowerMw.toFixed(0)} mW` : "-- mW";
+  document.querySelector("#live-controller-frame-loss").textContent = telemetry ? telemetry.frameLossCount.toLocaleString() : "--";
+  document.querySelector("#live-controller-failsafe-count").textContent = telemetry ? telemetry.failsafeCount.toLocaleString() : "--";
+  document.querySelector("#live-controller-antenna").textContent = telemetry?.activeAntenna ? `ANT ${telemetry.activeAntenna}` : "--";
+
+  const channels = document.querySelector("#live-controller-channels");
+  channels.replaceChildren();
+  (telemetry?.channelsUs || Array(16).fill(null)).forEach((value, index) => {
+    const row = document.createElement("div");
+    row.className = "controller-channel";
+    if (index >= 8) row.dataset.expertOnly = "";
+    const label = document.createElement("span");
+    label.textContent = liveControllerChannelNames[index];
+    const bar = document.createElement("i");
+    const level = Number.isFinite(value) ? Math.max(0, Math.min(100, (value - 1_000) / 10)) : 0;
+    bar.style.setProperty("--channel-level", `${level}%`);
+    const output = document.createElement("strong");
+    output.textContent = Number.isFinite(value) ? value.toFixed(0) : "--";
+    row.append(label, bar, output);
+    channels.append(row);
+  });
+
+  const events = document.querySelector("#live-controller-events");
+  events.replaceChildren();
+  document.querySelector("#live-controller-events-empty").hidden = snapshot.events.length > 0;
+  snapshot.events.slice(0, 12).forEach((event) => {
+    const row = document.createElement("article");
+    row.dataset.severity = event.severity;
+    const time = document.createElement("time");
+    time.textContent = new Date(event.timestampMs).toLocaleTimeString();
+    const severity = document.createElement("strong");
+    severity.textContent = event.severity.toUpperCase();
+    const message = document.createElement("p");
+    message.textContent = event.message;
+    row.append(time, severity, message);
+    events.append(row);
+  });
+}
+
+function updateLiveDiagnosticsUi(snapshot, liveSnapshot, controllerSnapshot) {
   const health = document.querySelector("#live-diagnostics-health");
   const hasFault = snapshot.stages.some((stage) => stage.status === "fault");
-  const hasWarning = snapshot.stages.some((stage) => stage.status === "warning");
+  const controllerDegraded = snapshot.linkFresh && !controllerSnapshot.linkReady;
+  const hasWarning = snapshot.stages.some((stage) => stage.status === "warning") || controllerDegraded;
   health.textContent = !snapshot.linkFresh ? "NO TELEMETRY" : hasFault ? "PIPELINE FAULT" : hasWarning ? "PIPELINE DEGRADED" : "PIPELINE HEALTHY";
   health.dataset.state = snapshot.linkFresh && !hasFault ? "online" : "offline";
-  document.querySelector("#live-diagnostics-event-count").textContent = `${snapshot.events.length} EVENTS`;
+  document.querySelector("#live-diagnostics-event-count").textContent = `${snapshot.events.length + controllerSnapshot.events.length} EVENTS`;
   document.querySelector("#live-diagnostics-pipeline-summary").textContent = !snapshot.linkFresh
     ? "WAITING FOR ROBOT DATA"
     : hasFault
       ? "FAULT FOUND"
       : hasWarning
-        ? "DEGRADED"
+        ? controllerDegraded ? "CONTROLLER LINK NOT READY" : "DEGRADED"
         : "ALL REPORTED STAGES HEALTHY";
   renderDiagnosticPipeline(snapshot);
   const firstBreak = document.querySelector("#live-diagnostics-first-break");
@@ -3204,6 +3280,7 @@ function updateLiveDiagnosticsUi(snapshot, liveSnapshot) {
         servoAngleDeg: liveSnapshot.expected.servoAngleDeg,
       }, null, 2)
     : "No expected command received.";
+  renderLiveControllerDiagnostics(controllerSnapshot);
 }
 
 function updateLiveSessionUi(snapshot) {
@@ -3324,15 +3401,16 @@ function updateLiveComparisonUi() {
       ? `Session ${liveConnectionState.sessionId.slice(0, 12)} / telemetry ${formatPacketAge(snapshot.lastRobotPacketAgeMs)} old`
       : "Engineering session connected but telemetry is stale";
 
-  const driveConnected = engineeringConnected && liveDiagnosticsState.telemetry?.driveLinkAlive === true;
+  const controllerSnapshot = liveControllerSnapshot(liveControllerState);
+  const driveConnected = engineeringConnected && controllerSnapshot.linkReady;
   const driveOutput = document.querySelector("#live-drive-link");
   driveOutput.textContent = driveConnected ? "CONNECTED" : "OFFLINE";
   driveOutput.dataset.state = driveConnected ? "connected" : "disconnected";
   const driveBadge = document.querySelector("#real-drive-status");
   driveBadge.dataset.state = driveConnected ? "online" : "offline";
   driveBadge.title = driveConnected
-    ? "Robot reports a fresh Boxer / ELRS drive link"
-    : "Robot has not reported a fresh Boxer / ELRS drive link";
+    ? `Robot reports ${controllerSnapshot.telemetry.packetRateHz.toFixed(0)} Hz Boxer / ELRS frames, ${controllerSnapshot.telemetry.linkQualityPercent.toFixed(0)}% link quality`
+    : "Robot has not reported a fresh, failsafe-clear Boxer / ELRS control frame";
 
   const robotState = sessionConnected ? liveSafetyState.robotState : "disconnected";
   document.querySelector("#live-robot-safety-state").textContent = robotState.toUpperCase();
@@ -3407,7 +3485,7 @@ function updateLiveComparisonUi() {
     : "--- W";
   const diagnosticSnapshot = liveDiagnosticsSnapshot(liveDiagnosticsState, snapshot);
   if (liveViewState.selected === LIVE_VIEW_DIAGNOSTICS) {
-    updateLiveDiagnosticsUi(diagnosticSnapshot, snapshot);
+    updateLiveDiagnosticsUi(diagnosticSnapshot, snapshot, liveControllerSnapshot(liveControllerState));
   }
   updateLiveSessionUi(snapshot);
 }
@@ -3673,6 +3751,7 @@ document.querySelectorAll("[data-diagnostic-filter]").forEach((button) => {
 });
 document.querySelector("#live-diagnostics-clear").addEventListener("click", () => {
   liveDiagnosticsState.events = [];
+  liveControllerState.events = [];
   updateLiveComparisonUi();
 });
 document.querySelector("#live-diagnostics-export").addEventListener("click", () => {
@@ -3681,6 +3760,17 @@ document.querySelector("#live-diagnostics-export").addEventListener("click", () 
     workspace: applicationState.workspace,
     experience: applicationState.experience,
     location: window.location.href,
+    connection: {
+      adapterId: liveConnectionState.selectedAdapterId,
+      sessionId: liveConnectionState.sessionId,
+      phase: liveConnectionState.phase,
+    },
+    safety: {
+      robotState: liveSafetyState.robotState,
+      watchdogTripped: liveSafetyState.watchdogTripped,
+      watchdogRemainingMs: liveSafetyState.watchdogRemainingMs,
+    },
+    controller: liveControllerDiagnosticExport(liveControllerState),
     calibration: createLiveCalibrationProfile(liveCalibrationState.profile),
     activeSession: liveSessionSummary(liveSessionState),
   });

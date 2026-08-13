@@ -133,6 +133,21 @@ a severity-filtered event log. Expert mode adds the last packet and command
 inspectors. A diagnostic bundle exports those stages, recent events, packet
 summary, active recording summary, and current calibration profile as JSON.
 
+The controller section separately validates the robot-side Boxer / ExpressLRS
+path. Simple mode shows the eight active controls, CRSF frame age and rate,
+link quality, dual RSSI, receiver voltage, and failsafe state. Expert mode adds
+all 16 channels, SNR, RF mode, transmitter power, active antenna, cumulative
+frame loss and failsafe counts, plus a timestamped transition log.
+
+![LIVE Boxer and ELRS controller diagnostics using local verification data](images/virtual-lab-live-controller-diagnostics.png)
+
+The drive badge and hold-to-arm prerequisite require fresh bounded
+`boxer-elrs` controller telemetry with failsafe clear, at least 50% link
+quality, and RSSI no worse than -105 dBm. A legacy boolean cannot make the link
+look ready. Controller telemetry and its event history are included in the
+downloadable diagnostic bundle, while rejected packet bursts are counted
+without flooding the event log.
+
 ![LIVE command-chain diagnostics using local relay verification data](images/virtual-lab-live-diagnostics.png)
 
 The screenshot above deliberately injects missing packets, low voltage, an IK

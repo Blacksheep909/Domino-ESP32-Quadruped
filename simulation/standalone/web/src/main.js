@@ -196,6 +196,7 @@ const liveCalibrationState = createLiveCalibrationState(
 let calibrationPendingRequestId = "";
 let calibrationPendingAction = "";
 let calibrationRequestTimeout = null;
+let calibrationFloatEnabled = true;
 let liveConnectionRequestTimeout = null;
 let liveSafetyRequestTimeout = null;
 let liveManualRequestTimeout = null;
@@ -2981,6 +2982,7 @@ function renderLiveCalibrationUi() {
   const definition = selectedCalibrationDefinition();
   const joint = selectedCalibrationJoint();
   if (!definition || !joint) return;
+  renderCalibrationPresentationMode();
   document.querySelectorAll("[data-calibration-step]").forEach((button) => {
     const active = Number(button.dataset.calibrationStep) === liveCalibrationState.step;
     button.setAttribute("aria-current", active ? "step" : "false");
@@ -3028,6 +3030,20 @@ function renderLiveCalibrationUi() {
       : "UNSAVED DRAFT";
   renderCalibrationJointMap();
   renderCalibrationReview();
+}
+
+function renderCalibrationPresentationMode() {
+  const button = document.querySelector("#live-calibration-float");
+  button.setAttribute("aria-pressed", String(calibrationFloatEnabled));
+  button.dataset.mode = calibrationFloatEnabled ? "float" : "floor";
+  button.setAttribute(
+    "aria-label",
+    calibrationFloatEnabled ? "Show calibration preview on floor" : "Show floating calibration preview",
+  );
+  button.title = calibrationFloatEnabled
+    ? "Floating preview on — click to show the floor"
+    : "Floor preview on — click to inspect unloaded motion in float mode";
+  canvas.dataset.calibrationFloat = String(calibrationFloatEnabled);
 }
 
 function downloadCalibrationJson() {
@@ -3749,6 +3765,10 @@ document.querySelector("#live-calibration-direction").addEventListener("change",
 document.querySelector("#live-calibration-preview").addEventListener("change", (event) => {
   liveCalibrationState.previewEnabled = event.target.checked;
   renderLiveCalibrationUi();
+});
+document.querySelector("#live-calibration-float").addEventListener("click", () => {
+  calibrationFloatEnabled = !calibrationFloatEnabled;
+  renderCalibrationPresentationMode();
 });
 document.querySelectorAll("[data-calibration-jog]").forEach((button) => {
   button.addEventListener("click", () => {
@@ -5280,8 +5300,9 @@ function animate(now) {
   if (telemetryDatasetDue) telemetryDatasetElapsed = 0;
   if (applicationState.workspace !== WORKSPACE_SIMULATION) {
     updateLiveTwinPose(delta);
-    ground.visible = true;
-    grid.visible = true;
+    const floatingCalibration = liveViewState.selected === LIVE_VIEW_CALIBRATION && calibrationFloatEnabled;
+    ground.visible = !floatingCalibration;
+    grid.visible = !floatingCalibration;
     courseVisuals.visible = false;
     controls.update();
     renderer.render(scene, camera);

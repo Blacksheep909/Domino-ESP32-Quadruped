@@ -3321,7 +3321,7 @@ body[data-workspace="real-robot"] .simulation-only {
   width: 34vw;
   padding: 12px 14px;
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto 1fr 28px;
   gap: 6px 14px;
   color: #d9d9dc;
   background: rgba(12, 12, 13, 0.78);
@@ -3335,6 +3335,23 @@ body[data-workspace="real-robot"] .simulation-only {
 .calibration-preview-caption span { color: #79c493; font: 750 8px/1 "Cascadia Mono", Consolas, monospace; }
 .calibration-preview-caption strong { font: 750 10px/1 "Cascadia Mono", Consolas, monospace; text-align: right; }
 .calibration-preview-caption small { grid-column: 1 / -1; color: #8f8f95; font-size: 8px; }
+.calibration-preview-caption button {
+  width: 28px;
+  height: 28px;
+  margin: -6px -7px -3px 0;
+  display: grid;
+  place-items: center;
+  color: #7f8287;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 5px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.calibration-preview-caption button:hover,
+.calibration-preview-caption button:focus-visible { color: #d4f0dd; border-color: rgba(121, 196, 147, 0.55); }
+.calibration-preview-caption button[aria-pressed="true"] { color: #9de0b3; background: rgba(61, 151, 95, 0.18); border-color: rgba(121, 196, 147, 0.46); }
+.calibration-preview-caption button svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 
 body[data-workspace="real-robot"][data-live-view="calibration"] #scene {
   inset: 144px 2.5vw 54px auto;

@@ -47,6 +47,15 @@ The optional `diagnostics` object on a `live-telemetry` packet may report
 fields with browser-observed packet order and freshness to find the first broken
 stage, retain a severity-tagged event log, and export a JSON diagnostic bundle.
 
+The LIVE Gaits tab reads and writes the same browser profile library used by the
+Simulation gait lab. It supports versioned JSON import/export, a moving local 3D
+preview, reachability and risk checks, and a parameter diff against the robot's
+reported active profile. Applying a draft is only enabled when telemetry reports
+the robot disarmed and advertises persistent gait-profile support. The adapter
+must acknowledge validation and storage through the `live-gait-command` /
+`live-gait-ack` relay contract; the prior robot profile can then be restored with
+an explicit rollback command.
+
 The Simulation link panel reports each part of the control path separately:
 
 - **Local bridge** is driven by a browser-to-server heartbeat, including
@@ -62,6 +71,8 @@ keyboard fallback as proof that a Boxer is connected.
 ![Simulation workspace](../../docs/images/virtual-lab-simulation-workspace.png)
 
 ![Real Robot workspace](../../docs/images/virtual-lab-real-robot-workspace.png)
+
+![LIVE gait profile transfer](../../docs/images/virtual-lab-live-gaits.png)
 
 ## Firmware deployment workspace
 

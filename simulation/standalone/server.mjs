@@ -13,6 +13,13 @@ import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 
 import { BoxerHidInput } from "./boxer-hid.mjs";
+import { FirmwareService } from "./firmware-service.mjs";
+import {
+  clientControlIsFresh,
+  hasActiveClient,
+  radioInputIsFresh,
+  releaseClientControl,
+} from "./control-state.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../..");
@@ -34,6 +41,7 @@ const debugStamp = debugStartedAt.toISOString().replaceAll(":", "-").replaceAll(
 const debugLogPath = path.join(runtimeRoot, `debug-session-${debugStamp}.jsonl`);
 const port = Number(process.env.DOMINO_STANDALONE_PORT || 8770);
 const maxDebugBytes = 64 * 1024 * 1024;
+const firmwareService = new FirmwareService({ projectRoot: repoRoot, runtimeRoot });
 
 mkdirSync(runtimeRoot, { recursive: true });
 writeFileSync(
@@ -125,11 +133,78 @@ function sendFirmwareState(response) {
 
 function safeJoinedPath(root, requestPath) {
   const candidate = path.resolve(root, `.${requestPath}`);
-  return candidate.startsWith(path.resolve(root)) ? candidate : null;
+  const relative = path.relative(path.resolve(root), candidate);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
+    ? candidate
+    : null;
 }
 
-const server = createServer((request, response) => {
+function sendJson(response, status, payload) {
+  response.writeHead(status, {
+    "Cache-Control": "no-store",
+    "Content-Type": "application/json; charset=utf-8",
+  });
+  response.end(JSON.stringify(payload));
+}
+
+function readJsonBody(request, limit = 32 * 1024) {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", (chunk) => {
+      body += chunk;
+      if (body.length > limit) reject(new Error("Request body is too large."));
+    });
+    request.on("end", () => {
+      try {
+        resolve(body ? JSON.parse(body) : {});
+      } catch {
+        reject(new Error("Request body must be valid JSON."));
+      }
+    });
+    request.on("error", reject);
+  });
+}
+
+async function handleFirmwareApi(request, response, url) {
+  try {
+    if (request.method === "GET" && url.pathname === "/api/firmware/status") {
+      sendJson(response, 200, firmwareService.status());
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/firmware/ports") {
+      sendJson(response, 200, { ports: await firmwareService.ports() });
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/api/firmware/file") {
+      const file = firmwareService.file(url.searchParams.get("path") || "");
+      sendJson(response, file ? 200 : 404, file || { error: "Firmware file not found." });
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/firmware/build") {
+      sendJson(response, 202, { job: firmwareService.startBuild() });
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/firmware/upload") {
+      sendJson(response, 202, { job: firmwareService.startUpload(await readJsonBody(request)) });
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/firmware/cancel") {
+      sendJson(response, 200, { cancelled: firmwareService.cancel() });
+      return;
+    }
+    sendJson(response, 404, { error: "Firmware endpoint not found." });
+  } catch (error) {
+    sendJson(response, 409, { error: error.message || "Firmware operation failed." });
+  }
+}
+
+const server = createServer(async (request, response) => {
   const url = new URL(request.url || "/", `http://${request.headers.host || "127.0.0.1"}`);
+  if (url.pathname.startsWith("/api/firmware/")) {
+    await handleFirmwareApi(request, response, url);
+    return;
+  }
   if (url.pathname === "/runtime/state.json") {
     sendFirmwareState(response);
     return;
@@ -161,6 +236,7 @@ const server = createServer((request, response) => {
 const sockets = new WebSocketServer({ server, path: "/control" });
 let activeControlSocket = null;
 let browserInput = { source: "none", name: "", axes: [], physics: null };
+let controlsSource = "safe";
 
 function broadcast(message) {
   const payload = JSON.stringify(message);
@@ -170,15 +246,21 @@ function broadcast(message) {
 }
 
 function demoClientIsActive() {
-  return [...sockets.clients].some(
-    (socket) => socket.readyState === socket.OPEN && socket.controlMode === "demo",
-  );
+  return hasActiveClient(sockets.clients, (socket) => socket.controlMode === "demo");
 }
 
 function manualClientIsActive() {
-  return [...sockets.clients].some(
-    (socket) => socket.readyState === socket.OPEN && socket.manualOverride === true,
-  );
+  return hasActiveClient(sockets.clients, (socket) => socket.manualOverride === true);
+}
+
+function writeSafeControls() {
+  channels.fill(1500);
+  channels[2] = 2000;
+  channels[4] = 1000;
+  channels[6] = 1000;
+  channels[7] = 1000;
+  writeControls(channels);
+  controlsSource = "safe";
 }
 
 const boxer = new BoxerHidInput((state) => {
@@ -189,17 +271,21 @@ const boxer = new BoxerHidInput((state) => {
 boxer.start();
 
 setInterval(() => {
+  if (activeControlSocket && !clientControlIsFresh(activeControlSocket)) {
+    releaseClientControl(activeControlSocket);
+    activeControlSocket = null;
+  }
   if (demoClientIsActive() || manualClientIsActive()) return;
-  const inputIsFresh =
-    radioInput.connected &&
-    radioInput.channels &&
-    Date.now() - radioInput.updatedAt < 250;
-  if (!inputIsFresh) return;
+  if (!radioInputIsFresh(radioInput)) {
+    if (controlsSource !== "safe" && !activeControlSocket) writeSafeControls();
+    return;
+  }
 
   for (let index = 0; index < 8; index += 1) {
     channels[index] = radioInput.channels[index];
   }
   writeControls(channels);
+  controlsSource = "radio";
   broadcast({ type: "input", input: radioInput });
 }, 25);
 
@@ -237,13 +323,35 @@ setInterval(() => {
 }, 100);
 
 sockets.on("connection", (socket) => {
+  releaseClientControl(socket);
   socket.send(JSON.stringify({ type: "ready", channels, input: radioInput }));
   socket.on("close", () => {
+    releaseClientControl(socket);
     if (activeControlSocket === socket) activeControlSocket = null;
   });
   socket.on("message", (payload) => {
     try {
       const message = JSON.parse(payload.toString());
+      if (message.type === "heartbeat") {
+        const sequence = Number(message.sequence);
+        const clientSentAt = Number(message.clientSentAt);
+        if (Number.isSafeInteger(sequence) && Number.isFinite(clientSentAt) && clientSentAt > 0) {
+          socket.send(JSON.stringify({
+            type: "heartbeat-ack",
+            sequence,
+            clientSentAt,
+            serverAt: Date.now(),
+          }));
+        }
+        return;
+      }
+      if (message.type === "live-telemetry") {
+        // The server is bound to localhost. A future wireless robot adapter
+        // will validate and translate device packets, then publish this
+        // canonical expected/measured envelope to every open LIVE workspace.
+        if (Buffer.byteLength(payload) <= 64 * 1024) broadcast(message);
+        return;
+      }
       if (message.type !== "control" || !Array.isArray(message.channels) || message.channels.length !== 16) {
         return;
       }
@@ -252,6 +360,7 @@ sockets.on("connection", (socket) => {
       // but cannot overwrite the active tab's RC command.
       if (message.active !== true) {
         if (activeControlSocket === socket) activeControlSocket = null;
+        releaseClientControl(socket);
         return;
       }
       if (activeControlSocket && activeControlSocket !== socket) {
@@ -259,6 +368,8 @@ sockets.on("connection", (socket) => {
         activeControlSocket = socket;
       }
       activeControlSocket = socket;
+      socket.controlActive = true;
+      socket.lastControlAt = Date.now();
       socket.controlMode = message.mode;
       socket.manualOverride = message.manualOverride === true;
       if (message.clientInput && typeof message.clientInput === "object") {
@@ -282,11 +393,12 @@ sockets.on("connection", (socket) => {
             : null,
         };
       }
-      if (radioInput.connected && message.mode !== "demo" && !socket.manualOverride) return;
+      if (radioInputIsFresh(radioInput) && message.mode !== "demo" && !socket.manualOverride) return;
       for (let index = 0; index < 16; index += 1) {
         channels[index] = message.channels[index];
       }
       writeControls(channels);
+      controlsSource = "browser";
     } catch {
       // Ignore malformed local control packets.
     }
@@ -294,7 +406,7 @@ sockets.on("connection", (socket) => {
 });
 
 server.listen(port, "127.0.0.1", () => {
-  console.log(`Domino standalone simulator: http://127.0.0.1:${port}`);
+  console.log(`Domino Virtual Lab: http://127.0.0.1:${port}`);
   console.log(`CAD source: ${cadRoot}`);
   console.log(`Control file: ${controlPath}`);
   console.log("Debug log: /runtime/debug/latest.jsonl");

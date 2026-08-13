@@ -3,24 +3,28 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Domino Sandbox</title>
+    <title>Domino Virtual Lab</title>
   </head>
-  <body>
-    <canvas id="scene"></canvas>
+  <body data-workspace="simulation">
+    <canvas id="scene" aria-label="Domino 3D robot viewport"></canvas>
 
     <header>
       <div class="brand">
         <strong>DOMINO</strong>
-        <span>STANDALONE SANDBOX</span>
+        <span id="workspace-subtitle">VIRTUAL LAB / 3D CODE TESTING</span>
+      </div>
+      <div class="workspace-tabs" role="tablist" aria-label="Domino workspace">
+        <button id="workspace-simulation" type="button" role="tab" aria-selected="true" aria-controls="simulation-workspace">SIMULATION</button>
+        <button id="workspace-real-robot" type="button" role="tab" aria-selected="false" aria-controls="real-workspace">LIVE</button>
       </div>
       <div class="status">
-        <span id="firmware-status" data-state="offline">FIRMWARE</span>
-        <span id="link-status" data-state="offline">CRSF</span>
-        <span id="physics-status" data-state="offline">PHYSICS</span>
-        <span id="debug-status" data-state="online">REC</span>
-        <span id="mode-status">SITTING</span>
-        <span id="height-status">HEIGHT 280 MM</span>
-        <span id="fps-status">0 FPS</span>
+        <button id="firmware-deploy-button" class="firmware-deploy-button real-robot-only" type="button" title="Review, build, and upload Domino firmware">UPLOAD</button>
+        <span id="firmware-status" class="simulation-only" data-state="offline">FIRMWARE</span>
+        <span id="link-status" class="simulation-only" data-state="offline">BOXER</span>
+        <span id="physics-status" class="simulation-only" data-state="offline">PHYSICS</span>
+        <span id="real-drive-status" class="real-robot-only" data-state="offline">DRIVE LINK</span>
+        <span id="real-engineering-status" class="real-robot-only" data-state="offline">ENGINEERING</span>
+        <span id="real-safety-status" class="real-robot-only" data-state="safe">DISARMED</span>
         <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false" title="Switch to dark theme">
           <span id="theme-icon" aria-hidden="true">&#9788;</span>
           <span id="theme-label" class="sr-only">Light theme</span>
@@ -28,7 +32,7 @@
       </div>
     </header>
 
-    <section id="channel-strip" aria-label="ELRS and CRSF channels">
+    <section id="channel-strip" class="simulation-only" aria-label="ELRS and CRSF channels">
       <div class="channel-strip-label">
         <strong id="channel-source">ELRS</strong>
         <span id="channel-source-detail">CRSF INPUT</span>
@@ -36,11 +40,19 @@
       <div id="channel-bars"></div>
     </section>
 
-    <nav aria-label="Robot controls">
+    <nav id="simulation-workspace" class="simulation-only" aria-label="Robot controls">
       <div class="toolbar-group pose-control" role="group" aria-label="Body pose">
         <button id="stand-button" type="button" title="Stand Domino">SITTING</button>
         <button id="tilt-button" type="button" title="Tilt Domino">LEVEL</button>
-        <button id="gait-button" type="button" title="Emulate SC fully down">GAIT OFF</button>
+      </div>
+      <div class="toolbar-group walk-control" role="group" aria-label="Channel 7 walk mode">
+        <span>WALK<small>CH7 / SC</small></span>
+        <div class="segmented-control">
+          <button id="walk-stand" type="button" data-walk-mode="0" title="SC low: stand">STAND</button>
+          <button id="walk-careful" type="button" data-walk-mode="1" title="SC middle: careful four-beat walk">CAREFUL</button>
+          <button id="walk-trot" type="button" data-walk-mode="2" title="SC high: diagonal trot">TROT</button>
+        </div>
+        <button id="gait-lab-button" class="gait-lab-button" type="button" aria-expanded="false" aria-controls="gait-lab-panel" title="Open simulator-only gait tuning">TUNE</button>
       </div>
       <div class="toolbar-group height-control" role="group" aria-label="Ride height">
         <span>RIDE HEIGHT<small>CH3 / LEFT Y</small></span>
@@ -56,7 +68,7 @@
         <button id="reset-view-button" type="button" title="Reset camera orbit and centre">RESET VIEW</button>
       </div>
       <div class="toolbar-group inspection-control" role="group" aria-label="Joint inspection overlay">
-        <button id="joints-button" type="button" aria-pressed="false" title="Show joint axes and labels">JOINTS</button>
+        <button id="joints-button" type="button" aria-pressed="false" title="Inspect joint motion">INSPECT</button>
         <select id="joint-leg" aria-label="Annotated leg">
           <option value="FR">FR</option>
           <option value="FL">FL</option>
@@ -64,10 +76,83 @@
           <option value="BL">BL</option>
           <option value="ALL">ALL</option>
         </select>
+        <button id="float-button" class="float-button" type="button" aria-pressed="false" title="Suspend Domino and disable ground physics">FLOAT</button>
+        <label class="joint-opacity-control" title="Joint overlay opacity">
+          <span>OPACITY</span>
+          <input id="joint-opacity" type="range" min="0.25" max="1" step="0.01" value="0.78" aria-label="Joint overlay opacity">
+        </label>
       </div>
     </nav>
 
-    <aside>
+    <section id="gait-lab-panel" class="gait-lab-panel simulation-only" aria-label="Simulator gait tuning" hidden>
+      <div class="gait-lab-heading panel-drag-handle" title="Drag to move gait lab">
+        <div>
+          <span>GAIT LAB</span>
+          <small id="gait-lab-runtime-status" data-state="idle">SIM ONLY / WAITING</small>
+        </div>
+        <label class="gait-lab-enable">
+          <input id="gait-lab-enabled" type="checkbox" checked>
+          <span>OVERRIDE</span>
+        </label>
+        <button id="gait-lab-close" type="button" aria-label="Close gait tuning" title="Close gait tuning">&times;</button>
+      </div>
+      <div class="gait-preset-row" role="group" aria-label="Gait presets">
+        <button type="button" data-gait-preset="stable">STABLE</button>
+        <button type="button" data-gait-preset="balanced" class="active">BALANCED</button>
+        <button type="button" data-gait-preset="fast">FAST</button>
+      </div>
+      <div class="gait-profile-manager" aria-label="Saved gait profiles">
+        <input id="gait-profile-name" type="text" maxlength="32" placeholder="PROFILE NAME" aria-label="Gait profile name">
+        <button id="gait-profile-save" type="button">SAVE</button>
+        <select id="gait-profile-select" aria-label="Saved gait profile">
+          <option value="">SAVED PROFILES</option>
+        </select>
+        <button id="gait-profile-load" type="button" disabled>LOAD</button>
+        <button id="gait-profile-delete" type="button" disabled>DELETE</button>
+        <output id="gait-profile-status" aria-live="polite"></output>
+      </div>
+      <div class="gait-control-grid">
+        <label class="gait-setting" data-gait-setting="cadenceHz"><span>Cadence</span><output></output><input type="range"></label>
+        <label class="gait-setting" data-gait-setting="strideMm"><span>Stride</span><output></output><input type="range"></label>
+        <label class="gait-setting" data-gait-setting="liftMm"><span>Clearance</span><output></output><input type="range"></label>
+        <label class="gait-setting" data-gait-setting="dutyFactor"><span>Ground time</span><output></output><input type="range"></label>
+        <label class="gait-setting" data-gait-setting="bodyHeightMm"><span>Gait height</span><output></output><input type="range"></label>
+        <label class="gait-setting" data-gait-setting="stanceWidthMm"><span>Stance width</span><output></output><input type="range"></label>
+        <label class="gait-setting" data-gait-setting="turnGain"><span>Turn gain</span><output></output><input type="range"></label>
+        <label class="gait-setting" data-gait-setting="responseMs"><span>Response</span><output></output><input type="range"></label>
+        <label class="gait-setting" data-gait-setting="swingShape"><span>Swing shape</span><output></output><input type="range"></label>
+        <label class="gait-setting" data-gait-setting="diagonalPhase"><span>Diagonal phase</span><output></output><input type="range"></label>
+      </div>
+      <footer class="gait-lab-footer">
+        <div><span>EST. SPEED</span><output id="gait-lab-speed">0 mm/s</output></div>
+        <div><span>SUPPORT</span><output id="gait-lab-support">4 / 4</output></div>
+        <div><span>REACH</span><output id="gait-lab-reach">4 / 4</output></div>
+        <button id="gait-setting-info-button" class="gait-setting-info-button" type="button" aria-label="Gait setting guide" aria-expanded="false" aria-controls="gait-setting-info" title="Gait setting guide">i</button>
+        <button id="gait-lab-reset" type="button">RESET</button>
+      </footer>
+    </section>
+
+    <div id="gait-setting-info" class="gait-setting-info simulation-only" role="dialog" aria-modal="false" aria-labelledby="gait-setting-info-title" hidden>
+      <div>
+        <strong id="gait-setting-info-title">GAIT SETTINGS</strong>
+        <button id="gait-setting-info-close" type="button" aria-label="Close setting information" title="Close">&times;</button>
+      </div>
+      <dl id="gait-setting-info-list"></dl>
+    </div>
+
+    <aside id="telemetry-panel" class="simulation-only">
+      <section class="simulation-links">
+        <h2>SIMULATION LINKS</h2>
+        <dl>
+          <div><dt>Local bridge</dt><dd id="sim-bridge-state" data-state="disconnected">DISCONNECTED</dd></div>
+          <div><dt>Heartbeat RTT</dt><dd id="sim-heartbeat-rtt">-- ms</dd></div>
+          <div><dt>Last acknowledgement</dt><dd id="sim-heartbeat-age">--</dd></div>
+          <div><dt>Boxer input</dt><dd id="sim-boxer-state" data-state="disconnected">OFFLINE</dd></div>
+          <div><dt>Boxer packet age</dt><dd id="sim-boxer-age">--</dd></div>
+          <div><dt>CRSF to firmware</dt><dd id="sim-crsf-state" data-state="disconnected">OFFLINE</dd></div>
+          <div><dt>Accepted CRSF frames</dt><dd id="sim-crsf-frames">0</dd></div>
+        </dl>
+      </section>
       <section>
         <h2>COMMAND</h2>
         <dl>
@@ -82,7 +167,7 @@
         <h2>STATE</h2>
         <dl>
           <div><dt>Commanded height</dt><dd id="ride-height">280 mm</dd></div>
-          <div><dt>Gait</dt><dd id="gait-state" data-state="idle">OFF</dd></div>
+          <div><dt>Walk mode</dt><dd id="gait-state" data-state="idle">STAND</dd></div>
           <div><dt>Body height</dt><dd id="body-height">--</dd></div>
           <div><dt>Foot contacts</dt><dd id="foot-contacts">0 / 4</dd></div>
           <div><dt>Actuators</dt><dd>12 LIVE</dd></div>
@@ -96,41 +181,251 @@
           <div><dt>Worst pin</dt><dd id="pin-error">--</dd></div>
           <div><dt>Foot symmetry</dt><dd id="foot-symmetry">--</dd></div>
           <div><dt>Physics</dt><dd id="physics-engine">STARTING</dd></div>
+          <div><dt>Mass model</dt><dd id="mass-model">--</dd></div>
         </dl>
       </section>
       <section id="joint-legend" hidden>
-        <h2>JOINT OVERLAY <span id="joint-legend-leg">FR</span></h2>
+        <h2 class="panel-drag-handle" title="Drag to move inspector">JOINT MOTION <span id="joint-legend-leg">FR</span></h2>
         <div class="body-plane-readout" aria-label="Body attitude">
           <div><span><i class="axis-x"></i>ROLL</span><output id="body-roll">--</output></div>
           <div><span><i class="axis-y"></i>PITCH</span><output id="body-pitch">--</output></div>
           <div><span><i class="axis-z"></i>YAW</span><output id="body-yaw">--</output></div>
           <div><span>LEAN</span><output id="body-plane-tilt">--</output></div>
         </div>
-        <div class="joint-legend-group">
-          <strong><i class="joint-swatch active"></i>ACTUATED <small>DELTA / SERVO</small></strong>
-          <span><b>q1</b><em>SHOULDER · X</em><output id="joint-q1-value">--</output></span>
-          <span><b>q2</b><em>UPPER · Y</em><output id="joint-q2-value">--</output></span>
-          <span><b>q3</b><em>LOWER · Y</em><output id="joint-q3-value">--</output></span>
+        <div class="joint-drive-selector" role="group" aria-label="Selected driven joint">
+          <button type="button" data-drive-joint="shoulder" aria-pressed="false"><b>q1</b><small>SHOULDER</small></button>
+          <button type="button" data-drive-joint="upper" aria-pressed="true" class="active"><b>q2</b><small>UPPER</small></button>
+          <button type="button" data-drive-joint="lower" aria-pressed="false"><b>q3</b><small>LOWER</small></button>
         </div>
-        <div class="joint-legend-group passive-joints">
-          <strong><i class="joint-swatch passive"></i>PASSIVE PINS <small>Y REVOLUTE</small></strong>
-          <span><b>P1</b><em>UPPER COUPLER</em></span>
-          <span><b>P2</b><em>UPPER DRIVER</em></span>
-          <span><b>P3</b><em>UPPER CLOSURE</em></span>
-          <span><b>P4</b><em>LOWER DRIVER</em></span>
-          <span><b>P5</b><em>LOWER COUPLER</em></span>
-          <span><b>P6</b><em>LOWER CLOSURE</em></span>
+        <div class="joint-legend-group">
+          <strong><i class="joint-swatch active"></i>DRIVES <small>OFFSET / SERVO</small></strong>
+          <span><b>q1</b><em>SHOULDER / X</em><output id="joint-q1-value">--</output></span>
+          <span><b>q2</b><em>UPPER / Y</em><output id="joint-q2-value">--</output></span>
+          <span><b>q3</b><em>LOWER / Y</em><output id="joint-q3-value">--</output></span>
+        </div>
+        <div class="joint-kinematic-readout">
+          <div><span>FOOT TARGET <small>X / Y / Z</small></span><output id="joint-foot-target">--</output></div>
+          <div><span>FOOT STATE</span><output id="joint-foot-state" data-state="unknown">--</output></div>
+        </div>
+        <div class="joint-closure-readout">
+          <span><i class="joint-swatch passive"></i>PIN CLOSURE</span>
+          <output id="joint-closure-value">6 / 6 LOCKED</output>
         </div>
       </section>
     </aside>
 
-    <div id="loading">
+    <main id="real-workspace" class="real-robot-only" aria-label="Live robot digital twin" hidden>
+      <nav class="live-toolbar" aria-label="Live robot tools">
+        <div class="live-toolbar-section">
+          <strong>LIVE TWIN</strong>
+          <span>PHYSICAL / EXPECTED</span>
+        </div>
+        <div class="live-view-tabs" role="tablist" aria-label="Live engineering view">
+          <button type="button" role="tab" aria-selected="true">COMPARE</button>
+          <button type="button" role="tab" aria-selected="false" disabled>DATA</button>
+          <button type="button" role="tab" aria-selected="false" disabled>CALIBRATION</button>
+          <button type="button" role="tab" aria-selected="false" disabled>GAITS</button>
+          <button type="button" role="tab" aria-selected="false" disabled>DIAGNOSTICS</button>
+          <button type="button" role="tab" aria-selected="false" disabled>SESSIONS</button>
+        </div>
+        <div class="experience-toggle" role="group" aria-label="Interface detail">
+          <button type="button" data-experience="simple" class="active" aria-pressed="true">SIMPLE</button>
+          <button type="button" data-experience="expert" aria-pressed="false">EXPERT</button>
+        </div>
+      </nav>
+
+      <section class="live-safety-dock" aria-label="Live robot safety state">
+        <div class="live-state-heading">
+          <span>ROBOT STATE</span>
+          <strong>DISARMED</strong>
+        </div>
+        <p>No physical link is configured. Commands are blocked and the CAD is a reference model only.</p>
+        <button type="button" disabled>HOLD TO ARM</button>
+        <button type="button" class="estop" disabled>E-STOP</button>
+      </section>
+
+      <aside class="live-comparison-panel" aria-label="Live telemetry comparison">
+        <section class="live-panel-section live-links">
+          <h2>LIVE LINKS</h2>
+          <dl>
+            <div><dt>Boxer / ELRS drive</dt><dd id="live-drive-link" data-state="disconnected">OFFLINE</dd></div>
+            <div><dt>PC engineering link</dt><dd id="live-engineering-link" data-state="disconnected">OFFLINE</dd></div>
+            <div><dt>Last robot packet</dt><dd id="live-packet-age">--</dd></div>
+            <div><dt>Round-trip latency</dt><dd id="live-link-rtt">-- ms</dd></div>
+          </dl>
+        </section>
+
+        <section class="live-panel-section twin-status">
+          <h2>DIGITAL TWIN</h2>
+          <dl>
+            <div><dt>Expected command</dt><dd id="live-expected-state" data-state="disconnected">NO STREAM</dd></div>
+            <div><dt>Measured pose</dt><dd id="live-measured-state" data-state="disconnected">NO STREAM</dd></div>
+            <div><dt>Time alignment</dt><dd id="live-time-alignment">-- ms</dd></div>
+            <div><dt>Worst joint error</dt><dd id="live-worst-joint-error">--&deg;</dd></div>
+          </dl>
+          <div class="twin-legend" aria-label="Digital twin legend">
+            <span><i class="expected"></i>EXPECTED</span>
+            <span><i class="measured"></i>MEASURED</span>
+            <span><i class="error"></i>ERROR</span>
+          </div>
+        </section>
+
+        <section class="live-panel-section body-comparison">
+          <div class="comparison-heading">
+            <h2>BODY POSE</h2>
+            <span>EXPECTED / MEASURED / ERROR</span>
+          </div>
+          <div class="comparison-table comparison-table-heading" aria-hidden="true">
+            <span></span><span>EXP</span><span>MEAS</span><span>&Delta;</span>
+          </div>
+          <div class="comparison-table">
+            <strong>ROLL</strong><output data-live-body="rollDeg" data-stream="expected">--.-&deg;</output><output data-live-body="rollDeg" data-stream="measured">--.-&deg;</output><output data-live-body-error="rollDeg">--.-&deg;</output>
+            <strong>PITCH</strong><output data-live-body="pitchDeg" data-stream="expected">--.-&deg;</output><output data-live-body="pitchDeg" data-stream="measured">--.-&deg;</output><output data-live-body-error="pitchDeg">--.-&deg;</output>
+            <strong>YAW</strong><output data-live-body="yawDeg" data-stream="expected">--.-&deg;</output><output data-live-body="yawDeg" data-stream="measured">--.-&deg;</output><output data-live-body-error="yawDeg">--.-&deg;</output>
+            <strong>HEIGHT</strong><output data-live-body="heightMm" data-stream="expected">--- mm</output><output data-live-body="heightMm" data-stream="measured">--- mm</output><output data-live-body-error="heightMm">-- mm</output>
+          </div>
+        </section>
+
+        <section class="live-panel-section joint-comparison">
+          <div class="comparison-heading">
+            <h2>JOINT ERROR</h2>
+            <span>SHOULDER / UPPER / LOWER</span>
+          </div>
+          <div class="joint-error-grid" aria-label="Joint position error by leg">
+            <strong>FR</strong><output data-live-joint-error="3">--.-&deg;</output><output data-live-joint-error="4">--.-&deg;</output><output data-live-joint-error="15">--.-&deg;</output>
+            <strong>FL</strong><output data-live-joint-error="0">--.-&deg;</output><output data-live-joint-error="1">--.-&deg;</output><output data-live-joint-error="2">--.-&deg;</output>
+            <strong>BR</strong><output data-live-joint-error="9">--.-&deg;</output><output data-live-joint-error="10">--.-&deg;</output><output data-live-joint-error="11">--.-&deg;</output>
+            <strong>BL</strong><output data-live-joint-error="14">--.-&deg;</output><output data-live-joint-error="7">--.-&deg;</output><output data-live-joint-error="8">--.-&deg;</output>
+          </div>
+        </section>
+
+        <section class="live-panel-section live-power">
+          <div class="comparison-heading"><h2>POWER</h2><span>MEASURED</span></div>
+          <div class="live-power-row">
+            <div><span>VOLTAGE</span><strong id="live-voltage">--.- V</strong></div>
+            <div><span>CURRENT</span><strong id="live-current">--.- A</strong></div>
+            <div><span>POWER</span><strong id="live-power">--- W</strong></div>
+          </div>
+        </section>
+      </aside>
+
+      <section class="live-error-scope" aria-label="Expected and measured error history">
+        <div class="live-scope-heading">
+          <div><span>COMPARISON SCOPE</span><strong id="live-chart-title">Body pitch / degrees</strong></div>
+          <div class="live-scope-actions">
+            <span id="live-session-state">NO ACTIVE SESSION</span>
+            <label for="live-chart-signal" class="sr-only">Comparison signal</label>
+            <select id="live-chart-signal" aria-label="Comparison signal">
+              <option value="pitchDeg">PITCH</option>
+              <option value="rollDeg">ROLL</option>
+              <option value="yawDeg">YAW</option>
+              <option value="heightMm">HEIGHT</option>
+            </select>
+            <button id="live-recording-toggle" type="button" disabled>START RECORDING</button>
+            <button id="live-export-csv" type="button" disabled>EXPORT CSV</button>
+          </div>
+        </div>
+        <div class="live-scope-grid">
+          <canvas id="live-comparison-chart" aria-label="Expected and measured telemetry graph"></canvas>
+          <div class="live-chart-legend" aria-hidden="true">
+            <span><i class="expected"></i>EXPECTED</span>
+            <span><i class="measured"></i>MEASURED</span>
+            <span><i class="error"></i>ERROR</span>
+          </div>
+          <em id="live-chart-empty">Connect the engineering link, then start recording.</em>
+        </div>
+      </section>
+    </main>
+
+    <dialog id="firmware-deploy-dialog" class="firmware-deploy-dialog" aria-labelledby="firmware-deploy-title">
+      <div class="firmware-workspace">
+        <header class="firmware-workspace-header">
+          <div>
+            <span class="firmware-kicker">DOMINO / ESP32</span>
+            <h1 id="firmware-deploy-title">Firmware deployment</h1>
+            <p>Review and validate the exact package before writing to hardware.</p>
+          </div>
+          <div class="firmware-header-actions">
+            <span id="firmware-package-state" class="firmware-state-pill" data-state="loading">CHECKING</span>
+            <button id="firmware-deploy-close" class="firmware-icon-button" type="button" aria-label="Close firmware deployment" title="Close">&times;</button>
+          </div>
+        </header>
+
+        <div class="firmware-workspace-body">
+          <section class="firmware-package-panel" aria-label="Firmware package">
+            <div class="firmware-section-heading">
+              <div><span>PACKAGE</span><strong id="firmware-package-name">esp32dev</strong></div>
+              <output id="firmware-package-size">--</output>
+            </div>
+            <div class="firmware-package-meta">
+              <span id="firmware-board-name">ESP32 Dev Module</span>
+              <code id="firmware-package-hash">--------</code>
+            </div>
+            <div id="firmware-file-list" class="firmware-file-list" role="listbox" aria-label="Firmware files"></div>
+          </section>
+
+          <section class="firmware-review-panel" aria-label="Source review">
+            <div class="firmware-section-heading">
+              <div><span>REVIEW</span><strong id="firmware-review-path">Select a file</strong></div>
+              <output id="firmware-review-size">--</output>
+            </div>
+            <pre id="firmware-source-viewer" tabindex="0"><code>Choose a package file to inspect the code that will be compiled and uploaded.</code></pre>
+          </section>
+
+          <aside class="firmware-action-panel" aria-label="Deployment controls">
+            <section>
+              <div class="firmware-step-heading"><span>01</span><div><strong>Toolchain</strong><small>Local build environment</small></div></div>
+              <dl class="firmware-readiness-list">
+                <div><dt>PlatformIO</dt><dd id="firmware-toolchain-state">Checking</dd></div>
+                <div><dt>Environment</dt><dd>esp32dev</dd></div>
+                <div><dt>Framework</dt><dd>Arduino</dd></div>
+              </dl>
+              <button id="firmware-build-button" class="firmware-primary-action" type="button">BUILD &amp; VALIDATE</button>
+            </section>
+
+            <section>
+              <div class="firmware-step-heading"><span>02</span><div><strong>Hardware</strong><small>USB serial bootloader</small></div></div>
+              <label class="firmware-field" for="firmware-port-select">
+                <span>UPLOAD PORT</span>
+                <select id="firmware-port-select"><option value="">AUTO DETECT</option></select>
+              </label>
+              <button id="firmware-refresh-ports" class="firmware-secondary-action" type="button">REFRESH PORTS</button>
+              <ol class="firmware-boot-guide">
+                <li>Connect Domino's ESP32 over USB.</li>
+                <li>Press and hold the <b>BOOT</b> button.</li>
+                <li>Start upload, then release BOOT when connecting begins.</li>
+              </ol>
+              <label class="firmware-confirmation">
+                <input id="firmware-boot-confirm" type="checkbox">
+                <span>I am holding BOOT and the robot is safely supported.</span>
+              </label>
+              <button id="firmware-upload-button" class="firmware-upload-action" type="button" disabled>UPLOAD TO ESP32</button>
+            </section>
+          </aside>
+        </div>
+
+        <footer class="firmware-console-panel">
+          <div class="firmware-progress-row">
+            <div><span id="firmware-job-label">READY</span><strong id="firmware-job-stage">No active job</strong></div>
+            <output id="firmware-job-percent">0%</output>
+          </div>
+          <div class="firmware-progress-track"><div id="firmware-progress-fill"></div></div>
+          <div class="firmware-console-heading">
+            <span>DEPLOYMENT LOG</span>
+            <div><button id="firmware-copy-log" type="button">COPY</button><button id="firmware-cancel-job" type="button" disabled>CANCEL</button></div>
+          </div>
+          <pre id="firmware-console" aria-live="polite">Waiting for a build or upload job.</pre>
+        </footer>
+      </div>
+    </dialog>
+
+    <div id="loading" class="simulation-only">
       <strong>LOADING DOMINO CAD</strong>
       <span id="loading-detail">Preparing renderer</span>
       <progress id="loading-progress" max="29" value="0"></progress>
     </div>
 
-    <div class="camera-gizmo" aria-label="Camera axis navigation">
+    <div class="camera-gizmo simulation-only" aria-label="Camera axis navigation">
       <canvas class="camera-gizmo-lines" width="112" height="112" aria-hidden="true"></canvas>
       <span class="camera-gizmo-hub" aria-hidden="true"></span>
       <button type="button" data-axis="+X" aria-label="View from positive X" title="View from +X">X</button>

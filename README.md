@@ -2,6 +2,10 @@
 
 Domino is a prototype ESP32 quadruped robot built around a carbon-and-printed composite chassis, a custom 3-DoF leg mechanism, CRSF/ExpressLRS radio control, PCA9685 servo output, and CAD-to-simulation experiments.
 
+For the portfolio-level explanation of the architecture, control flow, linkage
+problem, and the most interesting implementation details, start with the
+[Domino Engineering Overview](docs/engineering-overview.md).
+
 > Work in progress: Domino is an active engineering prototype, not a finished kit. The firmware, CAD exports, PCB package, calibration notes, and simulation files are included as a project record and technical reference. The repo does not yet contain a complete step-by-step build manual, measured BOM, wiring diagram, or validated production assembly process.
 
 ![Domino quadruped robot build](docs/images/domino-master.jpg)
@@ -18,6 +22,32 @@ Domino is the successor to my earlier SpotMicro ESP32 Nitro work. The earlier pr
 - CAD, STEP, USD, and Isaac Sim export work documenting the mechanical and simulation path.
 
 As a portfolio project, Domino demonstrates mechanical design, embedded firmware, RC protocol work, power distribution, servo safety, calibration, and simulation constraints in one prototype hardware stack.
+
+## Three Project Tracks
+
+The repository is deliberately split into three connected but distinct tracks:
+
+- **Physical Domino** - the ESP32/PlatformIO firmware, CRSF receiver link,
+  servo mapping, CAD-derived IK, electronics, and build documentation for the
+  real robot.
+- **Isaac Sim / Isaac Lab** - CAD import, closed-linkage experiments,
+  actuator/contact modelling, environments, and reinforcement-learning policy
+  research.
+- **Domino Virtual Lab** - the standalone 3D application for plugging in a
+  Boxer controller, exercising the production firmware in a game-like CAD
+  environment, and checking changes before hardware bring-up.
+
+The Virtual Lab lives at [`simulation/standalone`](simulation/standalone) for
+script compatibility, but it is a separate product track from the Isaac
+research environment and the physical firmware project.
+
+![Domino Virtual Lab simulation workspace](docs/images/virtual-lab-simulation-workspace.png)
+
+The application is committed as **locally runnable source code**, not deployed
+as a GitHub Pages website. Clone the repository, install the Virtual Lab's Node
+dependencies, and run its PowerShell launcher. See the
+[Virtual Lab guide](docs/virtual-lab.md) for setup, screenshots, architecture,
+controls, and current limitations.
 
 ## Current Status
 
@@ -48,11 +78,12 @@ Still in progress:
 
 If you are looking to build the project start here:
 
-1. [docs/control-notes.md](docs/control-notes.md) - coordinate frames, IK constants, servo mapping, and mode flow.
-2. [docs/crsf.md](docs/crsf.md) - CRSF/ExpressLRS parser and receiver migration notes.
-3. [docs/cad-design.md](docs/cad-design.md) - mechanical structure, STEP exports, composite cage, and simulation limitations.
-4. [docs/electronics.md](docs/electronics.md) - electronics architecture, PCB evolution, and power/control notes.
-5. [hardware/pcb/domino-quadruped-pcb-v1.1b](hardware/pcb/domino-quadruped-pcb-v1.1b) - Domino PCB V1.1B Gerber package.
+1. [docs/engineering-overview.md](docs/engineering-overview.md) - portfolio overview, architecture, data flow, code tour, and current boundaries.
+2. [docs/control-notes.md](docs/control-notes.md) - coordinate frames, IK constants, servo mapping, and mode flow.
+3. [docs/crsf.md](docs/crsf.md) - CRSF/ExpressLRS parser and receiver migration notes.
+4. [docs/cad-design.md](docs/cad-design.md) - mechanical structure, STEP exports, composite cage, and simulation limitations.
+5. [docs/electronics.md](docs/electronics.md) - electronics architecture, PCB evolution, and power/control notes.
+6. [hardware/pcb/domino-quadruped-pcb-v1.1b](hardware/pcb/domino-quadruped-pcb-v1.1b) - Domino PCB V1.1B Gerber package.
 
 ## Mechanical Design
 
@@ -182,6 +213,7 @@ Hardware bring-up should be done in layers: receiver first, then one servo, then
 |   `-- pcb/                 Domino PCB Gerber package and notes
 |-- simulation/
 |   |-- isaac/               Isaac Sim / Isaac Lab bring-up notes and URDF topology tooling
+|   |-- standalone/          Domino Virtual Lab 3D firmware/CAD testing app
 |   |-- sil/                 Desktop build of the production firmware and live monitor
 |   |-- urdf/generated/      Generated URDF reference export
 |   `-- usd/                 USD/USDZ exports for Isaac Sim experiments

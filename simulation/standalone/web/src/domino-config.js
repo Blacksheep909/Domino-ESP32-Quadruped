@@ -15,6 +15,39 @@ export const standServoReference = [
   0.0, 0.0, 119.88, 128.38,
 ];
 
+// Two CNHL Black Series 1500 mAh 4S packs are mounted across the front and
+// rear electronics bays. Coordinates use the centered Domino CAD frame.
+export const batteryPacks = [
+  {
+    id: "front",
+    center: [0.155, 0, 0.034],
+    size: [0.037, 0.075, 0.035],
+    massKg: 0.183,
+  },
+  {
+    id: "rear",
+    center: [-0.155, 0, 0.034],
+    size: [0.037, 0.075, 0.035],
+    massKg: 0.183,
+  },
+];
+
+const massPerLegKg = 0.1 + 0.12 + 0.1 + 0.03;
+const batteryMassKg = batteryPacks.reduce((sum, pack) => sum + pack.massKg, 0);
+
+export const dominoMassModel = Object.freeze({
+  chassisWithoutBatteriesKg: 1.2,
+  hipKg: 0.1,
+  upperLinkKg: 0.12,
+  lowerLinkKg: 0.1,
+  footKg: 0.03,
+  legCount: 4,
+  batteryCount: batteryPacks.length,
+  batteryMassKg,
+  packMassKg: batteryPacks[0].massKg,
+  totalMassKg: 1.2 + massPerLegKg * 4 + batteryMassKg,
+});
+
 export const legs = [
   {
     id: "dom_p_4_1",

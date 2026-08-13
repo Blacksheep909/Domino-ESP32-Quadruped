@@ -1,12 +1,12 @@
 {
-  "name": "domino-standalone-simulator",
+  "name": "domino-virtual-lab",
   "private": true,
   "version": "0.1.0",
   "type": "module",
   "scripts": {
     "build": "vite build",
     "start": "node server.mjs",
-    "test": "node --test boxer-hid.test.mjs cad-endpoint.test.mjs linkage.test.mjs physics.test.mjs"
+    "test": "node --test app-state.test.mjs boxer-hid.test.mjs cad-endpoint.test.mjs control-state.test.mjs firmware-service.test.mjs gait-lab.test.mjs heartbeat-state.test.mjs linkage.test.mjs live-session-state.test.mjs live-telemetry-state.test.mjs physics.test.mjs"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "0.19.3",

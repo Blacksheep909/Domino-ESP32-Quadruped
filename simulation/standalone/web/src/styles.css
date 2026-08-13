@@ -3208,6 +3208,480 @@ body[data-workspace="real-robot"] .simulation-only {
   font-size: 12px;
 }
 
+.live-calibration-layout {
+  max-width: 1240px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 15px;
+}
+
+.calibration-preview-caption {
+  position: fixed;
+  right: 3vw;
+  bottom: 70px;
+  width: 34vw;
+  padding: 12px 14px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 14px;
+  color: #d9d9dc;
+  background: rgba(12, 12, 13, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  backdrop-filter: blur(12px);
+  z-index: 9;
+  pointer-events: none;
+}
+
+.calibration-preview-caption span { color: #79c493; font: 750 8px/1 "Cascadia Mono", Consolas, monospace; }
+.calibration-preview-caption strong { font: 750 10px/1 "Cascadia Mono", Consolas, monospace; text-align: right; }
+.calibration-preview-caption small { grid-column: 1 / -1; color: #8f8f95; font-size: 8px; }
+
+body[data-workspace="real-robot"][data-live-view="calibration"] #scene {
+  inset: 144px 2.5vw 54px auto;
+  width: 36vw;
+  height: auto;
+  background: radial-gradient(circle at 50% 45%, #202024, #0c0c0d 68%);
+  border: 1px solid #303034;
+  border-radius: 8px;
+  z-index: 8;
+}
+
+.live-calibration-page { padding-right: 42vw; }
+.live-calibration-page .live-page-heading,
+.live-calibration-page .live-calibration-layout { max-width: none; }
+.live-calibration-page .live-calibration-layout { grid-template-columns: 170px minmax(0, 1fr); }
+.live-calibration-page .calibration-jog-control { grid-template-columns: 1fr; }
+.live-calibration-page .calibration-jog-control > div:last-child { flex-wrap: wrap; }
+
+.calibration-step-rail {
+  padding: 8px;
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  background: rgba(250, 250, 248, 0.9);
+  border: 1px solid #d2d2cd;
+  border-radius: 8px;
+}
+
+.calibration-step-rail button {
+  position: relative;
+  min-height: 64px;
+  padding: 11px 10px 11px 42px;
+  display: grid;
+  gap: 4px;
+  color: #777a75;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.calibration-step-rail button > span {
+  position: absolute;
+  top: 12px;
+  left: 11px;
+  color: #a0a29d;
+  font: 700 9px/1 "Cascadia Mono", Consolas, monospace;
+}
+
+.calibration-step-rail button strong {
+  font: 750 10px/1 "Cascadia Mono", Consolas, monospace;
+}
+
+.calibration-step-rail button small {
+  color: #9a9c97;
+  font-size: 9px;
+}
+
+.calibration-step-rail button[aria-current="step"] {
+  color: #225c3a;
+  background: #e4f0e8;
+  border-color: #9ec7ac;
+}
+
+.calibration-step-rail button[aria-current="step"] > span { color: #2f7b4b; }
+
+.calibration-workspace {
+  min-width: 0;
+  background: rgba(250, 250, 248, 0.92);
+  border: 1px solid #d2d2cd;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.calibration-panel {
+  min-height: 445px;
+  padding: 24px 26px;
+}
+
+.calibration-panel-heading {
+  padding-bottom: 17px;
+  border-bottom: 1px solid #dfdfda;
+}
+
+.calibration-panel-heading > span,
+.calibration-editor-heading span,
+.calibration-jog-control span,
+.calibration-selection-summary > span,
+.calibration-limit-summary > span,
+.calibration-lock-state span {
+  color: #858781;
+  font: 750 8px/1 "Cascadia Mono", Consolas, monospace;
+  letter-spacing: 0.07em;
+}
+
+.calibration-panel-heading h2 {
+  margin: 7px 0 5px;
+  font-size: 22px;
+}
+
+.calibration-panel-heading p,
+.calibration-safety-grid p,
+.calibration-selection-summary small,
+.calibration-jog-control small,
+.calibration-limit-summary p {
+  margin: 0;
+  color: #777a75;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.calibration-safety-grid {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.calibration-safety-grid article {
+  min-height: 132px;
+  padding: 15px;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  background: #f0f0ec;
+  border-radius: 6px;
+}
+
+.calibration-safety-grid article > span {
+  color: #2f7b4b;
+  font: 750 9px/1 "Cascadia Mono", Consolas, monospace;
+}
+
+.calibration-safety-grid article strong { font-size: 12px; }
+
+.calibration-confirm {
+  margin-top: 16px;
+  padding: 13px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #555852;
+  background: #f8efe1;
+  border: 1px solid #ddc59f;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.calibration-confirm input { accent-color: #327e4e; }
+
+.calibration-lock-state {
+  margin-top: 12px;
+  padding: 12px 14px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: #faeeeb;
+  border: 1px solid #dcb7ae;
+  border-radius: 6px;
+}
+
+.calibration-lock-state strong {
+  color: #9d4938;
+  font: 750 9px/1 "Cascadia Mono", Consolas, monospace;
+}
+
+.calibration-lock-state button {
+  height: 32px;
+  padding: 0 11px;
+  color: #225c3a;
+  background: #e4f0e8;
+  border: 1px solid #9ec7ac;
+  border-radius: 5px;
+  font-size: 8px;
+  font-weight: 750;
+}
+
+.calibration-lock-state button:disabled { color: #9b9d98; background: transparent; border-color: #d8d8d3; }
+
+.calibration-joint-map {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.calibration-joint-map > section {
+  padding: 8px;
+  background: #f0f0ec;
+  border: 1px solid #deded8;
+  border-radius: 6px;
+}
+
+.calibration-joint-map header {
+  position: static;
+  width: auto;
+  height: auto;
+  min-height: 0;
+  padding: 5px 5px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.calibration-joint-map header strong { font-size: 15px; }
+.calibration-joint-map header span { color: #8f918c; font-size: 8px; }
+
+.calibration-joint-map button {
+  width: 100%;
+  margin-top: 5px;
+  padding: 10px;
+  display: flex;
+  justify-content: space-between;
+  color: #555852;
+  background: #fafaf8;
+  border: 1px solid #d6d6d0;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.calibration-joint-map button strong,
+.calibration-joint-map button span {
+  font: 750 9px/1 "Cascadia Mono", Consolas, monospace;
+}
+
+.calibration-joint-map button span { color: #92948f; }
+.calibration-joint-map button[aria-pressed="true"] { color: #225c3a; background: #e4f0e8; border-color: #77ad8a; }
+
+.calibration-selection-summary {
+  margin-top: 14px;
+  padding: 13px 15px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 6px 18px;
+  border-left: 3px solid #4c9b69;
+  background: #f0f0ec;
+}
+
+.calibration-selection-summary strong { font: 750 12px/1 "Cascadia Mono", Consolas, monospace; }
+.calibration-selection-summary small { grid-column: 2; }
+
+.calibration-editor-heading {
+  margin-top: 18px;
+  padding: 13px 15px;
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 18px;
+  background: #f0f0ec;
+  border-radius: 6px;
+}
+
+.calibration-editor-heading > div { display: grid; gap: 7px; }
+.calibration-editor-heading strong { font: 750 12px/1 "Cascadia Mono", Consolas, monospace; }
+
+.calibration-field-grid {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.35fr;
+  gap: 10px;
+}
+
+.calibration-field-grid label,
+.calibration-limit-editor label {
+  padding: 12px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 7px;
+  color: #858781;
+  background: #f0f0ec;
+  border-radius: 6px;
+  font: 750 8px/1 "Cascadia Mono", Consolas, monospace;
+}
+
+.calibration-field-grid input[type="number"],
+.calibration-field-grid select,
+.calibration-limit-editor input {
+  grid-column: 1 / -1;
+  height: 36px;
+  padding: 0 10px;
+  color: #323531;
+  background: #fafaf8;
+  border: 1px solid #d2d2cd;
+  border-radius: 5px;
+  font: 700 12px/1 "Cascadia Mono", Consolas, monospace;
+}
+
+.calibration-field-grid label > span,
+.calibration-limit-editor label > span { font-size: 8px; font-weight: 500; }
+
+.calibration-preview-toggle {
+  grid-template-columns: auto 1fr !important;
+  align-content: center;
+}
+
+.calibration-preview-toggle input { accent-color: #327e4e; }
+.calibration-preview-toggle strong { color: #323531; font-size: 9px; }
+.calibration-preview-toggle span { grid-column: 2; }
+
+.calibration-jog-control {
+  margin-top: 12px;
+  padding: 14px;
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  background: #f0f0ec;
+  border-radius: 6px;
+}
+
+.calibration-jog-control > div:first-child { display: grid; grid-template-columns: auto 1fr; gap: 7px 14px; }
+.calibration-jog-control > div:first-child strong { font: 750 15px/1 "Cascadia Mono", Consolas, monospace; text-align: right; }
+.calibration-jog-control > div:first-child small { grid-column: 1 / -1; }
+.calibration-jog-control > div:last-child { display: flex; gap: 5px; }
+
+.calibration-jog-control button,
+.calibration-review-actions button,
+.calibration-wizard-footer > button {
+  height: 34px;
+  padding: 0 11px;
+  color: #225c3a;
+  background: #e4f0e8;
+  border: 1px solid #9ec7ac;
+  border-radius: 5px;
+  font-size: 9px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.calibration-inline-status {
+  margin: 12px 0 0;
+  color: #777a75;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.calibration-limit-editor {
+  margin-top: 20px;
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1.4fr) minmax(180px, 1fr);
+  align-items: center;
+  gap: 18px;
+}
+
+.calibration-range-graphic {
+  position: relative;
+  height: 5px;
+  background: #d8d9d4;
+  border-radius: 5px;
+}
+
+.calibration-range-graphic b { position: absolute; inset: 0 20%; background: #4c9b69; }
+.calibration-range-graphic i { position: absolute; top: -6px; width: 2px; height: 17px; background: #555852; }
+.calibration-range-graphic i:first-child { left: 20%; }
+.calibration-range-graphic i:last-child { right: 20%; }
+
+.calibration-limit-summary {
+  margin-top: 18px;
+  padding: 20px;
+  display: grid;
+  gap: 9px;
+  background: #f0f0ec;
+  border-left: 3px solid #4c9b69;
+}
+
+.calibration-limit-summary strong { font: 750 20px/1 "Cascadia Mono", Consolas, monospace; }
+
+.calibration-review-table-wrap {
+  max-height: 270px;
+  margin-top: 16px;
+  overflow: auto;
+}
+
+.calibration-review-table-wrap table { width: 100%; border-collapse: collapse; font: 650 9px/1.2 "Cascadia Mono", Consolas, monospace; }
+.calibration-review-table-wrap th,
+.calibration-review-table-wrap td { padding: 8px 10px; border-bottom: 1px solid #dfdfda; text-align: right; }
+.calibration-review-table-wrap th:first-child,
+.calibration-review-table-wrap td:first-child { text-align: left; }
+.calibration-review-table-wrap th { color: #858781; font-size: 8px; }
+
+.calibration-review-actions { margin-top: 15px; display: flex; flex-wrap: wrap; gap: 8px; }
+.calibration-review-actions button:disabled,
+.calibration-wizard-footer > button:disabled { color: #9b9d98; background: #ededE9; border-color: #d8d8d3; cursor: default; }
+
+.calibration-wizard-footer {
+  min-height: 62px;
+  padding: 12px 18px;
+  display: grid;
+  grid-template-columns: auto minmax(150px, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  border-top: 1px solid #dfdfda;
+}
+
+.calibration-wizard-footer > div { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 10px; }
+.calibration-wizard-footer span { color: #858781; font: 750 8px/1 "Cascadia Mono", Consolas, monospace; }
+.calibration-wizard-footer i { height: 3px; overflow: hidden; background: #deded8; border-radius: 3px; }
+.calibration-wizard-footer i b { display: block; width: 20%; height: 100%; background: #4c9b69; transition: width 160ms ease; }
+
+:root[data-theme="dark"] .calibration-step-rail,
+:root[data-theme="dark"] .calibration-workspace { background: #121214; border-color: #303034; }
+:root[data-theme="dark"] .calibration-step-rail button[aria-current="step"],
+:root[data-theme="dark"] .calibration-joint-map button[aria-pressed="true"] { color: #bce8c9; background: rgba(61, 151, 95, 0.14); border-color: rgba(80, 177, 113, 0.38); }
+:root[data-theme="dark"] .calibration-panel-heading,
+:root[data-theme="dark"] .calibration-wizard-footer { border-color: #303034; }
+:root[data-theme="dark"] .calibration-safety-grid article,
+:root[data-theme="dark"] .calibration-joint-map > section,
+:root[data-theme="dark"] .calibration-selection-summary,
+:root[data-theme="dark"] .calibration-editor-heading,
+:root[data-theme="dark"] .calibration-field-grid label,
+:root[data-theme="dark"] .calibration-jog-control,
+:root[data-theme="dark"] .calibration-limit-editor label,
+:root[data-theme="dark"] .calibration-limit-summary { background: #18181a; border-color: #303034; }
+:root[data-theme="dark"] .calibration-confirm { color: #e5c797; background: rgba(175, 112, 28, 0.1); border-color: rgba(205, 151, 76, 0.3); }
+:root[data-theme="dark"] .calibration-lock-state { background: rgba(180, 68, 49, 0.1); border-color: rgba(210, 91, 71, 0.3); }
+:root[data-theme="dark"] .calibration-joint-map button,
+:root[data-theme="dark"] .calibration-field-grid input[type="number"],
+:root[data-theme="dark"] .calibration-field-grid select,
+:root[data-theme="dark"] .calibration-limit-editor input { color: #d9d9dc; background: #202023; border-color: #343438; }
+:root[data-theme="dark"] .calibration-preview-toggle strong { color: #d9d9dc; }
+:root[data-theme="dark"] .calibration-review-table-wrap th,
+:root[data-theme="dark"] .calibration-review-table-wrap td { border-color: #29292c; }
+:root[data-theme="dark"] .calibration-review-actions button:disabled,
+:root[data-theme="dark"] .calibration-wizard-footer > button:disabled { color: #626269; background: #1b1b1e; border-color: #2d2d31; }
+
+@media (max-width: 1000px) {
+  body[data-workspace="real-robot"][data-live-view="calibration"] #scene { z-index: 0; inset: 0; width: 100%; height: 100%; border: 0; }
+  .live-calibration-page { padding-right: clamp(22px, 4vw, 58px); }
+  .calibration-preview-caption { display: none; }
+  .live-calibration-layout { grid-template-columns: 1fr; }
+  .calibration-step-rail { grid-template-columns: repeat(5, 1fr); }
+  .calibration-step-rail button { min-height: 55px; padding-left: 34px; }
+  .calibration-joint-map { grid-template-columns: repeat(2, 1fr); }
+}
+
 :root[data-theme="dark"] .live-view-page {
   color: #ededee;
   background: radial-gradient(circle at 86% 4%, rgba(57, 141, 87, 0.09), transparent 28%), #0c0c0d;
@@ -4071,6 +4545,38 @@ body[data-workspace="real-robot"] .simulation-only {
     max-height: calc(100vh - 194px);
     overflow-y: auto;
   }
+}
+
+/* The application inspection panel also uses a bare aside element. Keep the
+   calibration step rail in normal document flow regardless of those legacy
+   fixed-panel rules and their responsive overrides. */
+#live-view-calibration aside.calibration-step-rail {
+  position: static;
+  inset: auto;
+  width: auto;
+  max-height: none;
+  overflow: visible;
+  color: inherit;
+  background: rgba(250, 250, 248, 0.9);
+  border: 1px solid #d2d2cd;
+  border-radius: 8px;
+  box-shadow: none;
+  backdrop-filter: none;
+  z-index: auto;
+}
+
+#live-view-calibration aside.calibration-step-rail > section {
+  padding: 8px;
+  border: 1px solid #deded8;
+  border-radius: 6px;
+}
+
+:root[data-theme="dark"] #live-view-calibration aside.calibration-step-rail {
+  color: #ededee;
+  background: #121214;
+  border-color: #303034;
+  box-shadow: none;
+  backdrop-filter: none;
 }
 
 /* Keep the final dark palette authoritative over legacy component themes. */

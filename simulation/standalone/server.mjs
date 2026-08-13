@@ -20,6 +20,10 @@ import {
   radioInputIsFresh,
   releaseClientControl,
 } from "./control-state.mjs";
+import {
+  validCalibrationAcknowledgement,
+  validCalibrationCommand,
+} from "./web/src/live-calibration-protocol.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../..");
@@ -350,6 +354,26 @@ sockets.on("connection", (socket) => {
         // will validate and translate device packets, then publish this
         // canonical expected/measured envelope to every open LIVE workspace.
         if (Buffer.byteLength(payload) <= 64 * 1024) broadcast(message);
+        return;
+      }
+      if (message.type === "live-calibration-command") {
+        // Calibration commands are relayed only as the canonical, bounded
+        // browser-to-adapter contract. The robot adapter must refuse motion
+        // until it has entered bench mode and must enforce the supplied speed
+        // and jog limits independently of this browser.
+        if (
+          Buffer.byteLength(payload) <= 32 * 1024 &&
+          validCalibrationCommand(message)
+        ) broadcast(message);
+        return;
+      }
+      if (message.type === "live-calibration-ack") {
+        // A future wired/Wi-Fi/Bluetooth adapter publishes this response after
+        // robot-side bench-mode and persistence checks have actually passed.
+        if (
+          Buffer.byteLength(payload) <= 8 * 1024 &&
+          validCalibrationAcknowledgement(message)
+        ) broadcast(message);
         return;
       }
       if (message.type !== "control" || !Array.isArray(message.channels) || message.channels.length !== 16) {

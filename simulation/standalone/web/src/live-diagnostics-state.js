@@ -37,6 +37,10 @@ function sanitizeDiagnostics(diagnostics) {
     robotState: typeof diagnostics.robotState === "string"
       ? diagnostics.robotState.slice(0, 32).toLowerCase()
       : null,
+    driveLinkAlive: bool(diagnostics.driveLinkAlive),
+    drivePacketAgeMs: finite(diagnostics.drivePacketAgeMs),
+    driveRssiDbm: finite(diagnostics.driveRssiDbm),
+    driveLinkQualityPercent: finite(diagnostics.driveLinkQualityPercent),
     gaitTargetValid: bool(diagnostics.gaitTargetValid),
     ikValid: bool(diagnostics.ikValid),
     jointLimitClips: finite(diagnostics.jointLimitClips),

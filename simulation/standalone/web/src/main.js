@@ -56,7 +56,23 @@ import {
   stopLiveSession,
 } from "./live-session-state.js";
 import {
+  calibrationPreviewServoAngles,
+  calibrationProfileJson,
+  createCalibrationBenchCommand,
+  createLiveCalibrationProfile,
+  createLiveCalibrationState,
+  jogCalibrationJoint,
+  LIVE_CALIBRATION_JOINTS,
+  LIVE_CALIBRATION_STEPS,
+  LIVE_CALIBRATION_STORAGE_KEY,
+  parseCalibrationProfileJson,
+  selectCalibrationJoint,
+  selectCalibrationStep,
+  updateCalibrationJoint,
+} from "./live-calibration-state.js";
+import {
   createLiveViewState,
+  LIVE_VIEW_CALIBRATION,
   LIVE_VIEW_COMPARE,
   LIVE_VIEW_DATA,
   LIVE_VIEW_SESSIONS,
@@ -72,6 +88,19 @@ const liveTelemetryState = createLiveTelemetryState();
 const liveSessionState = createLiveSessionState();
 const liveSessionArchive = [];
 const liveViewState = createLiveViewState();
+let storedCalibrationProfile = null;
+try {
+  const storedCalibrationJson = localStorage.getItem(LIVE_CALIBRATION_STORAGE_KEY);
+  if (storedCalibrationJson) storedCalibrationProfile = parseCalibrationProfileJson(storedCalibrationJson);
+} catch {
+  localStorage.removeItem(LIVE_CALIBRATION_STORAGE_KEY);
+}
+const liveCalibrationState = createLiveCalibrationState(
+  storedCalibrationProfile || createLiveCalibrationProfile(),
+);
+let calibrationPendingRequestId = "";
+let calibrationPendingAction = "";
+let calibrationRequestTimeout = null;
 const realWorkspace = document.querySelector("#real-workspace");
 const workspaceButtons = {
   [WORKSPACE_SIMULATION]: document.querySelector("#workspace-simulation"),
@@ -118,8 +147,19 @@ function applyWorkspace(workspace) {
 }
 
 function applyLiveView(view) {
+  const leavingCalibration = liveViewState.selected === LIVE_VIEW_CALIBRATION && view !== LIVE_VIEW_CALIBRATION;
+  const enteringCalibration = liveViewState.selected !== LIVE_VIEW_CALIBRATION && view === LIVE_VIEW_CALIBRATION;
   if (!selectLiveView(liveViewState, view)) return false;
+  if (leavingCalibration) {
+    if (liveCalibrationState.benchModeAcknowledged) sendCalibrationCommand("exit");
+    liveCalibrationState.benchModeAcknowledged = false;
+    liveCalibrationState.jogOffsetDeg = 0;
+    liveExpectedServoAngles = [...standServoReference];
+    if (linkageRuntimesReady()) applyServoAnglesToRuntimes(linkageRuntimes, liveExpectedServoAngles);
+    resetCameraView();
+  }
   realWorkspace.dataset.view = liveViewState.selected;
+  document.body.dataset.liveView = liveViewState.selected;
   document.querySelectorAll("[data-live-view]").forEach((button) => {
     const active = button.dataset.liveView === liveViewState.selected;
     button.setAttribute("aria-selected", String(active));
@@ -127,9 +167,20 @@ function applyLiveView(view) {
   });
   document.querySelector("#live-view-compare").hidden = liveViewState.selected !== LIVE_VIEW_COMPARE;
   document.querySelector("#live-view-data").hidden = liveViewState.selected !== LIVE_VIEW_DATA;
+  document.querySelector("#live-view-calibration").hidden = liveViewState.selected !== LIVE_VIEW_CALIBRATION;
   document.querySelector("#live-view-sessions").hidden = liveViewState.selected !== LIVE_VIEW_SESSIONS;
   if (liveViewState.selected === LIVE_VIEW_DATA) requestAnimationFrame(renderLiveComparisonChart);
+  if (liveViewState.selected === LIVE_VIEW_CALIBRATION) renderLiveCalibrationUi();
   if (liveViewState.selected === LIVE_VIEW_SESSIONS) renderLiveSessionArchive();
+  requestAnimationFrame(() => {
+    resize();
+    if (enteringCalibration) {
+      resetCameraView();
+      perspectiveCamera.position.copy(robotCameraAnchor).addScaledVector(defaultCameraOffset, 0.58);
+      perspectiveCamera.lookAt(controls.target);
+      controls.update();
+    }
+  });
   return true;
 }
 
@@ -1609,6 +1660,12 @@ async function buildLeg(spec, runtimeIndex) {
     upper_driver: bodyGroup(legRoot, spec.points.upper_drive),
     upper_closure: bodyGroup(legRoot, spec.points.upper_closure_coupler),
   };
+  groups.ground.userData.calibrationChannel = spec.channels.shoulder;
+  groups.upper_driver.userData.calibrationChannel = spec.channels.upper;
+  groups.upper_closure.userData.calibrationChannel = spec.channels.upper;
+  ["lower_driver", "coupler", "lower_diagonal", "lower_closure"].forEach((role) => {
+    groups[role].userData.calibrationChannel = spec.channels.lower;
+  });
 
   await Promise.all(Object.entries(groups).map(([role, group]) => {
     const anchorByRole = {
@@ -1934,6 +1991,11 @@ function connectControlBridge() {
   socket.addEventListener("close", () => {
     markHeartbeatSocketClosed(bridgeHeartbeat);
     bridgeInput = { connected: false, channels: null };
+    liveCalibrationState.benchModeAcknowledged = false;
+    calibrationPendingRequestId = "";
+    calibrationPendingAction = "";
+    clearTimeout(calibrationRequestTimeout);
+    calibrationRequestTimeout = null;
     document.querySelector("#firmware-status").dataset.state = "offline";
     setTimeout(connectControlBridge, 800);
   });
@@ -1948,6 +2010,9 @@ function connectControlBridge() {
       }
       if (message.type === "live-telemetry") {
         acceptLiveTelemetryPacket(liveTelemetryState, message);
+      }
+      if (message.type === "live-calibration-ack") {
+        acceptCalibrationAcknowledgement(message);
       }
     } catch {
       // Ignore malformed local bridge packets.
@@ -2225,6 +2290,193 @@ function renderLiveDataTable() {
   });
 }
 
+function selectedCalibrationDefinition() {
+  return LIVE_CALIBRATION_JOINTS.find(
+    (definition) => definition.channel === liveCalibrationState.selectedChannel,
+  );
+}
+
+function selectedCalibrationJoint() {
+  return liveCalibrationState.profile.joints.find(
+    (joint) => joint.channel === liveCalibrationState.selectedChannel,
+  );
+}
+
+function formatCalibrationDegrees(value, digits = 1) {
+  if (!Number.isFinite(value)) return "--°";
+  return `${value >= 0 ? "+" : ""}${value.toFixed(digits)}°`;
+}
+
+function renderCalibrationJointMap() {
+  const list = document.querySelector("#live-calibration-joint-list");
+  list.replaceChildren();
+  ["FL", "FR", "BL", "BR"].forEach((leg) => {
+    const group = document.createElement("section");
+    const heading = document.createElement("header");
+    const legName = document.createElement("strong");
+    const location = document.createElement("span");
+    legName.textContent = leg;
+    location.textContent = leg.startsWith("F") ? "FRONT LEG" : "REAR LEG";
+    heading.append(legName, location);
+    group.append(heading);
+    LIVE_CALIBRATION_JOINTS.filter((joint) => joint.leg === leg).forEach((joint) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.dataset.calibrationChannel = String(joint.channel);
+      button.setAttribute("aria-pressed", String(joint.channel === liveCalibrationState.selectedChannel));
+      const label = document.createElement("strong");
+      const channel = document.createElement("span");
+      label.textContent = joint.label.replace(`${leg} `, "").toUpperCase();
+      channel.textContent = `CH ${joint.channel}`;
+      button.append(label, channel);
+      group.append(button);
+    });
+    list.append(group);
+  });
+}
+
+function renderCalibrationReview() {
+  const body = document.querySelector("#live-calibration-review-body");
+  body.replaceChildren();
+  LIVE_CALIBRATION_JOINTS.forEach((definition) => {
+    const joint = liveCalibrationState.profile.joints.find(
+      (candidate) => candidate.channel === definition.channel,
+    );
+    const row = body.insertRow();
+    [
+      definition.label.toUpperCase(),
+      String(definition.channel),
+      formatCalibrationDegrees(joint.offsetDeg),
+      joint.direction === -1 ? "INVERTED" : "NORMAL",
+      formatCalibrationDegrees(joint.minimumDeg, 0),
+      formatCalibrationDegrees(joint.maximumDeg, 0),
+    ].forEach((value) => {
+      const cell = row.insertCell();
+      cell.textContent = value;
+    });
+  });
+}
+
+function renderLiveCalibrationUi() {
+  const definition = selectedCalibrationDefinition();
+  const joint = selectedCalibrationJoint();
+  if (!definition || !joint) return;
+  document.querySelectorAll("[data-calibration-step]").forEach((button) => {
+    const active = Number(button.dataset.calibrationStep) === liveCalibrationState.step;
+    button.setAttribute("aria-current", active ? "step" : "false");
+  });
+  document.querySelectorAll("[data-calibration-panel]").forEach((panel) => {
+    panel.hidden = Number(panel.dataset.calibrationPanel) !== liveCalibrationState.step;
+  });
+  const progress = ((liveCalibrationState.step + 1) / LIVE_CALIBRATION_STEPS.length) * 100;
+  document.querySelector("#live-calibration-progress").style.width = `${progress}%`;
+  document.querySelector("#live-calibration-progress-label").textContent =
+    `STEP ${liveCalibrationState.step + 1} / ${LIVE_CALIBRATION_STEPS.length}`;
+  const back = document.querySelector("#live-calibration-back");
+  back.disabled = liveCalibrationState.step === 0;
+  const next = document.querySelector("#live-calibration-next");
+  const nextStep = LIVE_CALIBRATION_STEPS[liveCalibrationState.step + 1];
+  next.textContent = nextStep ? `NEXT: ${nextStep.label.toUpperCase()}` : "RETURN TO COMPARE";
+  next.disabled = liveCalibrationState.step === 0 && !liveCalibrationState.safetyConfirmed;
+
+  document.querySelector("#live-calibration-safety-confirm").checked =
+    liveCalibrationState.safetyConfirmed;
+  document.querySelector("#live-calibration-selected-summary").textContent =
+    `${definition.label.toUpperCase()} / CHANNEL ${definition.channel}`;
+  document.querySelector("#live-calibration-neutral-title").textContent = definition.label.toUpperCase();
+  document.querySelector("#live-calibration-channel").textContent = definition.channel;
+  document.querySelector("#live-calibration-reference").textContent = `${definition.neutralServoDeg.toFixed(2)}°`;
+  document.querySelector("#live-calibration-preview-caption").textContent =
+    `${definition.label.toUpperCase()} / ${formatCalibrationDegrees(joint.offsetDeg + liveCalibrationState.jogOffsetDeg)}`;
+  document.querySelector("#live-calibration-offset").value = joint.offsetDeg.toFixed(1);
+  document.querySelector("#live-calibration-direction").value = String(joint.direction);
+  document.querySelector("#live-calibration-preview").checked = liveCalibrationState.previewEnabled;
+  document.querySelector("#live-calibration-jog-value").textContent =
+    formatCalibrationDegrees(liveCalibrationState.jogOffsetDeg);
+  document.querySelector("#live-calibration-minimum").value = String(joint.minimumDeg);
+  document.querySelector("#live-calibration-maximum").value = String(joint.maximumDeg);
+  const logicalOutputs = [joint.minimumDeg, joint.maximumDeg].map(
+    (limit) => definition.neutralServoDeg + joint.offsetDeg + joint.direction * limit,
+  ).sort((a, b) => a - b);
+  document.querySelector("#live-calibration-output-range").textContent =
+    `${logicalOutputs[0].toFixed(2)}° - ${logicalOutputs[1].toFixed(2)}°`;
+  const savedAt = liveCalibrationState.profile.savedAt;
+  document.querySelector("#live-calibration-save-state").textContent = liveCalibrationState.dirty
+    ? "UNSAVED CHANGES"
+    : savedAt
+      ? `SAVED ${new Date(savedAt).toLocaleTimeString()}`
+      : "UNSAVED DRAFT";
+  renderCalibrationJointMap();
+  renderCalibrationReview();
+}
+
+function downloadCalibrationJson() {
+  const blob = new Blob([calibrationProfileJson(liveCalibrationState.profile)], {
+    type: "application/json;charset=utf-8",
+  });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `domino-calibration-${new Date().toISOString().slice(0, 10)}.json`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 0);
+}
+
+function sendCalibrationCommand(action) {
+  if (socket?.readyState !== WebSocket.OPEN) return false;
+  const requestId = crypto.randomUUID();
+  const command = createCalibrationBenchCommand(
+    liveCalibrationState,
+    action,
+    requestId,
+  );
+  if (!command) return false;
+  calibrationPendingRequestId = requestId;
+  calibrationPendingAction = action;
+  socket.send(JSON.stringify(command));
+  clearTimeout(calibrationRequestTimeout);
+  calibrationRequestTimeout = setTimeout(() => {
+    if (calibrationPendingRequestId !== requestId) return;
+    calibrationPendingRequestId = "";
+    calibrationPendingAction = "";
+    liveCalibrationState.benchModeAcknowledged = false;
+    document.querySelector("#live-calibration-review-status").textContent =
+      "The robot did not acknowledge the calibration request. Physical movement remains locked.";
+    updateLiveComparisonUi();
+  }, 3_000);
+  return true;
+}
+
+function acceptCalibrationAcknowledgement(message) {
+  if (
+    !message ||
+    message.type !== "live-calibration-ack" ||
+    message.requestId !== calibrationPendingRequestId ||
+    message.action !== calibrationPendingAction
+  ) return false;
+  const accepted = message.accepted === true;
+  if (message.action === "enter") {
+    liveCalibrationState.benchModeAcknowledged = Boolean(
+      accepted &&
+      message.benchMode === true &&
+      message.supportsSafeJog === true &&
+      Number(message.maxSpeedDegPerSec) <= 5,
+    );
+  } else if (message.action === "exit") {
+    liveCalibrationState.benchModeAcknowledged = false;
+  } else if (message.action === "save-profile") {
+    const status = document.querySelector("#live-calibration-review-status");
+    status.textContent = accepted && message.persisted === true
+      ? "Robot confirmed that the calibration profile was written to persistent storage."
+      : `Robot rejected calibration save${message.reason ? `: ${message.reason}` : "."}`;
+  }
+  calibrationPendingRequestId = "";
+  calibrationPendingAction = "";
+  clearTimeout(calibrationRequestTimeout);
+  calibrationRequestTimeout = null;
+  renderLiveCalibrationUi();
+  return true;
+}
+
 function updateLiveSessionUi(snapshot) {
   if (liveSessionState.status === "recording") {
     recordLiveComparisonSample(liveSessionState, snapshot);
@@ -2289,6 +2541,36 @@ function updateLiveComparisonUi() {
   const dataLinkOutput = document.querySelector("#live-data-link-state");
   dataLinkOutput.textContent = engineeringConnected ? "ENGINEERING CONNECTED" : "ENGINEERING OFFLINE";
   dataLinkOutput.dataset.state = engineeringConnected ? "online" : "offline";
+  const calibrationLinkOutput = document.querySelector("#live-calibration-link-state");
+  calibrationLinkOutput.textContent = liveCalibrationState.benchModeAcknowledged
+    ? "BENCH MODE READY"
+    : engineeringConnected
+      ? "LINKED / BENCH LOCKED"
+      : "ROBOT NOT READY";
+  calibrationLinkOutput.dataset.state = liveCalibrationState.benchModeAcknowledged ? "online" : "offline";
+  document.querySelector("#live-calibration-apply-robot").disabled =
+    !engineeringConnected || !liveCalibrationState.benchModeAcknowledged || Boolean(calibrationPendingRequestId);
+  const benchRequest = document.querySelector("#live-calibration-request-bench");
+  benchRequest.disabled =
+    !engineeringConnected ||
+    !liveCalibrationState.safetyConfirmed ||
+    liveCalibrationState.benchModeAcknowledged ||
+    Boolean(calibrationPendingRequestId);
+  benchRequest.textContent = calibrationPendingAction === "enter"
+    ? "WAITING FOR ROBOT"
+    : liveCalibrationState.benchModeAcknowledged
+      ? "BENCH MODE READY"
+      : "REQUEST BENCH MODE";
+  document.querySelector("#live-calibration-bench-state").textContent =
+    liveCalibrationState.benchModeAcknowledged
+      ? "UNLOCKED - ROBOT SAFETY ACKNOWLEDGED"
+      : calibrationPendingAction === "enter"
+        ? "LOCKED - WAITING FOR ROBOT ACKNOWLEDGEMENT"
+        : "LOCKED - BENCH MODE NOT ACKNOWLEDGED";
+  document.querySelector("#live-calibration-jog-status").textContent =
+    liveCalibrationState.benchModeAcknowledged
+      ? "Robot bench mode is active. Jog requests remain limited to ±10° and 5°/s."
+      : "Preview only. Connect a compatible robot adapter and receive a bench-mode acknowledgement to unlock physical movement.";
   document.querySelector("#live-data-current-time").textContent = engineeringConnected
     ? `PACKET ${formatPacketAge(snapshot.lastRobotPacketAgeMs)} AGO`
     : "NO TELEMETRY";
@@ -2393,6 +2675,136 @@ document.querySelector("#live-data-export-csv").addEventListener("click", () => 
 });
 document.querySelector("#live-sessions-open-data").addEventListener("click", () => {
   applyLiveView(LIVE_VIEW_DATA);
+});
+
+document.querySelectorAll("[data-calibration-step]").forEach((button) => {
+  button.addEventListener("click", () => {
+    selectCalibrationStep(liveCalibrationState, button.dataset.calibrationStep);
+    renderLiveCalibrationUi();
+  });
+});
+document.querySelector("#live-calibration-safety-confirm").addEventListener("change", (event) => {
+  liveCalibrationState.safetyConfirmed = event.target.checked;
+  renderLiveCalibrationUi();
+});
+document.querySelector("#live-calibration-request-bench").addEventListener("click", () => {
+  if (!liveCalibrationState.safetyConfirmed || !sendCalibrationCommand("enter")) return;
+  updateLiveComparisonUi();
+});
+document.querySelector("#live-calibration-joint-list").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-calibration-channel]");
+  if (!button) return;
+  selectCalibrationJoint(liveCalibrationState, button.dataset.calibrationChannel);
+  renderLiveCalibrationUi();
+});
+document.querySelector("#live-calibration-offset").addEventListener("change", (event) => {
+  updateCalibrationJoint(liveCalibrationState, { offsetDeg: event.target.value });
+  renderLiveCalibrationUi();
+});
+document.querySelector("#live-calibration-direction").addEventListener("change", (event) => {
+  updateCalibrationJoint(liveCalibrationState, { direction: event.target.value });
+  renderLiveCalibrationUi();
+});
+document.querySelector("#live-calibration-preview").addEventListener("change", (event) => {
+  liveCalibrationState.previewEnabled = event.target.checked;
+  renderLiveCalibrationUi();
+});
+document.querySelectorAll("[data-calibration-jog]").forEach((button) => {
+  button.addEventListener("click", () => {
+    jogCalibrationJoint(liveCalibrationState, button.dataset.calibrationJog);
+    if (liveCalibrationState.benchModeAcknowledged) sendCalibrationCommand("jog");
+    renderLiveCalibrationUi();
+  });
+});
+document.querySelector("[data-calibration-jog-reset]").addEventListener("click", () => {
+  liveCalibrationState.jogOffsetDeg = 0;
+  if (liveCalibrationState.benchModeAcknowledged) sendCalibrationCommand("jog");
+  renderLiveCalibrationUi();
+});
+document.querySelector("#live-calibration-minimum").addEventListener("change", (event) => {
+  updateCalibrationJoint(liveCalibrationState, { minimumDeg: event.target.value });
+  renderLiveCalibrationUi();
+});
+document.querySelector("#live-calibration-maximum").addEventListener("change", (event) => {
+  updateCalibrationJoint(liveCalibrationState, { maximumDeg: event.target.value });
+  renderLiveCalibrationUi();
+});
+document.querySelector("#live-calibration-back").addEventListener("click", () => {
+  selectCalibrationStep(liveCalibrationState, liveCalibrationState.step - 1);
+  renderLiveCalibrationUi();
+});
+document.querySelector("#live-calibration-next").addEventListener("click", () => {
+  if (liveCalibrationState.step === LIVE_CALIBRATION_STEPS.length - 1) {
+    applyLiveView(LIVE_VIEW_COMPARE);
+    return;
+  }
+  selectCalibrationStep(liveCalibrationState, liveCalibrationState.step + 1);
+  renderLiveCalibrationUi();
+});
+document.querySelector("#live-calibration-save-browser").addEventListener("click", () => {
+  liveCalibrationState.profile.savedAt = Date.now();
+  localStorage.setItem(
+    LIVE_CALIBRATION_STORAGE_KEY,
+    calibrationProfileJson(liveCalibrationState.profile),
+  );
+  liveCalibrationState.dirty = false;
+  document.querySelector("#live-calibration-review-status").textContent =
+    "Browser copy saved. Export JSON as the portable backup for this physical robot.";
+  renderLiveCalibrationUi();
+});
+document.querySelector("#live-calibration-export").addEventListener("click", downloadCalibrationJson);
+document.querySelector("#live-calibration-apply-robot").addEventListener("click", () => {
+  if (!liveCalibrationState.benchModeAcknowledged || !sendCalibrationCommand("save-profile")) return;
+  document.querySelector("#live-calibration-review-status").textContent =
+    "Waiting for the robot to confirm persistent calibration storage...";
+  updateLiveComparisonUi();
+});
+document.querySelector("#live-calibration-import").addEventListener("click", () => {
+  document.querySelector("#live-calibration-import-file").click();
+});
+document.querySelector("#live-calibration-import-file").addEventListener("change", async (event) => {
+  const [file] = event.target.files || [];
+  if (!file) return;
+  const status = document.querySelector("#live-calibration-review-status");
+  try {
+    liveCalibrationState.profile = parseCalibrationProfileJson(await file.text());
+    liveCalibrationState.dirty = true;
+    liveCalibrationState.jogOffsetDeg = 0;
+    status.textContent = `Imported ${file.name}. Review every joint before saving or applying.`;
+  } catch (error) {
+    status.textContent = error instanceof Error ? error.message : "Calibration import failed.";
+  }
+  event.target.value = "";
+  renderLiveCalibrationUi();
+});
+
+const calibrationRaycaster = new THREE.Raycaster();
+const calibrationPointer = new THREE.Vector2();
+canvas.addEventListener("dblclick", (event) => {
+  if (liveViewState.selected !== LIVE_VIEW_CALIBRATION || event.button !== 0) return;
+  const bounds = canvas.getBoundingClientRect();
+  calibrationPointer.set(
+    ((event.clientX - bounds.left) / bounds.width) * 2 - 1,
+    -((event.clientY - bounds.top) / bounds.height) * 2 + 1,
+  );
+  calibrationRaycaster.setFromCamera(calibrationPointer, camera);
+  const selected = calibrationRaycaster.intersectObject(cadRoot, true).find((intersection) => {
+    let object = intersection.object;
+    while (object && object !== cadRoot) {
+      if (Number.isInteger(object.userData.calibrationChannel)) return true;
+      object = object.parent;
+    }
+    return false;
+  });
+  if (!selected) return;
+  let object = selected.object;
+  while (object && object !== cadRoot && !Number.isInteger(object.userData.calibrationChannel)) {
+    object = object.parent;
+  }
+  if (!Number.isInteger(object?.userData.calibrationChannel)) return;
+  selectCalibrationJoint(liveCalibrationState, object.userData.calibrationChannel);
+  selectCalibrationStep(liveCalibrationState, "neutral");
+  renderLiveCalibrationUi();
 });
 
 window.addEventListener("resize", renderLiveComparisonChart);
@@ -3166,6 +3578,22 @@ function applyLiveBodyPose(group, body) {
 }
 
 function updateLiveTwinPose(delta) {
+  if (liveViewState.selected === LIVE_VIEW_CALIBRATION && linkageRuntimesReady()) {
+    const previewAngles = liveCalibrationState.previewEnabled
+      ? calibrationPreviewServoAngles(liveCalibrationState)
+      : standServoReference;
+    liveExpectedServoAngles = smoothLiveServoAngles(
+      liveExpectedServoAngles,
+      previewAngles,
+      delta,
+    );
+    applyServoAnglesToRuntimes(linkageRuntimes, liveExpectedServoAngles);
+    applyLiveBodyPose(robotWorld, { rollDeg: 0, pitchDeg: 0, yawDeg: 0, heightMm: 280 });
+    if (measuredRobotWorld) measuredRobotWorld.visible = false;
+    canvas.dataset.liveExpectedPose = "calibration-preview";
+    canvas.dataset.liveMeasuredPose = "unavailable";
+    return;
+  }
   const snapshot = liveComparisonSnapshot(liveTelemetryState);
   canvas.dataset.liveExpectedPose = snapshot.expected ? "fresh" : "unavailable";
   if (snapshot.expected && linkageRuntimesReady()) {
@@ -3657,8 +4085,9 @@ function animate(now) {
 }
 
 function resize() {
-  const width = window.innerWidth;
-  const height = window.innerHeight;
+  const bounds = canvas.getBoundingClientRect();
+  const width = Math.max(1, Math.round(bounds.width));
+  const height = Math.max(1, Math.round(bounds.height));
   renderer.setSize(width, height, false);
   perspectiveCamera.aspect = width / height;
   perspectiveCamera.updateProjectionMatrix();

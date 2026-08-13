@@ -2,10 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  archiveLiveSession,
   createLiveSessionState,
   liveSessionCsv,
   liveSessionSummary,
   recordLiveComparisonSample,
+  removeArchivedLiveSession,
   startLiveSession,
   stopLiveSession,
 } from "./web/src/live-session-state.js";
@@ -77,4 +79,19 @@ test("exports analysis-ready CSV with power, pose, timing and joint error", () =
   assert.match(csv, /joint_15_error_deg/);
   assert.match(csv, /45\.6000/);
   assert.equal(csv.split("\n").length, 2);
+});
+
+test("archives stopped sessions without sharing mutable sample objects", () => {
+  const session = createLiveSessionState();
+  startLiveSession(session, 10_000);
+  recordLiveComparisonSample(session, snapshot(), 10_100);
+  stopLiveSession(session, 10_500);
+  const archive = [];
+  const entry = archiveLiveSession(archive, session, "run-1");
+  assert.equal(entry.id, "run-1");
+  assert.equal(archive.length, 1);
+  session.samples[0].bodyError.pitchDeg = 99;
+  assert.equal(entry.samples[0].bodyError.pitchDeg, 1);
+  assert.equal(removeArchivedLiveSession(archive, "run-1"), true);
+  assert.equal(archive.length, 0);
 });

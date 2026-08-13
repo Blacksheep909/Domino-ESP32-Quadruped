@@ -65,6 +65,36 @@ export function liveSessionSummary(state, now = Date.now()) {
   };
 }
 
+export function archiveLiveSession(archive, state, identifier = `session-${Date.now()}`, maximumEntries = 20) {
+  if (!Array.isArray(archive) || !state || state.status === "recording" || state.samples.length === 0) {
+    return null;
+  }
+  const entry = {
+    id: String(identifier),
+    startedAt: state.startedAt,
+    stoppedAt: state.stoppedAt,
+    samples: state.samples.map((sample) => ({
+      ...sample,
+      expectedBody: { ...sample.expectedBody },
+      measuredBody: { ...sample.measuredBody },
+      bodyError: { ...sample.bodyError },
+      jointErrorsDeg: [...sample.jointErrorsDeg],
+      power: sample.power ? { ...sample.power } : null,
+    })),
+  };
+  archive.unshift(entry);
+  archive.splice(Math.max(1, Math.floor(maximumEntries)));
+  return entry;
+}
+
+export function removeArchivedLiveSession(archive, identifier) {
+  if (!Array.isArray(archive)) return false;
+  const index = archive.findIndex((entry) => entry.id === identifier);
+  if (index < 0) return false;
+  archive.splice(index, 1);
+  return true;
+}
+
 const csvNumber = (value, digits = 4) => Number.isFinite(value) ? Number(value).toFixed(digits) : "";
 
 export function liveSessionCsv(state) {

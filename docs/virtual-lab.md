@@ -58,6 +58,16 @@ values. Stopped sessions export analysis-ready CSV containing timestamps, time
 alignment, body pose, power, and all 12 driven-joint errors. The screenshot
 above uses local relay verification data, not a connected physical robot.
 
+The Live navigation now has three working views. Compare keeps the digital twin,
+pose deltas, power readings, and compact scope together. Data provides a larger
+signal graph, recorder controls, live engineering metrics, and a newest-first
+table of synchronized samples. Sessions keeps completed recordings for the
+current app run, summarizes duration, sample count, peak joint error, and average
+power, and gives every session independent CSV export and delete actions.
+Recording state is shared across all three views, so moving between them cannot
+interrupt or split a capture. Calibration, Gaits, and Diagnostics remain visibly
+disabled until their hardware-backed workflows are implemented.
+
 Simple mode will present the normal operating workflow. Expert mode will expose
 the detailed signals and settings needed for mechanism, gait, power, and
 control optimization. Safety limits remain active in both modes.

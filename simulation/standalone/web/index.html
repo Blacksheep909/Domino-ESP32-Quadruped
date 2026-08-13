@@ -221,12 +221,12 @@
           <span>PHYSICAL / EXPECTED</span>
         </div>
         <div class="live-view-tabs" role="tablist" aria-label="Live engineering view">
-          <button type="button" role="tab" aria-selected="true">COMPARE</button>
-          <button type="button" role="tab" aria-selected="false" disabled>DATA</button>
+          <button type="button" role="tab" data-live-view="compare" aria-selected="true" aria-controls="live-view-compare">COMPARE</button>
+          <button type="button" role="tab" data-live-view="data" aria-selected="false" aria-controls="live-view-data">DATA</button>
           <button type="button" role="tab" aria-selected="false" disabled>CALIBRATION</button>
           <button type="button" role="tab" aria-selected="false" disabled>GAITS</button>
           <button type="button" role="tab" aria-selected="false" disabled>DIAGNOSTICS</button>
-          <button type="button" role="tab" aria-selected="false" disabled>SESSIONS</button>
+          <button type="button" role="tab" data-live-view="sessions" aria-selected="false" aria-controls="live-view-sessions">SESSIONS</button>
         </div>
         <div class="experience-toggle" role="group" aria-label="Interface detail">
           <button type="button" data-experience="simple" class="active" aria-pressed="true">SIMPLE</button>
@@ -234,6 +234,7 @@
         </div>
       </nav>
 
+      <section id="live-view-compare" class="live-view-content" aria-label="Live robot comparison">
       <section class="live-safety-dock" aria-label="Live robot safety state">
         <div class="live-state-heading">
           <span>ROBOT STATE</span>
@@ -334,6 +335,60 @@
           </div>
           <em id="live-chart-empty">Connect the engineering link, then start recording.</em>
         </div>
+      </section>
+      </section>
+
+      <section id="live-view-data" class="live-view-page" aria-labelledby="live-data-title" hidden>
+        <header class="live-page-heading">
+          <div><span>LIVE / DATA</span><h1 id="live-data-title">Engineering data</h1><p>Record, inspect and export synchronized command, pose and power telemetry.</p></div>
+          <div class="live-page-status"><span id="live-data-link-state" data-state="offline">ENGINEERING OFFLINE</span><strong id="live-data-sample-count">0 SAMPLES</strong></div>
+        </header>
+        <div class="live-data-grid">
+          <section class="live-data-card live-data-summary">
+            <header><span>CURRENT SAMPLE</span><strong id="live-data-current-time">NO TELEMETRY</strong></header>
+            <div class="live-data-metrics">
+              <div><span>ALIGNMENT</span><strong id="live-data-alignment">-- ms</strong></div>
+              <div><span>WORST JOINT</span><strong id="live-data-joint-error">--&deg;</strong></div>
+              <div><span>VOLTAGE</span><strong id="live-data-voltage">--.- V</strong></div>
+              <div><span>POWER</span><strong id="live-data-power">--- W</strong></div>
+            </div>
+          </section>
+          <section class="live-data-card live-data-controls">
+            <header><span>RECORDER</span><strong id="live-data-recorder-state">WAITING FOR BOTH STREAMS</strong></header>
+            <div>
+              <label for="live-data-chart-signal">SIGNAL<select id="live-data-chart-signal"><option value="pitchDeg">BODY PITCH</option><option value="rollDeg">BODY ROLL</option><option value="yawDeg">BODY YAW</option><option value="heightMm">BODY HEIGHT</option></select></label>
+              <button id="live-data-recording-toggle" type="button" disabled>START RECORDING</button>
+              <button id="live-data-export-csv" type="button" disabled>EXPORT CSV</button>
+            </div>
+          </section>
+          <section class="live-data-card live-data-chart-card">
+            <header><span>TIME SERIES</span><strong id="live-data-chart-title">Body pitch / degrees</strong></header>
+            <div class="live-data-chart-wrap">
+              <canvas id="live-data-chart" aria-label="Detailed expected and measured telemetry graph"></canvas>
+              <div class="live-chart-legend" aria-hidden="true"><span><i class="expected"></i>EXPECTED</span><span><i class="measured"></i>MEASURED</span><span><i class="error"></i>ERROR</span></div>
+              <em id="live-data-chart-empty">Start recording to populate this graph.</em>
+            </div>
+          </section>
+          <section class="live-data-card live-data-table-card">
+            <header><span>RECENT SYNCHRONIZED SAMPLES</span><strong>NEWEST FIRST</strong></header>
+            <div class="live-data-table-wrap"><table><thead><tr><th>TIME</th><th>ALIGN</th><th>PITCH EXP</th><th>PITCH MEAS</th><th>ERROR</th><th>VOLTAGE</th><th>POWER</th></tr></thead><tbody id="live-data-table-body"><tr><td colspan="7">No recorded samples.</td></tr></tbody></table></div>
+          </section>
+        </div>
+      </section>
+
+      <section id="live-view-sessions" class="live-view-page" aria-labelledby="live-sessions-title" hidden>
+        <header class="live-page-heading">
+          <div><span>LIVE / SESSIONS</span><h1 id="live-sessions-title">Recorded sessions</h1><p>Completed recordings from this app run remain available for inspection and CSV export.</p></div>
+          <div class="live-page-status"><span>CURRENT APP RUN</span><strong id="live-session-archive-count">0 SAVED</strong></div>
+        </header>
+        <section class="live-session-current">
+          <div><span>ACTIVE RECORDER</span><strong id="live-sessions-current-state">IDLE</strong></div>
+          <div><span>SAMPLES</span><strong id="live-sessions-current-samples">0</strong></div>
+          <div><span>DURATION</span><strong id="live-sessions-current-duration">0.0 S</strong></div>
+          <button id="live-sessions-open-data" type="button">OPEN DATA</button>
+        </section>
+        <div id="live-session-list" class="live-session-list" aria-live="polite"></div>
+        <p id="live-session-list-empty" class="live-session-list-empty">No completed sessions yet. Start a recording from Compare or Data.</p>
       </section>
     </main>
 

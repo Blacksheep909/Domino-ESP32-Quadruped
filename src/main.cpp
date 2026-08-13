@@ -42,6 +42,9 @@
 #include "crsf.h"
 #include "leg_controller.h"
 #include "imu.h"
+#ifndef DOMINO_SIL
+#include "live_robot_endpoint.h"
+#endif
 
 enum LegIndex { LEG_FL = 0, LEG_FR = 1, LEG_BL = 2, LEG_BR = 3 };
 constexpr int kLegCount = 4;
@@ -638,6 +641,14 @@ void moveLegsFromBodyPose(Adafruit_PWMServoDriver &driver,
                           float rollDeg,
                           float pitchDeg,
                           float yawDeg) {
+#ifndef DOMINO_SIL
+  LiveRobotPoseSnapshot livePose;
+  livePose.rollDeg = rollDeg;
+  livePose.pitchDeg = pitchDeg;
+  livePose.yawDeg = yawDeg;
+  livePose.heightMm = bodyZ - STAND_HEIGHT_Z;
+  liveRobotEndpointSetExpectedPose(livePose);
+#endif
   for (int i = 0; i < kLegCount; ++i) {
     float xLeg = 0.0f;
     float yLeg = 0.0f;
@@ -986,6 +997,10 @@ void setup() {
   pca.setPWMFreq(kServoPwmFreqHz);
   delay(10);
 
+#ifndef DOMINO_SIL
+  liveRobotEndpointBegin(pca);
+#endif
+
   zRamp.setSpeed(kRampSpeedMmPerSec);
   zRamp.go(kCloserPoseZ);
   lastPoseZ = kCloserPoseZ;
@@ -1009,6 +1024,9 @@ void loop() {
   processCrsfFrames(now);
   // Refresh IMU sample; failures simply leave the previous values.
   (void)imuReadSample();
+#ifndef DOMINO_SIL
+  liveRobotEndpointLoop(now, pca);
+#endif
 
   // 1) Read current RC "menu inputs" (switches, link status).
   const MenuInputs inputs = readMenuInputs(now, &lastLinkAliveMs, &failsafeActive);
@@ -1177,6 +1195,12 @@ void loop() {
     } else if (sitBlend > sitBlendTarget) {
       sitBlend = fmaxf(sitBlendTarget, sitBlend - sitBlendStep);
     }
+
+#ifndef DOMINO_SIL
+    // Bench mode owns the one selected servo. Do not let the normal body loop
+    // overwrite its bounded calibration jog while outputs are temporarily on.
+    if (servoOutputsEnabled() && !liveRobotEndpointAllowsLocomotion()) return;
+#endif
 
     if (menuState.mode == BODY_TILT) {
       applyTiltPose(pca);

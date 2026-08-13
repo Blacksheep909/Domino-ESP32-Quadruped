@@ -2,28 +2,34 @@ export const LIVE_SERVO_CHANNELS = Object.freeze([0, 1, 2, 3, 4, 7, 8, 9, 10, 11
 export const LIVE_STREAM_FRESH_MS = 1_000;
 
 const finiteNumber = (value) => {
+  if (value === null || value === undefined || value === "") return null;
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : null;
 };
 
-function sanitizeBody(body) {
+function sanitizeBody(body, allowPartial = false) {
   if (!body || typeof body !== "object") return null;
   const rollDeg = finiteNumber(body.rollDeg);
   const pitchDeg = finiteNumber(body.pitchDeg);
   const yawDeg = finiteNumber(body.yawDeg);
   const heightMm = finiteNumber(body.heightMm);
-  if ([rollDeg, pitchDeg, yawDeg, heightMm].some((value) => value === null)) return null;
+  const values = [rollDeg, pitchDeg, yawDeg, heightMm];
+  if (allowPartial ? values.every((value) => value === null) : values.some((value) => value === null)) return null;
   return { rollDeg, pitchDeg, yawDeg, heightMm };
 }
 
-function sanitizePose(pose, receivedAt) {
+function sanitizePose(pose, receivedAt, allowPartial = false) {
   if (!pose || typeof pose !== "object") return null;
   const timestampMs = finiteNumber(pose.timestampMs);
   if (timestampMs === null || timestampMs <= 0) return null;
-  if (!Array.isArray(pose.servoAngleDeg) || pose.servoAngleDeg.length < 16) return null;
-  const servoAngleDeg = pose.servoAngleDeg.slice(0, 16).map(finiteNumber);
-  if (LIVE_SERVO_CHANNELS.some((channel) => servoAngleDeg[channel] === null)) return null;
-  const body = sanitizeBody(pose.body);
+  let servoAngleDeg = null;
+  if (Array.isArray(pose.servoAngleDeg) && pose.servoAngleDeg.length >= 16) {
+    servoAngleDeg = pose.servoAngleDeg.slice(0, 16).map(finiteNumber);
+    if (LIVE_SERVO_CHANNELS.some((channel) => servoAngleDeg[channel] === null)) servoAngleDeg = null;
+  }
+  if (allowPartial && Object.hasOwn(pose, "servoAngleDeg") && !servoAngleDeg) return null;
+  if (!allowPartial && !servoAngleDeg) return null;
+  const body = sanitizeBody(pose.body, allowPartial);
   if (!body) return null;
   return { timestampMs, receivedAt, servoAngleDeg, body };
 }
@@ -57,7 +63,7 @@ export function acceptLiveTelemetryPacket(state, packet, receivedAt = Date.now()
   const sequence = Number(packet.sequence);
   if (!Number.isSafeInteger(sequence) || sequence <= state.sequence) return false;
   const expected = sanitizePose(packet.expected, receivedAt);
-  const measured = sanitizePose(packet.measured, receivedAt);
+  const measured = sanitizePose(packet.measured, receivedAt, true);
   const power = sanitizePower(packet.power, receivedAt);
   if (!expected && !measured && !power) return false;
 
@@ -91,7 +97,7 @@ export function liveComparisonSnapshot(state, now = Date.now()) {
   const powerFresh = streamIsFresh(state?.power, now);
   const paired = expectedFresh && measuredFresh;
   const jointErrorsDeg = Array(16).fill(null);
-  if (paired) {
+  if (paired && Array.isArray(state.measured.servoAngleDeg)) {
     LIVE_SERVO_CHANNELS.forEach((channel) => {
       jointErrorsDeg[channel] = signedAngleErrorDeg(
         state.measured.servoAngleDeg[channel],
@@ -107,7 +113,9 @@ export function liveComparisonSnapshot(state, now = Date.now()) {
         rollDeg: signedAngleErrorDeg(state.measured.body.rollDeg, state.expected.body.rollDeg),
         pitchDeg: signedAngleErrorDeg(state.measured.body.pitchDeg, state.expected.body.pitchDeg),
         yawDeg: signedAngleErrorDeg(state.measured.body.yawDeg, state.expected.body.yawDeg),
-        heightMm: state.measured.body.heightMm - state.expected.body.heightMm,
+        heightMm: Number.isFinite(state.measured.body.heightMm)
+          ? state.measured.body.heightMm - state.expected.body.heightMm
+          : null,
       }
     : null;
 

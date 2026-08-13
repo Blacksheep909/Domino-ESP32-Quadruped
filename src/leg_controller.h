@@ -60,3 +60,11 @@ struct BodyPose {
 };
 
 void setBodyPose(const BodyPose &pose, Adafruit_PWMServoDriver &driver);
+
+// The cache is command feedback, not physical joint feedback. Outputs boot
+// disabled and are switched fully off for disarm, E-stop and watchdog states.
+void setServoOutputsEnabled(Adafruit_PWMServoDriver &driver, bool enabled);
+bool servoOutputsEnabled();
+const float* commandedServoAnglesDeg();
+uint32_t servoSafetyClipCount();
+bool commandCalibrationServoAngle(Adafruit_PWMServoDriver &driver, uint8_t channel, float angleDeg);

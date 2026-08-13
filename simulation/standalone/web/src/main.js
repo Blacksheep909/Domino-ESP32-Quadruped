@@ -4872,7 +4872,8 @@ function updateLiveTwinPose(delta) {
 
   if (measuredRobotWorld) {
     measuredRobotWorld.visible = Boolean(
-      snapshot.measured && measuredLinkageRuntimes.length === linkageRuntimes.length,
+      snapshot.measured && Array.isArray(snapshot.measured.servoAngleDeg) &&
+      measuredLinkageRuntimes.length === linkageRuntimes.length,
     );
     if (measuredRobotWorld.visible) {
       liveMeasuredServoAngles = smoothLiveServoAngles(

@@ -30,6 +30,23 @@ test("accepts independently timestamped expected and measured poses", () => {
   assert.ok(Math.abs(snapshot.power.powerW - 45.6) < 1e-9);
 });
 
+test("accepts honest IMU-only measured attitude without fabricating joint feedback", () => {
+  const state = createLiveTelemetryState();
+  assert.equal(acceptLiveTelemetryPacket(state, {
+    type: "live-telemetry",
+    sequence: 1,
+    expected: pose(10_000, 5),
+    measured: { timestampMs: 10_004, body: { rollDeg: 1.5, pitchDeg: -2 } },
+  }, 20_000), true);
+  const snapshot = liveComparisonSnapshot(state, 20_100);
+  assert.equal(snapshot.measuredFresh, true);
+  assert.equal(snapshot.bodyError.rollDeg, 1.5);
+  assert.equal(snapshot.bodyError.pitchDeg, -2);
+  assert.equal(snapshot.bodyError.yawDeg, null);
+  assert.equal(snapshot.worstJointErrorDeg, null);
+  assert.equal(snapshot.measured.servoAngleDeg, null);
+});
+
 test("rejects malformed and out-of-order robot packets", () => {
   const state = createLiveTelemetryState();
   assert.equal(acceptLiveTelemetryPacket(state, {

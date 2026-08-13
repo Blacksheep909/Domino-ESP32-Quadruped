@@ -44,6 +44,7 @@ function validRobotHello(message) {
     boundedString(message.robotId) &&
     boundedString(message.robotName) &&
     boundedString(message.firmwareVersion) &&
+    message.capabilities && typeof message.capabilities === "object" &&
     robotStates.has(message.robotState)
   );
 }
@@ -58,6 +59,27 @@ function validRobotTelemetry(message, receivedAt) {
     measured: message.measured,
     power: message.power,
   }, receivedAt);
+}
+
+function normalizeRobotTelemetryClock(message, receivedAt) {
+  const robotTimeMs = Number(message?.robotTimeMs);
+  if (!Number.isFinite(robotTimeMs) || robotTimeMs < 0) return message;
+  const toHostTime = (value) => {
+    const timestamp = Number(value);
+    if (!Number.isFinite(timestamp) || timestamp >= 1_000_000_000_000) return value;
+    return receivedAt - Math.max(0, robotTimeMs - timestamp);
+  };
+  const normalizePose = (pose) => pose && typeof pose === "object"
+    ? { ...pose, timestampMs: toHostTime(pose.timestampMs) }
+    : pose;
+  return {
+    ...message,
+    expected: normalizePose(message.expected),
+    measured: normalizePose(message.measured),
+    controller: message.controller && typeof message.controller === "object"
+      ? { ...message.controller, frameTimestampMs: toHostTime(message.controller.frameTimestampMs) }
+      : message.controller,
+  };
 }
 
 function validRobotAcknowledgement(message) {
@@ -108,6 +130,13 @@ export class LiveCompanionCore {
     this.endpoint = options.endpoint || "unconfigured";
     this.firmwareVersion = options.firmwareVersion || "unknown";
     this.robot = { id: options.robotId || "unknown", name: options.robotName || "Domino" };
+    this.capabilities = {
+      telemetry: false,
+      calibration: false,
+      gaitProfiles: false,
+      persistentProfiles: false,
+      manualControl: false,
+    };
     this.robotConnected = false;
     this.lastRobotMessageAt = 0;
     this.lastTelemetryAt = 0;
@@ -139,13 +168,7 @@ export class LiveCompanionCore {
         name: this.robot.name,
         firmwareVersion: this.firmwareVersion,
       },
-      capabilities: {
-        telemetry: true,
-        calibration: true,
-        gaitProfiles: true,
-        persistentProfiles: true,
-        manualControl: true,
-      },
+      capabilities: { ...this.capabilities },
     };
   }
 
@@ -324,21 +347,32 @@ export class LiveCompanionCore {
       this.robot.name = message.robotName;
       this.firmwareVersion = message.firmwareVersion;
       this.robotState = message.robotState;
+      Object.keys(this.capabilities).forEach((capability) => {
+        this.capabilities[capability] = message.capabilities?.[capability] === true;
+      });
       return { relay, robot };
     }
 
-    if (validRobotTelemetry(message, now)) {
+    const normalizedTelemetry = message.type === "robot-telemetry"
+      ? normalizeRobotTelemetryClock(message, now)
+      : message;
+    if (validRobotTelemetry(normalizedTelemetry, now)) {
       this.robotConnected = true;
       this.lastRobotMessageAt = now;
-      this.robotState = message.robotState;
-      this.controller = sanitizeLiveControllerTelemetry(message.controller);
+      this.robotState = normalizedTelemetry.robotState;
+      this.controller = sanitizeLiveControllerTelemetry(normalizedTelemetry.controller);
+      if (normalizedTelemetry.capabilities && typeof normalizedTelemetry.capabilities === "object") {
+        Object.keys(this.capabilities).forEach((capability) => {
+          this.capabilities[capability] = normalizedTelemetry.capabilities[capability] === true;
+        });
+      }
       this.lastTelemetryAt = now;
       if (this.sessionId) {
         relay.push({
           type: "live-telemetry", adapterId: this.adapterId, sessionId: this.sessionId,
-          sequence: this.telemetrySequence++, expected: message.expected, measured: message.measured,
-          power: message.power, controller: this.controller, diagnostics: message.diagnostics,
-          gaitProfile: message.gaitProfile, capabilities: message.capabilities,
+          sequence: this.telemetrySequence++, expected: normalizedTelemetry.expected, measured: normalizedTelemetry.measured,
+          power: normalizedTelemetry.power, controller: this.controller, diagnostics: normalizedTelemetry.diagnostics,
+          gaitProfile: normalizedTelemetry.gaitProfile, capabilities: normalizedTelemetry.capabilities,
         });
       }
       return { relay, robot };

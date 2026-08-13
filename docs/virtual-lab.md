@@ -58,15 +58,29 @@ values. Stopped sessions export analysis-ready CSV containing timestamps, time
 alignment, body pose, power, and all 12 driven-joint errors. The screenshot
 above uses local relay verification data, not a connected physical robot.
 
-The Live navigation now has three working views. Compare keeps the digital twin,
+The Live navigation now has four working views. Compare keeps the digital twin,
 pose deltas, power readings, and compact scope together. Data provides a larger
 signal graph, recorder controls, live engineering metrics, and a newest-first
 table of synchronized samples. Sessions keeps completed recordings for the
 current app run, summarizes duration, sample count, peak joint error, and average
 power, and gives every session independent CSV export and delete actions.
 Recording state is shared across all three views, so moving between them cannot
-interrupt or split a capture. Calibration, Gaits, and Diagnostics remain visibly
-disabled until their hardware-backed workflows are implemented.
+interrupt or split a capture.
+
+Calibration is a five-step workflow covering bench safety, selection of all 12
+wired joints, neutral offset and direction, conservative mechanical limits, and
+profile review. It provides a dedicated 3D neutral-pose preview, supports visual
+joint selection by double-clicking the model, bounds preview jogging to 10
+degrees, stores a browser copy, and imports/exports versioned JSON backups.
+
+![LIVE guided servo calibration with 3D neutral preview](images/virtual-lab-live-calibration.png)
+
+Physical movement and robot persistence are deliberately locked until a robot
+adapter acknowledges bench mode, safe jogging at no more than 5 degrees per
+second, and persistent profile storage. The localhost relay validates this
+command/acknowledgement contract; the ESP32 adapter that enforces it remains a
+hardware-side task. Gaits and Diagnostics remain visibly disabled until their
+LIVE-specific workflows are implemented.
 
 Simple mode will present the normal operating workflow. Expert mode will expose
 the detailed signals and settings needed for mechanism, gait, power, and

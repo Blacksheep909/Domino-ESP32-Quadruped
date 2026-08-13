@@ -223,7 +223,7 @@
         <div class="live-view-tabs" role="tablist" aria-label="Live engineering view">
           <button type="button" role="tab" data-live-view="compare" aria-selected="true" aria-controls="live-view-compare">COMPARE</button>
           <button type="button" role="tab" data-live-view="data" aria-selected="false" aria-controls="live-view-data">DATA</button>
-          <button type="button" role="tab" aria-selected="false" disabled>CALIBRATION</button>
+          <button type="button" role="tab" data-live-view="calibration" aria-selected="false" aria-controls="live-view-calibration">CALIBRATION</button>
           <button type="button" role="tab" aria-selected="false" disabled>GAITS</button>
           <button type="button" role="tab" aria-selected="false" disabled>DIAGNOSTICS</button>
           <button type="button" role="tab" data-live-view="sessions" aria-selected="false" aria-controls="live-view-sessions">SESSIONS</button>
@@ -373,6 +373,87 @@
             <header><span>RECENT SYNCHRONIZED SAMPLES</span><strong>NEWEST FIRST</strong></header>
             <div class="live-data-table-wrap"><table><thead><tr><th>TIME</th><th>ALIGN</th><th>PITCH EXP</th><th>PITCH MEAS</th><th>ERROR</th><th>VOLTAGE</th><th>POWER</th></tr></thead><tbody id="live-data-table-body"><tr><td colspan="7">No recorded samples.</td></tr></tbody></table></div>
           </section>
+        </div>
+      </section>
+
+      <section id="live-view-calibration" class="live-view-page live-calibration-page" aria-labelledby="live-calibration-title" hidden>
+        <header class="live-page-heading">
+          <div><span>LIVE / CALIBRATION</span><h1 id="live-calibration-title">Servo calibration</h1><p>A guided, joint-by-joint setup for neutral offsets, direction and safe mechanical limits.</p></div>
+          <div class="live-page-status"><span id="live-calibration-link-state" data-state="offline">ROBOT NOT READY</span><strong id="live-calibration-save-state">UNSAVED DRAFT</strong></div>
+        </header>
+        <div class="calibration-preview-caption"><span>3D NEUTRAL PREVIEW</span><strong id="live-calibration-preview-caption">FL HIP / +0.0&deg;</strong><small>Drag to orbit / double-click a joint to select / preview never drives hardware</small></div>
+
+        <div class="live-calibration-layout">
+          <aside class="calibration-step-rail" aria-label="Calibration steps">
+            <button type="button" data-calibration-step="0" aria-current="step"><span>01</span><strong>SAFETY</strong><small>Prepare the bench</small></button>
+            <button type="button" data-calibration-step="1"><span>02</span><strong>SELECT JOINT</strong><small>Choose one actuator</small></button>
+            <button type="button" data-calibration-step="2"><span>03</span><strong>SET NEUTRAL</strong><small>Offset and direction</small></button>
+            <button type="button" data-calibration-step="3"><span>04</span><strong>SET LIMITS</strong><small>Mechanical travel</small></button>
+            <button type="button" data-calibration-step="4"><span>05</span><strong>REVIEW</strong><small>Save and back up</small></button>
+          </aside>
+
+          <div class="calibration-workspace">
+            <section class="calibration-panel" data-calibration-panel="0">
+              <div class="calibration-panel-heading"><span>STEP 1 OF 5</span><h2>Make the robot safe</h2><p>Calibration can move individual servos. Complete these checks before a hardware session.</p></div>
+              <div class="calibration-safety-grid">
+                <article><span>01</span><strong>Support the chassis</strong><p>Lift all feet clear of the bench and remove external loads from the selected leg.</p></article>
+                <article><span>02</span><strong>Disable locomotion</strong><p>The robot adapter must acknowledge bench mode before any physical jog is allowed.</p></article>
+                <article><span>03</span><strong>Keep an E-stop ready</strong><p>Use low current limits and keep physical power isolation within reach.</p></article>
+              </div>
+              <label class="calibration-confirm"><input id="live-calibration-safety-confirm" type="checkbox"><span>I have supported the robot and understand that browser preview does not move hardware.</span></label>
+              <div class="calibration-lock-state"><span>PHYSICAL JOG</span><strong id="live-calibration-bench-state">LOCKED - BENCH MODE NOT ACKNOWLEDGED</strong><button id="live-calibration-request-bench" type="button" disabled>REQUEST BENCH MODE</button></div>
+            </section>
+
+            <section class="calibration-panel" data-calibration-panel="1" hidden>
+              <div class="calibration-panel-heading"><span>STEP 2 OF 5</span><h2>Select one joint</h2><p>Work through one actuator at a time. The channel map follows the current Domino wiring.</p></div>
+              <div id="live-calibration-joint-list" class="calibration-joint-map" aria-label="Domino calibration joints"></div>
+              <div class="calibration-selection-summary"><span>SELECTED</span><strong id="live-calibration-selected-summary">FL HIP / CHANNEL 0</strong><small>Selection is reflected in the neutral and limit steps.</small></div>
+            </section>
+
+            <section class="calibration-panel" data-calibration-panel="2" hidden>
+              <div class="calibration-panel-heading"><span>STEP 3 OF 5</span><h2>Set the neutral pose</h2><p>Adjust the zero offset and direction, then use the limited jog to inspect the 3D preview.</p></div>
+              <div class="calibration-editor-heading"><div><span>SELECTED JOINT</span><strong id="live-calibration-neutral-title">FL HIP</strong></div><div><span>SERVO CHANNEL</span><strong id="live-calibration-channel">0</strong></div><div><span>REFERENCE OUTPUT</span><strong id="live-calibration-reference">129.87&deg;</strong></div></div>
+              <div class="calibration-field-grid">
+                <label>ZERO OFFSET <input id="live-calibration-offset" type="number" min="-30" max="30" step="0.1" value="0"><span>degrees</span></label>
+                <label>DIRECTION <select id="live-calibration-direction"><option value="1">NORMAL</option><option value="-1">INVERTED</option></select><span>logical to servo</span></label>
+                <label class="calibration-preview-toggle"><input id="live-calibration-preview" type="checkbox" checked><strong>PREVIEW CALIBRATED NEUTRAL</strong><span>3D model only</span></label>
+              </div>
+              <div class="calibration-jog-control">
+                <div><span>LIMITED JOG</span><strong id="live-calibration-jog-value">+0.0&deg;</strong><small>&plusmn;10&deg; preview envelope / 5&deg;/s hardware contract</small></div>
+                <div role="group" aria-label="Calibration jog controls"><button type="button" data-calibration-jog="-1">-1&deg;</button><button type="button" data-calibration-jog="-0.1">-0.1&deg;</button><button type="button" data-calibration-jog-reset>NEUTRAL</button><button type="button" data-calibration-jog="0.1">+0.1&deg;</button><button type="button" data-calibration-jog="1">+1&deg;</button></div>
+              </div>
+              <p id="live-calibration-jog-status" class="calibration-inline-status">Preview only. Connect a compatible robot adapter and receive a bench-mode acknowledgement to unlock physical movement.</p>
+            </section>
+
+            <section class="calibration-panel" data-calibration-panel="3" hidden>
+              <div class="calibration-panel-heading"><span>STEP 4 OF 5</span><h2>Set mechanical limits</h2><p>Enter the safe logical travel for the selected joint. These bounds are checked before export or robot apply.</p></div>
+              <div class="calibration-limit-editor">
+                <label>MINIMUM <input id="live-calibration-minimum" type="number" min="-90" max="89" step="1" value="-45"><span>degrees from neutral</span></label>
+                <div class="calibration-range-graphic" aria-hidden="true"><i></i><b></b><i></i></div>
+                <label>MAXIMUM <input id="live-calibration-maximum" type="number" min="-89" max="90" step="1" value="45"><span>degrees from neutral</span></label>
+              </div>
+              <div class="calibration-limit-summary"><span>SAFE OUTPUT ENVELOPE</span><strong id="live-calibration-output-range">84.87&deg; - 174.87&deg;</strong><p>Limits describe logical joint travel. Direction inversion is applied before conversion to servo output.</p></div>
+            </section>
+
+            <section class="calibration-panel" data-calibration-panel="4" hidden>
+              <div class="calibration-panel-heading"><span>STEP 5 OF 5</span><h2>Review and save</h2><p>Store a browser copy, export a portable backup, or send the full profile once robot-side persistence is available.</p></div>
+              <div class="calibration-review-table-wrap"><table><thead><tr><th>JOINT</th><th>CH</th><th>OFFSET</th><th>DIRECTION</th><th>MIN</th><th>MAX</th></tr></thead><tbody id="live-calibration-review-body"></tbody></table></div>
+              <div class="calibration-review-actions">
+                <button id="live-calibration-save-browser" type="button">SAVE BROWSER COPY</button>
+                <button id="live-calibration-export" type="button">EXPORT JSON</button>
+                <button id="live-calibration-import" type="button">IMPORT JSON</button>
+                <button id="live-calibration-apply-robot" type="button" disabled>SEND TO ROBOT</button>
+                <input id="live-calibration-import-file" type="file" accept="application/json,.json" hidden>
+              </div>
+              <p id="live-calibration-review-status" class="calibration-inline-status">Robot apply is locked until the engineering adapter confirms bench mode and persistent calibration support.</p>
+            </section>
+
+            <footer class="calibration-wizard-footer">
+              <button id="live-calibration-back" type="button" disabled>BACK</button>
+              <div><span id="live-calibration-progress-label">STEP 1 / 5</span><i><b id="live-calibration-progress"></b></i></div>
+              <button id="live-calibration-next" type="button" disabled>NEXT: SELECT JOINT</button>
+            </footer>
+          </div>
         </div>
       </section>
 

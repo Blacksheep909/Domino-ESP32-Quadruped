@@ -37,6 +37,14 @@ duplicate adapter identities, mismatched sessions, and unsolicited command
 acknowledgements. Losing the adapter heartbeat immediately locks calibration and
 gait operations without claiming that the physical robot is still connected.
 
+The safety dock adds a separate `live-safety-command` contract for arm, disarm,
+E-stop, and physical-latch reset. Arm requires a 1.5-second uninterrupted hold,
+fresh expected/measured telemetry, a robot-reported Boxer/ELRS drive link, and a
+disarmed robot state. While armed, a session-bound 10 Hz heartbeat drives a
+400 ms robot-side watchdog. The UI fails closed on missing acknowledgements,
+workspace loss, hidden tabs, stale telemetry, bridge loss, or adapter loss; the
+companion adapter must enforce the watchdog and output shutdown independently.
+
 The LIVE comparison scope can record synchronized samples in memory, graph body
 pitch, roll, yaw, or height, survive a link interruption without filling the gap
 with stale values, and export a stopped session as CSV. Exports include capture
@@ -84,6 +92,8 @@ keyboard fallback as proof that a Boxer is connected.
 ![LIVE gait profile transfer](../../docs/images/virtual-lab-live-gaits.png)
 
 ![LIVE physical connection manager](../../docs/images/virtual-lab-live-connection-manager.png)
+
+![LIVE latched E-stop](../../docs/images/virtual-lab-live-safety.png)
 
 ## Firmware deployment workspace
 

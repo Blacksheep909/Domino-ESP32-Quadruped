@@ -4,6 +4,7 @@
 #include "leg_controller.h"
 
 #include "ik.h"
+#include "servo_calibration.h"
 
 namespace {
 constexpr float kServoCenterDeg = 135.0f;
@@ -95,6 +96,7 @@ float gCadLowerSeedDeg[kLegCount] = {};
 float gCommandedServoAnglesDeg[kPcaChannelCount] = {};
 bool gServoOutputsEnabled = false;
 uint32_t gServoSafetyClipCount = 0;
+ServoCalibrationProfile gServoCalibration = defaultServoCalibrationProfile();
 
 struct ServoAngleLimit {
   float minDeg;
@@ -414,7 +416,8 @@ uint16_t angleToPulse(float angleDegrees) {
 }
 
 void write270(Adafruit_PWMServoDriver &driver, uint8_t channel, float angleDegrees) {
-  const float safeAngle = applyServoSafetyLimit(channel, angleDegrees);
+  const float calibratedAngle = applyServoCalibration(gServoCalibration, channel, angleDegrees);
+  const float safeAngle = applyServoSafetyLimit(channel, calibratedAngle);
   if (channel < kPcaChannelCount) gCommandedServoAnglesDeg[channel] = safeAngle;
 #ifdef DOMINO_SIL
   driver.writeMicroseconds(channel, angleToPulse(safeAngle));
@@ -567,6 +570,26 @@ uint32_t servoSafetyClipCount() { return gServoSafetyClipCount; }
 
 bool commandCalibrationServoAngle(Adafruit_PWMServoDriver &driver, uint8_t channel, float angleDeg) {
   if (!gServoOutputsEnabled || channel >= kPcaChannelCount) return false;
-  write270(driver, channel, angleDeg);
+  // Bench targets are already absolute calibrated servo angles from the wizard.
+  const float safeAngle = applyServoSafetyLimit(channel, angleDeg);
+  gCommandedServoAnglesDeg[channel] = safeAngle;
+  driver.writeMicroseconds(channel, angleToPulse(safeAngle));
   return true;
 }
+
+void disableServoOutputChannel(Adafruit_PWMServoDriver &driver, uint8_t channel) {
+  if (channel >= kPcaChannelCount) return;
+#ifndef DOMINO_SIL
+  driver.setPWM(channel, 0, 4096);
+#else
+  (void)driver;
+#endif
+}
+
+bool setServoCalibrationProfile(const ServoCalibrationProfile &profile) {
+  if (!validateServoCalibrationProfile(profile)) return false;
+  gServoCalibration = profile;
+  return true;
+}
+
+const ServoCalibrationProfile& servoCalibrationProfile() { return gServoCalibration; }

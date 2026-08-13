@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Adafruit_PWMServoDriver.h>
+#include "servo_calibration.h"
 
 // Per-leg trim values (degrees). These are calibration offsets for the current
 // Domino mechanism and should be adjusted only after testing one servo/leg at a time.
@@ -68,3 +69,6 @@ bool servoOutputsEnabled();
 const float* commandedServoAnglesDeg();
 uint32_t servoSafetyClipCount();
 bool commandCalibrationServoAngle(Adafruit_PWMServoDriver &driver, uint8_t channel, float angleDeg);
+void disableServoOutputChannel(Adafruit_PWMServoDriver &driver, uint8_t channel);
+bool setServoCalibrationProfile(const ServoCalibrationProfile &profile);
+const ServoCalibrationProfile& servoCalibrationProfile();

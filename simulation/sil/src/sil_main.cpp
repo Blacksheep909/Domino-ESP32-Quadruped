@@ -12,6 +12,7 @@
 
 #include "crsf.h"
 #include "sim_pwm.h"
+#include "servo_calibration.h"
 
 void setup();
 void loop();
@@ -46,6 +47,34 @@ constexpr int kRideHeightChannelIndex = 2;  // Boxer left-stick vertical / CRSF 
 constexpr DWORD CREATE_WAITABLE_TIMER_HIGH_RESOLUTION = 0x00000002;
 #endif
 constexpr uint8_t kServoChannels[12] = {0, 1, 2, 3, 4, 15, 14, 7, 8, 9, 10, 11};
+
+bool validateCalibrationMath() {
+  ServoCalibrationProfile profile = defaultServoCalibrationProfile();
+  if (!validateServoCalibrationProfile(profile)) {
+    std::cerr << "FAIL: default servo calibration profile is invalid\n";
+    return false;
+  }
+  ServoCalibrationJoint *flUpper = nullptr;
+  for (ServoCalibrationJoint &joint : profile.joints) {
+    if (joint.channel == 1) flUpper = &joint;
+  }
+  if (flUpper == nullptr) return false;
+  flUpper->offsetDeg = 3.0f;
+  flUpper->minimumDeg = -10.0f;
+  flUpper->maximumDeg = 20.0f;
+  const float neutral = servoCalibrationNeutralDeg(1);
+  const float normal = applyServoCalibration(profile, 1, neutral - 12.0f);
+  flUpper->direction = 1;
+  const float inverted = applyServoCalibration(profile, 1, neutral - 12.0f);
+  const bool transformOk = fabsf(normal - (neutral - 9.0f)) < 0.01f &&
+                           fabsf(inverted - (neutral + 15.0f)) < 0.01f;
+  profile.joints[1].channel = profile.joints[0].channel;
+  const bool duplicateRejected = !validateServoCalibrationProfile(profile);
+  if (!transformOk || !duplicateRejected) {
+    std::cerr << "FAIL: calibration transform or exact-channel validation failed\n";
+  }
+  return transformOk && duplicateRejected;
+}
 
 struct Options {
   uint32_t durationMs = kScenarioDurationMs;
@@ -605,7 +634,8 @@ int main(int argc, char** argv) {
     return 0;
   }
 
-  const bool passed = validateOutputs(sawStand, sawTilt, sawGait, sawCareful,
+  const bool passed = validateCalibrationMath() &&
+      validateOutputs(sawStand, sawTilt, sawGait, sawCareful,
                                       gaitTiltInterlockViolation,
                                       motionInputInterlockViolation,
                                       gaitHeightTransitionDropout,

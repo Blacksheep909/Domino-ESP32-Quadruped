@@ -34,6 +34,19 @@ with stale values, and export a stopped session as CSV. Exports include capture
 and source timestamps, alignment, expected/measured/error body values, voltage,
 current, power, worst joint error, and every driven servo-channel error.
 
+The LIVE Calibration tab guides bench safety, all 12 joint selections, neutral
+offset/direction, mechanical limits, review, browser persistence, and JSON
+backup. A separate calibration command/acknowledgement envelope keeps physical
+jog and robot persistence locked until an adapter explicitly confirms bench
+mode and the 10 degree / 5 degree-per-second safety contract.
+
+The optional `diagnostics` object on a `live-telemetry` packet may report
+`controllerHz`, `commandHz`, `transmitHz`, `acknowledgementHz`, `esp32LoopHz`,
+`commandLatencyMs`, `uptimeMs`, `robotState`, `gaitTargetValid`, `ikValid`,
+`jointLimitClips`, and `servoOutputChannels`. LIVE Diagnostics combines those
+fields with browser-observed packet order and freshness to find the first broken
+stage, retain a severity-tagged event log, and export a JSON diagnostic bundle.
+
 The Simulation link panel reports each part of the control path separately:
 
 - **Local bridge** is driven by a browser-to-server heartbeat, including

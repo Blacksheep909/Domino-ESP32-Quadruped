@@ -225,7 +225,7 @@
           <button type="button" role="tab" data-live-view="data" aria-selected="false" aria-controls="live-view-data">DATA</button>
           <button type="button" role="tab" data-live-view="calibration" aria-selected="false" aria-controls="live-view-calibration">CALIBRATION</button>
           <button type="button" role="tab" aria-selected="false" disabled>GAITS</button>
-          <button type="button" role="tab" aria-selected="false" disabled>DIAGNOSTICS</button>
+          <button type="button" role="tab" data-live-view="diagnostics" aria-selected="false" aria-controls="live-view-diagnostics">DIAGNOSTICS</button>
           <button type="button" role="tab" data-live-view="sessions" aria-selected="false" aria-controls="live-view-sessions">SESSIONS</button>
         </div>
         <div class="experience-toggle" role="group" aria-label="Interface detail">
@@ -454,6 +454,42 @@
               <button id="live-calibration-next" type="button" disabled>NEXT: SELECT JOINT</button>
             </footer>
           </div>
+        </div>
+      </section>
+
+      <section id="live-view-diagnostics" class="live-view-page live-diagnostics-page" aria-labelledby="live-diagnostics-title" hidden>
+        <header class="live-page-heading">
+          <div><span>LIVE / DIAGNOSTICS</span><h1 id="live-diagnostics-title">Command-chain diagnostics</h1><p>Trace the first broken stage from engineering packet to servo output, with counters and timestamped evidence.</p></div>
+          <div class="live-page-status"><span id="live-diagnostics-health" data-state="offline">NO TELEMETRY</span><strong id="live-diagnostics-event-count">0 EVENTS</strong></div>
+        </header>
+        <div class="live-diagnostics-grid">
+          <section class="diagnostics-card diagnostics-pipeline-card">
+            <header><div><span>COMMAND PIPELINE</span><strong id="live-diagnostics-pipeline-summary">WAITING FOR ROBOT DATA</strong></div><button id="live-diagnostics-export" type="button">DOWNLOAD BUNDLE</button></header>
+            <div id="live-diagnostics-pipeline" class="diagnostics-pipeline" aria-label="Live command pipeline"></div>
+            <div id="live-diagnostics-first-break" class="diagnostics-first-break" data-state="unavailable"><span>FIRST BROKEN STAGE</span><strong>NOT ENOUGH DATA</strong><p>Connect the robot engineering stream to trace the control chain.</p></div>
+          </section>
+          <section class="diagnostics-card diagnostics-metrics-card">
+            <header><div><span>TRANSPORT + FIRMWARE</span><strong>LIVE COUNTERS</strong></div></header>
+            <div class="diagnostics-metrics">
+              <div><span>PACKET RATE</span><strong id="live-diagnostics-rate">0.0 Hz</strong></div>
+              <div><span>COMMAND LATENCY</span><strong id="live-diagnostics-latency">-- ms</strong></div>
+              <div><span>DROPPED / REJECTED</span><strong id="live-diagnostics-dropped">0 / 0</strong></div>
+              <div><span>STALE EVENTS</span><strong id="live-diagnostics-stale">0</strong></div>
+              <div><span>ESP32 LOOP</span><strong id="live-diagnostics-loop">-- Hz</strong></div>
+              <div><span>UPTIME</span><strong id="live-diagnostics-uptime">--:--:--</strong></div>
+              <div><span>ROBOT STATE</span><strong id="live-diagnostics-robot-state">UNKNOWN</strong></div>
+              <div><span>LAST SEQUENCE</span><strong id="live-diagnostics-sequence">--</strong></div>
+            </div>
+          </section>
+          <section class="diagnostics-card diagnostics-log-card">
+            <header><div><span>EVENT LOG</span><strong>NEWEST FIRST</strong></div><div class="diagnostics-log-actions" role="group" aria-label="Diagnostic log filter"><button type="button" data-diagnostic-filter="all" aria-pressed="true">ALL</button><button type="button" data-diagnostic-filter="warning" aria-pressed="false">WARNINGS</button><button type="button" data-diagnostic-filter="fault" aria-pressed="false">FAULTS</button><button id="live-diagnostics-clear" type="button">CLEAR</button></div></header>
+            <div id="live-diagnostics-events" class="diagnostics-events" aria-live="polite"></div>
+            <p id="live-diagnostics-events-empty" class="diagnostics-empty">No diagnostic events recorded in this app run.</p>
+          </section>
+          <section class="diagnostics-card diagnostics-packet-card" data-expert-only>
+            <header><div><span>PACKET INSPECTOR</span><strong>EXPERT MODE</strong></div></header>
+            <div class="diagnostics-packet-grid"><div><span>LAST RECEIVED TELEMETRY</span><pre id="live-diagnostics-last-packet">No packet received.</pre></div><div><span>LAST GENERATED COMMAND</span><pre id="live-diagnostics-last-command">No expected command received.</pre></div></div>
+          </section>
         </div>
       </section>
 

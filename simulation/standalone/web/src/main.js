@@ -46,6 +46,12 @@ import {
   liveComparisonSnapshot,
 } from "./live-telemetry-state.js";
 import {
+  createLiveDiagnosticsState,
+  liveDiagnosticBundle,
+  liveDiagnosticsSnapshot,
+  observeLiveDiagnosticPacket,
+} from "./live-diagnostics-state.js";
+import {
   archiveLiveSession,
   createLiveSessionState,
   liveSessionCsv,
@@ -75,6 +81,7 @@ import {
   LIVE_VIEW_CALIBRATION,
   LIVE_VIEW_COMPARE,
   LIVE_VIEW_DATA,
+  LIVE_VIEW_DIAGNOSTICS,
   LIVE_VIEW_SESSIONS,
   selectLiveView,
 } from "./live-view-state.js";
@@ -85,6 +92,7 @@ initializeFirmwareWorkspace();
 const canvas = document.querySelector("#scene");
 const applicationState = createApplicationState();
 const liveTelemetryState = createLiveTelemetryState();
+const liveDiagnosticsState = createLiveDiagnosticsState();
 const liveSessionState = createLiveSessionState();
 const liveSessionArchive = [];
 const liveViewState = createLiveViewState();
@@ -101,6 +109,7 @@ const liveCalibrationState = createLiveCalibrationState(
 let calibrationPendingRequestId = "";
 let calibrationPendingAction = "";
 let calibrationRequestTimeout = null;
+let liveDiagnosticFilter = "all";
 const realWorkspace = document.querySelector("#real-workspace");
 const workspaceButtons = {
   [WORKSPACE_SIMULATION]: document.querySelector("#workspace-simulation"),
@@ -168,9 +177,11 @@ function applyLiveView(view) {
   document.querySelector("#live-view-compare").hidden = liveViewState.selected !== LIVE_VIEW_COMPARE;
   document.querySelector("#live-view-data").hidden = liveViewState.selected !== LIVE_VIEW_DATA;
   document.querySelector("#live-view-calibration").hidden = liveViewState.selected !== LIVE_VIEW_CALIBRATION;
+  document.querySelector("#live-view-diagnostics").hidden = liveViewState.selected !== LIVE_VIEW_DIAGNOSTICS;
   document.querySelector("#live-view-sessions").hidden = liveViewState.selected !== LIVE_VIEW_SESSIONS;
   if (liveViewState.selected === LIVE_VIEW_DATA) requestAnimationFrame(renderLiveComparisonChart);
   if (liveViewState.selected === LIVE_VIEW_CALIBRATION) renderLiveCalibrationUi();
+  if (liveViewState.selected === LIVE_VIEW_DIAGNOSTICS) updateLiveComparisonUi();
   if (liveViewState.selected === LIVE_VIEW_SESSIONS) renderLiveSessionArchive();
   requestAnimationFrame(() => {
     resize();
@@ -188,6 +199,8 @@ Object.entries(workspaceButtons).forEach(([workspace, button]) => {
   button.addEventListener("click", () => applyWorkspace(workspace));
 });
 
+document.body.dataset.experience = applicationState.experience;
+
 document.querySelectorAll("[data-live-view]").forEach((button) => {
   button.addEventListener("click", () => applyLiveView(button.dataset.liveView));
 });
@@ -195,6 +208,7 @@ document.querySelectorAll("[data-live-view]").forEach((button) => {
 document.querySelectorAll("[data-experience]").forEach((button) => {
   button.addEventListener("click", () => {
     selectExperience(applicationState, button.dataset.experience);
+    document.body.dataset.experience = applicationState.experience;
     document.querySelectorAll("[data-experience]").forEach((candidate) => {
       const active = candidate.dataset.experience === applicationState.experience;
       candidate.classList.toggle("active", active);
@@ -1981,6 +1995,12 @@ function claimControl() {
 window.addEventListener("pointerdown", claimControl, { capture: true });
 window.addEventListener("keydown", claimControl, { capture: true });
 
+function ingestLiveTelemetry(packet, receivedAt = Date.now()) {
+  const accepted = acceptLiveTelemetryPacket(liveTelemetryState, packet, receivedAt);
+  observeLiveDiagnosticPacket(liveDiagnosticsState, packet, accepted, receivedAt);
+  return accepted;
+}
+
 function connectControlBridge() {
   socket = new WebSocket(`${socketProtocol}://${location.host}/control`);
   socket.addEventListener("open", () => {
@@ -2009,7 +2029,7 @@ function connectControlBridge() {
         acceptHeartbeatAcknowledgement(bridgeHeartbeat, message);
       }
       if (message.type === "live-telemetry") {
-        acceptLiveTelemetryPacket(liveTelemetryState, message);
+        ingestLiveTelemetry(message);
       }
       if (message.type === "live-calibration-ack") {
         acceptCalibrationAcknowledgement(message);
@@ -2477,6 +2497,115 @@ function acceptCalibrationAcknowledgement(message) {
   return true;
 }
 
+function formatDiagnosticUptime(value) {
+  if (!Number.isFinite(value) || value < 0) return "--:--:--";
+  const seconds = Math.floor(value / 1_000);
+  return [
+    Math.floor(seconds / 3600),
+    Math.floor(seconds / 60) % 60,
+    seconds % 60,
+  ].map((part) => String(part).padStart(2, "0")).join(":");
+}
+
+function renderDiagnosticPipeline(snapshot) {
+  const pipeline = document.querySelector("#live-diagnostics-pipeline");
+  pipeline.replaceChildren();
+  snapshot.stages.forEach((stage, index) => {
+    const row = document.createElement("article");
+    row.dataset.state = stage.status;
+    const number = document.createElement("span");
+    number.textContent = String(index + 1).padStart(2, "0");
+    const status = document.createElement("i");
+    status.setAttribute("aria-label", stage.status);
+    const body = document.createElement("div");
+    const label = document.createElement("strong");
+    const detail = document.createElement("small");
+    label.textContent = stage.label.toUpperCase();
+    detail.textContent = stage.detail;
+    body.append(label, detail);
+    const rate = document.createElement("b");
+    rate.textContent = Number.isFinite(stage.rateHz) ? `${stage.rateHz.toFixed(1)} Hz` : stage.status.toUpperCase();
+    row.append(number, status, body, rate);
+    pipeline.append(row);
+  });
+}
+
+function renderDiagnosticEvents(snapshot) {
+  const events = liveDiagnosticFilter === "all"
+    ? snapshot.events
+    : snapshot.events.filter((event) => event.severity === liveDiagnosticFilter);
+  const list = document.querySelector("#live-diagnostics-events");
+  list.replaceChildren();
+  document.querySelector("#live-diagnostics-events-empty").hidden = events.length > 0;
+  events.forEach((event) => {
+    const row = document.createElement("article");
+    row.dataset.severity = event.severity;
+    const time = document.createElement("time");
+    time.dateTime = new Date(event.timestampMs).toISOString();
+    time.textContent = new Date(event.timestampMs).toLocaleTimeString();
+    const severity = document.createElement("strong");
+    severity.textContent = event.severity.toUpperCase();
+    const source = document.createElement("span");
+    source.textContent = event.source.toUpperCase();
+    const message = document.createElement("p");
+    message.textContent = event.message;
+    row.append(time, severity, source, message);
+    list.append(row);
+  });
+}
+
+function updateLiveDiagnosticsUi(snapshot, liveSnapshot) {
+  const health = document.querySelector("#live-diagnostics-health");
+  const hasFault = snapshot.stages.some((stage) => stage.status === "fault");
+  const hasWarning = snapshot.stages.some((stage) => stage.status === "warning");
+  health.textContent = !snapshot.linkFresh ? "NO TELEMETRY" : hasFault ? "PIPELINE FAULT" : hasWarning ? "PIPELINE DEGRADED" : "PIPELINE HEALTHY";
+  health.dataset.state = snapshot.linkFresh && !hasFault ? "online" : "offline";
+  document.querySelector("#live-diagnostics-event-count").textContent = `${snapshot.events.length} EVENTS`;
+  document.querySelector("#live-diagnostics-pipeline-summary").textContent = !snapshot.linkFresh
+    ? "WAITING FOR ROBOT DATA"
+    : hasFault
+      ? "FAULT FOUND"
+      : hasWarning
+        ? "DEGRADED"
+        : "ALL REPORTED STAGES HEALTHY";
+  renderDiagnosticPipeline(snapshot);
+  const firstBreak = document.querySelector("#live-diagnostics-first-break");
+  firstBreak.dataset.state = snapshot.firstBrokenStage?.status || "ok";
+  firstBreak.querySelector("strong").textContent = snapshot.firstBrokenStage
+    ? snapshot.firstBrokenStage.label.toUpperCase()
+    : snapshot.linkFresh ? "NO BROKEN STAGE" : "NOT ENOUGH DATA";
+  firstBreak.querySelector("p").textContent = snapshot.firstBrokenStage
+    ? snapshot.firstBrokenStage.detail
+    : snapshot.linkFresh
+      ? "Every stage reported by the robot is currently healthy."
+      : "Connect the robot engineering stream to trace the control chain.";
+  document.querySelector("#live-diagnostics-rate").textContent = `${snapshot.packetRateHz.toFixed(1)} Hz`;
+  document.querySelector("#live-diagnostics-latency").textContent = Number.isFinite(snapshot.telemetry?.commandLatencyMs)
+    ? `${snapshot.telemetry.commandLatencyMs.toFixed(1)} ms`
+    : "-- ms";
+  document.querySelector("#live-diagnostics-dropped").textContent = `${snapshot.droppedPackets} / ${snapshot.rejectedPackets}`;
+  document.querySelector("#live-diagnostics-stale").textContent = String(snapshot.staleTransitions);
+  document.querySelector("#live-diagnostics-loop").textContent = Number.isFinite(snapshot.telemetry?.esp32LoopHz)
+    ? `${snapshot.telemetry.esp32LoopHz.toFixed(1)} Hz`
+    : "-- Hz";
+  document.querySelector("#live-diagnostics-uptime").textContent = formatDiagnosticUptime(snapshot.telemetry?.uptimeMs);
+  document.querySelector("#live-diagnostics-robot-state").textContent = snapshot.telemetry?.robotState?.toUpperCase() || "UNKNOWN";
+  document.querySelector("#live-diagnostics-sequence").textContent = snapshot.lastPacket
+    ? String(snapshot.lastPacket.sequence)
+    : "--";
+  renderDiagnosticEvents(snapshot);
+  document.querySelector("#live-diagnostics-last-packet").textContent = snapshot.lastPacket
+    ? JSON.stringify(snapshot.lastPacket, null, 2)
+    : "No packet received.";
+  document.querySelector("#live-diagnostics-last-command").textContent = liveSnapshot.expected
+    ? JSON.stringify({
+        timestampMs: liveSnapshot.expected.timestampMs,
+        body: liveSnapshot.expected.body,
+        servoAngleDeg: liveSnapshot.expected.servoAngleDeg,
+      }, null, 2)
+    : "No expected command received.";
+}
+
 function updateLiveSessionUi(snapshot) {
   if (liveSessionState.status === "recording") {
     recordLiveComparisonSample(liveSessionState, snapshot);
@@ -2638,6 +2767,10 @@ function updateLiveComparisonUi() {
   document.querySelector("#live-data-power").textContent = snapshot.power
     ? `${snapshot.power.powerW.toFixed(1)} W`
     : "--- W";
+  const diagnosticSnapshot = liveDiagnosticsSnapshot(liveDiagnosticsState, snapshot);
+  if (liveViewState.selected === LIVE_VIEW_DIAGNOSTICS) {
+    updateLiveDiagnosticsUi(diagnosticSnapshot, snapshot);
+  }
   updateLiveSessionUi(snapshot);
 }
 
@@ -2778,6 +2911,36 @@ document.querySelector("#live-calibration-import-file").addEventListener("change
   renderLiveCalibrationUi();
 });
 
+document.querySelectorAll("[data-diagnostic-filter]").forEach((button) => {
+  button.addEventListener("click", () => {
+    liveDiagnosticFilter = button.dataset.diagnosticFilter;
+    document.querySelectorAll("[data-diagnostic-filter]").forEach((candidate) => {
+      candidate.setAttribute("aria-pressed", String(candidate === button));
+    });
+    updateLiveComparisonUi();
+  });
+});
+document.querySelector("#live-diagnostics-clear").addEventListener("click", () => {
+  liveDiagnosticsState.events = [];
+  updateLiveComparisonUi();
+});
+document.querySelector("#live-diagnostics-export").addEventListener("click", () => {
+  const liveSnapshot = liveComparisonSnapshot(liveTelemetryState);
+  const bundle = liveDiagnosticBundle(liveDiagnosticsState, liveSnapshot, {
+    workspace: applicationState.workspace,
+    experience: applicationState.experience,
+    location: window.location.href,
+    calibration: createLiveCalibrationProfile(liveCalibrationState.profile),
+    activeSession: liveSessionSummary(liveSessionState),
+  });
+  const blob = new Blob([`${JSON.stringify(bundle, null, 2)}\n`], { type: "application/json;charset=utf-8" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `domino-diagnostic-bundle-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 0);
+});
+
 const calibrationRaycaster = new THREE.Raycaster();
 const calibrationPointer = new THREE.Vector2();
 canvas.addEventListener("dblclick", (event) => {
@@ -2811,7 +2974,7 @@ window.addEventListener("resize", renderLiveComparisonChart);
 
 window.dominoLiveTelemetry = Object.freeze({
   ingest(packet) {
-    const accepted = acceptLiveTelemetryPacket(liveTelemetryState, packet);
+    const accepted = ingestLiveTelemetry(packet);
     updateLiveComparisonUi();
     return accepted;
   },
@@ -2821,7 +2984,7 @@ window.dominoLiveTelemetry = Object.freeze({
 });
 window.addEventListener("domino-live-telemetry", (event) => {
   if (event instanceof CustomEvent) {
-    acceptLiveTelemetryPacket(liveTelemetryState, event.detail);
+    ingestLiveTelemetry(event.detail);
     updateLiveComparisonUi();
   }
 });

@@ -108,12 +108,14 @@ constexpr int YAW_CH_INDEX = 3;
 // the CAD-validated ride-height range.
 constexpr int RIDE_HEIGHT_CH_INDEX = 2;
 constexpr int SD_CH_INDEX = 7;
-constexpr int SC_GAIT_ON_THRESHOLD_US = 1750;
-constexpr int SC_GAIT_OFF_THRESHOLD_US = 1650;
+constexpr int SC_CAREFUL_MIN_US = 1300;
+constexpr int SC_TROT_MIN_US = 1700;
 constexpr int SD_ON_THRESHOLD_US = 1600;
 constexpr int SD_OFF_THRESHOLD_US = 1400;
 constexpr float kStickCenterUs = 1500.0f;
 constexpr float kStickHalfRangeUs = 500.0f;
+constexpr float kModeInputCenterDeadband = 0.14f;
+constexpr uint32_t kModeInputCenterHoldMs = 120;
 
 constexpr float kMaxRollDeg = 20.0f;
 constexpr float kMaxPitchDeg = 10.0f;
@@ -165,6 +167,16 @@ constexpr float kGaitBodyHeightMm = 265.0f;
 constexpr float kGaitBodyHeightSlewMmPerSec = 80.0f;
 constexpr uint32_t kGaitToggleDebounceMs = 200;
 
+// SC middle selects a statically stable four-beat crawl. Each leg owns one
+// quarter of the cycle, but swings for less than that quarter, guaranteeing
+// at least three planted feet and a short four-foot settle between steps.
+constexpr float kCarefulMaxStrideMm = 22.0f;
+constexpr float kCarefulMaxTurnStrideMm = 14.0f;
+constexpr float kCarefulMaxLiftMm = 20.0f;
+constexpr float kCarefulMinFrequencyHz = 0.30f;
+constexpr float kCarefulMaxFrequencyHz = 0.42f;
+constexpr float kCarefulSwingFraction = 0.19f;
+
 // Ride height configuration (stand-only, continuous CH3 command).
 // The Boxer left-stick vertical maps linearly across the CAD-validated
 // standing range. The stow pose remains a separate fixed safety pose.
@@ -177,6 +189,13 @@ enum BodyMode : uint8_t {
   BODY_TILT = 2,
   BODY_BALANCE = 3,
   BODY_GAIT = 4,
+  BODY_CAREFUL = 5,
+};
+
+enum MotionInputProfile : uint8_t {
+  MOTION_INPUT_NONE = 0,
+  MOTION_INPUT_TILT = 1,
+  MOTION_INPUT_WALK = 2,
 };
 
 // Offsets from kNeutralZ (mm). Positive values move the feet further from
@@ -265,10 +284,56 @@ float gaitForwardCommand = 0.0f;
 float gaitTurnCommand = 0.0f;
 float gaitAmplitude = 0.0f;
 float gaitBodyZ = kGaitBodyHeightMm;
+bool motionInputAwaitingCenter = false;
+uint32_t motionInputCenteredSinceMs = 0;
 
 float normalizeChannel(int chValueUs) {
   const float normalized = (static_cast<float>(chValueUs) - kStickCenterUs) / kStickHalfRangeUs;
   return constrain(normalized, -1.0f, 1.0f);
+}
+
+MotionInputProfile motionInputProfileForMode(BodyMode mode) {
+  if (mode == BODY_TILT) {
+    return MOTION_INPUT_TILT;
+  }
+  if (mode == BODY_GAIT || mode == BODY_CAREFUL) {
+    return MOTION_INPUT_WALK;
+  }
+  return MOTION_INPUT_NONE;
+}
+
+bool motionInputsAreCentered() {
+  return fabsf(normalizeChannel(ch_us[ROLL_CH_INDEX])) <= kModeInputCenterDeadband &&
+         fabsf(normalizeChannel(ch_us[PITCH_CH_INDEX])) <= kModeInputCenterDeadband &&
+         fabsf(normalizeChannel(ch_us[YAW_CH_INDEX])) <= kModeInputCenterDeadband;
+}
+
+void updateMotionInputInterlock(BodyMode previousMode, BodyMode nextMode, uint32_t now) {
+  const MotionInputProfile previousProfile = motionInputProfileForMode(previousMode);
+  const MotionInputProfile nextProfile = motionInputProfileForMode(nextMode);
+  if (previousProfile != nextProfile) {
+    motionInputAwaitingCenter = nextProfile != MOTION_INPUT_NONE;
+    motionInputCenteredSinceMs = 0;
+  }
+
+  if (!motionInputAwaitingCenter) {
+    return;
+  }
+  if (!motionInputsAreCentered()) {
+    motionInputCenteredSinceMs = 0;
+    return;
+  }
+  if (motionInputCenteredSinceMs == 0) {
+    motionInputCenteredSinceMs = now;
+    return;
+  }
+  if ((now - motionInputCenteredSinceMs) >= kModeInputCenterHoldMs) {
+    motionInputAwaitingCenter = false;
+  }
+}
+
+float readMotionChannelNormalized(int channelIndex) {
+  return motionInputAwaitingCenter ? 0.0f : normalizeChannel(ch_us[channelIndex]);
 }
 
 void logDebugState(uint32_t now,
@@ -412,6 +477,7 @@ struct MenuInputs {
   bool tiltSwitchDown = false;
   bool balanceRequested = false;
   bool gaitRequested = false;
+  bool carefulWalkRequested = false;
   float rideHeightMm = kRideHeightMaxMm;
 };
 
@@ -453,26 +519,19 @@ MenuInputs readMenuInputs(uint32_t now, uint32_t* lastLinkAliveMs, bool* failsaf
   }
   inputs.tiltSwitchDown = sdCommandActive;
 
-  // During gait bring-up, SC up and middle both mean normal stand. Only SC
-  // fully down requests gait; hysteresis keeps the boundary from chattering.
-  // The experimental balance controller remains compiled but is deliberately
-  // not mapped to SC middle, because filtered switch travel passes through the
-  // midpoint and would briefly trigger balance on every gait selection.
+  // SC is a three-position walk selector: low=stand, middle=careful crawl,
+  // high=diagonal trot. The mode-level debounce below prevents switch travel
+  // through the midpoint from briefly starting the careful gait.
   const int scValueUs = ch_us[SC_CH_INDEX];
   inputs.balanceRequested = false;
-  static bool scGaitCommand = false;
-  if (scGaitCommand) {
-    if (scValueUs < SC_GAIT_OFF_THRESHOLD_US) {
-      scGaitCommand = false;
-    }
-  } else if (scValueUs > SC_GAIT_ON_THRESHOLD_US) {
-    scGaitCommand = true;
-  }
-  inputs.gaitRequested = scGaitCommand && !inputs.failsafeActive;
-  static bool lastGaitRequested = false;
-  if (inputs.gaitRequested != lastGaitRequested) {
-    lastGaitRequested = inputs.gaitRequested;
-    Serial.printf("SC=%d -> gaitRequested=%d\n", scValueUs, inputs.gaitRequested ? 1 : 0);
+  inputs.carefulWalkRequested =
+      scValueUs >= SC_CAREFUL_MIN_US && scValueUs < SC_TROT_MIN_US && !inputs.failsafeActive;
+  inputs.gaitRequested = scValueUs >= SC_TROT_MIN_US && !inputs.failsafeActive;
+  static int lastWalkSelection = -1;
+  const int walkSelection = inputs.gaitRequested ? 2 : inputs.carefulWalkRequested ? 1 : 0;
+  if (walkSelection != lastWalkSelection) {
+    lastWalkSelection = walkSelection;
+    Serial.printf("SC=%d -> walkMode=%d\n", scValueUs, walkSelection);
   }
 
   // Continuous ride height from Boxer left-stick vertical / CRSF CH3.
@@ -703,8 +762,8 @@ void applySinusoidalGait(Adafruit_PWMServoDriver &driver, float baseZ) {
       gaitBodyZ,
       gaitBodyTargetZ,
       kGaitBodyHeightSlewMmPerSec * kControlStepSeconds);
-  const float targetForward = applyGaitDeadband(normalizeChannel(ch_us[PITCH_CH_INDEX]));
-  const float targetTurn = applyGaitDeadband(normalizeChannel(ch_us[ROLL_CH_INDEX]));
+  const float targetForward = applyGaitDeadband(readMotionChannelNormalized(PITCH_CH_INDEX));
+  const float targetTurn = applyGaitDeadband(readMotionChannelNormalized(YAW_CH_INDEX));
   const float maximumCommandStep = kGaitCommandSlewPerSec * kControlStepSeconds;
   gaitForwardCommand = approachGaitCommand(gaitForwardCommand, targetForward, maximumCommandStep);
   gaitTurnCommand = approachGaitCommand(gaitTurnCommand, targetTurn, maximumCommandStep);
@@ -755,6 +814,65 @@ void applySinusoidalGait(Adafruit_PWMServoDriver &driver, float baseZ) {
   }
 }
 
+void applyCarefulWalk(Adafruit_PWMServoDriver &driver, float baseZ) {
+  constexpr float kControlStepSeconds = static_cast<float>(kControlIntervalMs) / 1000.0f;
+  const float gaitBodyTargetZ = fminf(baseZ, kGaitBodyHeightMm);
+  gaitBodyZ = approachGaitCommand(
+      gaitBodyZ, gaitBodyTargetZ, kGaitBodyHeightSlewMmPerSec * kControlStepSeconds);
+  const float targetForward = applyGaitDeadband(readMotionChannelNormalized(PITCH_CH_INDEX));
+  const float targetTurn = applyGaitDeadband(readMotionChannelNormalized(YAW_CH_INDEX));
+  const float maximumCommandStep = kGaitCommandSlewPerSec * kControlStepSeconds;
+  gaitForwardCommand = approachGaitCommand(gaitForwardCommand, targetForward, maximumCommandStep);
+  gaitTurnCommand = approachGaitCommand(gaitTurnCommand, targetTurn, maximumCommandStep);
+
+  const float activity = constrain(
+      sqrtf(gaitForwardCommand * gaitForwardCommand + gaitTurnCommand * gaitTurnCommand),
+      0.0f, 1.0f);
+  const float targetAmplitude = halfCosine01(activity / 0.20f) * (0.72f + 0.28f * activity);
+  gaitAmplitude = approachGaitCommand(
+      gaitAmplitude, targetAmplitude, kGaitAmplitudeSlewPerSec * kControlStepSeconds);
+  if (activity > 0.001f) {
+    const float frequencyHz =
+        kCarefulMinFrequencyHz + activity * (kCarefulMaxFrequencyHz - kCarefulMinFrequencyHz);
+    gaitPhaseRad = fmodf(
+        gaitPhaseRad + 2.0f * kPi * frequencyHz * kControlStepSeconds, 2.0f * kPi);
+  } else {
+    gaitPhaseRad = 0.0f;
+  }
+
+  const float normalizedCycle = gaitPhaseRad / (2.0f * kPi);
+  const float commandScale = activity > 0.001f ? 1.0f / activity : 0.0f;
+  const float forwardDirection = gaitForwardCommand * commandScale;
+  const float turnDirection = gaitTurnCommand * commandScale;
+  constexpr LegIndex kSwingOrder[kLegCount] = {LEG_FL, LEG_BR, LEG_FR, LEG_BL};
+  for (int orderIndex = 0; orderIndex < kLegCount; ++orderIndex) {
+    const LegIndex leg = kSwingOrder[orderIndex];
+    const bool leftLeg = leg == LEG_FL || leg == LEG_BL;
+    const float sideSign = leftLeg ? 1.0f : -1.0f;
+    const float halfStrideMm = gaitAmplitude * (
+        forwardDirection * kCarefulMaxStrideMm +
+        sideSign * turnDirection * kCarefulMaxTurnStrideMm);
+    float legCycle = normalizedCycle - 0.25f * static_cast<float>(orderIndex);
+    legCycle -= floorf(legCycle);
+    float xOffsetMm = 0.0f;
+    float zOffsetMm = 0.0f;
+    if (legCycle < kCarefulSwingFraction) {
+      const float swing = legCycle / kCarefulSwingFraction;
+      xOffsetMm = halfStrideMm * (-1.0f + 2.0f * halfCosine01(swing));
+      const float liftWave = sinf(kPi * swing);
+      zOffsetMm = -kCarefulMaxLiftMm * gaitAmplitude * liftWave * liftWave;
+    } else {
+      const float stance = (legCycle - kCarefulSwingFraction) / (1.0f - kCarefulSwingFraction);
+      xOffsetMm = halfStrideMm * (1.0f - 2.0f * stance);
+    }
+    commandLeg(driver,
+               leg,
+               FOOT_BACK_OFFSET_X + xOffsetMm,
+               sideSign * (FOOT_OUT_OFFSET_Y - BODY_HALF_WIDTH_Y),
+               gaitBodyZ + zOffsetMm);
+  }
+}
+
 bool updateStandCommand(bool standActive, uint32_t now) {
   static SwitchDebounceState saDebounce;
   const int saValueUs = ch_us[SA_CH_INDEX];
@@ -802,9 +920,9 @@ void applyTiltPose(Adafruit_PWMServoDriver &driver) {
   // roll: right stick X (lean left/right)
   // pitch: right stick Y (future; currently unused in the radio mapping)
   // yaw: left stick X (twist the body about Z)
-  const float yawNorm = normalizeChannel(ch_us[YAW_CH_INDEX]);
-  float rollNorm = normalizeChannel(ch_us[ROLL_CH_INDEX]);
-  float pitchNorm = normalizeChannel(ch_us[PITCH_CH_INDEX]);
+  const float yawNorm = readMotionChannelNormalized(YAW_CH_INDEX);
+  float rollNorm = readMotionChannelNormalized(ROLL_CH_INDEX);
+  float pitchNorm = readMotionChannelNormalized(PITCH_CH_INDEX);
   float yawNormLimited = yawNorm;
 
   // Keep diagonal stick commands inside one combined body-pose envelope.
@@ -973,27 +1091,31 @@ void loop() {
   }
   menuState.mode = tiltModeActive ? BODY_TILT : menuState.mode;
 
-  // 6) Gait mode: SC fully down requests a slow diagonal trot, but SD/tilt
-  //    always wins. The raw SD state blocks gait immediately rather than
-  //    waiting for the tilt-mode debounce to complete.
-  const bool gaitCandidateRaw =
+  // 6) Walk mode: SC middle requests the stable crawl and SC high requests
+  //    the diagonal trot. SD/tilt always wins. A single walking debounce also
+  //    suppresses the transient middle position while moving the SC switch.
+  const bool walkWasActive = previousMode == BODY_GAIT || previousMode == BODY_CAREFUL;
+  const bool walkRequested = inputs.gaitRequested || inputs.carefulWalkRequested;
+  const bool walkCandidateRaw =
       menuState.mode == BODY_STAND &&
-      inputs.gaitRequested &&
+      walkRequested &&
+      ch_us[SD_CH_INDEX] < SD_ON_THRESHOLD_US &&
       !inputs.tiltSwitchDown &&
       !tiltModeActive &&
-      standPoseReady &&
+      (walkWasActive || standPoseReady) &&
       !inputs.failsafeActive;
-  bool gaitCandidateFiltered =
-      applySwitchDebounce(previousMode == BODY_GAIT,
-                          gaitCandidateRaw,
+  bool walkCandidateFiltered =
+      applySwitchDebounce(walkWasActive,
+                          walkCandidateRaw,
                           now,
                           &gaitDebounce,
                           kGaitToggleDebounceMs);
-  if (inputs.tiltSwitchDown || tiltModeActive || inputs.failsafeActive) {
-    gaitCandidateFiltered = false;
+  if (ch_us[SD_CH_INDEX] >= SD_ON_THRESHOLD_US ||
+      inputs.tiltSwitchDown || tiltModeActive || inputs.failsafeActive) {
+    walkCandidateFiltered = false;
   }
-  if (gaitCandidateFiltered && menuState.mode == BODY_STAND) {
-    menuState.mode = BODY_GAIT;
+  if (walkCandidateFiltered && menuState.mode == BODY_STAND) {
+    menuState.mode = inputs.gaitRequested ? BODY_GAIT : BODY_CAREFUL;
   }
 
   // 7) Balance mode: only allowed when standing (not stow, tilt, or gait),
@@ -1002,6 +1124,7 @@ void loop() {
       !inputs.failsafeActive) {
     menuState.mode = BODY_BALANCE;
   }
+  updateMotionInputInterlock(previousMode, menuState.mode, now);
   // Reset balance reference when entering or leaving balance mode.
   if (previousMode != BODY_BALANCE && menuState.mode == BODY_BALANCE) {
     Serial.printf("Entering BODY_BALANCE (SC=%d, imuOk=%d)\n",
@@ -1016,14 +1139,22 @@ void loop() {
     balanceRollCmdFilt = 0.0f;
     balancePitchCmdFilt = 0.0f;
   }
-  if (previousMode != BODY_GAIT && menuState.mode == BODY_GAIT) {
+  const bool walkingNow = menuState.mode == BODY_GAIT || menuState.mode == BODY_CAREFUL;
+  if (!walkWasActive && walkingNow) {
     resetGaitState();
-    Serial.printf("Entering BODY_GAIT (SC=%d, SD=%d)\n",
+    Serial.printf("Entering walk mode=%d (SC=%d, SD=%d)\n",
+                  static_cast<int>(menuState.mode),
                   ch_us[SC_CH_INDEX],
                   ch_us[SD_CH_INDEX]);
-  } else if (previousMode == BODY_GAIT && menuState.mode != BODY_GAIT) {
+  } else if (walkWasActive && !walkingNow) {
     resetGaitState();
-    Serial.printf("Exiting BODY_GAIT (newMode=%d)\n", static_cast<int>(menuState.mode));
+    Serial.printf("Exiting walk mode (newMode=%d)\n", static_cast<int>(menuState.mode));
+  } else if (walkWasActive && walkingNow && previousMode != menuState.mode) {
+    // Careful and trot use the same stick semantics. Preserve phase and
+    // filtered commands so moving SC through the two walk positions does not
+    // stop and restart the legs mid-stride.
+    Serial.printf("Changing walk mode=%d (SC=%d)\n",
+                  static_cast<int>(menuState.mode), ch_us[SC_CH_INDEX]);
   }
 
   logDebugState(now,
@@ -1056,13 +1187,17 @@ void loop() {
       silBodyYawDeg = 0.0f;
 #endif
       moveLegsToSitBlend(pca, rampZ, sitBlend);
-    } else if (menuState.mode == BODY_GAIT) {
+    } else if (menuState.mode == BODY_GAIT || menuState.mode == BODY_CAREFUL) {
 #ifdef DOMINO_SIL
       silBodyRollDeg = 0.0f;
       silBodyPitchDeg = 0.0f;
       silBodyYawDeg = 0.0f;
 #endif
-      applySinusoidalGait(pca, rampZ);
+      if (menuState.mode == BODY_CAREFUL) {
+        applyCarefulWalk(pca, rampZ);
+      } else {
+        applySinusoidalGait(pca, rampZ);
+      }
     } else {
 #ifdef DOMINO_SIL
       silBodyRollDeg = 0.0f;
@@ -1199,11 +1334,13 @@ extern "C" int dominoSilBodyMode() {
 }
 
 extern "C" float dominoSilTargetZ() {
-  return menuState.mode == BODY_GAIT ? fminf(currentTargetZ, kGaitBodyHeightMm) : currentTargetZ;
+  return (menuState.mode == BODY_GAIT || menuState.mode == BODY_CAREFUL)
+             ? fminf(currentTargetZ, kGaitBodyHeightMm)
+             : currentTargetZ;
 }
 
 extern "C" float dominoSilPoseZ() {
-  return menuState.mode == BODY_GAIT ? gaitBodyZ : lastPoseZ;
+  return (menuState.mode == BODY_GAIT || menuState.mode == BODY_CAREFUL) ? gaitBodyZ : lastPoseZ;
 }
 
 extern "C" bool dominoSilTiltActive() {
@@ -1215,7 +1352,11 @@ extern "C" float dominoSilRideHeightMm() {
 }
 
 extern "C" bool dominoSilGaitActive() {
-  return menuState.mode == BODY_GAIT;
+  return menuState.mode == BODY_GAIT || menuState.mode == BODY_CAREFUL;
+}
+
+extern "C" bool dominoSilMotionInputArmed() {
+  return !motionInputAwaitingCenter;
 }
 
 extern "C" float dominoSilGaitPhaseRad() {

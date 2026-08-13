@@ -22,6 +22,7 @@ extern "C" float dominoSilPoseZ();
 extern "C" bool dominoSilTiltActive();
 extern "C" float dominoSilRideHeightMm();
 extern "C" bool dominoSilGaitActive();
+extern "C" bool dominoSilMotionInputArmed();
 extern "C" float dominoSilGaitPhaseRad();
 extern "C" float dominoSilGaitForwardCommand();
 extern "C" float dominoSilGaitTurnCommand();
@@ -38,7 +39,7 @@ constexpr uint32_t kFrameIntervalMs = 20;
 // Match the production 20 ms control loop so the rendered CAD receives every
 // commanded servo frame instead of visibly stepping at 20 Hz.
 constexpr uint32_t kTelemetryIntervalMs = 20;
-constexpr uint32_t kScenarioDurationMs = 11000;
+constexpr uint32_t kScenarioDurationMs = 11500;
 constexpr uint32_t kLoopPeriodMs = 12000;
 constexpr int kRideHeightChannelIndex = 2;  // Boxer left-stick vertical / CRSF CH3.
 #ifndef CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
@@ -162,7 +163,7 @@ bool applyScenario(uint32_t scenarioMs, int channelsUs[16]) {
   channelsUs[SC_CH_INDEX] = 1000;
   channelsUs[7] = 1000;
 
-  if (scenarioMs < 500U || scenarioMs >= 8000U) {
+  if (scenarioMs < 500U || scenarioMs >= 9000U) {
     return false;
   }
 
@@ -173,21 +174,38 @@ bool applyScenario(uint32_t scenarioMs, int channelsUs[16]) {
   if (scenarioMs >= 4500U && scenarioMs < 6000U) {
     channelsUs[7] = 2000;
     channelsUs[SC_CH_INDEX] = 2000;  // Gait request must remain blocked by SD/tilt.
-    const float phase = static_cast<float>(scenarioMs - 4500U) * 0.0062831853f / 1000.0f;
-    channelsUs[0] = 1500 + static_cast<int>(430.0f * sinf(phase));
-    channelsUs[1] = 1500 + static_cast<int>(250.0f * cosf(phase * 0.7f));
-    channelsUs[3] = 1500 + static_cast<int>(320.0f * sinf(phase * 0.5f));
+    if (scenarioMs < 4700U) {
+      // Deliberately hold the sticks while switching. The mode-input
+      // interlock must suppress this command until a centred handoff occurs.
+      channelsUs[0] = 1900;
+      channelsUs[1] = 1800;
+      channelsUs[3] = 1750;
+    } else if (scenarioMs >= 4950U) {
+      const float phase = static_cast<float>(scenarioMs - 4950U) * 0.0062831853f / 1000.0f;
+      channelsUs[0] = 1500 + static_cast<int>(430.0f * sinf(phase));
+      channelsUs[1] = 1500 + static_cast<int>(250.0f * cosf(phase * 0.7f));
+      channelsUs[3] = 1500 + static_cast<int>(320.0f * sinf(phase * 0.5f));
+    }
   }
 
-  if (scenarioMs >= 6000U && scenarioMs < 8000U) {
+  if (scenarioMs >= 6000U && scenarioMs < 7500U) {
+    channelsUs[SC_CH_INDEX] = 1500;
+    channelsUs[7] = 1000;
+    if (scenarioMs >= 7200U) {
+      channelsUs[3] = 1600;
+      channelsUs[1] = 1900;
+    }
+  }
+
+  if (scenarioMs >= 7500U && scenarioMs < 9000U) {
     channelsUs[SC_CH_INDEX] = 2000;
     channelsUs[7] = 1000;
-    channelsUs[0] = 1680;  // Right-stick horizontal: gentle turn.
+    channelsUs[3] = 1680;  // Yaw / right-stick horizontal: gentle turn.
     channelsUs[1] = 1900;  // Right-stick vertical: forward travel.
   }
 
-  if (scenarioMs >= 6500U && scenarioMs < 8000U) {
-    const uint32_t heightProgressMs = scenarioMs - 6500U;
+  if (scenarioMs >= 7500U && scenarioMs < 9000U) {
+    const uint32_t heightProgressMs = scenarioMs - 7500U;
     channelsUs[kRideHeightChannelIndex] =
         2000 - static_cast<int>((1000U * heightProgressMs) / 1500U);
   }
@@ -222,6 +240,8 @@ const char* modeName(int mode) {
       return "BALANCE";
     case 4:
       return "GAIT";
+    case 5:
+      return "CAREFUL";
     default:
       return "UNKNOWN";
   }
@@ -236,6 +256,8 @@ std::string makeStateJson(uint32_t elapsedMs, uint32_t scenarioMs) {
   output << ",\"link_alive\":" << (crsfLinkAlive(millis()) ? "true" : "false");
   output << ",\"tilt_active\":" << (dominoSilTiltActive() ? "true" : "false");
   output << ",\"gait_active\":" << (dominoSilGaitActive() ? "true" : "false");
+  output << ",\"motion_input_armed\":"
+         << (dominoSilMotionInputArmed() ? "true" : "false");
   output << ",\"gait_phase_rad\":" << dominoSilGaitPhaseRad();
   output << ",\"gait_command\":["
          << dominoSilGaitForwardCommand() << ','
@@ -339,11 +361,15 @@ Options parseOptions(int argc, char** argv) {
   return options;
 }
 
-bool validateOutputs(bool sawStand, bool sawTilt, bool sawGait,
+bool validateOutputs(bool sawStand, bool sawTilt, bool sawGait, bool sawCareful,
                      bool gaitTiltInterlockViolation,
+                     bool motionInputInterlockViolation,
+                     bool gaitHeightTransitionDropout,
                      bool gaitSupportViolation,
                      bool sawGaitSwing,
                      bool sawGaitSupportOverlap,
+                     bool carefulSupportViolation,
+                     bool sawCarefulSwing,
                      float gaitMinX, float gaitMaxX, float gaitMaxLiftMm,
                      bool sawFailsafeStow,
                      float minRideHeightMm, float maxRideHeightMm,
@@ -370,12 +396,28 @@ bool validateOutputs(bool sawStand, bool sawTilt, bool sawGait,
     std::cerr << "FAIL: gait mode was never reached\n";
     passed = false;
   }
+  if (!sawCareful) {
+    std::cerr << "FAIL: careful walk mode was never reached\n";
+    passed = false;
+  }
   if (gaitTiltInterlockViolation) {
     std::cerr << "FAIL: gait ran while the SD tilt request was active\n";
     passed = false;
   }
+  if (motionInputInterlockViolation) {
+    std::cerr << "FAIL: held sticks actuated the newly selected motion mode before centering\n";
+    passed = false;
+  }
+  if (gaitHeightTransitionDropout) {
+    std::cerr << "FAIL: gait dropped out while ride height changed\n";
+    passed = false;
+  }
   if (gaitSupportViolation || !sawGaitSwing || !sawGaitSupportOverlap) {
     std::cerr << "FAIL: gait did not preserve two-foot swing and four-foot transition support\n";
+    passed = false;
+  }
+  if (carefulSupportViolation || !sawCarefulSwing) {
+    std::cerr << "FAIL: careful walk did not preserve at least three planted feet\n";
     passed = false;
   }
   if ((gaitMaxX - gaitMinX) < 15.0f || gaitMaxLiftMm < 8.0f) {
@@ -440,10 +482,16 @@ int main(int argc, char** argv) {
   bool sawStand = false;
   bool sawTilt = false;
   bool sawGait = false;
+  bool sawCareful = false;
   bool gaitTiltInterlockViolation = false;
+  bool motionInputInterlockViolation = false;
+  bool gaitHeightTransitionStarted = false;
+  bool gaitHeightTransitionDropout = false;
   bool gaitSupportViolation = false;
   bool sawGaitSwing = false;
   bool sawGaitSupportOverlap = false;
+  bool carefulSupportViolation = false;
+  bool sawCarefulSwing = false;
   bool sawFailsafeStow = false;
   float gaitMinX = 10000.0f;
   float gaitMaxX = -10000.0f;
@@ -476,14 +524,29 @@ int main(int argc, char** argv) {
     sawStand = sawStand || mode == 1;
     sawTilt = sawTilt || mode == 2;
     sawGait = sawGait || mode == 4;
+    sawCareful = sawCareful || mode == 5;
     gaitTiltInterlockViolation =
-        gaitTiltInterlockViolation || (mode == 4 && ch_us[7] > 1600);
+        gaitTiltInterlockViolation || ((mode == 4 || mode == 5) && ch_us[7] > 1600);
+    if (!dominoSilMotionInputArmed()) {
+      motionInputInterlockViolation = motionInputInterlockViolation ||
+          fabsf(dominoSilGaitForwardCommand()) > 0.01f ||
+          fabsf(dominoSilGaitTurnCommand()) > 0.01f ||
+          fabsf(dominoSilBodyRollDeg()) > 0.1f ||
+          fabsf(dominoSilBodyPitchDeg()) > 0.1f ||
+          fabsf(dominoSilBodyYawDeg()) > 0.1f;
+    }
+    if (!interactiveControl && scenarioMs >= 7500U && scenarioMs < 9000U) {
+      gaitHeightTransitionStarted = gaitHeightTransitionStarted || mode == 4;
+      if (gaitHeightTransitionStarted) {
+        gaitHeightTransitionDropout = gaitHeightTransitionDropout || mode != 4;
+      }
+    }
     sawFailsafeStow = sawFailsafeStow || (elapsedMs > 10000U && mode == 0);
     const float rideHeightMm = dominoSilRideHeightMm();
     minRideHeightMm = std::min(minRideHeightMm, rideHeightMm);
     maxRideHeightMm = std::max(maxRideHeightMm, rideHeightMm);
 
-    if (mode == 4) {
+    if (mode == 4 && dominoSilMotionInputArmed()) {
       int stanceLegCount = 0;
       for (int leg = 0; leg < 4; ++leg) {
         const float x = dominoSilLegCommandX(leg);
@@ -499,6 +562,18 @@ int main(int argc, char** argv) {
       gaitSupportViolation = gaitSupportViolation || stanceLegCount < 2;
       sawGaitSwing = sawGaitSwing || stanceLegCount == 2;
       sawGaitSupportOverlap = sawGaitSupportOverlap || stanceLegCount == 4;
+    }
+
+    if (mode == 5 && dominoSilMotionInputArmed()) {
+      int stanceLegCount = 0;
+      for (int leg = 0; leg < 4; ++leg) {
+        const float liftMm = dominoSilPoseZ() - dominoSilLegCommandZ(leg);
+        if (liftMm <= 0.75f) {
+          ++stanceLegCount;
+        }
+      }
+      carefulSupportViolation = carefulSupportViolation || stanceLegCount < 3;
+      sawCarefulSwing = sawCarefulSwing || stanceLegCount == 3;
     }
 
     for (size_t index = 0; index < sizeof(kServoChannels); ++index) {
@@ -530,11 +605,15 @@ int main(int argc, char** argv) {
     return 0;
   }
 
-  const bool passed = validateOutputs(sawStand, sawTilt, sawGait,
+  const bool passed = validateOutputs(sawStand, sawTilt, sawGait, sawCareful,
                                       gaitTiltInterlockViolation,
+                                      motionInputInterlockViolation,
+                                      gaitHeightTransitionDropout,
                                       gaitSupportViolation,
                                       sawGaitSwing,
                                       sawGaitSupportOverlap,
+                                      carefulSupportViolation,
+                                      sawCarefulSwing,
                                       gaitMinX, gaitMaxX, gaitMaxLiftMm,
                                       sawFailsafeStow,
                                       minRideHeightMm, maxRideHeightMm,

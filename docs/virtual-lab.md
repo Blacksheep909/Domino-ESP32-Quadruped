@@ -148,6 +148,23 @@ look ready. Controller telemetry and its event history are included in the
 downloadable diagnostic bundle, while rejected packet bursts are counted
 without flooding the event log.
 
+The LIVE toolbar also exposes guarded browser manual control without hiding the
+normal Boxer path. The page can be opened offline to inspect the workflow, but
+the robot must explicitly grant a session-bound, maximum 30-second authority
+lease before the deadman becomes available. Forward, turn, gait mode, and the
+Expert body controls remain bounded; frames transmit at 20 Hz only while HOLD
+TO DRIVE is held and declare a 250 ms robot-side timeout. Pointer/keyboard
+release sends neutral stand immediately. Hiding the tab, leaving LIVE, losing a
+safety prerequisite, disarming, or losing the adapter revokes the browser
+authority. The E-stop remains available inside the control window.
+
+The expected 3D pose is intentionally not driven optimistically from local
+slider values. It continues to follow robot-reported expected telemetry, so the
+display distinguishes what the browser requested from what the robot actually
+accepted and intended to execute. A physical companion adapter still needs to
+enforce authority tokens, armed state, deadman, bounds, timeout, neutralization,
+and power-isolation behaviour on the robot side.
+
 ![LIVE command-chain diagnostics using local relay verification data](images/virtual-lab-live-diagnostics.png)
 
 The screenshot above deliberately injects missing packets, low voltage, an IK

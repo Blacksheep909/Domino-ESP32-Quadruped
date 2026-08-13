@@ -102,6 +102,22 @@ import {
 } from "./live-safety-state.js";
 import { LIVE_SAFETY_HEARTBEAT_INTERVAL_MS } from "./live-safety-protocol.js";
 import {
+  acceptLiveManualAuthorityAcknowledgement,
+  beginLiveManualDeadman,
+  createLiveManualAuthorityCommand,
+  createLiveManualControlFrame,
+  createLiveManualControlState,
+  endLiveManualDeadman,
+  failLiveManualRequest,
+  liveManualCanRequest,
+  markLiveManualPending,
+  revokeLiveManualControl,
+  setLiveManualSupport,
+  tickLiveManualControl,
+  updateLiveManualAxes,
+} from "./live-manual-control-state.js";
+import { LIVE_MANUAL_FRAME_INTERVAL_MS } from "./live-manual-control-protocol.js";
+import {
   createLiveDiagnosticsState,
   liveDiagnosticBundle,
   liveDiagnosticsSnapshot,
@@ -151,6 +167,7 @@ const applicationState = createApplicationState();
 const liveTelemetryState = createLiveTelemetryState();
 const liveConnectionState = createLiveConnectionState();
 const liveSafetyState = createLiveSafetyState();
+const liveManualState = createLiveManualControlState();
 const liveControllerState = createLiveControllerState();
 const liveDiagnosticsState = createLiveDiagnosticsState();
 const liveSessionState = createLiveSessionState();
@@ -181,6 +198,7 @@ let calibrationPendingAction = "";
 let calibrationRequestTimeout = null;
 let liveConnectionRequestTimeout = null;
 let liveSafetyRequestTimeout = null;
+let liveManualRequestTimeout = null;
 let liveDiagnosticFilter = "all";
 const realWorkspace = document.querySelector("#real-workspace");
 const workspaceButtons = {
@@ -189,6 +207,9 @@ const workspaceButtons = {
 };
 
 function applyWorkspace(workspace) {
+  if (workspace !== WORKSPACE_REAL_ROBOT && liveManualState.authorityToken) {
+    releaseLiveManualControl("Leaving LIVE released browser-control authority.");
+  }
   selectWorkspace(applicationState, workspace);
   document.body.dataset.workspace = workspace;
   canvas.dataset.workspace = workspace;
@@ -355,6 +376,56 @@ liveArmButton.addEventListener("keyup", (event) => {
 document.querySelector("#live-safety-disarm").addEventListener("click", () => sendLiveSafetyCommand("disarm"));
 document.querySelector("#live-safety-estop").addEventListener("click", () => sendLiveSafetyCommand("estop"));
 document.querySelector("#live-safety-reset-estop").addEventListener("click", () => sendLiveSafetyCommand("reset-estop"));
+
+const liveManualDialog = document.querySelector("#live-manual-dialog");
+document.querySelector("#live-manual-open").addEventListener("click", () => {
+  renderLiveManualUi();
+  if (!liveManualDialog.open) liveManualDialog.showModal();
+});
+document.querySelector("#live-manual-close").addEventListener("click", () => {
+  if (liveManualState.deadmanActive) stopLiveManualDeadman();
+});
+document.querySelector("#live-manual-consent").addEventListener("change", (event) => {
+  liveManualState.safetyConfirmed = event.target.checked;
+  renderLiveManualUi();
+});
+document.querySelector("#live-manual-request").addEventListener("click", () => sendLiveManualAuthority("request-authority"));
+document.querySelector("#live-manual-release").addEventListener("click", () => releaseLiveManualControl());
+document.querySelectorAll("[data-live-manual-mode]").forEach((button) => {
+  button.addEventListener("click", () => {
+    updateLiveManualAxes(liveManualState, { mode: button.dataset.liveManualMode });
+    renderLiveManualUi();
+  });
+});
+document.querySelectorAll("[data-live-manual-axis]").forEach((input) => {
+  input.addEventListener("input", () => {
+    updateLiveManualAxes(liveManualState, { [input.dataset.liveManualAxis]: Number(input.value) });
+    renderLiveManualUi();
+  });
+});
+const liveManualDeadman = document.querySelector("#live-manual-deadman");
+liveManualDeadman.addEventListener("pointerdown", (event) => {
+  if (!beginLiveManualDeadman(liveManualState, liveManualContext())) return;
+  liveManualDeadman.setPointerCapture?.(event.pointerId);
+  renderLiveManualUi();
+});
+liveManualDeadman.addEventListener("pointerup", () => stopLiveManualDeadman());
+liveManualDeadman.addEventListener("pointercancel", () => stopLiveManualDeadman());
+liveManualDeadman.addEventListener("lostpointercapture", () => stopLiveManualDeadman());
+liveManualDeadman.addEventListener("keydown", (event) => {
+  if ((event.key === " " || event.key === "Enter") && !event.repeat) {
+    event.preventDefault();
+    beginLiveManualDeadman(liveManualState, liveManualContext());
+    renderLiveManualUi();
+  }
+});
+liveManualDeadman.addEventListener("keyup", (event) => {
+  if (event.key === " " || event.key === "Enter") stopLiveManualDeadman();
+});
+document.querySelector("#live-manual-estop").addEventListener("click", () => {
+  releaseLiveManualControl("E-stop requested. Browser control was neutralized.");
+  sendLiveSafetyCommand("estop");
+});
 
 const demoSelection = new URLSearchParams(window.location.search).get("demo");
 const demoMode = ["1", "tilt", "roll", "roll-negative", "gait", "gait-reverse"].includes(demoSelection);
@@ -2179,6 +2250,7 @@ function connectControlBridge() {
     markHeartbeatSocketClosed(bridgeHeartbeat);
     setLiveConnectionBridge(liveConnectionState, false);
     lockLiveSafetyState(liveSafetyState, "The local bridge disconnected. Robot-side outputs must fail safe.");
+    revokeLiveManualControl(liveManualState, "The local bridge disconnected. Browser authority was revoked.");
     bridgeInput = { connected: false, channels: null };
     liveCalibrationState.benchModeAcknowledged = false;
     calibrationPendingRequestId = "";
@@ -2216,6 +2288,7 @@ function connectControlBridge() {
         lockLiveSafetyState(liveSafetyState, "The adapter heartbeat was lost. Robot-side outputs must fail safe.");
         liveCalibrationState.benchModeAcknowledged = false;
         liveGaitState.persistentApplySupported = false;
+        revokeLiveManualControl(liveManualState, "The robot adapter disappeared. Browser authority was revoked.");
         renderLiveConnectionUi();
       }
       if (message.type === "live-connection-ack") {
@@ -2223,6 +2296,9 @@ function connectControlBridge() {
       }
       if (message.type === "live-safety-ack") {
         acceptLiveSafetyAck(message);
+      }
+      if (message.type === "live-manual-authority-ack") {
+        acceptLiveManualAuthorityAck(message);
       }
       if (message.type === "live-safety-heartbeat-ack") {
         const connection = liveConnectionEnvelope(liveConnectionState);
@@ -2275,6 +2351,118 @@ function liveSafetyContext() {
     driveLinkAlive: controller.linkReady,
   };
 }
+
+function liveManualContext() {
+  const snapshot = liveComparisonSnapshot(liveTelemetryState);
+  const controller = liveControllerSnapshot(liveControllerState);
+  return {
+    connectionReady: liveConnectionIsReady(liveConnectionState),
+    robotState: liveSafetyState.robotState,
+    telemetryFresh: snapshot.expectedFresh && snapshot.measuredFresh,
+    controllerLinkReady: controller.linkReady,
+    workspaceActive: applicationState.workspace === WORKSPACE_REAL_ROBOT && document.visibilityState === "visible",
+  };
+}
+
+function renderLiveManualUi() {
+  const selected = liveConnectionState.adapters[liveConnectionState.selectedAdapterId] || null;
+  setLiveManualSupport(liveManualState, selected?.capabilities?.manualControl === true);
+  const context = liveManualContext();
+  const remainingMs = Math.max(0, liveManualState.authorityExpiresAt - Date.now());
+  document.querySelector("#live-manual-phase").textContent = liveManualState.phase.toUpperCase();
+  document.querySelector("#live-manual-lease").textContent = liveManualState.authorityToken
+    ? `${(remainingMs / 1_000).toFixed(1)} S`
+    : "--";
+  document.querySelector("#live-manual-status").textContent = liveManualState.status;
+  document.querySelector("#live-manual-consent").checked = liveManualState.safetyConfirmed;
+  document.querySelector("#live-manual-request").disabled = !liveManualCanRequest(liveManualState, context);
+  document.querySelector("#live-manual-release").disabled = !liveManualState.authorityToken || Boolean(liveManualState.pendingRequestId);
+  document.querySelector("#live-manual-estop").disabled = !context.connectionReady;
+  const deadman = document.querySelector("#live-manual-deadman");
+  deadman.disabled = liveManualState.phase !== "ready" && liveManualState.phase !== "controlling";
+  deadman.dataset.active = String(liveManualState.deadmanActive);
+  deadman.textContent = liveManualState.deadmanActive ? "DRIVING — RELEASE TO NEUTRAL" : "HOLD TO DRIVE";
+  document.querySelectorAll("[data-live-manual-mode]").forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.dataset.liveManualMode === liveManualState.mode));
+    button.disabled = !liveManualState.authorityToken || liveManualState.deadmanActive;
+  });
+  document.querySelectorAll("[data-live-manual-axis]").forEach((input) => {
+    const value = liveManualState.axes[input.dataset.liveManualAxis];
+    input.value = String(value);
+    input.disabled = !liveManualState.authorityToken;
+    document.querySelector(`[data-live-manual-output="${input.dataset.liveManualAxis}"]`).textContent = value.toFixed(2);
+  });
+}
+
+function sendLiveManualAuthority(action) {
+  const connection = liveConnectionEnvelope(liveConnectionState);
+  if (socket?.readyState !== WebSocket.OPEN || !connection || !liveConnectionIsReady(liveConnectionState)) return false;
+  const requestId = crypto.randomUUID();
+  const command = createLiveManualAuthorityCommand(liveManualState, action, connection, requestId);
+  if (!command || (action === "request-authority" && !liveManualCanRequest(liveManualState, liveManualContext()))) return false;
+  markLiveManualPending(liveManualState, command);
+  socket.send(JSON.stringify(command));
+  clearTimeout(liveManualRequestTimeout);
+  liveManualRequestTimeout = setTimeout(() => {
+    if (failLiveManualRequest(liveManualState, requestId, "Manual-control acknowledgement timed out. No authority was assumed.")) {
+      renderLiveManualUi();
+    }
+  }, 2_000);
+  renderLiveManualUi();
+  return true;
+}
+
+function acceptLiveManualAuthorityAck(message) {
+  const connection = liveConnectionEnvelope(liveConnectionState);
+  if (!acceptLiveManualAuthorityAcknowledgement(liveManualState, message, connection)) return false;
+  clearTimeout(liveManualRequestTimeout);
+  liveManualRequestTimeout = null;
+  renderLiveManualUi();
+  return true;
+}
+
+function sendLiveManualFrame(forceNeutral = false) {
+  const connection = liveConnectionEnvelope(liveConnectionState);
+  const frame = createLiveManualControlFrame(liveManualState, connection, Date.now(), forceNeutral);
+  if (!frame || socket?.readyState !== WebSocket.OPEN) return false;
+  socket.send(JSON.stringify(frame));
+  return true;
+}
+
+function stopLiveManualDeadman() {
+  if (!liveManualState.deadmanActive) return false;
+  sendLiveManualFrame(true);
+  endLiveManualDeadman(liveManualState);
+  renderLiveManualUi();
+  return true;
+}
+
+function releaseLiveManualControl(reason = "Manual-control authority released. Robot command is neutral.") {
+  if (!liveManualState.authorityToken) return false;
+  sendLiveManualFrame(true);
+  const sent = sendLiveManualAuthority("release-authority");
+  if (!sent) revokeLiveManualControl(liveManualState, reason);
+  renderLiveManualUi();
+  return true;
+}
+
+function serviceLiveManualControl() {
+  if (liveManualState.authorityToken) {
+    const context = liveManualContext();
+    const invalid = Date.now() >= liveManualState.authorityExpiresAt ||
+      context.robotState !== "armed" || !context.connectionReady || !context.telemetryFresh ||
+      !context.controllerLinkReady || !context.workspaceActive;
+    if (invalid) {
+      sendLiveManualFrame(true);
+      tickLiveManualControl(liveManualState, context);
+    } else if (liveManualState.deadmanActive) {
+      sendLiveManualFrame(false);
+    }
+  }
+  if (liveManualDialog.open) renderLiveManualUi();
+}
+
+setInterval(serviceLiveManualControl, LIVE_MANUAL_FRAME_INTERVAL_MS);
 
 function renderLiveSafetyUi() {
   const context = liveSafetyContext();
@@ -2424,6 +2612,7 @@ function renderLiveConnectionUi() {
   const openButton = document.querySelector("#live-connection-open");
   openButton.textContent = connected ? "MANAGE" : "CONNECT";
   openButton.dataset.state = connected ? "connected" : "offline";
+  renderLiveManualUi();
 }
 
 function sendLiveConnectionRequest(action) {
@@ -2454,6 +2643,7 @@ function acceptLiveConnectionAck(message) {
   liveConnectionRequestTimeout = null;
   if (!liveConnectionIsReady(liveConnectionState)) {
     lockLiveSafetyState(liveSafetyState, "No engineering session is active. Robot-side outputs must fail safe.");
+    revokeLiveManualControl(liveManualState, "No engineering session is active. Browser authority was revoked.");
     resetLiveCommandPermissions("No engineering session is active. Robot profile changes remain blocked.");
   } else {
     setLiveSafetyRobotState(liveSafetyState, liveConnectionState.robotState);
@@ -3419,7 +3609,9 @@ function updateLiveComparisonUi() {
     : robotState === "disarmed"
       ? "The robot reports disarmed. Telemetry is available; motion remains blocked until separately armed."
       : robotState === "armed"
-        ? "The robot reports armed. Motion controls remain unavailable until the safety workflow is implemented."
+        ? liveManualState.authorityToken
+          ? "The robot reports armed. Guarded browser authority is active; motion streams only while its deadman is held."
+          : "The robot reports armed. Guarded browser control still requires an explicit, time-limited authority lease."
         : `The robot reports ${robotState}. Physical commands remain blocked.`;
   const safetyBadge = document.querySelector("#real-safety-status");
   safetyBadge.textContent = robotState.toUpperCase();
@@ -5157,7 +5349,10 @@ function resize() {
 
 window.addEventListener("resize", resize);
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden) return;
+  if (document.hidden) {
+    releaseLiveManualControl("Browser control was released because this tab is no longer visible.");
+    return;
+  }
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       positionGaitLabPanel();

@@ -539,6 +539,34 @@
               <div><span>LAST SEQUENCE</span><strong id="live-diagnostics-sequence">--</strong></div>
             </div>
           </section>
+          <section class="diagnostics-card diagnostics-controller-card">
+            <header><div><span>BOXER / ELRS CONTROLLER</span><strong id="live-controller-summary">NO RECEIVER TELEMETRY</strong></div><span id="live-controller-quality" data-state="offline">OFFLINE</span></header>
+            <div class="controller-overview">
+              <div><span>FRAME AGE</span><strong id="live-controller-frame-age">-- ms</strong></div>
+              <div><span>PACKET RATE</span><strong id="live-controller-rate">-- Hz</strong></div>
+              <div><span>LINK QUALITY</span><strong id="live-controller-lq">-- %</strong></div>
+              <div><span>RSSI 1 / 2</span><strong id="live-controller-rssi">-- / -- dBm</strong></div>
+              <div><span>RECEIVER</span><strong id="live-controller-voltage">-- V</strong></div>
+              <div><span>FAILSAFE</span><strong id="live-controller-failsafe">UNKNOWN</strong></div>
+              <div data-expert-only><span>SNR</span><strong id="live-controller-snr">-- dB</strong></div>
+              <div data-expert-only><span>RF MODE</span><strong id="live-controller-rf-mode">--</strong></div>
+              <div data-expert-only><span>TX POWER</span><strong id="live-controller-tx-power">-- mW</strong></div>
+              <div data-expert-only><span>FRAME LOSS</span><strong id="live-controller-frame-loss">--</strong></div>
+              <div data-expert-only><span>FAILSAFE COUNT</span><strong id="live-controller-failsafe-count">--</strong></div>
+              <div data-expert-only><span>ACTIVE ANTENNA</span><strong id="live-controller-antenna">--</strong></div>
+            </div>
+            <div class="controller-detail-grid">
+              <section>
+                <div class="controller-subheading"><span>CRSF CHANNELS</span><strong>µs AT ROBOT</strong></div>
+                <div id="live-controller-channels" class="controller-channels" aria-label="Robot received CRSF channels"></div>
+              </section>
+              <section data-expert-only>
+                <div class="controller-subheading"><span>LINK EVENTS</span><strong>NEWEST FIRST</strong></div>
+                <div id="live-controller-events" class="controller-events"></div>
+                <p id="live-controller-events-empty" class="diagnostics-empty">No controller transitions recorded.</p>
+              </section>
+            </div>
+          </section>
           <section class="diagnostics-card diagnostics-log-card">
             <header><div><span>EVENT LOG</span><strong>NEWEST FIRST</strong></div><div class="diagnostics-log-actions" role="group" aria-label="Diagnostic log filter"><button type="button" data-diagnostic-filter="all" aria-pressed="true">ALL</button><button type="button" data-diagnostic-filter="warning" aria-pressed="false">WARNINGS</button><button type="button" data-diagnostic-filter="fault" aria-pressed="false">FAULTS</button><button id="live-diagnostics-clear" type="button">CLEAR</button></div></header>
             <div id="live-diagnostics-events" class="diagnostics-events" aria-live="polite"></div>

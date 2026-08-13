@@ -54,6 +54,7 @@ export function createLiveDiagnosticsState(maximumEvents = LIVE_DIAGNOSTIC_MAX_E
     nextEventId: 1,
     acceptedPackets: 0,
     rejectedPackets: 0,
+    lastRejectedEventAt: 0,
     droppedPackets: 0,
     staleTransitions: 0,
     lastSequence: -1,
@@ -71,7 +72,10 @@ export function observeLiveDiagnosticPacket(state, packet, accepted, receivedAt 
   if (!state || !packet || packet.type !== "live-telemetry") return false;
   if (!accepted) {
     state.rejectedPackets += 1;
-    addEvent(state, "warning", "Rejected a malformed or out-of-order telemetry packet.", receivedAt, "transport");
+    if (!state.lastRejectedEventAt || receivedAt - state.lastRejectedEventAt >= 1_000) {
+      addEvent(state, "warning", "Rejected one or more malformed, unbound, or out-of-order telemetry packets.", receivedAt, "transport");
+      state.lastRejectedEventAt = receivedAt;
+    }
     return false;
   }
   const sequence = Number(packet.sequence);

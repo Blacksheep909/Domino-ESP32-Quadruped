@@ -61,6 +61,13 @@ unsolicited acknowledgements are rejected. Connecting never arms or moves the
 robot, and losing either the local bridge or adapter heartbeat immediately
 relocks hardware commands.
 
+The repository now includes a runnable physical companion process for Wi-Fi
+TCP, USB serial, and Bluetooth SPP serial links. It reconnects the browser relay
+and robot independently, refuses a read-only session until the robot has sent a
+fresh state, and waits for physical acknowledgements instead of treating a
+successful write as a successful action. Setup and the robot-side wire contract
+are documented in [LIVE companion protocol](live-companion-protocol.md).
+
 The LIVE safety dock now reflects the robot-reported state and implements an
 independent safety command protocol. Arming requires a continuous 1.5-second
 hold while the engineering session, expected/measured telemetry, and robot-side

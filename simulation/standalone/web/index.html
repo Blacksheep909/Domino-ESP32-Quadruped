@@ -18,13 +18,13 @@
         <button id="workspace-real-robot" type="button" role="tab" aria-selected="false" aria-controls="real-workspace">LIVE</button>
       </div>
       <div class="status">
-        <button id="firmware-deploy-button" class="firmware-deploy-button real-robot-only" type="button" title="Review, build, and upload Domino firmware">UPLOAD</button>
+        <button id="firmware-deploy-button" class="firmware-deploy-button real-robot-only" type="button" title="Review, build, and upload firmware to Domino">UPLOAD FW</button>
         <span id="firmware-status" class="simulation-only" data-state="offline">FIRMWARE</span>
         <span id="link-status" class="simulation-only" data-state="offline">BOXER</span>
         <span id="physics-status" class="simulation-only" data-state="offline">PHYSICS</span>
         <span id="real-drive-status" class="real-robot-only" data-state="offline">DRIVE LINK</span>
         <span id="real-engineering-status" class="real-robot-only pc-link-status" data-state="offline" title="PC-to-robot telemetry and configuration link">PC LINK</span>
-        <button id="live-connection-open" class="live-connection-open real-robot-only" type="button" aria-haspopup="dialog">CONNECT</button>
+        <button id="live-connection-open" class="live-connection-open real-robot-only" type="button" aria-haspopup="dialog" title="Find and pair this PC with Domino">PAIR ROBOT</button>
         <span id="real-safety-status" class="real-robot-only" data-state="safe">DISARMED</span>
         <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false" title="Switch to dark theme">
           <span id="theme-icon" aria-hidden="true">&#9788;</span>
@@ -655,7 +655,7 @@
         <header>
           <div>
             <span>LIVE / PHYSICAL LINK</span>
-            <h1 id="live-connection-title">Connect Domino</h1>
+            <h1 id="live-connection-title">Pair Domino</h1>
             <p>Choose a companion adapter, verify the robot identity, then establish a read-only PC link.</p>
           </div>
           <div class="live-connection-header-actions">

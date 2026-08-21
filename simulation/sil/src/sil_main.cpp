@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -12,6 +13,7 @@
 
 #include "crsf.h"
 #include "Adafruit_PWMServoDriver.h"
+#include "gait_profile.h"
 #include "leg_controller.h"
 #include "sim_pwm.h"
 #include "servo_calibration.h"
@@ -96,6 +98,29 @@ bool validateCalibrationMath() {
   }
   return transformOk && remapAccepted && runtimeRouted &&
          duplicateRejected && duplicateLogicalRejected;
+}
+
+bool validateGaitProfiles() {
+  const GaitProfile original = gaitProfile();
+  GaitProfile candidate = defaultGaitProfile();
+  strcpy(candidate.name, "SIL profile");
+  strcpy(candidate.settings.preset, "custom");
+  candidate.settings.cadenceHz = 1.25f;
+  candidate.settings.strideMm = 72.0f;
+  candidate.settings.stanceWidthMm = 44.0f;
+  const bool accepted = validateGaitProfile(candidate) && setGaitProfile(candidate) &&
+      fabsf(gaitProfile().settings.cadenceHz - 1.25f) < 0.001f &&
+      fabsf(gaitProfile().settings.stanceWidthMm - 44.0f) < 0.001f;
+  candidate.settings.strideMm = 121.0f;
+  const bool outOfBoundsRejected = !validateGaitProfile(candidate) && !setGaitProfile(candidate);
+  candidate = defaultGaitProfile();
+  candidate.settings.cadenceHz = NAN;
+  const bool nonFiniteRejected = !validateGaitProfile(candidate);
+  const bool restored = setGaitProfile(original);
+  if (!accepted || !outOfBoundsRejected || !nonFiniteRejected || !restored) {
+    std::cerr << "FAIL: gait profile bounds or runtime activation failed\n";
+  }
+  return accepted && outOfBoundsRejected && nonFiniteRejected && restored;
 }
 
 struct Options {
@@ -520,6 +545,7 @@ int main(int argc, char** argv) {
                                     ? createRealtimePacer()
                                     : RealtimePacer{NULL, LARGE_INTEGER(), 0};
   const bool calibrationMathPassed = validateCalibrationMath();
+  const bool gaitProfilesPassed = validateGaitProfiles();
   simSetTimeUs(0);
   simResetServoOutputs();
   setup();
@@ -657,7 +683,7 @@ int main(int argc, char** argv) {
     return 0;
   }
 
-  const bool passed = calibrationMathPassed &&
+  const bool passed = calibrationMathPassed && gaitProfilesPassed &&
       validateOutputs(sawStand, sawTilt, sawGait, sawCareful,
                                       gaitTiltInterlockViolation,
                                       motionInputInterlockViolation,

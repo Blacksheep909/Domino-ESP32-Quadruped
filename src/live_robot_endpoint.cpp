@@ -44,6 +44,7 @@
 #endif
 
 #include "crsf.h"
+#include "gait_profile.h"
 #include "imu.h"
 #include "leg_controller.h"
 
@@ -57,6 +58,8 @@ constexpr float kCalibrationMaxSpeedDegPerSec = 5.0f;
 constexpr float kCalibrationJogLimitDeg = 10.0f;
 constexpr uint32_t kCalibrationMagic = 0x4443414c;  // DCAL
 constexpr char kCalibrationNamespace[] = "domino-cal";
+constexpr uint32_t kGaitMagic = 0x44474149;  // DGAI
+constexpr char kGaitNamespace[] = "domino-gait";
 constexpr uint32_t kTransportOwnerIdleMs = 2000;
 constexpr uint32_t kWirelessAuthenticationMs = 2000;
 
@@ -115,6 +118,15 @@ struct StoredCalibrationProfile {
   uint32_t checksum;
 };
 
+struct StoredGaitProfile {
+  uint32_t magic;
+  GaitProfile profile;
+  uint32_t checksum;
+};
+
+uint8_t activeGaitSlot = 0;
+bool gaitRollbackAvailable = false;
+
 uint32_t checksumBytes(const uint8_t *bytes, size_t length) {
   uint32_t hash = 2166136261u;
   for (size_t index = 0; index < length; ++index) {
@@ -165,6 +177,149 @@ bool persistCalibrationProfile(const ServoCalibrationProfile &profile) {
   if (success) preferences.remove("candidate");
   preferences.end();
   return success && setServoCalibrationProfile(profile);
+}
+
+StoredGaitProfile storedGaitFor(const GaitProfile &profile) {
+  StoredGaitProfile stored{};
+  stored.magic = kGaitMagic;
+  stored.profile = profile;
+  stored.checksum = checksumBytes(
+      reinterpret_cast<const uint8_t *>(&stored.profile), sizeof(stored.profile));
+  return stored;
+}
+
+bool storedGaitValid(const StoredGaitProfile &stored) {
+  return stored.magic == kGaitMagic &&
+      stored.checksum == checksumBytes(
+          reinterpret_cast<const uint8_t *>(&stored.profile), sizeof(stored.profile)) &&
+      validateGaitProfile(stored.profile);
+}
+
+bool readGaitSlot(Preferences &preferences, uint8_t slot, StoredGaitProfile *stored) {
+  const char *key = slot == 0 ? "slot0" : "slot1";
+  return stored && preferences.getBytesLength(key) == sizeof(*stored) &&
+      preferences.getBytes(key, stored, sizeof(*stored)) == sizeof(*stored) &&
+      storedGaitValid(*stored);
+}
+
+bool loadGaitProfile() {
+  Preferences preferences;
+  if (!preferences.begin(kGaitNamespace, true)) return false;
+  const uint8_t preferred = preferences.getUChar("active", 0) > 0 ? 1 : 0;
+  StoredGaitProfile selected{};
+  StoredGaitProfile alternate{};
+  const bool selectedValid = readGaitSlot(preferences, preferred, &selected);
+  const bool alternateValid = readGaitSlot(preferences, 1 - preferred, &alternate);
+  preferences.end();
+  if (selectedValid && setGaitProfile(selected.profile)) {
+    activeGaitSlot = preferred;
+    gaitRollbackAvailable = alternateValid;
+    return true;
+  }
+  if (alternateValid && setGaitProfile(alternate.profile)) {
+    activeGaitSlot = 1 - preferred;
+    gaitRollbackAvailable = false;
+    return true;
+  }
+  return false;
+}
+
+bool persistGaitProfile(const GaitProfile &profile) {
+  if (!validateGaitProfile(profile)) return false;
+  Preferences preferences;
+  if (!preferences.begin(kGaitNamespace, false)) return false;
+  // Seed the first slot with the currently running safe/default profile so
+  // the very first browser apply is also recoverable.
+  StoredGaitProfile current{};
+  if (!readGaitSlot(preferences, activeGaitSlot, &current)) {
+    current = storedGaitFor(gaitProfile());
+    const char *currentKey = activeGaitSlot == 0 ? "slot0" : "slot1";
+    if (preferences.putBytes(currentKey, &current, sizeof(current)) != sizeof(current)) {
+      preferences.end();
+      return false;
+    }
+  }
+  const uint8_t candidateSlot = 1 - activeGaitSlot;
+  const char *candidateKey = candidateSlot == 0 ? "slot0" : "slot1";
+  const StoredGaitProfile candidate = storedGaitFor(profile);
+  bool success = preferences.putBytes(candidateKey, &candidate, sizeof(candidate)) == sizeof(candidate);
+  StoredGaitProfile verified{};
+  success = success && readGaitSlot(preferences, candidateSlot, &verified);
+  success = success && preferences.putUChar("active", candidateSlot) == 1;
+  preferences.end();
+  if (!success || !setGaitProfile(verified.profile)) return false;
+  activeGaitSlot = candidateSlot;
+  gaitRollbackAvailable = true;
+  return true;
+}
+
+bool revertGaitProfile() {
+  if (!gaitRollbackAvailable) return false;
+  Preferences preferences;
+  if (!preferences.begin(kGaitNamespace, false)) return false;
+  const uint8_t previousSlot = 1 - activeGaitSlot;
+  StoredGaitProfile previous{};
+  const bool success = readGaitSlot(preferences, previousSlot, &previous) &&
+      preferences.putUChar("active", previousSlot) == 1;
+  preferences.end();
+  if (!success || !setGaitProfile(previous.profile)) return false;
+  activeGaitSlot = previousSlot;
+  return true;
+}
+
+bool copyBoundedString(JsonVariantConst source, char *destination, size_t capacity) {
+  const char *value = source.as<const char *>();
+  if (!value || !destination || capacity == 0 || strlen(value) >= capacity) return false;
+  strcpy(destination, value);
+  return true;
+}
+
+bool parseGaitProfile(JsonObjectConst source, GaitProfile *profile) {
+  if (!profile || source.isNull() ||
+      (source["schemaVersion"] | 0) != DOMINO_GAIT_SCHEMA_VERSION ||
+      strcmp(source["robot"] | "", "domino-esp32-quadruped")) return false;
+  GaitProfile candidate{};
+  candidate.schemaVersion = DOMINO_GAIT_SCHEMA_VERSION;
+  candidate.updatedAt = source["updatedAt"] | static_cast<uint64_t>(0);
+  JsonObjectConst settings = source["settings"].as<JsonObjectConst>();
+  if (!copyBoundedString(source["name"], candidate.name, sizeof(candidate.name)) ||
+      !copyBoundedString(settings["preset"], candidate.settings.preset,
+                         sizeof(candidate.settings.preset))) return false;
+  candidate.settings.enabled = settings["enabled"] | false;
+  candidate.settings.cadenceHz = settings["cadenceHz"] | NAN;
+  candidate.settings.strideMm = settings["strideMm"] | NAN;
+  candidate.settings.liftMm = settings["liftMm"] | NAN;
+  candidate.settings.dutyFactor = settings["dutyFactor"] | NAN;
+  candidate.settings.bodyHeightMm = settings["bodyHeightMm"] | NAN;
+  candidate.settings.stanceWidthMm = settings["stanceWidthMm"] | NAN;
+  candidate.settings.turnGain = settings["turnGain"] | NAN;
+  candidate.settings.responseMs = settings["responseMs"] | NAN;
+  candidate.settings.swingShape = settings["swingShape"] | NAN;
+  candidate.settings.diagonalPhase = settings["diagonalPhase"] | NAN;
+  if (!validateGaitProfile(candidate)) return false;
+  *profile = candidate;
+  return true;
+}
+
+void addGaitProfile(JsonObject target, const GaitProfile &profile) {
+  target["schemaVersion"] = profile.schemaVersion;
+  target["robot"] = "domino-esp32-quadruped";
+  target["name"] = profile.name;
+  target["updatedAt"] = profile.updatedAt;
+  target["source"] = "robot";
+  JsonObject settings = target["settings"].to<JsonObject>();
+  settings["enabled"] = profile.settings.enabled;
+  settings["preset"] = profile.settings.preset;
+  settings["cadenceHz"] = profile.settings.cadenceHz;
+  settings["strideMm"] = profile.settings.strideMm;
+  settings["liftMm"] = profile.settings.liftMm;
+  settings["dutyFactor"] = profile.settings.dutyFactor;
+  settings["bodyHeightMm"] = profile.settings.bodyHeightMm;
+  settings["stanceWidthMm"] = profile.settings.stanceWidthMm;
+  settings["turnGain"] = profile.settings.turnGain;
+  settings["responseMs"] = profile.settings.responseMs;
+  settings["swingShape"] = profile.settings.swingShape;
+  settings["diagonalPhase"] = profile.settings.diagonalPhase;
 }
 
 bool parseCalibrationProfile(JsonObjectConst source, ServoCalibrationProfile *profile) {
@@ -242,8 +397,9 @@ void writeDocument(JsonDocument &document) {
 void addCapabilities(JsonObject capabilities) {
   capabilities["telemetry"] = true;
   capabilities["calibration"] = true;
-  capabilities["gaitProfiles"] = false;
-  capabilities["persistentProfiles"] = false;
+  capabilities["gaitProfiles"] = true;
+  capabilities["persistentProfiles"] = true;
+  capabilities["persistentGaitProfiles"] = true;
   capabilities["manualControl"] = false;
 }
 
@@ -278,10 +434,11 @@ void sendHello() {
   document["type"] = "robot-hello";
   document["robotId"] = "domino-esp32-quadruped";
   document["robotName"] = "Domino";
-  document["firmwareVersion"] = "0.3.0";
+  document["firmwareVersion"] = "0.4.0";
   document["robotState"] = stateName();
   document["wirelessAuth"] = "psk-v1";
   addCapabilities(document["capabilities"].to<JsonObject>());
+  addGaitProfile(document["gaitProfile"].to<JsonObject>(), gaitProfile());
   writeDocument(document);
 }
 
@@ -299,6 +456,7 @@ void sendTelemetry(uint32_t now) {
   document["robotState"] = stateName();
   document["robotTimeMs"] = now;
   addCapabilities(document["capabilities"].to<JsonObject>());
+  addGaitProfile(document["gaitProfile"].to<JsonObject>(), gaitProfile());
 
   JsonObject expected = document["expected"].to<JsonObject>();
   expected["timestampMs"] = now;
@@ -381,6 +539,23 @@ void acknowledgeCalibration(const char *action, const char *requestId, bool acce
   document["persisted"] = persisted;
   if (reason) document["reason"] = reason;
   if (includeProfile) addCalibrationProfile(document["profile"].to<JsonObject>(), servoCalibrationProfile());
+  writeDocument(document);
+}
+
+void acknowledgeGait(const char *action, const char *requestId, bool accepted,
+                     const char *reason = nullptr, bool includeProfile = true) {
+  JsonDocument document;
+  document["protocol"] = kProtocol;
+  document["type"] = "robot-ack";
+  document["kind"] = "gait";
+  document["action"] = action;
+  document["requestId"] = requestId;
+  document["accepted"] = accepted;
+  document["robotState"] = stateName();
+  document["persisted"] = accepted;
+  document["rollbackAvailable"] = gaitRollbackAvailable;
+  if (reason) document["reason"] = reason;
+  if (includeProfile) addGaitProfile(document["profile"].to<JsonObject>(), gaitProfile());
   writeDocument(document);
 }
 
@@ -518,6 +693,45 @@ void handleCalibration(JsonObjectConst command, JsonObjectConst payload,
   }
 }
 
+void handleGait(JsonObjectConst command, JsonObjectConst payload) {
+  const char *action = command["action"] | "";
+  const char *requestId = command["requestId"] | "";
+  if (!strcmp(action, "request-profile")) {
+    acknowledgeGait(action, requestId, true);
+    return;
+  }
+  if (state != LiveRobotState::Disarmed || benchMode || servoOutputsEnabled()) {
+    acknowledgeGait(action, requestId, false,
+                    "Gait persistence requires disarmed state with every servo output disabled.");
+    return;
+  }
+  if (!strcmp(action, "apply-profile")) {
+    if (payload["safety"]["requiresDisarmed"] != true ||
+        payload["safety"]["twoStageApply"] != true) {
+      acknowledgeGait(action, requestId, false, "Required two-stage safety acknowledgement is missing.");
+      return;
+    }
+    GaitProfile profile{};
+    if (!parseGaitProfile(payload["profile"].as<JsonObjectConst>(), &profile)) {
+      acknowledgeGait(action, requestId, false,
+                      "Profile schema or one of the ten bounded gait settings is invalid.");
+    } else if (!persistGaitProfile(profile)) {
+      acknowledgeGait(action, requestId, false,
+                      "NVS verification failed; the previous gait remains active.");
+    } else {
+      acknowledgeGait(action, requestId, true);
+    }
+  } else if (!strcmp(action, "revert-profile")) {
+    if (!revertGaitProfile()) {
+      acknowledgeGait(action, requestId, false, "No verified previous gait profile is available.");
+    } else {
+      acknowledgeGait(action, requestId, true);
+    }
+  } else {
+    acknowledgeGait(action, requestId, false, "Unsupported gait action.");
+  }
+}
+
 void handleCommand(const String &line, LiveTransport source,
                    Adafruit_PWMServoDriver &driver, uint32_t now) {
   JsonDocument document;
@@ -550,6 +764,7 @@ void handleCommand(const String &line, LiveTransport source,
   if (!strcmp(kind, "safety")) handleSafety(command, payload, driver, now);
   else if (!strcmp(kind, "safety-heartbeat")) handleHeartbeat(command, now);
   else if (!strcmp(kind, "calibration")) handleCalibration(command, payload, driver, now);
+  else if (!strcmp(kind, "gait")) handleGait(command, payload);
   else if (command["requestId"].is<const char*>())
     acknowledge(kind, command["action"] | "", command["requestId"], false, "Capability is not implemented by this firmware.");
 }
@@ -656,6 +871,7 @@ void updateCalibrationJog(Adafruit_PWMServoDriver &driver, uint32_t now) {
 void liveRobotEndpointBegin(Adafruit_PWMServoDriver &driver) {
   setServoOutputsEnabled(driver, false);
   if (!loadCalibrationProfile()) setServoCalibrationProfile(defaultServoCalibrationProfile());
+  if (!loadGaitProfile()) setGaitProfile(defaultGaitProfile());
   usbInputLine.reserve(1024);
 #if DOMINO_LIVE_WIFI_ENABLED
   wifiInputLine.reserve(1024);

@@ -29,17 +29,17 @@ or demo input therefore cannot make the Boxer indicator appear connected.
 
 ### Live
 
-![Domino Real Robot engineering workspace](images/virtual-lab-real-robot-workspace.png)
+![Domino LIVE digital-twin workspace](images/virtual-lab-real-robot-workspace.png)
 
 The Live real-robot workspace is deliberately separate from Simulation. It opens
 disarmed and cannot own simulation controls, firmware state, or physics state.
 It keeps the same CAD viewport as a digital-twin surface: commanded geometry
 will be shown as the expected pose, physical joint/IMU telemetry as the measured
 pose, and the difference as joint, body-pose, timing, and graph errors. Until a
-physical engineering link exists, measured values remain unavailable rather
+physical PC link exists, measured values remain unavailable rather
 than borrowing simulated data.
 
-The current comparison shell includes independent drive and engineering link
+The current comparison shell includes independent DRIVE LINK and PC LINK
 health, expected/measured stream state, body-pose deltas, all 12 joint errors,
 power measurements, and a synchronized comparison scope. The physical telemetry
 contract now accepts independently timestamped expected and measured poses,
@@ -48,7 +48,9 @@ stale packets. Fresh measured telemetry drives a separate translucent CAD model
 over the expected pose; the overlay disappears if the stream is more than one
 second old. A transport-neutral connection manager now discovers companion
 adapters, shows robot identity, firmware, signal, endpoint, and capabilities,
-then negotiates an explicit read-only engineering session.
+then negotiates an explicit read-only PC link.
+
+![Current Pair Domino manager](images/virtual-lab-live-pairing.png)
 
 ![LIVE physical connection manager using a synthetic local adapter](images/virtual-lab-live-connection-manager.png)
 
@@ -68,7 +70,7 @@ are documented in [LIVE companion protocol](live-companion-protocol.md).
 
 The LIVE safety dock now reflects the robot-reported state and implements an
 independent safety command protocol. Arming requires a continuous 1.5-second
-hold while the engineering session, expected/measured telemetry, and robot-side
+hold while the PC link, expected/measured telemetry, and robot-side
 Boxer/ELRS drive link all remain fresh. Arm, disarm, E-stop, and E-stop reset do
 not update optimistically: the UI waits for a session-bound robot
 acknowledgement and preserves the reported state on rejection or timeout.
@@ -91,14 +93,21 @@ values. Stopped sessions export analysis-ready CSV containing timestamps, time
 alignment, body pose, power, and all 12 driven-joint errors. The screenshot
 above uses local relay verification data, not a connected physical robot.
 
-The Live navigation now has six working views. Compare keeps the digital twin,
+The LIVE navigation has six working views. Compare keeps the digital twin,
 pose deltas, power readings, and compact scope together. Data provides a larger
-signal graph, recorder controls, live engineering metrics, and a newest-first
+signal graph, recorder controls, live robot metrics, and a newest-first
 table of synchronized samples. Sessions keeps completed recordings for the
 current app run, summarizes duration, sample count, peak joint error, and average
 power, and gives every session independent CSV export and delete actions.
 Recording state is shared across all three views, so moving between them cannot
 interrupt or split a capture.
+
+![Current LIVE robot-data workspace](images/virtual-lab-live-data.png)
+
+The current offline capture above shows the complete Data layout without
+inventing telemetry. Once both expected and measured streams are fresh, the
+same view fills the graph, metrics, and Expert sample table from synchronized
+records.
 
 Calibration is a five-step workflow covering bench safety, selection of all 12
 wired joints, neutral offset and direction, conservative mechanical limits, and
@@ -149,7 +158,7 @@ remains available for explicit rollback. Active robot settings are included in
 LIVE telemetry so the comparison view reflects what the controller is actually
 running.
 
-Diagnostics traces eight stages from the engineering packet through expected and
+Diagnostics traces eight stages from the PC command packet through expected and
 measured poses, ESP32 acknowledgement, gait target, IK, limit checking, and all
 12 servo outputs. It reports packet rate, latency, missing/rejected/stale packet
 counters, ESP32 loop rate, uptime, robot state, and the last sequence number.
@@ -204,6 +213,12 @@ does not represent a connected physical robot.
 Simple mode will present the normal operating workflow. Expert mode will expose
 the detailed signals and settings needed for mechanism, gait, power, and
 control optimization. Safety limits remain active in both modes.
+
+![Current LIVE recorded-sessions workspace](images/virtual-lab-live-sessions.png)
+
+Sessions is intentionally quiet before a recording exists. Completed captures
+remain available for the current application run and can be inspected or
+exported without reconnecting the robot.
 
 ## Current architecture
 

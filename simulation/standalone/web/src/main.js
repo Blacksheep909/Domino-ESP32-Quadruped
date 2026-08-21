@@ -67,6 +67,7 @@ import {
   liveControllerDiagnosticExport,
   liveControllerSnapshot,
 } from "./live-controller-state.js";
+import { identifyInputDevice, normalizedGamepadControls } from "./gamepad-profile.js";
 import {
   acceptLiveAdapterAnnouncement,
   acceptLiveConnectionAcknowledgement,
@@ -2705,13 +2706,13 @@ function updateSimulationLinkHealth() {
   const boxerStateOutput = document.querySelector("#sim-boxer-state");
   boxerStateOutput.textContent = boxerConnected ? "CONNECTED" : "OFFLINE";
   boxerStateOutput.dataset.state = boxerConnected ? "connected" : "disconnected";
-  boxerStateOutput.title = boxerHeartbeat.name || "No RadioMaster Boxer detected";
+  boxerStateOutput.title = boxerHeartbeat.name || "No CRSF transmitter detected";
   document.querySelector("#sim-boxer-age").textContent = formatPacketAge(boxerAge);
   const boxerBadge = document.querySelector("#link-status");
   boxerBadge.dataset.state = boxerConnected ? "online" : "offline";
   boxerBadge.title = boxerConnected
     ? `${boxerHeartbeat.name} / packet ${formatPacketAge(boxerAge)} old`
-    : "RadioMaster Boxer not connected";
+    : "CRSF transmitter not connected";
 
   const crsfConnected = firmwareState?.link_alive === true;
   const crsfStateOutput = document.querySelector("#sim-crsf-state");
@@ -3750,8 +3751,8 @@ function updateLiveComparisonUi() {
   const driveBadge = document.querySelector("#real-drive-status");
   driveBadge.dataset.state = driveConnected ? "online" : "offline";
   driveBadge.title = driveConnected
-    ? `Robot reports ${controllerSnapshot.telemetry.packetRateHz.toFixed(0)} Hz Boxer / ELRS frames, ${controllerSnapshot.telemetry.linkQualityPercent.toFixed(0)}% link quality`
-    : "Robot has not reported a fresh, failsafe-clear Boxer / ELRS control frame";
+    ? `Robot reports ${controllerSnapshot.telemetry.packetRateHz.toFixed(0)} Hz CRSF / ELRS frames from ${controllerSnapshot.telemetry.transmitterName}, ${controllerSnapshot.telemetry.linkQualityPercent.toFixed(0)}% link quality`
+    : "Robot has not reported a fresh, failsafe-clear CRSF / ELRS control frame";
 
   const robotState = sessionConnected ? liveSafetyState.robotState : "disconnected";
   document.querySelector("#live-robot-safety-state").textContent = robotState.toUpperCase();
@@ -4743,7 +4744,7 @@ function updateInput() {
     document.querySelector("#gamepad-name").textContent = `USB / ${bridgeInput.name}`;
     boxerHeartbeat = {
       connected: true,
-      name: bridgeInput.name || "RadioMaster Boxer",
+      name: bridgeInput.name || "CRSF transmitter",
       updatedAt: Number(bridgeInput.updatedAt) || Date.now(),
     };
     rollInput = deadzone((channels[0] - 1500) / 500);
@@ -4757,35 +4758,36 @@ function updateInput() {
     applyPhysicalModeChannels();
   } else if (gamepad) {
     const axes = [...gamepad.axes];
-    const isEdgeTxRadio =
-      axes.length >= 8 && /radiomaster|boxer|edgetx|open.?tx/i.test(gamepad.id);
-    boxerHeartbeat = isEdgeTxRadio
+    const controls = normalizedGamepadControls(gamepad);
+    const profile = identifyInputDevice(gamepad);
+    const isCrsfRadio = profile.family === "crsf-radio";
+    boxerHeartbeat = isCrsfRadio
       ? { connected: true, name: gamepad.id, updatedAt: Date.now() }
       : { connected: false, name: "", updatedAt: 0 };
     document.querySelector("#gamepad-name").textContent =
-      `${isEdgeTxRadio ? "BROWSER HID" : "GAMEPAD"} / ${gamepad.id}`;
+      `${profile.label} / ${gamepad.id}`;
     clientInputSnapshot = {
-      source: isEdgeTxRadio ? "browser_hid" : "gamepad",
+      source: isCrsfRadio ? "browser_hid" : `gamepad_${profile.family}`,
       name: gamepad.id,
       axes: axes.slice(0, 16),
     };
 
-    if (isEdgeTxRadio) {
+    if (isCrsfRadio) {
       directRadioChannels = true;
       for (let index = 0; index < 8; index += 1) {
-        channels[index] = axisToChannel(axes[index]);
+        channels[index] = axisToChannel(controls.radioAxes[index]);
       }
       rollInput = deadzone((channels[0] - 1500) / 500);
       forwardInput = deadzone((channels[1] - 1500) / 500);
       turnInput = deadzone((channels[3] - 1500) / 500);
       applyPhysicalModeChannels();
     } else {
-      rollInput = deadzone(axes[0] || 0);
-      forwardInput = -deadzone(axes[1] || 0);
-      turnInput = deadzone(axes[2] ?? axes[0] ?? 0);
-      pressedOnce(gamepad, 0, () => requestStand(!standRequested));
-      pressedOnce(gamepad, 1, () => requestTilt(!tiltRequested));
-      pressedOnce(gamepad, 3, resetRobot);
+      rollInput = deadzone(controls.roll);
+      forwardInput = deadzone(controls.forward);
+      turnInput = deadzone(controls.turn);
+      pressedOnce(gamepad, controls.buttons.stand, () => requestStand(!standRequested));
+      pressedOnce(gamepad, controls.buttons.tilt, () => requestTilt(!tiltRequested));
+      pressedOnce(gamepad, controls.buttons.reset, resetRobot);
     }
   } else {
     boxerHeartbeat = { connected: false, name: "", updatedAt: 0 };

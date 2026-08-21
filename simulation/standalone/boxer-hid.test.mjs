@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { decodeBoxerReport, rawAxisToMicroseconds } from "./boxer-hid.mjs";
+import { decodeBoxerReport, isCrsfTransmitterDevice, rawAxisToMicroseconds } from "./boxer-hid.mjs";
 
 test("decodes the live EdgeTX Boxer report layout", () => {
   const report = Buffer.from("0000000004000455020004000000040000000021", "hex");
@@ -18,4 +18,12 @@ test("maps the EdgeTX axis range onto CRSF-style microseconds", () => {
   assert.equal(rawAxisToMicroseconds(0), 1000);
   assert.equal(rawAxisToMicroseconds(1024), 1500);
   assert.equal(rawAxisToMicroseconds(2048), 2000);
+});
+
+test("detects supported RadioMaster, EdgeTX, OpenTX, and Jumper joystick devices", () => {
+  const joystick = { usagePage: 1, usage: 4 };
+  assert.equal(isCrsfTransmitterDevice({ ...joystick, product: "RadioMaster TX16S" }), true);
+  assert.equal(isCrsfTransmitterDevice({ ...joystick, product: "EdgeTX Joystick" }), true);
+  assert.equal(isCrsfTransmitterDevice({ ...joystick, manufacturer: "Jumper", product: "T-Pro" }), true);
+  assert.equal(isCrsfTransmitterDevice({ ...joystick, product: "Xbox Wireless Controller" }), false);
 });

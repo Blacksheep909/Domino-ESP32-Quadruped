@@ -29,7 +29,7 @@ function controllerReady(controller, now) {
   const sanitized = sanitizeLiveControllerTelemetry(controller);
   const frameAgeMs = sanitized ? now - sanitized.frameTimestampMs : -1;
   return Boolean(
-    sanitized?.source === "boxer-elrs" &&
+    ["crsf-radio", "boxer-elrs"].includes(sanitized?.source) &&
     sanitized.failsafe === false &&
     frameAgeMs >= 0 &&
     frameAgeMs <= 500 &&
@@ -248,7 +248,7 @@ export class LiveCompanionCore {
       let reason = "";
       if (message.action === "arm" && this.robotState !== "disarmed") reason = "Robot must report disarmed before arming.";
       if (message.action === "arm" && !this.telemetryFresh(now)) reason = "Fresh physical telemetry is required before arming.";
-      if (message.action === "arm" && !this.driveLinkReady(now)) reason = "A fresh failsafe-clear Boxer/ELRS link is required before arming.";
+      if (message.action === "arm" && !this.driveLinkReady(now)) reason = "A fresh failsafe-clear CRSF/ELRS link is required before arming.";
       if (message.action === "reset-estop" && this.robotState !== "estopped") reason = "Robot is not in the E-stop state.";
       if (reason) {
         relay.push(this.safetyAck(message, false, reason));
@@ -279,7 +279,7 @@ export class LiveCompanionCore {
       if (message.action === "request-authority") {
         const accepted = this.robotState === "armed" && this.telemetryFresh(now) && this.driveLinkReady(now) && !this.manualAuthority;
         if (!accepted) {
-          relay.push(this.manualAuthorityAck(message, false, "Armed state, fresh telemetry, and a healthy Boxer/ELRS link are required."));
+          relay.push(this.manualAuthorityAck(message, false, "Armed state, fresh telemetry, and a healthy CRSF/ELRS link are required."));
         } else {
           const token = randomUUID();
           const leaseMs = Math.min(Number(message.requestedLeaseMs), LIVE_MANUAL_MAX_LEASE_MS);

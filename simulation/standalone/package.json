@@ -6,7 +6,7 @@
   "scripts": {
     "build": "vite build",
     "start": "node server.mjs",
-    "test": "node --test app-state.test.mjs boxer-hid.test.mjs cad-endpoint.test.mjs control-state.test.mjs firmware-service.test.mjs gait-lab.test.mjs heartbeat-state.test.mjs linkage.test.mjs live-calibration-state.test.mjs live-companion-adapter.test.mjs live-companion-core.test.mjs live-connection-state.test.mjs live-controller-state.test.mjs live-diagnostics-state.test.mjs live-gait-state.test.mjs live-manual-control-state.test.mjs live-safety-state.test.mjs live-session-state.test.mjs live-telemetry-state.test.mjs live-view-state.test.mjs physics.test.mjs"
+    "test": "node --test app-state.test.mjs boxer-hid.test.mjs cad-endpoint.test.mjs control-state.test.mjs firmware-service.test.mjs gait-lab.test.mjs gamepad-profile.test.mjs heartbeat-state.test.mjs linkage.test.mjs live-calibration-state.test.mjs live-companion-adapter.test.mjs live-companion-core.test.mjs live-connection-state.test.mjs live-controller-state.test.mjs live-diagnostics-state.test.mjs live-gait-state.test.mjs live-manual-control-state.test.mjs live-safety-state.test.mjs live-session-state.test.mjs live-telemetry-state.test.mjs live-view-state.test.mjs physics.test.mjs"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "0.19.3",

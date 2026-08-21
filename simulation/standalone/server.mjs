@@ -12,7 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 
-import { BoxerHidInput } from "./boxer-hid.mjs";
+import { CrsfTransmitterHidInput } from "./boxer-hid.mjs";
 import { FirmwareService } from "./firmware-service.mjs";
 import {
   clientControlIsFresh,
@@ -78,7 +78,7 @@ let debugBytes = statSync(debugLogPath).size;
 
 const channels = Array(16).fill(1500);
 channels[4] = 1000;
-// CRSF CH3 is the Boxer left-stick vertical and owns ride-height selection.
+// CRSF CH3 is the transmitter left-stick vertical and owns ride-height selection.
 channels[2] = 2000;
 channels[6] = 1000;
 channels[7] = 1000;
@@ -94,7 +94,7 @@ writeControls();
 
 let radioInput = {
   connected: false,
-  name: "BOXER NOT FOUND",
+  name: "CRSF TRANSMITTER NOT FOUND",
   channels: null,
   axes: null,
   battery: null,
@@ -351,12 +351,12 @@ function writeSafeControls() {
   controlsSource = "safe";
 }
 
-const boxer = new BoxerHidInput((state) => {
+const radio = new CrsfTransmitterHidInput((state) => {
   const connectionChanged = state.connected !== radioInput.connected;
   radioInput = state;
   if (connectionChanged) broadcast({ type: "input", input: radioInput });
 });
-boxer.start();
+radio.start();
 
 setInterval(() => {
   if (activeControlSocket && !clientControlIsFresh(activeControlSocket)) {
@@ -391,7 +391,7 @@ setInterval(() => {
       : manualClientIsActive()
         ? "browser_override"
         : radioInput.connected
-          ? "boxer_hid"
+          ? "crsf_transmitter_hid"
           : "browser",
     hid: {
       connected: radioInput.connected,
@@ -694,7 +694,7 @@ server.listen(port, "127.0.0.1", () => {
 });
 
 function shutdown() {
-  boxer.stop();
+  radio.stop();
   server.close();
 }
 

@@ -80,7 +80,7 @@ test("arming is rejected without a fresh healthy controller link", () => {
     safety: { holdMs: 1_500, requiresDisarmed: true, requiresFreshTelemetry: true, requiresDriveLink: true, watchdogMs: 400 },
   }, 1_050);
   assert.equal(result.relay[0].accepted, false);
-  assert.match(result.relay[0].reason, /Boxer\/ELRS/);
+  assert.match(result.relay[0].reason, /CRSF\/ELRS/);
   assert.equal(result.robot.length, 0);
 });
 

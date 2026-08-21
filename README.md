@@ -6,7 +6,9 @@ For the portfolio-level explanation of the architecture, control flow, linkage
 problem, and the most interesting implementation details, start with the
 [Domino Engineering Overview](docs/engineering-overview.md).
 Current implementation status and remaining physical-validation gates are in
-the [Virtual Lab roadmap status](docs/virtual-lab-roadmap-status.md).
+the [Virtual Lab roadmap status](docs/virtual-lab-roadmap-status.md). Use the
+[LIVE hardware bring-up procedure](docs/live-hardware-bring-up.md) before
+enabling physical calibration, motion, wireless control, or power telemetry.
 
 > Work in progress: Domino is an active engineering prototype, not a finished kit. The firmware, CAD exports, PCB package, calibration notes, and simulation files are included as a project record and technical reference. The repo does not yet contain a complete step-by-step build manual, measured BOM, wiring diagram, or validated production assembly process.
 

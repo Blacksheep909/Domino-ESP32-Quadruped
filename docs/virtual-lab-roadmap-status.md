@@ -52,6 +52,9 @@ with both the default configuration and the optional power-monitor path.
   is required rather than expected servo output plus measured IMU attitude.
 - A validated start-to-finish public build manual and measured BOM.
 
+The remaining robot-side gates are sequenced in the
+[LIVE hardware bring-up procedure](live-hardware-bring-up.md).
+
 ## Verification commands
 
 ```powershell

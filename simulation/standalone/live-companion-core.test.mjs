@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { DOMINO_ROBOT_LINK_PROTOCOL, LiveCompanionCore } from "./live-companion-core.mjs";
+import { createLiveGaitProfile } from "./web/src/live-gait-state.js";
 
 const adapterId = "adapter-test";
 const hello = (robotState = "disarmed") => ({
@@ -163,10 +164,29 @@ test("calibration and gait writes fail closed while armed", () => {
     type: "live-gait-command", action: "apply-profile", requestId: "gait-1",
     adapterId, sessionId: core.sessionId,
     safety: { requiresDisarmed: true, twoStageApply: true },
-    profile: { schemaVersion: 1, robot: "domino-esp32-quadruped" },
+    profile: createLiveGaitProfile({}, "Armed test"),
   }, 1_050);
   assert.equal(gait.relay[0].accepted, false);
   assert.equal(gait.robot.length, 0);
+});
+
+test("a physical gait acknowledgement returns the verified active profile", () => {
+  const core = connectedCore();
+  const profile = createLiveGaitProfile({}, "Robot balanced");
+  const request = {
+    type: "live-gait-command", action: "apply-profile", requestId: "gait-apply",
+    adapterId, sessionId: core.sessionId,
+    safety: { requiresDisarmed: true, twoStageApply: true }, profile,
+  };
+  const outbound = core.handleRelay(request, 1_050);
+  assert.equal(outbound.robot[0].kind, "gait");
+  const inbound = core.handleRobot({
+    protocol: DOMINO_ROBOT_LINK_PROTOCOL, type: "robot-ack", kind: "gait",
+    action: "apply-profile", requestId: "gait-apply", accepted: true,
+    robotState: "disarmed", persisted: true, rollbackAvailable: true, profile,
+  }, 1_060);
+  assert.equal(inbound.relay[0].accepted, true);
+  assert.deepEqual(inbound.relay[0].profile.settings, profile.settings);
 });
 
 test("physical calibration safety and persistence evidence reaches the wizard", () => {

@@ -129,8 +129,8 @@ during bench jog, and turns all outputs off before activating a new map.
 Physical movement and robot persistence are deliberately locked until a robot
 adapter acknowledges bench mode, safe jogging at no more than 5 degrees per
 second, and persistent profile storage. The localhost relay validates this
-command/acknowledgement contract; the ESP32 adapter that enforces it remains a
-hardware-side task.
+command/acknowledgement contract, and firmware 0.4.0 now enforces it on USB,
+Wi-Fi TCP, and Bluetooth SPP transports.
 
 Gaits is now a separate LIVE profile-transfer workspace. It shares the same
 versioned profile library and JSON format as the Simulation gait lab, but edits
@@ -141,11 +141,13 @@ warnings make the differences visible before hardware is involved.
 ![LIVE gait profile transfer using local relay verification data](images/virtual-lab-live-gaits.png)
 
 The apply path requires the adapter to advertise persistent-profile support and
-report the robot disarmed. The relay validates a two-stage apply contract, the
-adapter must acknowledge validation and persistent storage, and the previous
-robot profile remains available for explicit rollback. The screenshot uses a
-synthetic local adapter; implementing this acknowledgement and persistence on
-the physical ESP32 transport remains a hardware-side task.
+report the robot disarmed. The relay validates a two-stage apply contract and
+firmware 0.4.0 validates all ten numeric bounds again with every output off.
+The ESP32 writes the candidate into the inactive NVS slot, reads back and
+checksums it, then atomically changes the active slot. The prior verified slot
+remains available for explicit rollback. Active robot settings are included in
+LIVE telemetry so the comparison view reflects what the controller is actually
+running.
 
 Diagnostics traces eight stages from the engineering packet through expected and
 measured poses, ESP32 acknowledgement, gait target, IK, limit checking, and all

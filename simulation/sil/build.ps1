@@ -32,6 +32,7 @@ $arguments = @(
     (Join-Path $repoRoot "src\crsf.cpp"),
     (Join-Path $repoRoot "src\gait_profile.cpp"),
     (Join-Path $repoRoot "src\manual_control_guard.cpp"),
+    (Join-Path $repoRoot "src\power_monitor_math.cpp"),
     (Join-Path $repoRoot "src\leg_controller.cpp"),
     (Join-Path $repoRoot "src\servo_calibration.cpp"),
     (Join-Path $repoRoot "src\ik.cpp"),

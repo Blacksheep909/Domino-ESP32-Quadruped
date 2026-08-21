@@ -217,7 +217,7 @@ For each `safety-heartbeat`, return the same sequence:
 
 ## Current ESP32 endpoint
 
-Firmware `0.5.0` implements the matching USB serial endpoint. Build and flash
+Firmware `0.6.0` implements the matching USB serial endpoint. Build and flash
 the normal PlatformIO `esp32dev` environment, connect the ESP32 over USB, then
 run the companion with `-Transport usb -Device COMx`.
 
@@ -258,5 +258,13 @@ neutral stand command; lease expiry, disarm, watchdog, controller failure, or
 explicit release revokes the override. Granting authority alone never moves
 the robot. LIVE diagnostics report lease time, frame age, override state, and
 deadman state without exposing the token.
+
+Power telemetry is present only when the optional INA226 monitor has a fresh
+verified sample. The physical endpoint then adds `power.timestampMs`,
+`voltageV`, `currentA`, and `powerW`; otherwise the object is omitted. This is
+intentional—an absent sensor must remain unavailable rather than look like a
+zero-current robot. `diagnostics.powerMonitorOnline` and
+`diagnostics.powerSampleValid` distinguish configuration/link failure from a
+valid measurement.
 Wi-Fi TCP and Bluetooth SPP are implemented but compile disabled until the
 local secrets header explicitly enables them.

@@ -415,14 +415,15 @@ uint16_t angleToPulse(float angleDegrees) {
   return static_cast<uint16_t>(microseconds);
 }
 
-void write270(Adafruit_PWMServoDriver &driver, uint8_t channel, float angleDegrees) {
-  const float calibratedAngle = applyServoCalibration(gServoCalibration, channel, angleDegrees);
-  const float safeAngle = applyServoSafetyLimit(channel, calibratedAngle);
-  if (channel < kPcaChannelCount) gCommandedServoAnglesDeg[channel] = safeAngle;
+void write270(Adafruit_PWMServoDriver &driver, uint8_t logicalChannel, float angleDegrees) {
+  const float calibratedAngle = applyServoCalibration(gServoCalibration, logicalChannel, angleDegrees);
+  const float safeAngle = applyServoSafetyLimit(logicalChannel, calibratedAngle);
+  const uint8_t physicalChannel = servoCalibrationPhysicalChannel(gServoCalibration, logicalChannel);
+  if (logicalChannel < kPcaChannelCount) gCommandedServoAnglesDeg[logicalChannel] = safeAngle;
 #ifdef DOMINO_SIL
-  driver.writeMicroseconds(channel, angleToPulse(safeAngle));
+  driver.writeMicroseconds(physicalChannel, angleToPulse(safeAngle));
 #else
-  if (gServoOutputsEnabled) driver.writeMicroseconds(channel, angleToPulse(safeAngle));
+  if (gServoOutputsEnabled) driver.writeMicroseconds(physicalChannel, angleToPulse(safeAngle));
 #endif
 }
 
@@ -568,19 +569,24 @@ bool servoOutputsEnabled() { return gServoOutputsEnabled; }
 const float* commandedServoAnglesDeg() { return gCommandedServoAnglesDeg; }
 uint32_t servoSafetyClipCount() { return gServoSafetyClipCount; }
 
-bool commandCalibrationServoAngle(Adafruit_PWMServoDriver &driver, uint8_t channel, float angleDeg) {
-  if (!gServoOutputsEnabled || channel >= kPcaChannelCount) return false;
+bool commandCalibrationServoAngle(Adafruit_PWMServoDriver &driver,
+                                  uint8_t logicalChannel,
+                                  uint8_t physicalChannel,
+                                  float angleDeg) {
+  if (!gServoOutputsEnabled || logicalChannel >= kPcaChannelCount ||
+      physicalChannel >= kPcaChannelCount ||
+      !findServoCalibrationJoint(gServoCalibration, logicalChannel)) return false;
   // Bench targets are already absolute calibrated servo angles from the wizard.
-  const float safeAngle = applyServoSafetyLimit(channel, angleDeg);
-  gCommandedServoAnglesDeg[channel] = safeAngle;
-  driver.writeMicroseconds(channel, angleToPulse(safeAngle));
+  const float safeAngle = applyServoSafetyLimit(logicalChannel, angleDeg);
+  gCommandedServoAnglesDeg[logicalChannel] = safeAngle;
+  driver.writeMicroseconds(physicalChannel, angleToPulse(safeAngle));
   return true;
 }
 
-void disableServoOutputChannel(Adafruit_PWMServoDriver &driver, uint8_t channel) {
-  if (channel >= kPcaChannelCount) return;
+void disableServoOutputPhysicalChannel(Adafruit_PWMServoDriver &driver, uint8_t physicalChannel) {
+  if (physicalChannel >= kPcaChannelCount) return;
 #ifndef DOMINO_SIL
-  driver.setPWM(channel, 0, 4096);
+  driver.setPWM(physicalChannel, 0, 4096);
 #else
   (void)driver;
 #endif

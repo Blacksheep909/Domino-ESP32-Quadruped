@@ -24,3 +24,6 @@ env_isaaclab/
 IsaacLab/
 .isaacsim/
 simulation/isaac/out/
+
+# Local robot radio credentials; copy the tracked example and keep secrets local.
+src/live_robot_secrets.h

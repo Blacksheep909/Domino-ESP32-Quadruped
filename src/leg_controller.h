@@ -68,7 +68,10 @@ void setServoOutputsEnabled(Adafruit_PWMServoDriver &driver, bool enabled);
 bool servoOutputsEnabled();
 const float* commandedServoAnglesDeg();
 uint32_t servoSafetyClipCount();
-bool commandCalibrationServoAngle(Adafruit_PWMServoDriver &driver, uint8_t channel, float angleDeg);
-void disableServoOutputChannel(Adafruit_PWMServoDriver &driver, uint8_t channel);
+bool commandCalibrationServoAngle(Adafruit_PWMServoDriver &driver,
+                                  uint8_t logicalChannel,
+                                  uint8_t physicalChannel,
+                                  float angleDeg);
+void disableServoOutputPhysicalChannel(Adafruit_PWMServoDriver &driver, uint8_t physicalChannel);
 bool setServoCalibrationProfile(const ServoCalibrationProfile &profile);
 const ServoCalibrationProfile& servoCalibrationProfile();

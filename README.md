@@ -49,6 +49,28 @@ dependencies, and run its PowerShell launcher. See the
 [Virtual Lab guide](docs/virtual-lab.md) for setup, screenshots, architecture,
 controls, and current limitations.
 
+### Virtual Lab walkthrough
+
+Simulation and LIVE are intentionally separate workspaces. Simulation is the
+safe place to change poses, terrain, controller mappings, and gait profiles.
+LIVE is the physical-robot engineering workspace: it compares commanded and
+measured state, records synchronized telemetry, guides servo calibration, and
+keeps every hardware-moving action behind an explicit connection and safety
+contract.
+
+| LIVE connection and safety | Telemetry and recording |
+| --- | --- |
+| ![LIVE physical connection manager](docs/images/virtual-lab-live-connection-manager.png) | ![LIVE synchronized telemetry recording](docs/images/virtual-lab-live-recording.png) |
+
+| Guided servo calibration | Gait profile transfer |
+| --- | --- |
+| ![LIVE guided servo calibration](docs/images/virtual-lab-live-calibration.png) | ![LIVE gait profile transfer](docs/images/virtual-lab-live-gaits.png) |
+
+The screenshots use the repository's synthetic verification adapter so the UI
+can be demonstrated without implying that a physical robot was connected. The
+real ESP32 endpoint fails closed, opens disarmed, and requires fresh heartbeat
+and robot acknowledgements before hardware motion is available.
+
 ## Current Status
 
 Implemented or documented:

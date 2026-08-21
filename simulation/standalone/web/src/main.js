@@ -271,6 +271,10 @@ function applyLiveView(view) {
   const leavingGaits = liveViewState.selected === LIVE_VIEW_GAITS && view !== LIVE_VIEW_GAITS;
   const enteringGaits = liveViewState.selected !== LIVE_VIEW_GAITS && view === LIVE_VIEW_GAITS;
   if (!selectLiveView(liveViewState, view)) return false;
+  if (liveViewState.selected !== LIVE_VIEW_COMPARE && jointOverlayVisible) {
+    jointOverlayVisible = false;
+    updateJointOverlay();
+  }
   if (leavingCalibration) {
     closeCalibrationWiringDialog();
     closeRobotCalibrationConfirmation();

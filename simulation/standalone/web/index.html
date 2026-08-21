@@ -23,7 +23,7 @@
         <span id="link-status" class="simulation-only" data-state="offline">BOXER</span>
         <span id="physics-status" class="simulation-only" data-state="offline">PHYSICS</span>
         <span id="real-drive-status" class="real-robot-only" data-state="offline">DRIVE LINK</span>
-        <span id="real-engineering-status" class="real-robot-only" data-state="offline">ENGINEERING</span>
+        <span id="real-engineering-status" class="real-robot-only pc-link-status" data-state="offline" title="PC-to-robot telemetry and configuration link">PC LINK</span>
         <button id="live-connection-open" class="live-connection-open real-robot-only" type="button" aria-haspopup="dialog">CONNECT</button>
         <span id="real-safety-status" class="real-robot-only" data-state="safe">DISARMED</span>
         <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false" title="Switch to dark theme">
@@ -266,7 +266,7 @@
           <h2>LIVE LINKS</h2>
           <dl>
             <div><dt>Boxer / ELRS drive</dt><dd id="live-drive-link" data-state="disconnected">OFFLINE</dd></div>
-            <div><dt>PC engineering link</dt><dd id="live-engineering-link" data-state="disconnected">OFFLINE</dd></div>
+            <div><dt>PC link</dt><dd id="live-engineering-link" data-state="disconnected">OFFLINE</dd></div>
             <div><dt>Last robot packet</dt><dd id="live-packet-age">--</dd></div>
             <div><dt>Round-trip latency</dt><dd id="live-link-rtt">-- ms</dd></div>
           </dl>
@@ -349,15 +349,15 @@
             <span><i class="measured"></i>MEASURED</span>
             <span><i class="error"></i>ERROR</span>
           </div>
-          <em id="live-chart-empty">Connect the engineering link, then start recording.</em>
+          <em id="live-chart-empty">Connect the PC link, then start recording.</em>
         </div>
       </section>
       </section>
 
       <section id="live-view-data" class="live-view-page" aria-labelledby="live-data-title" hidden>
         <header class="live-page-heading">
-          <div><span>LIVE / DATA</span><h1 id="live-data-title">Engineering data</h1><p>Record, inspect and export synchronized command, pose and power telemetry.</p></div>
-          <div class="live-page-status"><span id="live-data-link-state" data-state="offline">ENGINEERING OFFLINE</span><strong id="live-data-sample-count">0 SAMPLES</strong></div>
+          <div><span>LIVE / DATA</span><h1 id="live-data-title">Robot data</h1><p>Record, inspect and export synchronized command, pose and power telemetry.</p></div>
+          <div class="live-page-status"><span id="live-data-link-state" data-state="offline">PC LINK OFFLINE</span><strong id="live-data-sample-count">0 SAMPLES</strong></div>
         </header>
         <div class="live-data-grid">
           <section class="live-data-card live-data-summary">
@@ -572,14 +572,14 @@
 
       <section id="live-view-diagnostics" class="live-view-page live-diagnostics-page" aria-labelledby="live-diagnostics-title" hidden>
         <header class="live-page-heading">
-          <div><span>LIVE / DIAGNOSTICS</span><h1 id="live-diagnostics-title">Command-chain diagnostics</h1><p>Trace the first broken stage from engineering packet to servo output, with counters and timestamped evidence.</p></div>
+          <div><span>LIVE / DIAGNOSTICS</span><h1 id="live-diagnostics-title">Command-chain diagnostics</h1><p>Trace the first broken stage from PC command packet to servo output, with counters and timestamped evidence.</p></div>
           <div class="live-page-status"><span id="live-diagnostics-health" data-state="offline">NO TELEMETRY</span><strong id="live-diagnostics-event-count">0 EVENTS</strong></div>
         </header>
         <div class="live-diagnostics-grid">
           <section class="diagnostics-card diagnostics-pipeline-card">
             <header><div><span>COMMAND PIPELINE</span><strong id="live-diagnostics-pipeline-summary">WAITING FOR ROBOT DATA</strong></div><button id="live-diagnostics-export" type="button">DOWNLOAD BUNDLE</button></header>
             <div id="live-diagnostics-pipeline" class="diagnostics-pipeline" aria-label="Live command pipeline"></div>
-            <div id="live-diagnostics-first-break" class="diagnostics-first-break" data-state="unavailable"><span>FIRST BROKEN STAGE</span><strong>NOT ENOUGH DATA</strong><p>Connect the robot engineering stream to trace the control chain.</p></div>
+            <div id="live-diagnostics-first-break" class="diagnostics-first-break" data-state="unavailable"><span>FIRST BROKEN STAGE</span><strong>NOT ENOUGH DATA</strong><p>Connect the robot PC stream to trace the control chain.</p></div>
           </section>
           <section class="diagnostics-card diagnostics-metrics-card">
             <header><div><span>TRANSPORT + FIRMWARE</span><strong>LIVE COUNTERS</strong></div></header>
@@ -656,7 +656,7 @@
           <div>
             <span>LIVE / PHYSICAL LINK</span>
             <h1 id="live-connection-title">Connect Domino</h1>
-            <p>Choose a companion adapter, verify the robot identity, then establish a read-only engineering session.</p>
+            <p>Choose a companion adapter, verify the robot identity, then establish a read-only PC link.</p>
           </div>
           <div class="live-connection-header-actions">
             <span id="live-connection-phase" data-state="offline">DISCONNECTED</span>

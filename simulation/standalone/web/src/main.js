@@ -2658,7 +2658,7 @@ function sendLiveConnectionRequest(action) {
       requestId,
       "The connection request timed out. Robot commands remain blocked.",
     )) return;
-    resetLiveCommandPermissions("The engineering session is unavailable. Robot profile changes remain blocked.");
+    resetLiveCommandPermissions("The PC link is unavailable. Robot profile changes remain blocked.");
     renderLiveConnectionUi();
     updateLiveComparisonUi();
   }, 4_000);
@@ -2671,12 +2671,12 @@ function acceptLiveConnectionAck(message) {
   clearTimeout(liveConnectionRequestTimeout);
   liveConnectionRequestTimeout = null;
   if (!liveConnectionIsReady(liveConnectionState)) {
-    lockLiveSafetyState(liveSafetyState, "No engineering session is active. Robot-side outputs must fail safe.");
-    revokeLiveManualControl(liveManualState, "No engineering session is active. Browser authority was revoked.");
-    resetLiveCommandPermissions("No engineering session is active. Robot profile changes remain blocked.");
+    lockLiveSafetyState(liveSafetyState, "No PC link is active. Robot-side outputs must fail safe.");
+    revokeLiveManualControl(liveManualState, "No PC link is active. Browser authority was revoked.");
+    resetLiveCommandPermissions("No PC link is active. Robot profile changes remain blocked.");
   } else {
     setLiveSafetyRobotState(liveSafetyState, liveConnectionState.robotState);
-    liveSafetyState.status = "Engineering session connected. Verify telemetry and drive link before arming.";
+    liveSafetyState.status = "PC link connected. Verify telemetry and drive link before arming.";
   }
   renderLiveConnectionUi();
   renderLiveSafetyUi();
@@ -3592,7 +3592,7 @@ function updateLiveDiagnosticsUi(snapshot, liveSnapshot, controllerSnapshot) {
     ? snapshot.firstBrokenStage.detail
     : snapshot.linkFresh
       ? "Every stage reported by the robot is currently healthy."
-      : "Connect the robot engineering stream to trace the control chain.";
+      : "Connect the robot PC stream to trace the control chain.";
   document.querySelector("#live-diagnostics-rate").textContent = `${snapshot.packetRateHz.toFixed(1)} Hz`;
   document.querySelector("#live-diagnostics-latency").textContent = Number.isFinite(snapshot.telemetry?.commandLatencyMs)
     ? `${snapshot.telemetry.commandLatencyMs.toFixed(1)} ms`
@@ -3664,7 +3664,7 @@ function updateLiveSessionUi(snapshot) {
     ? "Telemetry interrupted. Recording will resume when both streams return."
     : summary.sampleCount > 0
       ? "Waiting for another synchronized sample."
-      : "Connect the engineering link, then start recording.";
+      : "Connect the PC link, then start recording.";
   document.querySelector("#live-data-chart-empty").textContent = recording && !snapshot.paired
     ? "Telemetry interrupted. Recording will resume automatically."
     : summary.sampleCount > 0
@@ -3691,7 +3691,7 @@ function updateLiveComparisonUi() {
   engineeringOutput.textContent = engineeringConnected ? "CONNECTED" : "OFFLINE";
   engineeringOutput.dataset.state = engineeringConnected ? "connected" : "disconnected";
   const dataLinkOutput = document.querySelector("#live-data-link-state");
-  dataLinkOutput.textContent = engineeringConnected ? "ENGINEERING CONNECTED" : "ENGINEERING OFFLINE";
+  dataLinkOutput.textContent = engineeringConnected ? "PC LINK CONNECTED" : "PC LINK OFFLINE";
   dataLinkOutput.dataset.state = engineeringConnected ? "online" : "offline";
   const calibrationLinkOutput = document.querySelector("#live-calibration-link-state");
   calibrationLinkOutput.textContent = liveCalibrationState.benchModeAcknowledged
@@ -3732,12 +3732,12 @@ function updateLiveComparisonUi() {
   );
   const engineeringBadge = document.querySelector("#real-engineering-status");
   engineeringBadge.dataset.state = engineeringConnected ? "online" : "offline";
-  engineeringBadge.textContent = engineeringConnected ? "ENGINEERING" : "ENGINEERING";
+  engineeringBadge.textContent = "PC LINK";
   engineeringBadge.title = !sessionConnected
-    ? "No engineering session"
+    ? "No PC link"
     : engineeringConnected
       ? `Session ${liveConnectionState.sessionId.slice(0, 12)} / telemetry ${formatPacketAge(snapshot.lastRobotPacketAgeMs)} old`
-      : "Engineering session connected but telemetry is stale";
+      : "PC link connected but telemetry is stale";
 
   const controllerSnapshot = liveControllerSnapshot(liveControllerState);
   const driveConnected = engineeringConnected && controllerSnapshot.linkReady;
@@ -3753,7 +3753,7 @@ function updateLiveComparisonUi() {
   const robotState = sessionConnected ? liveSafetyState.robotState : "disconnected";
   document.querySelector("#live-robot-safety-state").textContent = robotState.toUpperCase();
   document.querySelector("#live-robot-safety-copy").textContent = !sessionConnected
-    ? "No physical engineering session is active. Commands are blocked and the CAD is a reference model only."
+    ? "No physical PC link is active. Commands are blocked and the CAD is a reference model only."
     : robotState === "disarmed"
       ? "The robot reports disarmed. Telemetry is available; motion remains blocked until separately armed."
       : robotState === "armed"

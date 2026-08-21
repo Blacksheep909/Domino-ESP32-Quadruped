@@ -28,8 +28,8 @@ export function sanitizeLiveControllerTelemetry(candidate) {
     return null;
   }
   return {
-    source: candidate.source === "boxer-elrs" ? candidate.source : "unknown",
-    transmitterName: boundedText(candidate.transmitterName, "RadioMaster Boxer"),
+    source: ["crsf-radio", "boxer-elrs"].includes(candidate.source) ? candidate.source : "unknown",
+    transmitterName: boundedText(candidate.transmitterName, "CRSF transmitter"),
     receiverName: boundedText(candidate.receiverName, "ExpressLRS receiver"),
     frameTimestampMs,
     channelsUs,
@@ -78,14 +78,14 @@ export function acceptLiveControllerTelemetry(state, packet, receivedAt = Date.n
   const telemetry = sanitizeLiveControllerTelemetry(packet.controller);
   if (!telemetry) return false;
   const frameAgeMs = receivedAt - telemetry.frameTimestampMs;
-  const linkReady = telemetry.source === "boxer-elrs" &&
+  const linkReady = ["crsf-radio", "boxer-elrs"].includes(telemetry.source) &&
     frameAgeMs >= 0 &&
     frameAgeMs <= LIVE_CONTROLLER_FRESH_MS &&
     !telemetry.failsafe &&
     telemetry.linkQualityPercent >= 50 &&
     telemetry.rssi1Dbm >= -105;
-  if (linkReady && !state.previous.linkReady) addControllerEvent(state, "info", "Boxer / ELRS control link became ready.", receivedAt);
-  if (!linkReady && state.previous.linkReady) addControllerEvent(state, "fault", "Boxer / ELRS control link became unavailable.", receivedAt);
+  if (linkReady && !state.previous.linkReady) addControllerEvent(state, "info", "CRSF / ELRS control link became ready.", receivedAt);
+  if (!linkReady && state.previous.linkReady) addControllerEvent(state, "fault", "CRSF / ELRS control link became unavailable.", receivedAt);
   if (telemetry.failsafe && !state.previous.failsafe) addControllerEvent(state, "fault", "Receiver failsafe asserted.", receivedAt);
   if (!telemetry.failsafe && state.previous.failsafe) addControllerEvent(state, "info", "Receiver failsafe cleared.", receivedAt);
   if (telemetry.failsafeCount > state.previous.failsafeCount) {
@@ -117,7 +117,7 @@ export function liveControllerSnapshot(state, now = Date.now()) {
   );
   const linkReady = Boolean(
     fresh &&
-    telemetry.source === "boxer-elrs" &&
+    ["crsf-radio", "boxer-elrs"].includes(telemetry.source) &&
     !telemetry.failsafe &&
     telemetry.linkQualityPercent >= 50 &&
     telemetry.rssi1Dbm >= -105
@@ -132,7 +132,7 @@ export function liveControllerSnapshot(state, now = Date.now()) {
           ? "degraded"
           : "good";
   if (!linkReady && state?.previous?.linkReady) {
-    addControllerEvent(state, "fault", "Boxer / ELRS control evidence became stale or unsafe.", now);
+    addControllerEvent(state, "fault", "CRSF / ELRS control evidence became stale or unsafe.", now);
     state.previous.linkReady = false;
   }
   return {

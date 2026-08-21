@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { gaitLabControls, gaitLabPresets } from "./web/src/gait-lab.js";
-import { validLiveGaitAcknowledgement, validLiveGaitCommand } from "./web/src/live-gait-protocol.js";
+import { validLiveGaitAcknowledgement, validLiveGaitCommand, validLiveGaitProfile } from "./web/src/live-gait-protocol.js";
 import {
   acceptRobotGaitProfile,
   createLiveGaitCommand,
@@ -60,6 +60,15 @@ test("robot apply requires disarm and advertised persistent apply support", () =
   assert.equal(validLiveGaitCommand(command), true);
   assert.equal(command.safety.twoStageApply, true);
   assert.equal(validLiveGaitCommand({ ...command, safety: {} }), false);
+  assert.equal(validLiveGaitProfile(command.profile), true);
+  assert.equal(validLiveGaitCommand({
+    ...command,
+    profile: { ...command.profile, settings: { ...command.profile.settings, strideMm: 121 } },
+  }), false);
+  assert.equal(validLiveGaitCommand({
+    ...command,
+    profile: { ...command.profile, settings: { ...command.profile.settings, cadenceHz: Number.NaN } },
+  }), false);
 });
 
 test("versioned and raw simulation JSON both import safely", () => {

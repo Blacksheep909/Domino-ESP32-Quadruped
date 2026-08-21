@@ -40,6 +40,7 @@
 #include <math.h>
 
 #include "crsf.h"
+#include "gait_profile.h"
 #include "leg_controller.h"
 #include "imu.h"
 #ifndef DOMINO_SIL
@@ -158,27 +159,11 @@ constexpr bool kBalanceDebugLoggingEnabled = false;
 // vertical commands travel; right-stick horizontal commands differential
 // stride for turning.
 constexpr float kGaitStickDeadband = 0.12f;
-constexpr float kGaitMaxStrideMm = 33.0f;
-constexpr float kGaitMaxTurnStrideMm = 22.0f;
-constexpr float kGaitMaxLiftMm = 30.0f;
-constexpr float kGaitMinFrequencyHz = 0.54f;
-constexpr float kGaitMaxFrequencyHz = 0.76f;
-constexpr float kGaitStanceFraction = 0.68f;
-constexpr float kGaitCommandSlewPerSec = 1.5f;
-constexpr float kGaitAmplitudeSlewPerSec = 2.0f;
-constexpr float kGaitBodyHeightMm = 265.0f;
-constexpr float kGaitBodyHeightSlewMmPerSec = 80.0f;
 constexpr uint32_t kGaitToggleDebounceMs = 200;
 
 // SC middle selects a statically stable four-beat crawl. Each leg owns one
 // quarter of the cycle, but swings for less than that quarter, guaranteeing
 // at least three planted feet and a short four-foot settle between steps.
-constexpr float kCarefulMaxStrideMm = 22.0f;
-constexpr float kCarefulMaxTurnStrideMm = 14.0f;
-constexpr float kCarefulMaxLiftMm = 20.0f;
-constexpr float kCarefulMinFrequencyHz = 0.30f;
-constexpr float kCarefulMaxFrequencyHz = 0.42f;
-constexpr float kCarefulSwingFraction = 0.19f;
 
 // Ride height configuration (stand-only, continuous CH3 command).
 // The Boxer left-stick vertical maps linearly across the CAD-validated
@@ -286,7 +271,7 @@ float gaitPhaseRad = 0.0f;
 float gaitForwardCommand = 0.0f;
 float gaitTurnCommand = 0.0f;
 float gaitAmplitude = 0.0f;
-float gaitBodyZ = kGaitBodyHeightMm;
+float gaitBodyZ = 265.0f;
 bool motionInputAwaitingCenter = false;
 uint32_t motionInputCenteredSinceMs = 0;
 
@@ -742,15 +727,17 @@ float halfCosine01(float value) {
 void sampleGaitFootPath(float cycle,
                         float halfStrideMm,
                         float liftMm,
+                        float stanceFraction,
+                        float swingShape,
                         float *xOffsetMm,
                         float *zOffsetMm) {
   cycle -= floorf(cycle);
-  if (cycle < kGaitStanceFraction) {
+  if (cycle < stanceFraction) {
     // A planted foot must move rearward at constant speed relative to the
     // body. The old half-cosine repeatedly accelerated and decelerated the
     // loaded foot across the floor, which produced visible scrub and sideways
     // reaction forces even for a steady forward command.
-    const float stance = cycle / kGaitStanceFraction;
+    const float stance = cycle / stanceFraction;
     *xOffsetMm = halfStrideMm * (1.0f - 2.0f * stance);
     *zOffsetMm = 0.0f;
     return;
@@ -759,23 +746,29 @@ void sampleGaitFootPath(float cycle,
   // Return the unloaded foot from rear to front. The smooth swing curve keeps
   // touchdown and lift-off gentle; only the unloaded leg uses this variable
   // speed profile.
-  const float swing = (cycle - kGaitStanceFraction) / (1.0f - kGaitStanceFraction);
+  const float swing = (cycle - stanceFraction) / (1.0f - stanceFraction);
   const float swingPosition = halfCosine01(swing);
   const float liftWave = sinf(kPi * swing);
   *xOffsetMm = halfStrideMm * (-1.0f + 2.0f * swingPosition);
-  *zOffsetMm = -liftMm * liftWave * liftWave;
+  *zOffsetMm = -liftMm * powf(fmaxf(0.0f, liftWave), swingShape);
 }
 
 void applySinusoidalGait(Adafruit_PWMServoDriver &driver, float baseZ) {
+  const GaitProfileSettings &profile = gaitProfile().settings;
   constexpr float kControlStepSeconds = static_cast<float>(kControlIntervalMs) / 1000.0f;
-  const float gaitBodyTargetZ = fminf(baseZ, kGaitBodyHeightMm);
+  const float gaitBodyTargetZ = fminf(baseZ, profile.bodyHeightMm);
+  const float responseSeconds = profile.responseMs / 1000.0f;
+  const float commandSlewPerSec = 1.0f / responseSeconds;
+  const float bodySlewMmPerSec = 60.0f / responseSeconds;
   gaitBodyZ = approachGaitCommand(
       gaitBodyZ,
       gaitBodyTargetZ,
-      kGaitBodyHeightSlewMmPerSec * kControlStepSeconds);
-  const float targetForward = applyGaitDeadband(readMotionChannelNormalized(PITCH_CH_INDEX));
-  const float targetTurn = applyGaitDeadband(readMotionChannelNormalized(YAW_CH_INDEX));
-  const float maximumCommandStep = kGaitCommandSlewPerSec * kControlStepSeconds;
+      bodySlewMmPerSec * kControlStepSeconds);
+  const float targetForward = profile.enabled
+      ? applyGaitDeadband(readMotionChannelNormalized(PITCH_CH_INDEX)) : 0.0f;
+  const float targetTurn = profile.enabled
+      ? applyGaitDeadband(readMotionChannelNormalized(YAW_CH_INDEX)) : 0.0f;
+  const float maximumCommandStep = commandSlewPerSec * kControlStepSeconds;
   gaitForwardCommand = approachGaitCommand(gaitForwardCommand, targetForward, maximumCommandStep);
   gaitTurnCommand = approachGaitCommand(gaitTurnCommand, targetTurn, maximumCommandStep);
 
@@ -790,10 +783,9 @@ void applySinusoidalGait(Adafruit_PWMServoDriver &driver, float baseZ) {
   gaitAmplitude = approachGaitCommand(
       gaitAmplitude,
       targetAmplitude,
-      kGaitAmplitudeSlewPerSec * kControlStepSeconds);
+      1.35f * commandSlewPerSec * kControlStepSeconds);
   if (activity > 0.001f) {
-    const float frequencyHz =
-        kGaitMinFrequencyHz + activity * (kGaitMaxFrequencyHz - kGaitMinFrequencyHz);
+    const float frequencyHz = profile.cadenceHz;
     gaitPhaseRad = fmodf(gaitPhaseRad + 2.0f * kPi * frequencyHz * kControlStepSeconds,
                          2.0f * kPi);
   } else {
@@ -809,30 +801,37 @@ void applySinusoidalGait(Adafruit_PWMServoDriver &driver, float baseZ) {
     const bool leftLeg = (i == LEG_FL || i == LEG_BL);
     const float sideSign = leftLeg ? 1.0f : -1.0f;
     const float halfStrideMm = gaitAmplitude * (
-        forwardDirection * kGaitMaxStrideMm +
-        sideSign * turnDirection * kGaitMaxTurnStrideMm);
+        forwardDirection * profile.strideMm * 0.5f +
+        sideSign * turnDirection * profile.strideMm * 0.5f * profile.turnGain);
     float xOffsetMm = 0.0f;
     float zOffsetMm = 0.0f;
-    sampleGaitFootPath(normalizedCycle + (diagonalA ? 0.0f : 0.5f),
+    sampleGaitFootPath(normalizedCycle + (diagonalA ? 0.0f : profile.diagonalPhase),
                        halfStrideMm,
-                       kGaitMaxLiftMm * gaitAmplitude,
+                       profile.liftMm * gaitAmplitude,
+                       profile.dutyFactor,
+                       profile.swingShape,
                        &xOffsetMm,
                        &zOffsetMm);
     const float x = FOOT_BACK_OFFSET_X + xOffsetMm;
-    const float y = sideSign * (FOOT_OUT_OFFSET_Y - BODY_HALF_WIDTH_Y);
+    const float y = sideSign * profile.stanceWidthMm;
     const float z = gaitBodyZ + zOffsetMm;
     commandLeg(driver, i, x, y, z);
   }
 }
 
 void applyCarefulWalk(Adafruit_PWMServoDriver &driver, float baseZ) {
+  const GaitProfileSettings &profile = gaitProfile().settings;
   constexpr float kControlStepSeconds = static_cast<float>(kControlIntervalMs) / 1000.0f;
-  const float gaitBodyTargetZ = fminf(baseZ, kGaitBodyHeightMm);
+  const float gaitBodyTargetZ = fminf(baseZ, profile.bodyHeightMm);
+  const float responseSeconds = profile.responseMs / 1000.0f;
+  const float commandSlewPerSec = 1.0f / responseSeconds;
   gaitBodyZ = approachGaitCommand(
-      gaitBodyZ, gaitBodyTargetZ, kGaitBodyHeightSlewMmPerSec * kControlStepSeconds);
-  const float targetForward = applyGaitDeadband(readMotionChannelNormalized(PITCH_CH_INDEX));
-  const float targetTurn = applyGaitDeadband(readMotionChannelNormalized(YAW_CH_INDEX));
-  const float maximumCommandStep = kGaitCommandSlewPerSec * kControlStepSeconds;
+      gaitBodyZ, gaitBodyTargetZ, (60.0f / responseSeconds) * kControlStepSeconds);
+  const float targetForward = profile.enabled
+      ? applyGaitDeadband(readMotionChannelNormalized(PITCH_CH_INDEX)) : 0.0f;
+  const float targetTurn = profile.enabled
+      ? applyGaitDeadband(readMotionChannelNormalized(YAW_CH_INDEX)) : 0.0f;
+  const float maximumCommandStep = commandSlewPerSec * kControlStepSeconds;
   gaitForwardCommand = approachGaitCommand(gaitForwardCommand, targetForward, maximumCommandStep);
   gaitTurnCommand = approachGaitCommand(gaitTurnCommand, targetTurn, maximumCommandStep);
 
@@ -841,10 +840,9 @@ void applyCarefulWalk(Adafruit_PWMServoDriver &driver, float baseZ) {
       0.0f, 1.0f);
   const float targetAmplitude = halfCosine01(activity / 0.20f) * (0.72f + 0.28f * activity);
   gaitAmplitude = approachGaitCommand(
-      gaitAmplitude, targetAmplitude, kGaitAmplitudeSlewPerSec * kControlStepSeconds);
+      gaitAmplitude, targetAmplitude, 1.35f * commandSlewPerSec * kControlStepSeconds);
   if (activity > 0.001f) {
-    const float frequencyHz =
-        kCarefulMinFrequencyHz + activity * (kCarefulMaxFrequencyHz - kCarefulMinFrequencyHz);
+    const float frequencyHz = profile.cadenceHz;
     gaitPhaseRad = fmodf(
         gaitPhaseRad + 2.0f * kPi * frequencyHz * kControlStepSeconds, 2.0f * kPi);
   } else {
@@ -861,25 +859,27 @@ void applyCarefulWalk(Adafruit_PWMServoDriver &driver, float baseZ) {
     const bool leftLeg = leg == LEG_FL || leg == LEG_BL;
     const float sideSign = leftLeg ? 1.0f : -1.0f;
     const float halfStrideMm = gaitAmplitude * (
-        forwardDirection * kCarefulMaxStrideMm +
-        sideSign * turnDirection * kCarefulMaxTurnStrideMm);
+        forwardDirection * profile.strideMm * 0.5f +
+        sideSign * turnDirection * profile.strideMm * 0.5f * profile.turnGain);
     float legCycle = normalizedCycle - 0.25f * static_cast<float>(orderIndex);
     legCycle -= floorf(legCycle);
     float xOffsetMm = 0.0f;
     float zOffsetMm = 0.0f;
-    if (legCycle < kCarefulSwingFraction) {
-      const float swing = legCycle / kCarefulSwingFraction;
+    const float swingFraction = fminf(0.245f, 1.0f - profile.dutyFactor);
+    if (legCycle < swingFraction) {
+      const float swing = legCycle / swingFraction;
       xOffsetMm = halfStrideMm * (-1.0f + 2.0f * halfCosine01(swing));
       const float liftWave = sinf(kPi * swing);
-      zOffsetMm = -kCarefulMaxLiftMm * gaitAmplitude * liftWave * liftWave;
+      zOffsetMm = -profile.liftMm * gaitAmplitude *
+          powf(fmaxf(0.0f, liftWave), profile.swingShape);
     } else {
-      const float stance = (legCycle - kCarefulSwingFraction) / (1.0f - kCarefulSwingFraction);
+      const float stance = (legCycle - swingFraction) / (1.0f - swingFraction);
       xOffsetMm = halfStrideMm * (1.0f - 2.0f * stance);
     }
     commandLeg(driver,
                leg,
                FOOT_BACK_OFFSET_X + xOffsetMm,
-               sideSign * (FOOT_OUT_OFFSET_Y - BODY_HALF_WIDTH_Y),
+               sideSign * profile.stanceWidthMm,
                gaitBodyZ + zOffsetMm);
   }
 }
@@ -1359,7 +1359,7 @@ extern "C" int dominoSilBodyMode() {
 
 extern "C" float dominoSilTargetZ() {
   return (menuState.mode == BODY_GAIT || menuState.mode == BODY_CAREFUL)
-             ? fminf(currentTargetZ, kGaitBodyHeightMm)
+             ? fminf(currentTargetZ, gaitProfile().settings.bodyHeightMm)
              : currentTargetZ;
 }
 

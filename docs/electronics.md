@@ -53,6 +53,30 @@ Bring-up checks:
 - One servo channel should be tested before all twelve servos are connected.
 - Mechanical horn alignment should be corrected physically before relying on software trims.
 
+### Optional measured power telemetry
+
+The current PCB documentation does not identify an installed voltage/current
+monitor, so the firmware reports power as unavailable by default. It never
+estimates current from servo commands. Firmware 0.6.0 includes an optional
+INA226 interface for a future high-side monitor and external shunt. The INA226
+supports the 4S bus-voltage range, while the shunt, PCB copper, connectors, and
+monitor module must all be selected for the robot's real peak and stall current.
+Register scaling and the SIL reference case follow the
+[Texas Instruments INA226 datasheet](https://www.ti.com/lit/ds/symlink/ina226.pdf).
+
+Enable the commented `DOMINO_POWER_*` flags in `platformio.ini` only after:
+
+- Confirming the device is an INA226 at the configured I2C address.
+- Measuring the actual shunt resistance and entering it in micro-ohms.
+- Choosing a maximum-current scale that covers the protected electrical path.
+- Comparing voltage and current against independent bench instruments.
+- Verifying shunt dissipation, creepage, wiring, fuse, and connector ratings.
+
+When enabled, the endpoint samples at 10 Hz and publishes only fresh, finite
+measured voltage, signed current, and power. A missing or unreadable monitor
+leaves the LIVE fields unavailable and sets diagnostic flags rather than
+inventing zero-valued measurements.
+
 ## Domino PCB V1.1B
 
 Domino now includes a dedicated PCB manufacturing package:

@@ -334,11 +334,16 @@ document.querySelectorAll("[data-experience]").forEach((button) => {
   button.addEventListener("click", () => {
     selectExperience(applicationState, button.dataset.experience);
     document.body.dataset.experience = applicationState.experience;
+    realWorkspace.dataset.experience = applicationState.experience;
     document.querySelectorAll("[data-experience]").forEach((candidate) => {
       const active = candidate.dataset.experience === applicationState.experience;
       candidate.classList.toggle("active", active);
       candidate.setAttribute("aria-pressed", String(active));
     });
+    document.querySelector("#real-workspace .live-toolbar").setAttribute(
+      "aria-label",
+      `Live robot tools / ${applicationState.experience} view`,
+    );
   });
 });
 

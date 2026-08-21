@@ -3412,6 +3412,19 @@ body[data-workspace="real-robot"]:is([data-live-view="calibration"], [data-live-
   transform-origin: top right;
 }
 
+body[data-workspace="real-robot"]:is([data-live-view="data"], [data-live-view="diagnostics"], [data-live-view="sessions"]) :is(#scene, .camera-gizmo) {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+body[data-workspace="real-robot"]:not([data-live-view="compare"]) #real-workspace .live-inspection-control {
+  display: none;
+}
+
+body[data-workspace="real-robot"]:not([data-live-view="compare"]) #real-workspace .live-toolbar {
+  grid-template-columns: 150px minmax(0, 1fr) auto auto;
+}
+
 .live-calibration-page { padding-right: 42vw; }
 .live-calibration-page .live-page-heading,
 .live-calibration-page .live-calibration-layout { max-width: none; }
@@ -4593,6 +4606,7 @@ body[data-experience="simple"] [data-expert-only] { display: none !important; }
 
 @media (max-width: 1100px) {
   #real-workspace .live-toolbar { grid-template-columns: minmax(0, 1fr) auto auto; }
+  body[data-workspace="real-robot"]:not([data-live-view="compare"]) #real-workspace .live-toolbar { grid-template-columns: minmax(0, 1fr) auto; }
   #real-workspace .live-toolbar-section { display: none; }
   #real-workspace .experience-toggle { display: none; }
   #real-workspace .live-view-tabs button { min-width: 62px; padding: 0 7px; }
@@ -4602,6 +4616,7 @@ body[data-experience="simple"] [data-expert-only] { display: none !important; }
 
 @media (max-width: 820px) {
   #real-workspace .live-toolbar { grid-template-columns: minmax(0, 1fr) auto; }
+  body[data-workspace="real-robot"]:not([data-live-view="compare"]) #real-workspace .live-toolbar { grid-template-columns: minmax(0, 1fr); }
   .live-toolbar-section { display: none; }
   #real-workspace .live-manual-open { display: none; }
   .live-view-tabs { overflow-x: auto; }

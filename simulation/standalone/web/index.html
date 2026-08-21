@@ -229,6 +229,16 @@
           <button type="button" role="tab" data-live-view="diagnostics" aria-selected="false" aria-controls="live-view-diagnostics">DIAGNOSTICS</button>
           <button type="button" role="tab" data-live-view="sessions" aria-selected="false" aria-controls="live-view-sessions">SESSIONS</button>
         </div>
+        <div class="live-inspection-control inspection-control" role="group" aria-label="Live joint inspection overlay">
+          <button id="live-joints-button" type="button" aria-pressed="false" title="Inspect the digital twin joint motion">INSPECT</button>
+          <select id="live-joint-leg" aria-label="Live annotated leg">
+            <option value="FR">FR</option>
+            <option value="FL">FL</option>
+            <option value="BR">BR</option>
+            <option value="BL">BL</option>
+            <option value="ALL">ALL</option>
+          </select>
+        </div>
         <button id="live-manual-open" class="live-manual-open" type="button">MANUAL CONTROL</button>
         <div class="experience-toggle" role="group" aria-label="Interface detail">
           <button type="button" data-experience="simple" class="active" aria-pressed="true">SIMPLE</button>

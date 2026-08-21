@@ -251,16 +251,13 @@ function applyWorkspace(workspace) {
     applyLiveView(liveViewState.selected);
     footTrajectoryGroup.visible = false;
     inspectionGrid.visible = false;
-    if (bodyReferenceOverlay) bodyReferenceOverlay.group.visible = false;
     linkageRuntimes.forEach((runtime) => {
       if (!runtime) return;
-      Object.values(runtime.annotations).forEach((annotation) => {
-        annotation.group.visible = false;
-      });
       Object.values(runtime.pins).forEach((pin) => {
         pin.visible = false;
       });
     });
+    updateJointOverlay();
   } else {
     if (measuredRobotWorld) measuredRobotWorld.visible = false;
     updateJointOverlay();
@@ -2512,6 +2509,7 @@ function renderLiveSafetyUi() {
     ? "fault"
     : liveSafetyState.robotState === "armed" ? "active" : "inactive";
   document.querySelector("#live-robot-safety-state").textContent = stateLabel.toUpperCase();
+  realWorkspace.dataset.robotState = stateLabel;
 }
 
 function sendLiveSafetyCommand(action) {
@@ -4428,12 +4426,16 @@ function updateJointOverlay() {
       }
     });
   });
-  const button = document.querySelector("#joints-button");
-  const control = button.closest(".inspection-control");
-  button.classList.toggle("active", jointOverlayVisible);
-  button.setAttribute("aria-pressed", String(jointOverlayVisible));
-  button.textContent = jointOverlayVisible ? "INSPECT ON" : "INSPECT";
-  control.classList.toggle("active", jointOverlayVisible);
+  document.querySelectorAll("#joints-button, #live-joints-button").forEach((button) => {
+    button.classList.toggle("active", jointOverlayVisible);
+    button.setAttribute("aria-pressed", String(jointOverlayVisible));
+    button.textContent = jointOverlayVisible ? "INSPECT ON" : "INSPECT";
+    button.closest(".inspection-control")?.classList.toggle("active", jointOverlayVisible);
+  });
+  document.querySelectorAll("#joint-leg, #live-joint-leg").forEach((select) => {
+    select.value = selectedJointLeg;
+  });
+  document.querySelector("#joint-opacity").value = String(jointOverlayOpacity);
   document.querySelector("#joint-legend").hidden = !jointOverlayVisible;
   inspectorPanelController?.setActive(jointOverlayVisible);
   if (jointOverlayVisible) inspectorPanelController?.clamp();
@@ -4613,14 +4615,18 @@ syncGaitLabUi();
 syncGaitProfileUi();
 document.querySelector("#reset-button").addEventListener("click", resetRobot);
 document.querySelector("#reset-view-button").addEventListener("click", resetCameraView);
-document.querySelector("#joints-button").addEventListener("click", () => {
-  jointOverlayVisible = !jointOverlayVisible;
-  updateJointOverlay();
+document.querySelectorAll("#joints-button, #live-joints-button").forEach((button) => {
+  button.addEventListener("click", () => {
+    jointOverlayVisible = !jointOverlayVisible;
+    updateJointOverlay();
+  });
 });
-document.querySelector("#joint-leg").addEventListener("change", (event) => {
-  selectedJointLeg = event.currentTarget.value;
-  updateJointOverlay();
-  updateJointLegendValues();
+document.querySelectorAll("#joint-leg, #live-joint-leg").forEach((select) => {
+  select.addEventListener("change", (event) => {
+    selectedJointLeg = event.currentTarget.value;
+    updateJointOverlay();
+    updateJointLegendValues();
+  });
 });
 document.querySelectorAll("[data-drive-joint]").forEach((button) => {
   button.addEventListener("click", () => {

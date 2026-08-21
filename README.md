@@ -58,13 +58,20 @@ measured state, records synchronized telemetry, guides servo calibration, and
 keeps every hardware-moving action behind an explicit connection and safety
 contract.
 
+![Domino Virtual Lab usage tour](docs/images/virtual-lab-usage-tour.gif)
+
+The short tour above is captured from the locally running repository build. It
+switches between the Simulation and LIVE workspaces, then visits comparison,
+calibration, physical channel mapping, telemetry data, gait transfer, and
+diagnostics without claiming a physical robot connection.
+
 | LIVE connection and safety | Telemetry and recording |
 | --- | --- |
 | ![LIVE physical connection manager](docs/images/virtual-lab-live-connection-manager.png) | ![LIVE synchronized telemetry recording](docs/images/virtual-lab-live-recording.png) |
 
-| Guided servo calibration | Gait profile transfer |
+| Physical servo channel mapping | Gait profile transfer |
 | --- | --- |
-| ![LIVE guided servo calibration](docs/images/virtual-lab-live-calibration.png) | ![LIVE gait profile transfer](docs/images/virtual-lab-live-gaits.png) |
+| ![LIVE physical servo channel mapping](docs/images/virtual-lab-live-channel-map.png) | ![LIVE gait profile transfer](docs/images/virtual-lab-live-gaits.png) |
 
 The screenshots use the repository's synthetic verification adapter so the UI
 can be demonstrated without implying that a physical robot was connected. The

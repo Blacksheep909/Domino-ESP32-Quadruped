@@ -16,6 +16,9 @@ This page tracks media that would make the project easier to evaluate visually. 
 - LIVE guided servo-calibration workflow.
 - LIVE gait-profile transfer workflow.
 - LIVE command-chain and controller diagnostics.
+- Short locally captured Virtual Lab tour covering Simulation, LIVE comparison,
+  channel mapping, Data, Gaits, and Diagnostics.
+- Current physical servo channel-map editor screenshot.
 
 ## Highest-Value Missing Media
 
@@ -24,7 +27,6 @@ This page tracks media that would make the project easier to evaluate visually. 
 - Annotated wiring photo for receiver, ESP32, PCA9685, and servo power.
 - CAD view with one leg isolated and labeled.
 - Isaac Sim / USD import screenshot showing the current simulation state.
-- Updated calibration screenshot showing the floating/floor preview toggle.
 - A short, real-hardware LIVE telemetry session after the electrical bring-up is
   safe enough to publish.
 

@@ -24,7 +24,7 @@ pio device monitor
 Expected evidence: firmware boots, every PCA9685 output remains off, CRSF frames
 and link statistics become fresh, and no servo moves.
 
-## Gate 1: read-only USB engineering link
+## Gate 1: read-only USB PC link
 
 Run the Virtual Lab and physical companion in separate terminals:
 
@@ -33,7 +33,7 @@ Run the Virtual Lab and physical companion in separate terminals:
 .\simulation\standalone\start-live-companion.ps1 -Transport usb -Device COMx
 ```
 
-Open `http://127.0.0.1:8770`, select **LIVE**, then **CONNECT**. Verify the robot
+Open `http://127.0.0.1:8770`, select **LIVE**, then **PAIR ROBOT**. Verify the robot
 identity and establish the read-only session. Do not arm.
 
 Expected evidence:

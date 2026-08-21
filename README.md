@@ -53,34 +53,89 @@ dependencies, and run its PowerShell launcher. See the
 [Virtual Lab guide](docs/virtual-lab.md) for setup, screenshots, architecture,
 controls, and current limitations.
 
-### Virtual Lab walkthrough
+## Domino Virtual Lab
 
-Simulation and LIVE are intentionally separate workspaces. Simulation is the
-safe place to change poses, terrain, controller mappings, and gait profiles.
-LIVE is the physical-robot engineering workspace: it compares commanded and
-measured state, records synchronized telemetry, guides servo calibration, and
-keeps every hardware-moving action behind an explicit connection and safety
-contract.
+The Virtual Lab is the desktop control and development environment included in
+this repository. It is not a mock website or a hosted demo: the browser UI,
+local Node service, CAD assets, physics runtime, firmware bridge, physical
+companion protocol, tests, and launch scripts are all included under
+[`simulation/standalone`](simulation/standalone).
+
+Simulation and LIVE are deliberately separate top-level workspaces:
+
+- **Simulation** is the safe sandbox. It runs the Domino CAD and linkage model
+  with Rapier physics, terrain, gait tuning, joint inspection, keyboard/gamepad
+  input, and RadioMaster Boxer support. Profiles can be pushed hard here
+  without implying that a physical actuator moved.
+- **LIVE** is the physical-robot workspace. `PAIR ROBOT` opens a read-only
+  Wi-Fi, Bluetooth, or USB pairing flow; `UPLOAD FW` opens the reviewed firmware
+  build/flash workflow. DRIVE LINK and PC LINK remain independent status
+  signals, and every motion-capable operation fails closed until the robot
+  acknowledges the required safety state.
+
+The LIVE digital twin can overlay robot-reported measured joint and IMU state
+against the expected command. Its six pages divide normal operation from the
+deeper engineering tools:
+
+| Page | Purpose |
+| --- | --- |
+| **Compare** | Expected-versus-measured CAD, body/joint error, power, safety state, recording, and guarded manual control. |
+| **Data** | Larger synchronized graphs, recorder controls, CSV export, and an Expert sample table. |
+| **Calibration** | Five-step servo setup, remappable PCA9685 channels, neutral offsets, direction, limits, safe jog contracts, and JSON backup. |
+| **Gaits** | Cross-compatible Simulation profiles, local animated preview, risk checks, robot comparison, persistent apply, and rollback. |
+| **Diagnostics** | Command-pipeline tracing, Boxer/ELRS health, packet counters, event history, and Expert raw packet inspection. |
+| **Sessions** | Completed captures with duration, sample count, error/power summaries, and independent export. |
+
+Simple mode keeps the operating views compact. Expert mode reveals joint-level,
+RF, packet, and sample detail without weakening any safety limit.
+
+### Program walkthrough
 
 ![Domino Virtual Lab usage tour](docs/images/virtual-lab-usage-tour.gif)
 
 The short tour above is captured from the locally running repository build. It
-switches between the Simulation and LIVE workspaces, then visits comparison,
-calibration, physical channel mapping, telemetry data, gait transfer, and
-diagnostics without claiming a physical robot connection.
+switches between Simulation and LIVE, then visits comparison, calibration,
+physical channel mapping, telemetry, gait transfer, and diagnostics without
+claiming a physical robot connection.
 
-| LIVE connection and safety | Telemetry and recording |
+| Simulation sandbox | LIVE digital twin |
 | --- | --- |
-| ![LIVE physical connection manager](docs/images/virtual-lab-live-connection-manager.png) | ![LIVE synchronized telemetry recording](docs/images/virtual-lab-live-recording.png) |
+| ![Current Simulation workspace](docs/images/virtual-lab-simulation-workspace.png) | ![Current LIVE comparison workspace](docs/images/virtual-lab-real-robot-workspace.png) |
 
-| Physical servo channel mapping | Gait profile transfer |
+| Pair a robot | Robot data and graphs |
 | --- | --- |
-| ![LIVE physical servo channel mapping](docs/images/virtual-lab-live-channel-map.png) | ![LIVE gait profile transfer](docs/images/virtual-lab-live-gaits.png) |
+| ![Current robot pairing manager](docs/images/virtual-lab-live-pairing.png) | ![Current LIVE data workspace](docs/images/virtual-lab-live-data.png) |
 
-The screenshots use the repository's synthetic verification adapter so the UI
-can be demonstrated without implying that a physical robot was connected. The
-real ESP32 endpoint fails closed, opens disarmed, and requires fresh heartbeat
-and robot acknowledgements before hardware motion is available.
+| Guided servo calibration | Gait profile transfer |
+| --- | --- |
+| ![Current servo calibration workflow](docs/images/virtual-lab-live-calibration.png) | ![Current gait profile workspace](docs/images/virtual-lab-live-gaits.png) |
+
+| Command diagnostics | Recorded sessions |
+| --- | --- |
+| ![Current command-chain diagnostics](docs/images/virtual-lab-live-diagnostics.png) | ![Current recorded sessions workspace](docs/images/virtual-lab-live-sessions.png) |
+
+The gallery above shows the current local build in its honest offline state.
+The deeper [Virtual Lab guide](docs/virtual-lab.md) also contains clearly
+labelled synthetic-adapter captures that demonstrate armed-state, synchronized
+telemetry, and failure diagnostics without implying that a powered physical
+robot was used. The real ESP32 endpoint opens disarmed and requires fresh
+heartbeats plus explicit robot acknowledgements before hardware motion is
+available.
+
+### Run the program
+
+On Windows, install Node.js and pnpm, then launch from the repository root:
+
+```powershell
+cd simulation\standalone
+pnpm install
+cd ..\..
+.\simulation\standalone\launch.ps1
+```
+
+The launcher starts the local service and opens the source-built application.
+Full setup, controller notes, connection transports, safety contracts, and
+troubleshooting are in the [Virtual Lab guide](docs/virtual-lab.md).
 
 ## Current Status
 

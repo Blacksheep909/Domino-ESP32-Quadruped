@@ -28,10 +28,10 @@ packet order and freshness, computes the 12 driven-joint errors, and renders a
 translucent measured CAD overlay only while physical data is fresh. Power is
 carried in the same envelope but remains an independent freshness-gated signal.
 
-`CONNECT` opens the physical-link manager. Companion adapters announce a stable
+`PAIR ROBOT` opens the physical-link manager. Companion adapters announce a stable
 identity, Wi-Fi/Bluetooth/USB transport, robot identity, firmware, signal, and
 capabilities. The browser then requests a read-only handshake and receives a
-short-lived engineering session. All telemetry and hardware command envelopes
+short-lived PC link. All telemetry and hardware command envelopes
 must carry the selected `adapterId` and `sessionId`; the relay rejects stale or
 duplicate adapter identities, mismatched sessions, and unsolicited command
 acknowledgements. Losing the adapter heartbeat immediately locks calibration and
@@ -116,7 +116,7 @@ keyboard fallback as proof that a Boxer is connected.
 
 ![Simulation workspace](../../docs/images/virtual-lab-simulation-workspace.png)
 
-![Real Robot workspace](../../docs/images/virtual-lab-real-robot-workspace.png)
+![LIVE digital-twin workspace](../../docs/images/virtual-lab-real-robot-workspace.png)
 
 ![LIVE gait profile transfer](../../docs/images/virtual-lab-live-gaits.png)
 
@@ -128,7 +128,7 @@ keyboard fallback as proof that a Boxer is connected.
 
 ## Firmware deployment workspace
 
-Open **UPLOAD** in the Real Robot header to review, build, and deploy the
+Open **UPLOAD FW** in the LIVE header to review, build, and deploy the
 real root PlatformIO project. The workspace lists every included file from
 `platformio.ini`, `src/`, `include/`, and `lib/`, shows a package SHA-256, and
 provides a read-only source viewer before hardware operations are enabled.

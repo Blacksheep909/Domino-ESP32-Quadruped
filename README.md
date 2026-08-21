@@ -5,6 +5,8 @@ Domino is a prototype ESP32 quadruped robot built around a carbon-and-printed co
 For the portfolio-level explanation of the architecture, control flow, linkage
 problem, and the most interesting implementation details, start with the
 [Domino Engineering Overview](docs/engineering-overview.md).
+Current implementation status and remaining physical-validation gates are in
+the [Virtual Lab roadmap status](docs/virtual-lab-roadmap-status.md).
 
 > Work in progress: Domino is an active engineering prototype, not a finished kit. The firmware, CAD exports, PCB package, calibration notes, and simulation files are included as a project record and technical reference. The repo does not yet contain a complete step-by-step build manual, measured BOM, wiring diagram, or validated production assembly process.
 
@@ -218,8 +220,8 @@ The firmware can be built with PlatformIO:
 pio run
 ```
 
-The LIVE workspace can connect to firmware `0.3.0` over the ESP32 USB serial
-port through the fail-closed PC companion. See
+The LIVE workspace can connect to firmware `0.6.0` over ESP32 USB serial,
+Wi-Fi TCP, or a paired Bluetooth SPP port through the fail-closed PC companion. See
 [`docs/live-companion-protocol.md`](docs/live-companion-protocol.md) for the
 protocol, startup command, supported capabilities, and hardware safety rules.
 

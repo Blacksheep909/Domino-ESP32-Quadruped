@@ -57,7 +57,7 @@ becomes idle while safely disarmed. An owner disconnect while armed enters the
 watchdog state immediately; a disconnect in calibration turns every servo off.
 An E-stop is still accepted from any authenticated transport.
 
-The adapter appears in **LIVE -> CONNECT** only after the physical endpoint has
+The adapter appears in **LIVE -> PAIR ROBOT** only after the physical endpoint has
 sent a fresh hello or telemetry message. A stale or disconnected robot is
 advertised as an error and cannot negotiate a session.
 

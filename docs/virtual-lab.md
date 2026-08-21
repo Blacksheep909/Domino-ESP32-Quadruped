@@ -46,11 +46,9 @@ contract now accepts independently timestamped expected and measured poses,
 computes shortest-path angular errors, and rejects malformed, out-of-order, or
 stale packets. Fresh measured telemetry drives a separate translucent CAD model
 over the expected pose; the overlay disappears if the stream is more than one
-second old. The local WebSocket relay is ready for the future wireless robot
-adapter. A transport-neutral connection manager now discovers companion
+second old. A transport-neutral connection manager now discovers companion
 adapters, shows robot identity, firmware, signal, endpoint, and capabilities,
-then negotiates an explicit read-only engineering session. The Wi-Fi,
-Bluetooth, and USB companion implementations remain hardware-side work.
+then negotiates an explicit read-only engineering session.
 
 ![LIVE physical connection manager using a synthetic local adapter](images/virtual-lab-live-connection-manager.png)
 

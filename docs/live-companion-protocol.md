@@ -83,7 +83,7 @@ The robot sends this after boot and whenever a link is established:
   "type": "robot-hello",
   "robotId": "domino-1",
   "robotName": "Domino",
-  "firmwareVersion": "0.5.0",
+  "firmwareVersion": "0.6.0",
   "robotState": "disarmed",
   "capabilities": {
     "telemetry": true,

@@ -83,7 +83,7 @@ The robot sends this after boot and whenever a link is established:
   "type": "robot-hello",
   "robotId": "domino-1",
   "robotName": "Domino",
-  "firmwareVersion": "0.4.0",
+  "firmwareVersion": "0.5.0",
   "robotState": "disarmed",
   "capabilities": {
     "telemetry": true,
@@ -91,7 +91,7 @@ The robot sends this after boot and whenever a link is established:
     "gaitProfiles": true,
     "persistentProfiles": true,
     "persistentGaitProfiles": true,
-    "manualControl": false
+    "manualControl": true
   }
 }
 ```
@@ -217,7 +217,7 @@ For each `safety-heartbeat`, return the same sequence:
 
 ## Current ESP32 endpoint
 
-Firmware `0.4.0` implements the matching USB serial endpoint. Build and flash
+Firmware `0.5.0` implements the matching USB serial endpoint. Build and flash
 the normal PlatformIO `esp32dev` environment, connect the ESP32 over USB, then
 run the companion with `-Transport usb -Device COMx`.
 
@@ -249,7 +249,14 @@ NVS slot, read back, checksum-validated, and selected only after verification;
 the other valid slot remains the rollback profile. Telemetry reports the active
 profile and persistent-profile capabilities to LIVE.
 
-Browser manual driving remains disabled and is advertised as unsupported until
-its independent robot-side authority enforcement is implemented.
+Browser manual driving is guarded independently on the ESP32. Authority is
+granted only while armed with a healthy Boxer/ELRS link, is bound to one
+constant-time-compared token, and expires after at most 30 seconds. Frames must
+carry a strictly increasing sequence, four finite bounded axes, a supported
+mode, deadman, and the exact 250 ms timeout contract. A stale frame becomes a
+neutral stand command; lease expiry, disarm, watchdog, controller failure, or
+explicit release revokes the override. Granting authority alone never moves
+the robot. LIVE diagnostics report lease time, frame age, override state, and
+deadman state without exposing the token.
 Wi-Fi TCP and Bluetooth SPP are implemented but compile disabled until the
 local secrets header explicitly enables them.

@@ -111,6 +111,7 @@ uint8_t calibrationPhysicalChannel = 0;
 float calibrationTargetDeg = 135.0f;
 float calibrationCurrentDeg = 135.0f;
 uint32_t calibrationUpdatedMs = 0;
+ManualControlGuard manualGuard;
 
 struct StoredCalibrationProfile {
   uint32_t magic;
@@ -400,7 +401,15 @@ void addCapabilities(JsonObject capabilities) {
   capabilities["gaitProfiles"] = true;
   capabilities["persistentProfiles"] = true;
   capabilities["persistentGaitProfiles"] = true;
-  capabilities["manualControl"] = false;
+  capabilities["manualControl"] = true;
+}
+
+bool boundedManualAxis(JsonVariantConst source, float *value) {
+  if (!value || !source.is<float>()) return false;
+  const float candidate = source.as<float>();
+  if (!isfinite(candidate) || candidate < -1.0f || candidate > 1.0f) return false;
+  *value = candidate;
+  return true;
 }
 
 bool constantTimeLinkKeyMatches(const char *candidate) {
@@ -434,7 +443,7 @@ void sendHello() {
   document["type"] = "robot-hello";
   document["robotId"] = "domino-esp32-quadruped";
   document["robotName"] = "Domino";
-  document["firmwareVersion"] = "0.4.0";
+  document["firmwareVersion"] = "0.5.0";
   document["robotState"] = stateName();
   document["wirelessAuth"] = "psk-v1";
   addCapabilities(document["capabilities"].to<JsonObject>());
@@ -487,6 +496,12 @@ void sendTelemetry(uint32_t now) {
   diagnostics["imuAzG"] = gImuState.az_g_filt;
   diagnostics["servoLimitClipCount"] = servoSafetyClipCount();
   diagnostics["jointFeedbackAvailable"] = false;
+  const LiveManualControlSnapshot &manual = manualGuard.snapshot();
+  diagnostics["manualAuthorityActive"] = manualGuard.authorityActive();
+  diagnostics["manualOverrideActive"] = manual.active;
+  diagnostics["manualDeadman"] = manual.deadman;
+  diagnostics["manualFrameAgeMs"] = manualGuard.frameAgeMs(now);
+  diagnostics["manualLeaseRemainingMs"] = manualGuard.leaseRemainingMs(now);
 
   const CrsfLinkStatistics link = crsfLinkStatistics();
   JsonObject controller = document["controller"].to<JsonObject>();
@@ -564,6 +579,7 @@ void disableOutputs(Adafruit_PWMServoDriver &driver, LiveRobotState nextState) {
   calibrationJogActive = false;
   calibrationChannelActive = false;
   setServoOutputsEnabled(driver, false);
+  manualGuard.revoke();
   state = nextState;
 }
 
@@ -693,6 +709,79 @@ void handleCalibration(JsonObjectConst command, JsonObjectConst payload,
   }
 }
 
+void handleManualAuthority(JsonObjectConst command, JsonObjectConst payload, uint32_t now) {
+  const char *action = command["action"] | "";
+  const char *requestId = command["requestId"] | "";
+  if (!strcmp(action, "request-authority")) {
+    const char *token = command["authorityToken"] | "";
+    const uint32_t leaseMs = command["leaseMs"] | 0;
+    const bool safetyContract = payload["safety"]["requiresArmed"] == true &&
+        payload["safety"]["requiresDeadman"] == true &&
+        payload["safety"]["neutralOnRelease"] == true &&
+        (payload["safety"]["commandTimeoutMs"] | 0) == DOMINO_MANUAL_TIMEOUT_MS;
+    if (state != LiveRobotState::Armed || !controllerSafeToArm(now)) {
+      acknowledge("manual-authority", action, requestId, false,
+                  "Armed state and a fresh healthy Boxer/ELRS link are required.");
+    } else if (manualGuard.authorityActive()) {
+      acknowledge("manual-authority", action, requestId, false,
+                  "Another manual-control lease is already active.");
+    } else if (!safetyContract || !manualGuard.grant(token, leaseMs, now)) {
+      acknowledge("manual-authority", action, requestId, false,
+                  "Invalid authority token, lease, or safety contract.");
+    } else {
+      acknowledge("manual-authority", action, requestId, true);
+    }
+    return;
+  }
+  if (!strcmp(action, "release-authority")) {
+    if (!manualGuard.release(payload["authorityToken"] | "")) {
+      acknowledge("manual-authority", action, requestId, false,
+                  "Authority token does not match the active lease.");
+    } else {
+      acknowledge("manual-authority", action, requestId, true);
+    }
+    return;
+  }
+  acknowledge("manual-authority", action, requestId, false,
+              "Unsupported manual-authority action.");
+}
+
+void handleManualControl(JsonObjectConst command, uint32_t now) {
+  // A companion-generated neutral command intentionally needs no token. It is
+  // a one-way fail-safe used on browser disconnect, deadman release and lease
+  // teardown; accepting it can only reduce motion.
+  const bool neutral = command["neutral"] == true && command["deadman"] == false;
+  if (neutral) {
+    manualGuard.acceptNeutral(now);
+    return;
+  }
+  const char *token = command["authorityToken"] | "";
+  const uint32_t sequence = command["sequence"] | 0;
+  const uint32_t timeoutMs = command["timeoutMs"] | 0;
+  const char *mode = command["mode"] | "";
+  if (command["deadman"] != true) return;
+  LiveManualMode parsedMode = LiveManualMode::Stand;
+  if (!strcmp(mode, "stand")) parsedMode = LiveManualMode::Stand;
+  else if (!strcmp(mode, "careful")) parsedMode = LiveManualMode::Careful;
+  else if (!strcmp(mode, "trot")) parsedMode = LiveManualMode::Trot;
+  else return;
+  JsonObjectConst axes = command["axes"].as<JsonObjectConst>();
+  float forward = 0.0f;
+  float turn = 0.0f;
+  float roll = 0.0f;
+  float height = 0.0f;
+  if (state != LiveRobotState::Armed || !controllerSafeToArm(now) ||
+      !boundedManualAxis(axes["forward"], &forward) ||
+      !boundedManualAxis(axes["turn"], &turn) ||
+      !boundedManualAxis(axes["roll"], &roll) ||
+      !boundedManualAxis(axes["height"], &height)) return;
+  manualGuard.acceptFrame(token, sequence, now, parsedMode, forward, turn, roll, height, timeoutMs);
+}
+
+void updateManualControl(uint32_t now) {
+  manualGuard.tick(now, state == LiveRobotState::Armed && controllerSafeToArm(now));
+}
+
 void handleGait(JsonObjectConst command, JsonObjectConst payload) {
   const char *action = command["action"] | "";
   const char *requestId = command["requestId"] | "";
@@ -763,6 +852,8 @@ void handleCommand(const String &line, LiveTransport source,
   JsonObjectConst payload = command["payload"].as<JsonObjectConst>();
   if (!strcmp(kind, "safety")) handleSafety(command, payload, driver, now);
   else if (!strcmp(kind, "safety-heartbeat")) handleHeartbeat(command, now);
+  else if (!strcmp(kind, "manual-authority")) handleManualAuthority(command, payload, now);
+  else if (!strcmp(kind, "manual-control")) handleManualControl(command, now);
   else if (!strcmp(kind, "calibration")) handleCalibration(command, payload, driver, now);
   else if (!strcmp(kind, "gait")) handleGait(command, payload);
   else if (command["requestId"].is<const char*>())
@@ -896,6 +987,7 @@ void liveRobotEndpointLoop(uint32_t now, Adafruit_PWMServoDriver &driver) {
   readTransport(Serial, usbInputLine, LiveTransport::Usb, driver, now);
   updateWirelessTransports(driver, now);
   updateCalibrationJog(driver, now);
+  updateManualControl(now);
   if (state == LiveRobotState::Armed &&
       (now - lastHeartbeatMs > kWatchdogMs || !controllerSafeToArm(now))) {
     disableOutputs(driver, LiveRobotState::Watchdog);
@@ -913,3 +1005,4 @@ void liveRobotEndpointLoop(uint32_t now, Adafruit_PWMServoDriver &driver) {
 void liveRobotEndpointSetExpectedPose(const LiveRobotPoseSnapshot &pose) { expectedPose = pose; }
 LiveRobotState liveRobotEndpointState() { return state; }
 bool liveRobotEndpointAllowsLocomotion() { return state == LiveRobotState::Armed; }
+LiveManualControlSnapshot liveRobotEndpointManualControl() { return manualGuard.snapshot(); }

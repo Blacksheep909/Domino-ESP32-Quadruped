@@ -2,6 +2,7 @@
 
 #include <Adafruit_PWMServoDriver.h>
 #include <Arduino.h>
+#include "manual_control_guard.h"
 
 enum class LiveRobotState : uint8_t {
   Disarmed,
@@ -23,3 +24,4 @@ void liveRobotEndpointLoop(uint32_t now, Adafruit_PWMServoDriver &driver);
 void liveRobotEndpointSetExpectedPose(const LiveRobotPoseSnapshot &pose);
 LiveRobotState liveRobotEndpointState();
 bool liveRobotEndpointAllowsLocomotion();
+LiveManualControlSnapshot liveRobotEndpointManualControl();

@@ -38,7 +38,7 @@ The repository is deliberately split into three connected but distinct tracks:
   actuator/contact modelling, environments, and reinforcement-learning policy
   research.
 - **Domino Virtual Lab** - the standalone 3D application for plugging in a
-  Boxer controller, exercising the production firmware in a game-like CAD
+  CRSF transmitter or standard gamepad, exercising the production firmware in a game-like CAD
   environment, and checking changes before hardware bring-up.
 
 The Virtual Lab lives at [`simulation/standalone`](simulation/standalone) for
@@ -65,7 +65,9 @@ Simulation and LIVE are deliberately separate top-level workspaces:
 
 - **Simulation** is the safe sandbox. It runs the Domino CAD and linkage model
   with Rapier physics, terrain, gait tuning, joint inspection, keyboard/gamepad
-  input, and RadioMaster Boxer support. Profiles can be pushed hard here
+  input, generic gamepads, and RadioMaster/EdgeTX/OpenTX CRSF transmitters.
+  Xbox, DualShock 4, DualSense, and compatible controllers are identified by
+  name and normalized to the same driving controls. Profiles can be pushed hard here
   without implying that a physical actuator moved.
 - **LIVE** is the physical-robot workspace. `PAIR ROBOT` opens a read-only
   Wi-Fi, Bluetooth, or USB pairing flow; `UPLOAD FW` opens the reviewed firmware
@@ -83,7 +85,7 @@ deeper engineering tools:
 | **Data** | Larger synchronized graphs, recorder controls, CSV export, and an Expert sample table. |
 | **Calibration** | Five-step servo setup, remappable PCA9685 channels, neutral offsets, direction, limits, safe jog contracts, and JSON backup. |
 | **Gaits** | Cross-compatible Simulation profiles, local animated preview, risk checks, robot comparison, persistent apply, and rollback. |
-| **Diagnostics** | Command-pipeline tracing, Boxer/ELRS health, packet counters, event history, and Expert raw packet inspection. |
+| **Diagnostics** | Command-pipeline tracing, CRSF/ELRS health, packet counters, event history, and Expert raw packet inspection. |
 | **Sessions** | Completed captures with duration, sample count, error/power summaries, and independent export. |
 
 Simple mode keeps the operating views compact. Expert mode reveals joint-level,
@@ -243,7 +245,7 @@ debounced mode changes, stand and tilt movement, continuous ride height, gait
 stride/lift, the tilt interlock, link
 loss, failsafe stow, and all 12 output pulse widths. The next integration stage
 will feed those same outputs into the CAD-derived Isaac articulation and accept
-Boxer input over USB.
+compatible CRSF-transmitter input over USB.
 
 ## CRSF / ExpressLRS Radio Link
 

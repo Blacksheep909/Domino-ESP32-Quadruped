@@ -2,6 +2,7 @@ import { HID, devices } from "node-hid";
 
 export const BOXER_VENDOR_ID = 0x1209;
 export const BOXER_PRODUCT_ID = 0x4f54;
+export const CRSF_TRANSMITTER_PATTERN = /radiomaster|edge\s*tx|open\s*tx|tx16s|boxer|zorro|pocket|jumper|t-?lite|t-?pro/i;
 
 const AXIS_COUNT = 8;
 const AXIS_MAX = 2048;
@@ -59,7 +60,15 @@ export function decodeBoxerReport(report) {
   };
 }
 
-export class BoxerHidInput {
+export const decodeCrsfTransmitterReport = decodeBoxerReport;
+
+export function isCrsfTransmitterDevice(device) {
+  if (!device || device.usagePage !== 1 || ![4, 5].includes(device.usage)) return false;
+  if (device.vendorId === BOXER_VENDOR_ID && device.productId === BOXER_PRODUCT_ID) return true;
+  return CRSF_TRANSMITTER_PATTERN.test(`${device.manufacturer || ""} ${device.product || ""}`);
+}
+
+export class CrsfTransmitterHidInput {
   constructor(onState, logger = console) {
     this.onState = onState;
     this.logger = logger;
@@ -67,7 +76,7 @@ export class BoxerHidInput {
     this.scanTimer = null;
     this.state = {
       connected: false,
-      name: "BOXER NOT FOUND",
+      name: "CRSF TRANSMITTER NOT FOUND",
       channels: null,
       axes: null,
       battery: null,
@@ -87,21 +96,15 @@ export class BoxerHidInput {
 
     let info;
     try {
-      info = devices().find(
-        (device) =>
-          device.vendorId === BOXER_VENDOR_ID &&
-          device.productId === BOXER_PRODUCT_ID &&
-          device.usagePage === 1 &&
-          device.usage === 5,
-      );
+      info = devices().find(isCrsfTransmitterDevice);
     } catch (error) {
-      this.logger.warn(`Boxer HID scan failed: ${error.message}`);
+      this.logger.warn(`CRSF transmitter HID scan failed: ${error.message}`);
       return;
     }
 
     if (!info) {
       if (this.state.connected) {
-        this.publish({ connected: false, name: "BOXER NOT FOUND", channels: null, updatedAt: Date.now() });
+        this.publish({ connected: false, name: "CRSF TRANSMITTER NOT FOUND", channels: null, updatedAt: Date.now() });
       }
       return;
     }
@@ -109,20 +112,21 @@ export class BoxerHidInput {
     try {
       this.device = new HID(info.path);
     } catch (error) {
-      this.logger.warn(`Boxer HID open failed: ${error.message}`);
+      this.logger.warn(`CRSF transmitter HID open failed: ${error.message}`);
       this.device = null;
       return;
     }
 
-    this.logger.log(`Boxer HID connected: ${info.product}`);
-    this.publish({ connected: true, name: info.product || "RADIOMASTER BOXER", updatedAt: Date.now() });
+    const deviceName = info.product || info.manufacturer || "CRSF TRANSMITTER";
+    this.logger.log(`CRSF transmitter HID connected: ${deviceName}`);
+    this.publish({ connected: true, name: deviceName, updatedAt: Date.now() });
 
     this.device.on("data", (report) => {
       const decoded = decodeBoxerReport(report);
       if (!decoded) return;
       this.publish({
         connected: true,
-        name: info.product || "RADIOMASTER BOXER",
+        name: deviceName,
         channels: decoded.channels,
         axes: decoded.axes,
         battery: decoded.battery,
@@ -132,7 +136,7 @@ export class BoxerHidInput {
       });
     });
     this.device.on("error", (error) => {
-      this.logger.warn(`Boxer HID disconnected: ${error.message}`);
+      this.logger.warn(`CRSF transmitter HID disconnected: ${error.message}`);
       this.disconnect();
     });
   }
@@ -147,7 +151,7 @@ export class BoxerHidInput {
         // The OS may already have closed a removed USB device.
       }
     }
-    this.publish({ connected: false, name: "BOXER NOT FOUND", channels: null, updatedAt: Date.now() });
+    this.publish({ connected: false, name: "CRSF TRANSMITTER NOT FOUND", channels: null, updatedAt: Date.now() });
   }
 
   start() {
@@ -161,3 +165,6 @@ export class BoxerHidInput {
     this.disconnect();
   }
 }
+
+// Retained for downstream imports while the public name migrates.
+export const BoxerHidInput = CrsfTransmitterHidInput;

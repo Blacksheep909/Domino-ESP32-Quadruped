@@ -7,7 +7,7 @@ and from the Isaac Sim / Isaac Lab training work.
 
 The program now has two top-level workspaces:
 
-- **Simulation** owns the firmware-in-the-loop 3D environment, Boxer heartbeat,
+- **Simulation** owns the firmware-in-the-loop 3D environment, CRSF-radio heartbeat,
   physics, joint inspection, and experimental gait tools.
 - **Live** is an isolated, safely disarmed real-robot digital twin. It shares
   the 3D CAD viewport for visual comparison while keeping physical telemetry,
@@ -48,7 +48,7 @@ for launch commands and the required ESP32 JSONL endpoint.
 
 The safety dock adds a separate `live-safety-command` contract for arm, disarm,
 E-stop, and physical-latch reset. Arm requires a 1.5-second uninterrupted hold,
-fresh expected/measured telemetry, a robot-reported Boxer/ELRS drive link, and a
+fresh expected/measured telemetry, a robot-reported CRSF/ELRS drive link, and a
 disarmed robot state. While armed, a session-bound 10 Hz heartbeat drives a
 400 ms robot-side watchdog. The UI fails closed on missing acknowledgements,
 workspace loss, hidden tabs, stale telemetry, bridge loss, or adapter loss; the
@@ -76,15 +76,15 @@ stage, retain a severity-tagged event log, and export a JSON diagnostic bundle.
 The optional `controller` object carries the robot-side CRSF evidence used for
 the LIVE drive badge and arm interlock: exactly 16 bounded channel values, frame
 timestamp/rate/loss, failsafe state/count, link quality, dual RSSI, SNR, RF mode,
-transmitter power, active antenna, receiver voltage, and Boxer/receiver names.
+transmitter power, active antenna, receiver voltage, and transmitter/receiver names.
 Simple diagnostics shows the operating essentials and eight mapped controls;
 Expert shows all RF fields, all 16 channels, and controller transition history.
-The link is arm-ready only while a fresh `boxer-elrs` frame is failsafe-clear,
+The link is arm-ready only while a fresh `crsf-radio` (or legacy `boxer-elrs`) frame is failsafe-clear,
 link quality is at least 50%, and RSSI is at least -105 dBm.
 
 `MANUAL CONTROL` adds a separate, guarded browser-driving path for compatible
 adapters. It remains inspectable offline, but requesting authority requires an
-armed robot, fresh expected/measured telemetry, a healthy Boxer/ELRS link, and
+armed robot, fresh expected/measured telemetry, a healthy CRSF/ELRS link, and
 an explicit physical-E-stop confirmation. A robot-granted authority token lasts
 at most 30 seconds. Bounded controls stream at 20 Hz only while HOLD TO DRIVE is
 pressed, release sends a neutral stand frame, and every frame declares a 250 ms
@@ -106,13 +106,13 @@ The Simulation link panel reports each part of the control path separately:
 
 - **Local bridge** is driven by a browser-to-server heartbeat, including
   acknowledgement age and round-trip latency;
-- **Boxer input** becomes connected only when fresh RadioMaster HID/gamepad
-  packets are actually arriving;
+- **Radio input** becomes connected only when fresh RadioMaster, EdgeTX, OpenTX,
+  or compatible transmitter HID/gamepad packets are actually arriving;
 - **CRSF to firmware** reflects accepted frames and the SIL firmware's own
   link-alive state.
 
 These indicators deliberately avoid treating a healthy local server or
-keyboard fallback as proof that a Boxer is connected.
+keyboard fallback as proof that a radio is connected.
 
 ![Simulation workspace](../../docs/images/virtual-lab-simulation-workspace.png)
 
@@ -124,7 +124,7 @@ keyboard fallback as proof that a Boxer is connected.
 
 ![LIVE latched E-stop](../../docs/images/virtual-lab-live-safety.png)
 
-![LIVE Boxer and ELRS controller diagnostics](../../docs/images/virtual-lab-live-controller-diagnostics.png)
+![LIVE CRSF and ELRS controller diagnostics](../../docs/images/virtual-lab-live-controller-diagnostics.png)
 
 ## Firmware deployment workspace
 
@@ -153,7 +153,7 @@ explicit BOOT confirmation.
 This local application runs separately from Isaac Sim and Isaac Lab. It combines:
 
 - the production ESP32 firmware compiled as a native process;
-- CRSF frames generated from keyboard or direct RadioMaster Boxer USB input;
+- CRSF frames generated from keyboard or direct compatible transmitter USB input;
 - all 29 real Domino CAD STL meshes;
 - a real-time closed-linkage kinematic solver;
 - Rapier 3D rigid-body dynamics at 120 Hz;
@@ -210,16 +210,19 @@ For a hands-off renderer and linkage check, open
 
 ## Input
 
-Connect the RadioMaster Boxer in EdgeTX USB joystick mode before or after
-launching the sandbox. The local server reads its HID report directly, so it
-also works in embedded browsers that do not expose the Gamepad API.
+Connect a RadioMaster or compatible EdgeTX/OpenTX transmitter in USB joystick
+mode before or after launching the sandbox. The native bridge identifies the
+actual transmitter name and supports common RadioMaster and Jumper product
+names, including Boxer, TX16S, Zorro, Pocket, T-Lite, and T-Pro. Xbox/XInput,
+DualShock 4, DualSense, and standards-compliant generic gamepads are normalized
+through the browser Gamepad API and retain their detected controller identity.
 
 The first eight EdgeTX output channels are passed directly into the firmware
 bridge. The current robot mapping is:
 
 - channel 1: roll;
 - channel 2: forward command;
-- channel 3 / Boxer left-stick vertical: continuous ride height from 220 to 280 mm (1000 µs = low, 2000 µs = high);
+- channel 3 / transmitter left-stick vertical: continuous ride height from 220 to 280 mm (1000 µs = low, 2000 µs = high);
 - channel 4: turn;
 - channel 5 / SA: stand mode;
 - channel 6 / SB: unbound and ignored by the current firmware;
@@ -250,7 +253,7 @@ it is never sent back to the SIL process or written to `src/main.cpp`. Settings
 are stored in the browser so a useful candidate can be compared across runs
 before it is deliberately ported to the physical robot firmware.
 
-Each launch records Boxer HID axes, mapped channels, outgoing controls, firmware
+Each launch records controller HID axes, mapped channels, outgoing controls, firmware
 mode, target pose, all servo outputs, body height, reset count, and per-foot
 contact state. The active recording is available at
 `http://127.0.0.1:8770/runtime/debug/latest.jsonl`.

@@ -4999,6 +4999,23 @@ function applyLiveBodyPose(group, body) {
   ));
 }
 
+function groundLivePreviewFromFeet() {
+  scene.updateMatrixWorld(true);
+  const footSurfaces = linkageRuntimes
+    .filter(Boolean)
+    .map((runtime) => {
+      runtime.footProbe.getWorldPosition(visualFootPosition);
+      return visualFootPosition.y - CAD_FOOT_RADIUS;
+    })
+    .filter(Number.isFinite);
+  if (!footSurfaces.length) return 0;
+  const correction = VISUAL_FLOOR_CLEARANCE - Math.min(...footSurfaces);
+  robotWorld.position.y += correction;
+  robotWorld.updateMatrixWorld(true);
+  canvas.dataset.liveGroundOffsetMm = (correction * 1_000).toFixed(2);
+  return correction;
+}
+
 function updateLiveTwinPose(delta) {
   if (liveViewState.selected === LIVE_VIEW_CALIBRATION && linkageRuntimesReady()) {
     const previewAngles = liveCalibrationState.previewEnabled
@@ -5011,6 +5028,7 @@ function updateLiveTwinPose(delta) {
     );
     applyServoAnglesToRuntimes(linkageRuntimes, liveExpectedServoAngles);
     applyLiveBodyPose(robotWorld, { rollDeg: 0, pitchDeg: 0, yawDeg: 0, heightMm: 280 });
+    if (!calibrationFloatEnabled) groundLivePreviewFromFeet();
     if (measuredRobotWorld) measuredRobotWorld.visible = false;
     canvas.dataset.liveExpectedPose = "calibration-preview";
     canvas.dataset.liveMeasuredPose = "unavailable";
@@ -5051,6 +5069,7 @@ function updateLiveTwinPose(delta) {
       yawDeg: 0,
       heightMm: liveGaitPreviewOutput.pose_z_mm,
     });
+    groundLivePreviewFromFeet();
     if (measuredRobotWorld) measuredRobotWorld.visible = false;
     canvas.dataset.liveExpectedPose = "gait-preview";
     canvas.dataset.liveMeasuredPose = "unavailable";

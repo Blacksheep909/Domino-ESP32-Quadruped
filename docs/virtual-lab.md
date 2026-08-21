@@ -124,6 +124,8 @@ confirmation. The firmware keeps joint calibration attached to the logical
 mechanism, routes PWM to the selected physical output, energizes only one output
 during bench jog, and turns all outputs off before activating a new map.
 
+![LIVE physical PCA9685 channel-map editor](images/virtual-lab-live-channel-map.png)
+
 ![LIVE guided servo calibration with 3D neutral preview](images/virtual-lab-live-calibration.png)
 
 Physical movement and robot persistence are deliberately locked until a robot

@@ -5063,18 +5063,34 @@ body[data-experience="simple"] [data-expert-only] { display: none !important; }
 }
 
 .live-connection-open {
-  min-width: 74px;
+  min-width: 104px;
   height: 32px;
-  padding: 0 13px;
-  border: 1px solid rgba(41, 133, 82, 0.42);
+  padding: 0 15px;
+  border: 1px solid #4aaa70;
   border-radius: 7px;
-  color: #1f6b43;
-  background: rgba(55, 155, 95, 0.09);
+  color: #f3fff7;
+  background: #287a4c;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.16), 0 4px 12px rgba(24, 105, 61, 0.24);
   font-family: inherit;
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 800;
   letter-spacing: 0.035em;
   cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, translate 80ms ease, box-shadow 120ms ease;
+}
+
+.live-connection-open:hover,
+.live-connection-open:focus-visible {
+  color: #fff;
+  background: #31925c;
+  border-color: #63c486;
+  box-shadow: 0 0 0 2px rgba(67, 177, 107, 0.18), 0 5px 14px rgba(24, 105, 61, 0.3);
+  outline: none;
+}
+
+.live-connection-open:active {
+  translate: 0 1px;
+  box-shadow: none;
 }
 
 .live-connection-open[data-state="connected"] {
@@ -5355,9 +5371,9 @@ body[data-experience="simple"] [data-expert-only] { display: none !important; }
 .live-connection-workspace > footer .live-connection-primary { width: auto; min-width: 170px; }
 
 :root[data-theme="dark"] .live-connection-open {
-  color: #9bd8af;
-  border-color: rgba(83, 179, 117, 0.32);
-  background: rgba(48, 138, 82, 0.1);
+  color: #f2fff6;
+  border-color: #4aaa70;
+  background: #287a4c;
 }
 
 :root[data-theme="dark"] .live-connection-dialog {
@@ -5396,6 +5412,7 @@ body[data-experience="simple"] [data-expert-only] { display: none !important; }
 
 .firmware-deploy-button {
   height: 30px;
+  min-width: 88px;
   padding: 0 14px;
   color: #111113;
   border: 1px solid #f4f4f4;

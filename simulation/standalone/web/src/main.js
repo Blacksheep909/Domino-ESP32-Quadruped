@@ -2639,8 +2639,11 @@ function renderLiveConnectionUi() {
     !connected || liveSafetyState.robotState === "armed" || Boolean(liveConnectionState.pendingRequestId);
 
   const openButton = document.querySelector("#live-connection-open");
-  openButton.textContent = connected ? "MANAGE" : "CONNECT";
-  openButton.dataset.state = connected ? "connected" : "offline";
+  openButton.textContent = connected ? "MANAGE LINK" : "PAIR ROBOT";
+  openButton.title = connected
+    ? "Inspect or disconnect the active PC link"
+    : "Find and pair this PC with Domino";
+  openButton.dataset.state = connected ? "connected" : "ready";
   renderLiveManualUi();
 }
 

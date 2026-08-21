@@ -8,6 +8,8 @@ import { WebSocketServer } from "ws";
 
 import { DOMINO_ROBOT_LINK_PROTOCOL } from "./live-companion-core.mjs";
 
+const integrationLinkKey = "integration-link-key-123";
+
 const listen = (server) => new Promise((resolve, reject) => {
   server.once("error", reject);
   server.listen(0, "127.0.0.1", () => resolve(server.address().port));
@@ -59,7 +61,9 @@ test("the runnable adapter bridges relay commands and physical acknowledgements"
         robotBuffer = robotBuffer.slice(newline + 1);
         if (!line.startsWith("{")) continue;
         const message = JSON.parse(line);
+        if (message.type === "companion-auth") assert.equal(message.linkKey, integrationLinkKey);
         if (message.kind === "safety" && message.action === "request-state") {
+          assert.equal(message.linkKey, integrationLinkKey);
           socket.write(`${JSON.stringify({
             type: "robot-ack", protocol: DOMINO_ROBOT_LINK_PROTOCOL,
             kind: "safety", action: "request-state", requestId: message.requestId,
@@ -112,7 +116,10 @@ test("the runnable adapter bridges relay commands and physical acknowledgements"
         "--robot-port", String(robotPort),
         "--relay", `ws://127.0.0.1:${relayPort}/control`,
         "--adapter-id", "adapter-e2e",
-      ], { cwd: import.meta.dirname, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+      ], {
+        cwd: import.meta.dirname, windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
+        env: { ...process.env, DOMINO_ROBOT_LINK_KEY: integrationLinkKey },
+      });
       child.stderr.setEncoding("utf8");
       child.stderr.on("data", (chunk) => { stderr += chunk; });
       child.once("exit", (code) => {

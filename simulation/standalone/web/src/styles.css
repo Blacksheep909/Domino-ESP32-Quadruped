@@ -3718,6 +3718,36 @@ body[data-workspace="real-robot"][data-live-view="gaits"] #scene {
 
 .calibration-lock-state button:disabled { color: #9b9d98; background: transparent; border-color: #d8d8d3; }
 
+.calibration-wiring-toolbar {
+  margin-top: 16px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  background: #f0f0ec;
+  border: 1px solid #deded8;
+  border-radius: 6px;
+}
+
+.calibration-wiring-toolbar > div { display: grid; gap: 5px; }
+.calibration-wiring-toolbar span { color: #858781; font: 750 8px/1 "Cascadia Mono", Consolas, monospace; letter-spacing: .07em; }
+.calibration-wiring-toolbar strong { font: 750 11px/1 "Cascadia Mono", Consolas, monospace; }
+.calibration-wiring-toolbar small { color: #777a75; font-size: 9px; }
+.calibration-wiring-toolbar button {
+  min-width: 138px;
+  height: 34px;
+  padding: 0 12px;
+  color: #225c3a;
+  background: #e4f0e8;
+  border: 1px solid #9ec7ac;
+  border-radius: 5px;
+  font-size: 9px;
+  font-weight: 750;
+  cursor: pointer;
+}
+.calibration-wiring-toolbar button:disabled { color: #9b9d98; background: transparent; border-color: #d8d8d3; cursor: default; }
+
 .calibration-joint-map {
   margin-top: 18px;
   display: grid;
@@ -3944,6 +3974,109 @@ body[data-workspace="real-robot"][data-live-view="gaits"] #scene {
 .calibration-wizard-footer i { height: 3px; overflow: hidden; background: #deded8; border-radius: 3px; }
 .calibration-wizard-footer i b { display: block; width: 20%; height: 100%; background: #4c9b69; transition: width 160ms ease; }
 
+.calibration-dialog {
+  width: min(820px, calc(100vw - 36px));
+  max-height: calc(100vh - 36px);
+  padding: 0;
+  color: #323531;
+  background: transparent;
+  border: 0;
+  overflow: visible;
+}
+
+.calibration-dialog::backdrop { background: rgba(0, 0, 0, .72); backdrop-filter: blur(3px); }
+.calibration-dialog-shell {
+  max-height: calc(100vh - 36px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  background: #fafaf8;
+  border: 1px solid #d2d2cd;
+  border-radius: 9px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, .35);
+}
+.calibration-dialog header {
+  position: static;
+  width: auto;
+  height: auto;
+  min-height: 0;
+  padding: 20px 22px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid #dfdfda;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+.calibration-dialog header > div { display: grid; gap: 6px; }
+.calibration-dialog header span { color: #2f7b4b; font: 750 8px/1 "Cascadia Mono", Consolas, monospace; letter-spacing: .08em; }
+.calibration-dialog header h2 { margin: 0; font-size: 22px; }
+.calibration-dialog header p { max-width: 620px; margin: 0; color: #777a75; font-size: 10px; line-height: 1.5; }
+.calibration-dialog header > button {
+  width: 32px;
+  height: 32px;
+  color: #777a75;
+  background: transparent;
+  border: 1px solid #d2d2cd;
+  border-radius: 5px;
+  font-size: 20px;
+  cursor: pointer;
+}
+.calibration-wiring-stage { min-height: 0; padding: 18px 22px; overflow: auto; }
+.calibration-wiring-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.calibration-wiring-list label {
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: 1fr 132px;
+  align-items: center;
+  gap: 12px;
+  background: #f0f0ec;
+  border: 1px solid #deded8;
+  border-radius: 6px;
+}
+.calibration-wiring-list label > span { display: grid; gap: 5px; }
+.calibration-wiring-list strong { font: 750 10px/1 "Cascadia Mono", Consolas, monospace; }
+.calibration-wiring-list small { color: #8f918c; font-size: 8px; }
+.calibration-wiring-list select {
+  height: 34px;
+  padding: 0 9px;
+  color: #323531;
+  background: #fafaf8;
+  border: 1px solid #c9cac4;
+  border-radius: 5px;
+  font: 700 9px/1 "Cascadia Mono", Consolas, monospace;
+}
+.calibration-wiring-list select[data-invalid="true"] { color: #9d4938; border-color: #cf7461; background: #fff0ed; }
+.calibration-dialog-status { min-height: 16px; margin: 12px 0 0; color: #39764f; font-size: 9px; }
+.calibration-dialog-status[data-state="error"] { color: #a44836; }
+.calibration-warning { padding: 14px 16px; color: #8c5b12; background: #f8efe1; border: 1px solid #ddc59f; border-radius: 6px; }
+.calibration-warning strong { font: 750 10px/1 "Cascadia Mono", Consolas, monospace; }
+.calibration-warning p { margin: 7px 0 0; font-size: 10px; line-height: 1.5; }
+.calibration-wiring-changes { margin-top: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.calibration-wiring-changes div { padding: 11px 12px; display: flex; justify-content: space-between; gap: 16px; background: #f0f0ec; border-radius: 5px; }
+.calibration-wiring-changes strong,
+.calibration-wiring-changes span { font: 750 9px/1 "Cascadia Mono", Consolas, monospace; }
+.calibration-wiring-changes span { color: #8c5b12; }
+.calibration-dialog footer { padding: 13px 18px; display: flex; align-items: center; gap: 8px; border-top: 1px solid #dfdfda; }
+.calibration-dialog footer > span { flex: 1; }
+.calibration-dialog footer button {
+  height: 34px;
+  padding: 0 13px;
+  color: #225c3a;
+  background: #e4f0e8;
+  border: 1px solid #9ec7ac;
+  border-radius: 5px;
+  font-size: 9px;
+  font-weight: 750;
+  cursor: pointer;
+}
+.calibration-dialog footer button:first-child { color: #666963; background: transparent; border-color: #cfd0ca; }
+.calibration-dialog footer button:disabled { color: #9b9d98; background: #ededE9; border-color: #d8d8d3; cursor: default; }
+.calibration-robot-confirm { width: min(620px, calc(100vw - 36px)); }
+
 :root[data-theme="dark"] .calibration-step-rail,
 :root[data-theme="dark"] .calibration-workspace { background: #121214; border-color: #303034; }
 :root[data-theme="dark"] .calibration-step-rail button[aria-current="step"],
@@ -3951,6 +4084,7 @@ body[data-workspace="real-robot"][data-live-view="gaits"] #scene {
 :root[data-theme="dark"] .calibration-panel-heading,
 :root[data-theme="dark"] .calibration-wizard-footer { border-color: #303034; }
 :root[data-theme="dark"] .calibration-safety-grid article,
+:root[data-theme="dark"] .calibration-wiring-toolbar,
 :root[data-theme="dark"] .calibration-joint-map > section,
 :root[data-theme="dark"] .calibration-selection-summary,
 :root[data-theme="dark"] .calibration-editor-heading,
@@ -3969,6 +4103,17 @@ body[data-workspace="real-robot"][data-live-view="gaits"] #scene {
 :root[data-theme="dark"] .calibration-review-table-wrap td { border-color: #29292c; }
 :root[data-theme="dark"] .calibration-review-actions button:disabled,
 :root[data-theme="dark"] .calibration-wizard-footer > button:disabled { color: #626269; background: #1b1b1e; border-color: #2d2d31; }
+:root[data-theme="dark"] .calibration-dialog { color: #ededee; }
+:root[data-theme="dark"] .calibration-dialog-shell { background: #121214; border-color: #343438; }
+:root[data-theme="dark"] .calibration-dialog header,
+:root[data-theme="dark"] .calibration-dialog footer { border-color: #303034; }
+:root[data-theme="dark"] .calibration-dialog header > button { color: #aaaab0; border-color: #3a3a40; }
+:root[data-theme="dark"] .calibration-wiring-list label,
+:root[data-theme="dark"] .calibration-wiring-changes div { background: #18181a; border-color: #303034; }
+:root[data-theme="dark"] .calibration-wiring-list select { color: #ededee; background: #202023; border-color: #3a3a40; }
+:root[data-theme="dark"] .calibration-wiring-list select[data-invalid="true"] { color: #ef9182; background: rgba(180, 68, 49, .12); border-color: rgba(210, 91, 71, .55); }
+:root[data-theme="dark"] .calibration-warning { color: #e5c797; background: rgba(175, 112, 28, .1); border-color: rgba(205, 151, 76, .3); }
+:root[data-theme="dark"] .calibration-dialog footer button:first-child { color: #aaaab0; border-color: #3a3a40; }
 
 @media (max-width: 1000px) {
   body[data-workspace="real-robot"][data-live-view="calibration"] #scene { z-index: 0; inset: 0; width: 100%; height: 100%; border: 0; }
@@ -3978,6 +4123,7 @@ body[data-workspace="real-robot"][data-live-view="gaits"] #scene {
   .calibration-step-rail { grid-template-columns: repeat(5, 1fr); }
   .calibration-step-rail button { min-height: 55px; padding-left: 34px; }
   .calibration-joint-map { grid-template-columns: repeat(2, 1fr); }
+  .calibration-wiring-list { grid-template-columns: 1fr; }
 }
 
 .live-diagnostics-grid {
@@ -4324,9 +4470,9 @@ body[data-experience="simple"] [data-expert-only] { display: none !important; }
 }
 
 :root[data-theme="dark"] #real-workspace .live-view-tabs button {
-  color: #b9b9bf;
-  background: #1c1c1f;
-  border-color: #303034;
+  color: #d2d2d7;
+  background: #242428;
+  border-color: #3a3a40;
 }
 :root[data-theme="dark"] #real-workspace .live-view-tabs button:hover:not(:disabled):not([aria-selected="true"]),
 :root[data-theme="dark"] #real-workspace .live-view-tabs button:focus-visible:not([aria-selected="true"]) {
@@ -4337,7 +4483,13 @@ body[data-experience="simple"] [data-expert-only] { display: none !important; }
 :root[data-theme="dark"] #real-workspace .live-view-tabs button[aria-selected="true"] {
   color: #bce8c9;
   background: rgba(61, 151, 95, 0.14);
-  border-color: rgba(80, 177, 113, 0.24);
+  border-color: rgba(80, 177, 113, 0.48);
+}
+:root[data-theme="dark"] #real-workspace .live-view-tabs button:disabled {
+  color: #66666c;
+  background: #171719;
+  border-color: #27272b;
+  opacity: 0.5;
 }
 
 :root[data-theme="dark"] .live-safety-dock { border-left-color: #4fa26d; }

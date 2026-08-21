@@ -11,6 +11,8 @@
 #include <vector>
 
 #include "crsf.h"
+#include "Adafruit_PWMServoDriver.h"
+#include "leg_controller.h"
 #include "sim_pwm.h"
 #include "servo_calibration.h"
 
@@ -56,7 +58,7 @@ bool validateCalibrationMath() {
   }
   ServoCalibrationJoint *flUpper = nullptr;
   for (ServoCalibrationJoint &joint : profile.joints) {
-    if (joint.channel == 1) flUpper = &joint;
+    if (joint.logicalChannel == 1) flUpper = &joint;
   }
   if (flUpper == nullptr) return false;
   flUpper->offsetDeg = 3.0f;
@@ -68,12 +70,32 @@ bool validateCalibrationMath() {
   const float inverted = applyServoCalibration(profile, 1, neutral - 12.0f);
   const bool transformOk = fabsf(normal - (neutral - 9.0f)) < 0.01f &&
                            fabsf(inverted - (neutral + 15.0f)) < 0.01f;
+  profile.joints[0].channel = 15;
+  profile.joints[11].channel = 0;
+  const bool remapAccepted = validateServoCalibrationProfile(profile) &&
+                             servoCalibrationPhysicalChannel(profile, 0) == 15 &&
+                             servoCalibrationPhysicalChannel(profile, 15) == 0;
+  Adafruit_PWMServoDriver calibrationDriver;
+  simResetServoOutputs();
+  setServoOutputsEnabled(calibrationDriver, true);
+  const bool profileActivated = setServoCalibrationProfile(profile);
+  moveLegFL(calibrationDriver, 0.0f, 60.0f, 200.0f);
+  const bool runtimeRouted = profileActivated &&
+                             simServoWriteCount(15) > 0 &&
+                             simServoWriteCount(0) == 0;
+  setServoCalibrationProfile(defaultServoCalibrationProfile());
+  simResetServoOutputs();
   profile.joints[1].channel = profile.joints[0].channel;
   const bool duplicateRejected = !validateServoCalibrationProfile(profile);
-  if (!transformOk || !duplicateRejected) {
-    std::cerr << "FAIL: calibration transform or exact-channel validation failed\n";
+  profile = defaultServoCalibrationProfile();
+  profile.joints[1].logicalChannel = profile.joints[0].logicalChannel;
+  const bool duplicateLogicalRejected = !validateServoCalibrationProfile(profile);
+  if (!transformOk || !remapAccepted || !runtimeRouted ||
+      !duplicateRejected || !duplicateLogicalRejected) {
+    std::cerr << "FAIL: calibration transform or logical-to-physical channel validation failed\n";
   }
-  return transformOk && duplicateRejected;
+  return transformOk && remapAccepted && runtimeRouted &&
+         duplicateRejected && duplicateLogicalRejected;
 }
 
 struct Options {
@@ -497,6 +519,7 @@ int main(int argc, char** argv) {
   RealtimePacer realtimePacer = options.realtime
                                     ? createRealtimePacer()
                                     : RealtimePacer{NULL, LARGE_INTEGER(), 0};
+  const bool calibrationMathPassed = validateCalibrationMath();
   simSetTimeUs(0);
   simResetServoOutputs();
   setup();
@@ -634,7 +657,7 @@ int main(int argc, char** argv) {
     return 0;
   }
 
-  const bool passed = validateCalibrationMath() &&
+  const bool passed = calibrationMathPassed &&
       validateOutputs(sawStand, sawTilt, sawGait, sawCareful,
                                       gaitTiltInterlockViolation,
                                       motionInputInterlockViolation,

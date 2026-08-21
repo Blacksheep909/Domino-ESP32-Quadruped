@@ -73,6 +73,9 @@ constexpr float COMMAND_NEUTRAL_FOOT_Y_FROM_HIP = 38.0f;
 constexpr float kStandPoseToleranceMm = 5.0f;
 
 namespace {
+#ifndef DOMINO_SIL
+LiveManualControlSnapshot activeManualControl{};
+#endif
 constexpr uint32_t kOscillatorFreqHz = 27000000;
 constexpr float kServoPwmFreqHz = 50.0f;
 
@@ -291,6 +294,13 @@ MotionInputProfile motionInputProfileForMode(BodyMode mode) {
 }
 
 bool motionInputsAreCentered() {
+#ifndef DOMINO_SIL
+  if (activeManualControl.active) {
+    return fabsf(activeManualControl.roll) <= kModeInputCenterDeadband &&
+           fabsf(activeManualControl.forward) <= kModeInputCenterDeadband &&
+           fabsf(activeManualControl.turn) <= kModeInputCenterDeadband;
+  }
+#endif
   return fabsf(normalizeChannel(ch_us[ROLL_CH_INDEX])) <= kModeInputCenterDeadband &&
          fabsf(normalizeChannel(ch_us[PITCH_CH_INDEX])) <= kModeInputCenterDeadband &&
          fabsf(normalizeChannel(ch_us[YAW_CH_INDEX])) <= kModeInputCenterDeadband;
@@ -321,7 +331,26 @@ void updateMotionInputInterlock(BodyMode previousMode, BodyMode nextMode, uint32
 }
 
 float readMotionChannelNormalized(int channelIndex) {
+#ifndef DOMINO_SIL
+  if (activeManualControl.active) {
+    if (motionInputAwaitingCenter) return 0.0f;
+    if (channelIndex == PITCH_CH_INDEX) return activeManualControl.forward;
+    if (channelIndex == YAW_CH_INDEX) return activeManualControl.turn;
+    if (channelIndex == ROLL_CH_INDEX) return activeManualControl.roll;
+  }
+#endif
   return motionInputAwaitingCenter ? 0.0f : normalizeChannel(ch_us[channelIndex]);
+}
+
+float manualRollFootZOffset(float lateralMm) {
+#ifndef DOMINO_SIL
+  if (activeManualControl.active && activeManualControl.deadman) {
+    return sinf(activeManualControl.roll * kMaxRollDeg * kDegToRad) * lateralMm;
+  }
+#else
+  (void)lateralMm;
+#endif
+  return 0.0f;
 }
 
 void logDebugState(uint32_t now,
@@ -814,7 +843,7 @@ void applySinusoidalGait(Adafruit_PWMServoDriver &driver, float baseZ) {
                        &zOffsetMm);
     const float x = FOOT_BACK_OFFSET_X + xOffsetMm;
     const float y = sideSign * profile.stanceWidthMm;
-    const float z = gaitBodyZ + zOffsetMm;
+    const float z = gaitBodyZ + zOffsetMm + manualRollFootZOffset(y);
     commandLeg(driver, i, x, y, z);
   }
 }
@@ -880,7 +909,8 @@ void applyCarefulWalk(Adafruit_PWMServoDriver &driver, float baseZ) {
                leg,
                FOOT_BACK_OFFSET_X + xOffsetMm,
                sideSign * profile.stanceWidthMm,
-               gaitBodyZ + zOffsetMm);
+               gaitBodyZ + zOffsetMm +
+                   manualRollFootZOffset(sideSign * profile.stanceWidthMm));
   }
 }
 
@@ -1026,10 +1056,27 @@ void loop() {
   (void)imuReadSample();
 #ifndef DOMINO_SIL
   liveRobotEndpointLoop(now, pca);
+  activeManualControl = liveRobotEndpointManualControl();
 #endif
 
   // 1) Read current RC "menu inputs" (switches, link status).
-  const MenuInputs inputs = readMenuInputs(now, &lastLinkAliveMs, &failsafeActive);
+  MenuInputs inputs = readMenuInputs(now, &lastLinkAliveMs, &failsafeActive);
+#ifndef DOMINO_SIL
+  if (activeManualControl.active) {
+    // The Boxer link remains the physical safety prerequisite, but the
+    // session-bound browser lease owns motion mode and bounded axes.
+    inputs.standRequested = true;
+    inputs.tiltSwitchDown = false;
+    inputs.balanceRequested = false;
+    inputs.carefulWalkRequested = activeManualControl.deadman &&
+        activeManualControl.mode == LiveManualMode::Careful;
+    inputs.gaitRequested = activeManualControl.deadman &&
+        activeManualControl.mode == LiveManualMode::Trot;
+    inputs.rideHeightMm = kRideHeightMinMm +
+        (activeManualControl.height + 1.0f) * 0.5f *
+        (kRideHeightMaxMm - kRideHeightMinMm);
+  }
+#endif
   menuState.linkAlive = inputs.haveLink;
   menuState.failsafeActive = inputs.failsafeActive;
 
@@ -1114,10 +1161,15 @@ void loop() {
   //    suppresses the transient middle position while moving the SC switch.
   const bool walkWasActive = previousMode == BODY_GAIT || previousMode == BODY_CAREFUL;
   const bool walkRequested = inputs.gaitRequested || inputs.carefulWalkRequested;
+#ifndef DOMINO_SIL
+  const bool manualOwnsMotion = activeManualControl.active;
+#else
+  constexpr bool manualOwnsMotion = false;
+#endif
   const bool walkCandidateRaw =
       menuState.mode == BODY_STAND &&
       walkRequested &&
-      ch_us[SD_CH_INDEX] < SD_ON_THRESHOLD_US &&
+      (manualOwnsMotion || ch_us[SD_CH_INDEX] < SD_ON_THRESHOLD_US) &&
       !inputs.tiltSwitchDown &&
       !tiltModeActive &&
       (walkWasActive || standPoseReady) &&
@@ -1128,7 +1180,7 @@ void loop() {
                           now,
                           &gaitDebounce,
                           kGaitToggleDebounceMs);
-  if (ch_us[SD_CH_INDEX] >= SD_ON_THRESHOLD_US ||
+  if ((!manualOwnsMotion && ch_us[SD_CH_INDEX] >= SD_ON_THRESHOLD_US) ||
       inputs.tiltSwitchDown || tiltModeActive || inputs.failsafeActive) {
     walkCandidateFiltered = false;
   }
@@ -1232,6 +1284,11 @@ void loop() {
       const float bodyZ = rampZ + STAND_HEIGHT_Z;
       float rollDeg = 0.0f;
       float pitchDeg = 0.0f;
+#ifndef DOMINO_SIL
+      if (activeManualControl.active && activeManualControl.deadman) {
+        rollDeg = activeManualControl.roll * kMaxRollDeg;
+      }
+#endif
       bool useBalanceZOffsets = false;
       float balanceZOffsets[kLegCount] = {0.0f, 0.0f, 0.0f, 0.0f};
 

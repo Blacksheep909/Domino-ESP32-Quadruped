@@ -129,7 +129,7 @@ during bench jog, and turns all outputs off before activating a new map.
 Physical movement and robot persistence are deliberately locked until a robot
 adapter acknowledges bench mode, safe jogging at no more than 5 degrees per
 second, and persistent profile storage. The localhost relay validates this
-command/acknowledgement contract, and firmware 0.4.0 now enforces it on USB,
+command/acknowledgement contract, and firmware 0.5.0 now enforces it on USB,
 Wi-Fi TCP, and Bluetooth SPP transports.
 
 Gaits is now a separate LIVE profile-transfer workspace. It shares the same
@@ -142,7 +142,7 @@ warnings make the differences visible before hardware is involved.
 
 The apply path requires the adapter to advertise persistent-profile support and
 report the robot disarmed. The relay validates a two-stage apply contract and
-firmware 0.4.0 validates all ten numeric bounds again with every output off.
+firmware 0.5.0 validates all ten numeric bounds again with every output off.
 The ESP32 writes the candidate into the inactive NVS slot, reads back and
 checksums it, then atomically changes the active slot. The prior verified slot
 remains available for explicit rollback. Active robot settings are included in
@@ -183,12 +183,17 @@ release sends neutral stand immediately. Hiding the tab, leaving LIVE, losing a
 safety prerequisite, disarming, or losing the adapter revokes the browser
 authority. The E-stop remains available inside the control window.
 
+Firmware 0.5.0 enforces that contract on the ESP32 as well as in the companion.
+It independently checks the authority token, maximum lease, monotonic sequence,
+deadman, axis bounds, armed state, and Boxer link. A missing frame neutralizes
+within 250 ms, while disarm, watchdog, lease expiry, controller failure, or
+release revokes the override. Browser stand, careful, and trot use the same
+production motion path as the radio; Expert height and body roll remain bounded.
+
 The expected 3D pose is intentionally not driven optimistically from local
 slider values. It continues to follow robot-reported expected telemetry, so the
 display distinguishes what the browser requested from what the robot actually
-accepted and intended to execute. A physical companion adapter still needs to
-enforce authority tokens, armed state, deadman, bounds, timeout, neutralization,
-and power-isolation behaviour on the robot side.
+accepted and intended to execute.
 
 ![LIVE command-chain diagnostics using local relay verification data](images/virtual-lab-live-diagnostics.png)
 

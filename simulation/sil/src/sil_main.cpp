@@ -15,6 +15,7 @@
 #include "Adafruit_PWMServoDriver.h"
 #include "gait_profile.h"
 #include "leg_controller.h"
+#include "manual_control_guard.h"
 #include "sim_pwm.h"
 #include "servo_calibration.h"
 
@@ -121,6 +122,42 @@ bool validateGaitProfiles() {
     std::cerr << "FAIL: gait profile bounds or runtime activation failed\n";
   }
   return accepted && outOfBoundsRejected && nonFiniteRejected && restored;
+}
+
+bool validateManualControlGuard() {
+  ManualControlGuard guard;
+  const bool granted = guard.grant("sil-authority-token", 1000, 100);
+  const bool grantDoesNotMove = granted && guard.authorityActive() && !guard.snapshot().active;
+  const bool wrongTokenRejected = !guard.acceptFrame(
+      "wrong-token", 0, 120, LiveManualMode::Trot, 0.2f, 0.1f, 0.0f, 0.0f,
+      DOMINO_MANUAL_TIMEOUT_MS);
+  const bool frameAccepted = guard.acceptFrame(
+      "sil-authority-token", 0, 120, LiveManualMode::Trot, 0.2f, 0.1f, -0.3f, 0.4f,
+      DOMINO_MANUAL_TIMEOUT_MS);
+  const bool replayRejected = !guard.acceptFrame(
+      "sil-authority-token", 0, 130, LiveManualMode::Trot, 0.3f, 0.0f, 0.0f, 0.0f,
+      DOMINO_MANUAL_TIMEOUT_MS);
+  const bool axisRejected = !guard.acceptFrame(
+      "sil-authority-token", 1, 130, LiveManualMode::Trot, 1.01f, 0.0f, 0.0f, 0.0f,
+      DOMINO_MANUAL_TIMEOUT_MS);
+  guard.tick(371, true);
+  const bool timeoutNeutral = guard.authorityActive() && guard.snapshot().active &&
+      !guard.snapshot().deadman && guard.snapshot().mode == LiveManualMode::Stand;
+  const bool resumed = guard.acceptFrame(
+      "sil-authority-token", 1, 400, LiveManualMode::Careful, -0.2f, 0.0f, 0.0f, -0.4f,
+      DOMINO_MANUAL_TIMEOUT_MS);
+  guard.tick(1100, true);
+  const bool leaseRevoked = !guard.authorityActive() && !guard.snapshot().active;
+
+  ManualControlGuard releaseGuard;
+  const bool releaseValidated = releaseGuard.grant("release-token", 1000, 0) &&
+      !releaseGuard.release("other-token") && releaseGuard.release("release-token") &&
+      !releaseGuard.authorityActive();
+  const bool passed = grantDoesNotMove && wrongTokenRejected && frameAccepted &&
+      replayRejected && axisRejected && timeoutNeutral && resumed && leaseRevoked &&
+      releaseValidated;
+  if (!passed) std::cerr << "FAIL: manual-control authority or deadman guard failed\n";
+  return passed;
 }
 
 struct Options {
@@ -546,6 +583,7 @@ int main(int argc, char** argv) {
                                     : RealtimePacer{NULL, LARGE_INTEGER(), 0};
   const bool calibrationMathPassed = validateCalibrationMath();
   const bool gaitProfilesPassed = validateGaitProfiles();
+  const bool manualControlPassed = validateManualControlGuard();
   simSetTimeUs(0);
   simResetServoOutputs();
   setup();
@@ -683,7 +721,7 @@ int main(int argc, char** argv) {
     return 0;
   }
 
-  const bool passed = calibrationMathPassed && gaitProfilesPassed &&
+  const bool passed = calibrationMathPassed && gaitProfilesPassed && manualControlPassed &&
       validateOutputs(sawStand, sawTilt, sawGait, sawCareful,
                                       gaitTiltInterlockViolation,
                                       motionInputInterlockViolation,

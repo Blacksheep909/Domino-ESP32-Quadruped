@@ -135,18 +135,22 @@ import {
 } from "./live-session-state.js";
 import {
   calibrationPreviewServoAngles,
+  calibrationChannelMap,
+  calibrationChannelMapIssues,
   calibrationProfileJson,
   createCalibrationBenchCommand,
   createLiveCalibrationProfile,
   createLiveCalibrationState,
   jogCalibrationJoint,
   LIVE_CALIBRATION_JOINTS,
+  LIVE_CALIBRATION_LEGACY_STORAGE_KEY,
   LIVE_CALIBRATION_STEPS,
   LIVE_CALIBRATION_STORAGE_KEY,
   parseCalibrationProfileJson,
   selectCalibrationJoint,
   selectCalibrationStep,
   updateCalibrationJoint,
+  updateCalibrationChannelMap,
 } from "./live-calibration-state.js";
 import {
   createLiveViewState,
@@ -185,10 +189,22 @@ let liveGaitPendingTimeout = null;
 let liveGaitPreviewOutput = null;
 let storedCalibrationProfile = null;
 try {
-  const storedCalibrationJson = localStorage.getItem(LIVE_CALIBRATION_STORAGE_KEY);
-  if (storedCalibrationJson) storedCalibrationProfile = parseCalibrationProfileJson(storedCalibrationJson);
+  const currentCalibrationJson = localStorage.getItem(LIVE_CALIBRATION_STORAGE_KEY);
+  const legacyCalibrationJson = localStorage.getItem(LIVE_CALIBRATION_LEGACY_STORAGE_KEY);
+  const storedCalibrationJson = currentCalibrationJson || legacyCalibrationJson;
+  if (storedCalibrationJson) {
+    storedCalibrationProfile = parseCalibrationProfileJson(storedCalibrationJson);
+    if (!currentCalibrationJson && legacyCalibrationJson) {
+      localStorage.setItem(
+        LIVE_CALIBRATION_STORAGE_KEY,
+        calibrationProfileJson(storedCalibrationProfile),
+      );
+      localStorage.removeItem(LIVE_CALIBRATION_LEGACY_STORAGE_KEY);
+    }
+  }
 } catch {
   localStorage.removeItem(LIVE_CALIBRATION_STORAGE_KEY);
+  localStorage.removeItem(LIVE_CALIBRATION_LEGACY_STORAGE_KEY);
 }
 const liveCalibrationState = createLiveCalibrationState(
   storedCalibrationProfile || createLiveCalibrationProfile(),
@@ -197,6 +213,9 @@ let calibrationPendingRequestId = "";
 let calibrationPendingAction = "";
 let calibrationRequestTimeout = null;
 let calibrationFloatEnabled = true;
+let calibrationChannelDraft = null;
+let calibrationWiringStage = "edit";
+let calibrationOpenWiringAfterExit = false;
 let liveConnectionRequestTimeout = null;
 let liveSafetyRequestTimeout = null;
 let liveManualRequestTimeout = null;
@@ -256,6 +275,8 @@ function applyLiveView(view) {
   const enteringGaits = liveViewState.selected !== LIVE_VIEW_GAITS && view === LIVE_VIEW_GAITS;
   if (!selectLiveView(liveViewState, view)) return false;
   if (leavingCalibration) {
+    closeCalibrationWiringDialog();
+    closeRobotCalibrationConfirmation();
     if (liveCalibrationState.benchModeAcknowledged) sendCalibrationCommand("exit");
     liveCalibrationState.benchModeAcknowledged = false;
     liveCalibrationState.jogOffsetDeg = 0;
@@ -2919,7 +2940,7 @@ function selectedCalibrationDefinition() {
 
 function selectedCalibrationJoint() {
   return liveCalibrationState.profile.joints.find(
-    (joint) => joint.channel === liveCalibrationState.selectedChannel,
+    (joint) => joint.logicalChannel === liveCalibrationState.selectedChannel,
   );
 }
 
@@ -2941,6 +2962,9 @@ function renderCalibrationJointMap() {
     heading.append(legName, location);
     group.append(heading);
     LIVE_CALIBRATION_JOINTS.filter((joint) => joint.leg === leg).forEach((joint) => {
+      const calibration = liveCalibrationState.profile.joints.find(
+        (candidate) => candidate.logicalChannel === joint.channel,
+      );
       const button = document.createElement("button");
       button.type = "button";
       button.dataset.calibrationChannel = String(joint.channel);
@@ -2948,7 +2972,7 @@ function renderCalibrationJointMap() {
       const label = document.createElement("strong");
       const channel = document.createElement("span");
       label.textContent = joint.label.replace(`${leg} `, "").toUpperCase();
-      channel.textContent = `CH ${joint.channel}`;
+      channel.textContent = `CH ${calibration.channel}`;
       button.append(label, channel);
       group.append(button);
     });
@@ -2961,12 +2985,12 @@ function renderCalibrationReview() {
   body.replaceChildren();
   LIVE_CALIBRATION_JOINTS.forEach((definition) => {
     const joint = liveCalibrationState.profile.joints.find(
-      (candidate) => candidate.channel === definition.channel,
+      (candidate) => candidate.logicalChannel === definition.channel,
     );
     const row = body.insertRow();
     [
       definition.label.toUpperCase(),
-      String(definition.channel),
+      String(joint.channel),
       formatCalibrationDegrees(joint.offsetDeg),
       joint.direction === -1 ? "INVERTED" : "NORMAL",
       formatCalibrationDegrees(joint.minimumDeg, 0),
@@ -3004,9 +3028,9 @@ function renderLiveCalibrationUi() {
   document.querySelector("#live-calibration-safety-confirm").checked =
     liveCalibrationState.safetyConfirmed;
   document.querySelector("#live-calibration-selected-summary").textContent =
-    `${definition.label.toUpperCase()} / CHANNEL ${definition.channel}`;
+    `${definition.label.toUpperCase()} / CHANNEL ${joint.channel}`;
   document.querySelector("#live-calibration-neutral-title").textContent = definition.label.toUpperCase();
-  document.querySelector("#live-calibration-channel").textContent = definition.channel;
+  document.querySelector("#live-calibration-channel").textContent = joint.channel;
   document.querySelector("#live-calibration-reference").textContent = `${definition.neutralServoDeg.toFixed(2)}°`;
   document.querySelector("#live-calibration-preview-caption").textContent =
     `${definition.label.toUpperCase()} / ${formatCalibrationDegrees(joint.offsetDeg + liveCalibrationState.jogOffsetDeg)}`;
@@ -3028,6 +3052,11 @@ function renderLiveCalibrationUi() {
     : savedAt
       ? `SAVED ${new Date(savedAt).toLocaleTimeString()}`
       : "UNSAVED DRAFT";
+  const channelIssues = calibrationChannelMapIssues(calibrationChannelMap(liveCalibrationState.profile));
+  document.querySelector("#live-calibration-wiring-summary").textContent = channelIssues.length > 0
+    ? "MAP NEEDS ATTENTION"
+    : "12 UNIQUE CHANNELS";
+  document.querySelector("#live-calibration-edit-wiring").disabled = Boolean(calibrationPendingRequestId);
   renderCalibrationJointMap();
   renderCalibrationReview();
 }
@@ -3044,6 +3073,93 @@ function renderCalibrationPresentationMode() {
     ? "Floating preview on — click to show the floor"
     : "Floor preview on — click to inspect unloaded motion in float mode";
   canvas.dataset.calibrationFloat = String(calibrationFloatEnabled);
+}
+
+function closeCalibrationWiringDialog() {
+  const dialog = document.querySelector("#live-calibration-wiring-dialog");
+  if (dialog.open) dialog.close();
+  calibrationChannelDraft = null;
+  calibrationWiringStage = "edit";
+  calibrationOpenWiringAfterExit = false;
+}
+
+function renderCalibrationWiringDialog() {
+  if (!calibrationChannelDraft) return;
+  const currentMap = calibrationChannelMap(liveCalibrationState.profile);
+  const issues = calibrationChannelMapIssues(calibrationChannelDraft);
+  const editStage = document.querySelector("#live-calibration-wiring-edit");
+  const confirmStage = document.querySelector("#live-calibration-wiring-confirm");
+  editStage.hidden = calibrationWiringStage !== "edit";
+  confirmStage.hidden = calibrationWiringStage !== "confirm";
+  document.querySelector("#live-calibration-wiring-back").hidden = calibrationWiringStage !== "confirm";
+  document.querySelector("#live-calibration-wiring-review").hidden = calibrationWiringStage !== "edit";
+  document.querySelector("#live-calibration-wiring-apply").hidden = calibrationWiringStage !== "confirm";
+
+  const list = document.querySelector("#live-calibration-wiring-list");
+  list.replaceChildren();
+  LIVE_CALIBRATION_JOINTS.forEach((definition, index) => {
+    const row = document.createElement("label");
+    const identity = document.createElement("span");
+    const title = document.createElement("strong");
+    const detail = document.createElement("small");
+    const select = document.createElement("select");
+    title.textContent = definition.label.toUpperCase();
+    detail.textContent = `DEFAULT CH ${definition.channel}`;
+    identity.append(title, detail);
+    select.dataset.wiringIndex = String(index);
+    select.setAttribute("aria-label", `${definition.label} physical servo channel`);
+    for (let channel = 0; channel < 16; channel += 1) {
+      const option = document.createElement("option");
+      option.value = String(channel);
+      option.textContent = `CHANNEL ${channel}`;
+      select.append(option);
+    }
+    select.value = String(calibrationChannelDraft[index]);
+    const duplicate = calibrationChannelDraft.filter(
+      (channel) => Number(channel) === Number(calibrationChannelDraft[index]),
+    ).length > 1;
+    select.dataset.invalid = String(duplicate);
+    row.append(identity, select);
+    list.append(row);
+  });
+
+  const changed = calibrationChannelDraft.filter((channel, index) => channel !== currentMap[index]).length;
+  const error = document.querySelector("#live-calibration-wiring-error");
+  error.dataset.state = issues.length > 0 ? "error" : "ok";
+  error.textContent = issues[0] || (changed > 0
+    ? `${changed} physical channel assignment${changed === 1 ? "" : "s"} changed.`
+    : "The draft matches the current channel map.");
+  document.querySelector("#live-calibration-wiring-review").disabled = issues.length > 0 || changed === 0;
+
+  const changes = document.querySelector("#live-calibration-wiring-changes");
+  changes.replaceChildren();
+  LIVE_CALIBRATION_JOINTS.forEach((definition, index) => {
+    if (calibrationChannelDraft[index] === currentMap[index]) return;
+    const row = document.createElement("div");
+    const label = document.createElement("strong");
+    const value = document.createElement("span");
+    label.textContent = definition.label.toUpperCase();
+    value.textContent = `CH ${currentMap[index]}  →  CH ${calibrationChannelDraft[index]}`;
+    row.append(label, value);
+    changes.append(row);
+  });
+  const acknowledged = document.querySelector("#live-calibration-wiring-ack").checked;
+  document.querySelector("#live-calibration-wiring-apply").disabled =
+    calibrationWiringStage !== "confirm" || !acknowledged || issues.length > 0;
+}
+
+function openCalibrationWiringDialog() {
+  calibrationChannelDraft = calibrationChannelMap(liveCalibrationState.profile);
+  calibrationWiringStage = "edit";
+  document.querySelector("#live-calibration-wiring-ack").checked = false;
+  renderCalibrationWiringDialog();
+  document.querySelector("#live-calibration-wiring-dialog").showModal();
+}
+
+function openRobotCalibrationConfirmation() {
+  document.querySelector("#live-calibration-robot-confirm-ack").checked = false;
+  document.querySelector("#live-calibration-robot-confirm-send").disabled = true;
+  document.querySelector("#live-calibration-robot-confirm").showModal();
 }
 
 function downloadCalibrationJson() {
@@ -3107,6 +3223,11 @@ function acceptCalibrationAcknowledgement(message) {
     liveCalibrationState.benchModeAcknowledged = false;
   } else if (message.action === "save-profile") {
     const status = document.querySelector("#live-calibration-review-status");
+    if (accepted && message.persisted === true) {
+      liveCalibrationState.benchModeAcknowledged = false;
+      liveCalibrationState.profile.savedAt = Date.now();
+      liveCalibrationState.dirty = false;
+    }
     status.textContent = accepted && message.persisted === true
       ? "Robot confirmed that the calibration profile was written to persistent storage."
       : `Robot rejected calibration save${message.reason ? `: ${message.reason}` : "."}`;
@@ -3116,6 +3237,10 @@ function acceptCalibrationAcknowledgement(message) {
   clearTimeout(calibrationRequestTimeout);
   calibrationRequestTimeout = null;
   renderLiveCalibrationUi();
+  if (message.action === "exit" && accepted && calibrationOpenWiringAfterExit) {
+    calibrationOpenWiringAfterExit = false;
+    openCalibrationWiringDialog();
+  }
   return true;
 }
 
@@ -3754,6 +3879,58 @@ document.querySelector("#live-calibration-joint-list").addEventListener("click",
   selectCalibrationJoint(liveCalibrationState, button.dataset.calibrationChannel);
   renderLiveCalibrationUi();
 });
+document.querySelector("#live-calibration-edit-wiring").addEventListener("click", () => {
+  if (calibrationPendingRequestId) return;
+  if (liveCalibrationState.benchModeAcknowledged) {
+    calibrationOpenWiringAfterExit = true;
+    if (!sendCalibrationCommand("exit")) calibrationOpenWiringAfterExit = false;
+    document.querySelector("#live-calibration-review-status").textContent =
+      "Locking physical jog before opening the wiring editor...";
+    updateLiveComparisonUi();
+    return;
+  }
+  openCalibrationWiringDialog();
+});
+document.querySelector("#live-calibration-wiring-list").addEventListener("change", (event) => {
+  const select = event.target.closest("[data-wiring-index]");
+  if (!select || !calibrationChannelDraft) return;
+  calibrationChannelDraft[Number(select.dataset.wiringIndex)] = Number(select.value);
+  renderCalibrationWiringDialog();
+});
+document.querySelector("#live-calibration-wiring-review").addEventListener("click", () => {
+  if (!calibrationChannelDraft || calibrationChannelMapIssues(calibrationChannelDraft).length > 0) return;
+  calibrationWiringStage = "confirm";
+  document.querySelector("#live-calibration-wiring-ack").checked = false;
+  renderCalibrationWiringDialog();
+});
+document.querySelector("#live-calibration-wiring-back").addEventListener("click", () => {
+  calibrationWiringStage = "edit";
+  document.querySelector("#live-calibration-wiring-ack").checked = false;
+  renderCalibrationWiringDialog();
+});
+document.querySelector("#live-calibration-wiring-ack").addEventListener("change", renderCalibrationWiringDialog);
+document.querySelector("#live-calibration-wiring-apply").addEventListener("click", () => {
+  if (!document.querySelector("#live-calibration-wiring-ack").checked) return;
+  const result = updateCalibrationChannelMap(liveCalibrationState, calibrationChannelDraft);
+  if (!result.accepted) {
+    calibrationWiringStage = "edit";
+    renderCalibrationWiringDialog();
+    return;
+  }
+  closeCalibrationWiringDialog();
+  document.querySelector("#live-calibration-review-status").textContent =
+    "Channel map updated locally. Review all 12 assignments before saving or sending to the robot.";
+  renderLiveCalibrationUi();
+});
+[
+  "#live-calibration-wiring-close",
+  "#live-calibration-wiring-cancel",
+].forEach((selector) => document.querySelector(selector).addEventListener("click", closeCalibrationWiringDialog));
+document.querySelector("#live-calibration-wiring-dialog").addEventListener("cancel", () => {
+  calibrationChannelDraft = null;
+  calibrationWiringStage = "edit";
+  calibrationOpenWiringAfterExit = false;
+});
 document.querySelector("#live-calibration-offset").addEventListener("change", (event) => {
   updateCalibrationJoint(liveCalibrationState, { offsetDeg: event.target.value });
   renderLiveCalibrationUi();
@@ -3815,7 +3992,25 @@ document.querySelector("#live-calibration-save-browser").addEventListener("click
 });
 document.querySelector("#live-calibration-export").addEventListener("click", downloadCalibrationJson);
 document.querySelector("#live-calibration-apply-robot").addEventListener("click", () => {
-  if (!liveCalibrationState.benchModeAcknowledged || !sendCalibrationCommand("save-profile")) return;
+  if (!liveCalibrationState.benchModeAcknowledged) return;
+  openRobotCalibrationConfirmation();
+});
+document.querySelector("#live-calibration-robot-confirm-ack").addEventListener("change", (event) => {
+  document.querySelector("#live-calibration-robot-confirm-send").disabled = !event.target.checked;
+});
+function closeRobotCalibrationConfirmation() {
+  const dialog = document.querySelector("#live-calibration-robot-confirm");
+  if (dialog.open) dialog.close();
+}
+[
+  "#live-calibration-robot-confirm-close",
+  "#live-calibration-robot-confirm-cancel",
+].forEach((selector) => document.querySelector(selector).addEventListener("click", closeRobotCalibrationConfirmation));
+document.querySelector("#live-calibration-robot-confirm-send").addEventListener("click", () => {
+  if (!document.querySelector("#live-calibration-robot-confirm-ack").checked ||
+      !liveCalibrationState.benchModeAcknowledged ||
+      !sendCalibrationCommand("save-profile")) return;
+  closeRobotCalibrationConfirmation();
   document.querySelector("#live-calibration-review-status").textContent =
     "Waiting for the robot to confirm persistent calibration storage...";
   updateLiveComparisonUi();

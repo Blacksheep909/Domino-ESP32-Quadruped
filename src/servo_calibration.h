@@ -4,9 +4,10 @@
 
 constexpr uint8_t DOMINO_DRIVEN_JOINT_COUNT = 12;
 constexpr uint8_t DOMINO_SERVO_CHANNEL_COUNT = 16;
-constexpr uint16_t DOMINO_CALIBRATION_SCHEMA_VERSION = 1;
+constexpr uint16_t DOMINO_CALIBRATION_SCHEMA_VERSION = 2;
 
 struct ServoCalibrationJoint {
+  uint8_t logicalChannel;
   uint8_t channel;
   float offsetDeg;
   int8_t direction;
@@ -26,6 +27,8 @@ float applyServoCalibration(const ServoCalibrationProfile &profile,
                             uint8_t channel,
                             float uncalibratedServoDeg);
 const ServoCalibrationJoint* findServoCalibrationJoint(
-    const ServoCalibrationProfile &profile, uint8_t channel);
+    const ServoCalibrationProfile &profile, uint8_t logicalChannel);
+uint8_t servoCalibrationPhysicalChannel(const ServoCalibrationProfile &profile,
+                                        uint8_t logicalChannel);
 float servoCalibrationNeutralDeg(uint8_t channel);
 int8_t servoCalibrationDefaultDirection(uint8_t channel);

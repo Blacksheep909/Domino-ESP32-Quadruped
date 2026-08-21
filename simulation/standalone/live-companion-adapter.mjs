@@ -54,6 +54,11 @@ function configureSerialDevice(device, baud) {
 function openRobotLink(options, onMessage, onClose) {
   if (options["robot-host"]) {
     const socket = net.createConnection({ host: options["robot-host"], port: Number(options["robot-port"] || 8766) });
+    socket.on("connect", () => {
+      if (options.robotLinkKey) socket.write(`${JSON.stringify({
+        type: "companion-auth", protocol: "domino-robot-link-v1", linkKey: options.robotLinkKey,
+      })}\n`);
+    });
     lineReader(socket, onMessage);
     socket.on("close", onClose);
     socket.on("error", (error) => console.error(`Robot TCP link: ${error.message}`));
@@ -67,6 +72,9 @@ function openRobotLink(options, onMessage, onClose) {
     const fd = openSync(device, "r+");
     const input = createReadStream(null, { fd, autoClose: false });
     const output = createWriteStream(null, { fd, autoClose: false });
+    if (options.robotLinkKey) output.write(`${JSON.stringify({
+      type: "companion-auth", protocol: "domino-robot-link-v1", linkKey: options.robotLinkKey,
+    })}\n`);
     lineReader(input, onMessage);
     input.on("close", onClose);
     input.on("error", (error) => console.error(`Robot USB link: ${error.message}`));
@@ -83,12 +91,19 @@ Wi-Fi:     node live-companion-adapter.mjs --robot-host 192.168.4.1 [--robot-por
 USB:       node live-companion-adapter.mjs --device COM5 [--baud 115200]
 Bluetooth: node live-companion-adapter.mjs --transport bluetooth --device COM7 [--baud 115200]
 
+Wireless links require the DOMINO_ROBOT_LINK_KEY environment variable (16+ characters).
+
 Optional: --relay ws://127.0.0.1:8770/control --adapter-id domino-physical-1 --robot-id domino-1`);
   process.exit(0);
 }
 const relayUrl = options.relay || "ws://127.0.0.1:8770/control";
 const transport = options.transport || (options.device ? "usb" : "wifi");
 if (!["wifi", "bluetooth", "usb"].includes(transport)) throw new Error(`Unsupported transport: ${transport}`);
+const robotLinkKey = process.env.DOMINO_ROBOT_LINK_KEY || options["robot-key"] || "";
+if (transport !== "usb" && robotLinkKey.length < 16) {
+  throw new Error("Wireless robot links require DOMINO_ROBOT_LINK_KEY with at least 16 characters.");
+}
+options.robotLinkKey = robotLinkKey;
 const endpoint = options.device || `${options["robot-host"] || "unconfigured"}:${options["robot-port"] || 8766}`;
 const core = new LiveCompanionCore({
   adapterId: options["adapter-id"] || "domino-physical-1",
@@ -105,7 +120,9 @@ let shuttingDown = false;
 function writeRelay(message) {
   if (relay?.readyState === WebSocket.OPEN) relay.send(JSON.stringify(message));
 }
-function writeRobot(message) { robotLink?.write(message); }
+function writeRobot(message) {
+  robotLink?.write(robotLinkKey ? { ...message, linkKey: robotLinkKey } : message);
+}
 function dispatch(result) {
   result.relay.forEach(writeRelay);
   result.robot.forEach(writeRobot);

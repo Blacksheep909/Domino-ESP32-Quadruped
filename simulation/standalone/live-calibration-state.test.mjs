@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 
 import {
   calibrationPreviewServoAngles,
+  calibrationChannelMap,
+  calibrationChannelMapIssues,
   calibrationProfileJson,
   createCalibrationBenchCommand,
   createLiveCalibrationProfile,
@@ -14,6 +16,7 @@ import {
   selectCalibrationJoint,
   selectCalibrationStep,
   updateCalibrationJoint,
+  updateCalibrationChannelMap,
 } from "./web/src/live-calibration-state.js";
 import {
   validCalibrationAcknowledgement,
@@ -48,6 +51,7 @@ test("calibration edits are clamped to conservative configuration bounds", () =>
   });
   const joint = state.profile.joints.find((candidate) => candidate.channel === state.selectedChannel);
   assert.deepEqual(joint, {
+    logicalChannel: state.selectedChannel,
     channel: state.selectedChannel,
     offsetDeg: 30,
     direction: -1,
@@ -55,6 +59,38 @@ test("calibration edits are clamped to conservative configuration bounds", () =>
     maximumDeg: 90,
   });
   assert.equal(state.dirty, true);
+});
+
+test("channel mapping is atomic, unique and retained in versioned JSON", () => {
+  const state = createLiveCalibrationState();
+  const remapped = calibrationChannelMap(state.profile);
+  [remapped[0], remapped[11]] = [remapped[11], remapped[0]];
+  assert.deepEqual(calibrationChannelMapIssues(remapped), []);
+  assert.equal(updateCalibrationChannelMap(state, remapped).accepted, true);
+  assert.deepEqual(calibrationChannelMap(state.profile), remapped);
+  assert.equal(state.dirty, true);
+
+  const duplicate = [...remapped];
+  duplicate[1] = duplicate[0];
+  const rejected = updateCalibrationChannelMap(state, duplicate);
+  assert.equal(rejected.accepted, false);
+  assert.match(rejected.issues[0], /assigned more than once/i);
+  assert.deepEqual(calibrationChannelMap(state.profile), remapped);
+
+  const restored = parseCalibrationProfileJson(calibrationProfileJson(state.profile));
+  assert.deepEqual(calibrationChannelMap(restored), remapped);
+});
+
+test("version 1 calibration imports migrate fixed channels into version 2", () => {
+  const legacy = createLiveCalibrationProfile();
+  const legacyJson = JSON.stringify({
+    ...legacy,
+    schemaVersion: 1,
+    joints: legacy.joints.map(({ logicalChannel, ...joint }) => joint),
+  });
+  const migrated = parseCalibrationProfileJson(legacyJson);
+  assert.equal(migrated.schemaVersion, 2);
+  assert.deepEqual(calibrationChannelMap(migrated), LIVE_CALIBRATION_JOINTS.map((joint) => joint.channel));
 });
 
 test("preview jogging is limited and only changes the selected servo", () => {
@@ -86,6 +122,8 @@ test("bench commands carry explicit robot-side safety limits", () => {
   assert.equal(command.safety.maxSpeedDegPerSec, 5);
   assert.equal(command.timestampMs, 1234);
   assert.equal(validCalibrationCommand(command), true);
+  assert.equal(validCalibrationCommand({ ...command, physicalChannel: command.selectedChannel }), true);
+  assert.equal(validCalibrationCommand({ ...command, physicalChannel: 16 }), false);
   assert.equal(validCalibrationCommand({ ...command, safety: { ...command.safety, maxSpeedDegPerSec: 6 } }), false);
   assert.equal(validCalibrationAcknowledgement({
     type: "live-calibration-ack",

@@ -25,25 +25,34 @@ ServoCalibrationProfile defaultServoCalibrationProfile() {
   profile.schemaVersion = DOMINO_CALIBRATION_SCHEMA_VERSION;
   for (uint8_t index = 0; index < DOMINO_DRIVEN_JOINT_COUNT; ++index) {
     const uint8_t channel = kChannels[index];
-    profile.joints[index] = {channel, 0.0f, kDefaultDirection[channel], -45.0f, 45.0f};
+    profile.joints[index] = {channel, channel, 0.0f, kDefaultDirection[channel], -45.0f, 45.0f};
   }
   return profile;
 }
 
 const ServoCalibrationJoint* findServoCalibrationJoint(
-    const ServoCalibrationProfile &profile, uint8_t channel) {
+    const ServoCalibrationProfile &profile, uint8_t logicalChannel) {
   for (const ServoCalibrationJoint &joint : profile.joints) {
-    if (joint.channel == channel) return &joint;
+    if (joint.logicalChannel == logicalChannel) return &joint;
   }
   return nullptr;
 }
 
+uint8_t servoCalibrationPhysicalChannel(const ServoCalibrationProfile &profile,
+                                        uint8_t logicalChannel) {
+  const ServoCalibrationJoint *joint = findServoCalibrationJoint(profile, logicalChannel);
+  return joint ? joint->channel : logicalChannel;
+}
+
 bool validateServoCalibrationProfile(const ServoCalibrationProfile &profile) {
   if (profile.schemaVersion != DOMINO_CALIBRATION_SCHEMA_VERSION) return false;
-  bool seen[DOMINO_SERVO_CHANNEL_COUNT] = {};
+  bool seenLogical[DOMINO_SERVO_CHANNEL_COUNT] = {};
+  bool seenPhysical[DOMINO_SERVO_CHANNEL_COUNT] = {};
   for (const ServoCalibrationJoint &joint : profile.joints) {
-    if (joint.channel >= DOMINO_SERVO_CHANNEL_COUNT ||
-        servoCalibrationDefaultDirection(joint.channel) == 0 || seen[joint.channel] ||
+    if (joint.logicalChannel >= DOMINO_SERVO_CHANNEL_COUNT ||
+        servoCalibrationDefaultDirection(joint.logicalChannel) == 0 ||
+        joint.channel >= DOMINO_SERVO_CHANNEL_COUNT ||
+        seenLogical[joint.logicalChannel] || seenPhysical[joint.channel] ||
         !finite(joint.offsetDeg) || joint.offsetDeg < -30.0f || joint.offsetDeg > 30.0f ||
         (joint.direction != -1 && joint.direction != 1) ||
         !finite(joint.minimumDeg) || !finite(joint.maximumDeg) ||
@@ -51,19 +60,20 @@ bool validateServoCalibrationProfile(const ServoCalibrationProfile &profile) {
         joint.maximumDeg < joint.minimumDeg + 1.0f || joint.maximumDeg > 90.0f) {
       return false;
     }
-    seen[joint.channel] = true;
+    seenLogical[joint.logicalChannel] = true;
+    seenPhysical[joint.channel] = true;
   }
-  for (uint8_t channel : kChannels) if (!seen[channel]) return false;
+  for (uint8_t channel : kChannels) if (!seenLogical[channel]) return false;
   return true;
 }
 
 float applyServoCalibration(const ServoCalibrationProfile &profile,
-                            uint8_t channel,
+                            uint8_t logicalChannel,
                             float uncalibratedServoDeg) {
-  const ServoCalibrationJoint *joint = findServoCalibrationJoint(profile, channel);
-  const int8_t defaultDirection = servoCalibrationDefaultDirection(channel);
+  const ServoCalibrationJoint *joint = findServoCalibrationJoint(profile, logicalChannel);
+  const int8_t defaultDirection = servoCalibrationDefaultDirection(logicalChannel);
   if (!joint || defaultDirection == 0 || !finite(uncalibratedServoDeg)) return uncalibratedServoDeg;
-  const float neutral = servoCalibrationNeutralDeg(channel);
+  const float neutral = servoCalibrationNeutralDeg(logicalChannel);
   float logicalDelta = (uncalibratedServoDeg - neutral) / static_cast<float>(defaultDirection);
   if (logicalDelta < joint->minimumDeg) logicalDelta = joint->minimumDeg;
   if (logicalDelta > joint->maximumDeg) logicalDelta = joint->maximumDeg;

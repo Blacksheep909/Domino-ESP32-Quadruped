@@ -15,10 +15,16 @@ param(
 $ErrorActionPreference = "Stop"
 
 if ($Transport -eq "wifi" -and [string]::IsNullOrWhiteSpace($RobotHost)) {
-    throw "Wi-Fi transport requires -RobotHost, for example 192.168.4.1."
+    throw "Wi-Fi transport requires -RobotHost, for example 192.168.1.123."
 }
 if ($Transport -ne "wifi" -and [string]::IsNullOrWhiteSpace($Device)) {
     throw "$Transport transport requires -Device, for example COM5."
+}
+if ($Transport -ne "usb" -and [string]::IsNullOrWhiteSpace($env:DOMINO_ROBOT_LINK_KEY)) {
+    throw "Wireless transport requires DOMINO_ROBOT_LINK_KEY to match src/live_robot_secrets.h."
+}
+if ($Transport -ne "usb" -and $env:DOMINO_ROBOT_LINK_KEY.Length -lt 16) {
+    throw "DOMINO_ROBOT_LINK_KEY must contain at least 16 characters."
 }
 
 $bundledNode = Join-Path $env:USERPROFILE ".cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe"

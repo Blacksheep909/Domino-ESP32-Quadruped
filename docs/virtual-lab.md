@@ -115,6 +115,15 @@ floor back on when stance context is useful. This switch is visual only: it does
 not enter robot bench mode, move a servo, or replace the requirement to support
 the physical chassis before calibration.
 
+The Select Joint step also opens a dedicated physical channel-map editor. A
+logical joint can be routed to any PCA9685 channel from 0-15, which supports
+robots whose cable layout differs from the compiled Domino defaults. Duplicate
+outputs are rejected. The editor shows a before/after list and requires an
+explicit physical-wiring acknowledgement; persistent robot apply has a separate
+confirmation. The firmware keeps joint calibration attached to the logical
+mechanism, routes PWM to the selected physical output, energizes only one output
+during bench jog, and turns all outputs off before activating a new map.
+
 ![LIVE guided servo calibration with 3D neutral preview](images/virtual-lab-live-calibration.png)
 
 Physical movement and robot persistence are deliberately locked until a robot

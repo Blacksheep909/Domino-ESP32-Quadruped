@@ -4,6 +4,45 @@
 #include <Preferences.h>
 #include <math.h>
 
+#if __has_include("live_robot_secrets.h")
+#include "live_robot_secrets.h"
+#endif
+
+#ifndef DOMINO_LIVE_WIFI_ENABLED
+#define DOMINO_LIVE_WIFI_ENABLED 0
+#endif
+#ifndef DOMINO_LIVE_WIFI_SSID
+#define DOMINO_LIVE_WIFI_SSID ""
+#endif
+#ifndef DOMINO_LIVE_WIFI_PASSWORD
+#define DOMINO_LIVE_WIFI_PASSWORD ""
+#endif
+#ifndef DOMINO_LIVE_WIFI_HOSTNAME
+#define DOMINO_LIVE_WIFI_HOSTNAME "domino-robot"
+#endif
+#ifndef DOMINO_LIVE_WIFI_PORT
+#define DOMINO_LIVE_WIFI_PORT 8766
+#endif
+#ifndef DOMINO_LIVE_BLUETOOTH_ENABLED
+#define DOMINO_LIVE_BLUETOOTH_ENABLED 0
+#endif
+#ifndef DOMINO_LIVE_BLUETOOTH_NAME
+#define DOMINO_LIVE_BLUETOOTH_NAME "Domino-LIVE"
+#endif
+#ifndef DOMINO_LIVE_BLUETOOTH_PIN
+#define DOMINO_LIVE_BLUETOOTH_PIN ""
+#endif
+#ifndef DOMINO_LIVE_LINK_KEY
+#define DOMINO_LIVE_LINK_KEY ""
+#endif
+
+#if DOMINO_LIVE_WIFI_ENABLED
+#include <WiFi.h>
+#endif
+#if DOMINO_LIVE_BLUETOOTH_ENABLED
+#include <BluetoothSerial.h>
+#endif
+
 #include "crsf.h"
 #include "imu.h"
 #include "leg_controller.h"
@@ -18,6 +57,32 @@ constexpr float kCalibrationMaxSpeedDegPerSec = 5.0f;
 constexpr float kCalibrationJogLimitDeg = 10.0f;
 constexpr uint32_t kCalibrationMagic = 0x4443414c;  // DCAL
 constexpr char kCalibrationNamespace[] = "domino-cal";
+constexpr uint32_t kTransportOwnerIdleMs = 2000;
+constexpr uint32_t kWirelessAuthenticationMs = 2000;
+
+#if DOMINO_LIVE_WIFI_ENABLED
+static_assert(sizeof(DOMINO_LIVE_WIFI_SSID) > 1, "Wi-Fi SSID must not be empty");
+static_assert(sizeof(DOMINO_LIVE_WIFI_PASSWORD) >= 9, "Wi-Fi password must contain at least 8 characters");
+WiFiServer wifiServer(DOMINO_LIVE_WIFI_PORT);
+WiFiClient wifiClient;
+bool wifiServerStarted = false;
+bool wifiAuthenticated = false;
+uint32_t wifiAcceptedMs = 0;
+#endif
+#if DOMINO_LIVE_BLUETOOTH_ENABLED
+static_assert(sizeof(DOMINO_LIVE_BLUETOOTH_PIN) >= 5 && sizeof(DOMINO_LIVE_BLUETOOTH_PIN) <= 17,
+              "Bluetooth PIN must contain 4-16 characters");
+BluetoothSerial bluetoothSerial;
+bool bluetoothAuthenticated = false;
+bool bluetoothHadClient = false;
+uint32_t bluetoothAcceptedMs = 0;
+#endif
+#if DOMINO_LIVE_WIFI_ENABLED || DOMINO_LIVE_BLUETOOTH_ENABLED
+static_assert(sizeof(DOMINO_LIVE_LINK_KEY) >= 17,
+              "Wireless LIVE transports require a link key of at least 16 characters");
+#endif
+
+enum class LiveTransport : uint8_t { None, Usb, Wifi, Bluetooth };
 
 LiveRobotState state = LiveRobotState::Disarmed;
 LiveRobotPoseSnapshot expectedPose{};
@@ -27,10 +92,19 @@ uint32_t lastHeartbeatMs = 0;
 uint32_t lastHeartbeatSequence = 0;
 bool haveHeartbeatSequence = false;
 bool benchMode = false;
-String inputLine;
+String usbInputLine;
+#if DOMINO_LIVE_WIFI_ENABLED
+String wifiInputLine;
+#endif
+#if DOMINO_LIVE_BLUETOOTH_ENABLED
+String bluetoothInputLine;
+#endif
+LiveTransport commandOwner = LiveTransport::None;
+uint32_t lastOwnerCommandMs = 0;
 bool calibrationJogActive = false;
 bool calibrationChannelActive = false;
 uint8_t calibrationChannel = 0;
+uint8_t calibrationPhysicalChannel = 0;
 float calibrationTargetDeg = 135.0f;
 float calibrationCurrentDeg = 135.0f;
 uint32_t calibrationUpdatedMs = 0;
@@ -104,6 +178,7 @@ bool parseCalibrationProfile(JsonObjectConst source, ServoCalibrationProfile *pr
   uint8_t index = 0;
   for (JsonObjectConst joint : joints) {
     candidate.joints[index++] = {
+        static_cast<uint8_t>(joint["logicalChannel"] | 255),
         static_cast<uint8_t>(joint["channel"] | 255),
         joint["offsetDeg"] | NAN,
         static_cast<int8_t>(joint["direction"] | 0),
@@ -123,6 +198,7 @@ void addCalibrationProfile(JsonObject target, const ServoCalibrationProfile &pro
   JsonArray joints = target["joints"].to<JsonArray>();
   for (const ServoCalibrationJoint &joint : profile.joints) {
     JsonObject item = joints.add<JsonObject>();
+    item["logicalChannel"] = joint.logicalChannel;
     item["channel"] = joint.channel;
     item["offsetDeg"] = joint.offsetDeg;
     item["direction"] = joint.direction;
@@ -149,6 +225,18 @@ uint16_t txPowerMw(uint8_t code) {
 void writeDocument(JsonDocument &document) {
   serializeJson(document, Serial);
   Serial.println();
+#if DOMINO_LIVE_WIFI_ENABLED
+  if (wifiClient && wifiClient.connected()) {
+    serializeJson(document, wifiClient);
+    wifiClient.println();
+  }
+#endif
+#if DOMINO_LIVE_BLUETOOTH_ENABLED
+  if (bluetoothSerial.hasClient()) {
+    serializeJson(document, bluetoothSerial);
+    bluetoothSerial.println();
+  }
+#endif
 }
 
 void addCapabilities(JsonObject capabilities) {
@@ -159,6 +247,31 @@ void addCapabilities(JsonObject capabilities) {
   capabilities["manualControl"] = false;
 }
 
+bool constantTimeLinkKeyMatches(const char *candidate) {
+  if (!candidate) return false;
+  const size_t expectedLength = strlen(DOMINO_LIVE_LINK_KEY);
+  const size_t candidateLength = strlen(candidate);
+  size_t difference = expectedLength ^ candidateLength;
+  const size_t comparedLength = expectedLength > candidateLength ? expectedLength : candidateLength;
+  for (size_t index = 0; index < comparedLength; ++index) {
+    const uint8_t expected = index < expectedLength ? DOMINO_LIVE_LINK_KEY[index] : 0;
+    const uint8_t supplied = index < candidateLength ? candidate[index] : 0;
+    difference |= expected ^ supplied;
+  }
+  return difference == 0;
+}
+
+bool transportAuthenticated(JsonObjectConst command, LiveTransport source) {
+  if (source == LiveTransport::Usb) return true;
+#if DOMINO_LIVE_WIFI_ENABLED
+  if (source == LiveTransport::Wifi && !wifiAuthenticated) return false;
+#endif
+#if DOMINO_LIVE_BLUETOOTH_ENABLED
+  if (source == LiveTransport::Bluetooth && !bluetoothAuthenticated) return false;
+#endif
+  return constantTimeLinkKeyMatches(command["linkKey"] | static_cast<const char *>(nullptr));
+}
+
 void sendHello() {
   JsonDocument document;
   document["protocol"] = kProtocol;
@@ -167,6 +280,7 @@ void sendHello() {
   document["robotName"] = "Domino";
   document["firmwareVersion"] = "0.3.0";
   document["robotState"] = stateName();
+  document["wirelessAuth"] = "psk-v1";
   addCapabilities(document["capabilities"].to<JsonObject>());
   writeDocument(document);
 }
@@ -360,20 +474,25 @@ void handleCalibration(JsonObjectConst command, JsonObjectConst payload,
   }
   if (!strcmp(action, "jog")) {
     const int channel = payload["selectedChannel"] | -1;
+    const int physicalChannel = payload["physicalChannel"] | -1;
     const float jog = payload["jogOffsetDeg"] | 99.0f;
     const float target = payload["targetServoDeg"] | NAN;
     const bool drivenChannel = channel >= 0 && channel < 16 &&
         findServoCalibrationJoint(servoCalibrationProfile(), static_cast<uint8_t>(channel)) != nullptr;
+    const bool validPhysicalChannel = physicalChannel >= 0 && physicalChannel < 16;
     const bool targetBounded = drivenChannel && isfinite(target) &&
         fabsf(target - servoCalibrationNeutralDeg(static_cast<uint8_t>(channel))) <= 40.0f;
-    if (!drivenChannel || fabsf(jog) > kCalibrationJogLimitDeg || !targetBounded) {
+    if (!drivenChannel || !validPhysicalChannel ||
+        fabsf(jog) > kCalibrationJogLimitDeg || !targetBounded) {
       acknowledgeCalibration(action, requestId, false, "Jog exceeds channel or +/-10 degree safety bounds.");
       return;
     }
-    if (calibrationChannelActive && calibrationChannel != static_cast<uint8_t>(channel)) {
-      disableServoOutputChannel(driver, calibrationChannel);
+    if (calibrationChannelActive &&
+        calibrationPhysicalChannel != static_cast<uint8_t>(physicalChannel)) {
+      disableServoOutputPhysicalChannel(driver, calibrationPhysicalChannel);
     }
     calibrationChannel = static_cast<uint8_t>(channel);
+    calibrationPhysicalChannel = static_cast<uint8_t>(physicalChannel);
     calibrationChannelActive = true;
     calibrationCurrentDeg = commandedServoAnglesDeg()[calibrationChannel];
     calibrationTargetDeg = target;
@@ -384,22 +503,49 @@ void handleCalibration(JsonObjectConst command, JsonObjectConst payload,
     ServoCalibrationProfile profile{};
     if (!parseCalibrationProfile(payload["profile"].as<JsonObjectConst>(), &profile)) {
       acknowledgeCalibration(action, requestId, false, "Profile must contain exactly 12 unique, bounded Domino joints.");
-    } else if (!persistCalibrationProfile(profile)) {
-      acknowledgeCalibration(action, requestId, false, "NVS verification failed; previous calibration remains active.");
     } else {
-      acknowledgeCalibration(action, requestId, true, nullptr, true, true);
+      // A channel-map replacement is applied only with every PCA9685 output
+      // fully off. Re-entering bench mode is required before any further jog.
+      disableOutputs(driver, LiveRobotState::Disarmed);
+      if (!persistCalibrationProfile(profile)) {
+        acknowledgeCalibration(action, requestId, false, "NVS verification failed; previous calibration remains active.");
+      } else {
+        acknowledgeCalibration(action, requestId, true, nullptr, true, true);
+      }
     }
   } else {
     acknowledgeCalibration(action, requestId, false, "Unsupported calibration action.");
   }
 }
 
-void handleCommand(const String &line, Adafruit_PWMServoDriver &driver, uint32_t now) {
+void handleCommand(const String &line, LiveTransport source,
+                   Adafruit_PWMServoDriver &driver, uint32_t now) {
   JsonDocument document;
   if (deserializeJson(document, line) != DeserializationError::Ok) return;
   JsonObjectConst command = document.as<JsonObjectConst>();
-  if (strcmp(command["protocol"] | "", kProtocol) || strcmp(command["type"] | "", "companion-command")) return;
+  if (strcmp(command["protocol"] | "", kProtocol)) return;
+  if (!strcmp(command["type"] | "", "companion-auth")) {
+    const bool authenticated = source != LiveTransport::Usb &&
+        constantTimeLinkKeyMatches(command["linkKey"] | static_cast<const char *>(nullptr));
+#if DOMINO_LIVE_WIFI_ENABLED
+    if (source == LiveTransport::Wifi) wifiAuthenticated = authenticated;
+#endif
+#if DOMINO_LIVE_BLUETOOTH_ENABLED
+    if (source == LiveTransport::Bluetooth) bluetoothAuthenticated = authenticated;
+#endif
+    if (authenticated) sendHello();
+    return;
+  }
+  if (strcmp(command["type"] | "", "companion-command")) return;
+  if (!transportAuthenticated(command, source)) return;
   const char *kind = command["kind"] | "";
+  const char *action = command["action"] | "";
+  const bool emergencyEstop = !strcmp(kind, "safety") && !strcmp(action, "estop");
+  if (!emergencyEstop) {
+    if (commandOwner == LiveTransport::None) commandOwner = source;
+    if (commandOwner != source) return;
+    lastOwnerCommandMs = now;
+  }
   JsonObjectConst payload = command["payload"].as<JsonObjectConst>();
   if (!strcmp(kind, "safety")) handleSafety(command, payload, driver, now);
   else if (!strcmp(kind, "safety-heartbeat")) handleHeartbeat(command, now);
@@ -408,16 +554,86 @@ void handleCommand(const String &line, Adafruit_PWMServoDriver &driver, uint32_t
     acknowledge(kind, command["action"] | "", command["requestId"], false, "Capability is not implemented by this firmware.");
 }
 
-void readUsb(Adafruit_PWMServoDriver &driver, uint32_t now) {
-  while (Serial.available()) {
-    const char next = static_cast<char>(Serial.read());
+void readTransport(Stream &stream, String &line, LiveTransport source,
+                   Adafruit_PWMServoDriver &driver, uint32_t now) {
+  while (stream.available()) {
+    const char next = static_cast<char>(stream.read());
     if (next == '\n') {
-      if (inputLine.length()) handleCommand(inputLine, driver, now);
-      inputLine = "";
+      if (line.length()) handleCommand(line, source, driver, now);
+      line = "";
     } else if (next != '\r') {
-      if (inputLine.length() < 8192) inputLine += next;
-      else inputLine = "";
+      if (line.length() < 8192) line += next;
+      else line = "";
     }
+  }
+}
+
+bool ownerConnected() {
+  if (commandOwner == LiveTransport::Usb || commandOwner == LiveTransport::None) return true;
+#if DOMINO_LIVE_WIFI_ENABLED
+  if (commandOwner == LiveTransport::Wifi) return wifiClient && wifiClient.connected();
+#endif
+#if DOMINO_LIVE_BLUETOOTH_ENABLED
+  if (commandOwner == LiveTransport::Bluetooth) return bluetoothSerial.hasClient();
+#endif
+  return false;
+}
+
+void updateWirelessTransports(Adafruit_PWMServoDriver &driver, uint32_t now) {
+#if DOMINO_LIVE_WIFI_ENABLED
+  if (WiFi.status() == WL_CONNECTED) {
+    if (!wifiServerStarted) {
+      wifiServer.begin();
+      wifiServer.setNoDelay(true);
+      wifiServerStarted = true;
+      Serial.printf("LIVE Wi-Fi ready at %s:%u\n",
+                    WiFi.localIP().toString().c_str(), DOMINO_LIVE_WIFI_PORT);
+    }
+    WiFiClient candidate = wifiServer.available();
+    if (candidate) {
+      if (!wifiClient || !wifiClient.connected()) {
+        wifiClient = candidate;
+        wifiClient.setNoDelay(true);
+        wifiInputLine = "";
+        wifiAuthenticated = false;
+        wifiAcceptedMs = now;
+        sendHello();
+      } else {
+        candidate.stop();
+      }
+    }
+    if (wifiClient && wifiClient.connected()) {
+      readTransport(wifiClient, wifiInputLine, LiveTransport::Wifi, driver, now);
+      if (!wifiAuthenticated && now - wifiAcceptedMs > kWirelessAuthenticationMs) {
+        wifiClient.stop();
+      }
+    }
+  }
+#endif
+#if DOMINO_LIVE_BLUETOOTH_ENABLED
+  const bool bluetoothHasClient = bluetoothSerial.hasClient();
+  if (bluetoothHasClient && !bluetoothHadClient) {
+    bluetoothAuthenticated = false;
+    bluetoothAcceptedMs = now;
+    sendHello();
+  }
+  if (bluetoothHasClient) {
+    readTransport(bluetoothSerial, bluetoothInputLine, LiveTransport::Bluetooth, driver, now);
+    if (!bluetoothAuthenticated && now - bluetoothAcceptedMs > kWirelessAuthenticationMs) {
+      bluetoothSerial.disconnect();
+    }
+  }
+  if (!bluetoothHasClient) bluetoothAuthenticated = false;
+  bluetoothHadClient = bluetoothHasClient;
+#endif
+
+  if (!ownerConnected()) {
+    if (state == LiveRobotState::Armed) disableOutputs(driver, LiveRobotState::Watchdog);
+    else if (benchMode) disableOutputs(driver, LiveRobotState::Disarmed);
+    commandOwner = LiveTransport::None;
+  } else if (commandOwner != LiveTransport::None && state != LiveRobotState::Armed && !benchMode &&
+             now - lastOwnerCommandMs > kTransportOwnerIdleMs) {
+    commandOwner = LiveTransport::None;
   }
 }
 
@@ -432,19 +648,37 @@ void updateCalibrationJog(Adafruit_PWMServoDriver &driver, uint32_t now) {
   } else {
     calibrationCurrentDeg += error > 0 ? step : -step;
   }
-  commandCalibrationServoAngle(driver, calibrationChannel, calibrationCurrentDeg);
+  commandCalibrationServoAngle(
+      driver, calibrationChannel, calibrationPhysicalChannel, calibrationCurrentDeg);
 }
 }  // namespace
 
 void liveRobotEndpointBegin(Adafruit_PWMServoDriver &driver) {
   setServoOutputsEnabled(driver, false);
   if (!loadCalibrationProfile()) setServoCalibrationProfile(defaultServoCalibrationProfile());
-  inputLine.reserve(1024);
+  usbInputLine.reserve(1024);
+#if DOMINO_LIVE_WIFI_ENABLED
+  wifiInputLine.reserve(1024);
+  WiFi.mode(WIFI_STA);
+  WiFi.setHostname(DOMINO_LIVE_WIFI_HOSTNAME);
+  WiFi.setAutoReconnect(true);
+  WiFi.begin(DOMINO_LIVE_WIFI_SSID, DOMINO_LIVE_WIFI_PASSWORD);
+#endif
+#if DOMINO_LIVE_BLUETOOTH_ENABLED
+  bluetoothInputLine.reserve(1024);
+  if (bluetoothSerial.begin(DOMINO_LIVE_BLUETOOTH_NAME) &&
+      bluetoothSerial.setPin(DOMINO_LIVE_BLUETOOTH_PIN)) {
+    Serial.printf("LIVE Bluetooth SPP ready as %s (PIN enabled).\n", DOMINO_LIVE_BLUETOOTH_NAME);
+  } else {
+    Serial.println("LIVE Bluetooth failed to start securely; USB recovery remains available.");
+  }
+#endif
   sendHello();
 }
 
 void liveRobotEndpointLoop(uint32_t now, Adafruit_PWMServoDriver &driver) {
-  readUsb(driver, now);
+  readTransport(Serial, usbInputLine, LiveTransport::Usb, driver, now);
+  updateWirelessTransports(driver, now);
   updateCalibrationJog(driver, now);
   if (state == LiveRobotState::Armed &&
       (now - lastHeartbeatMs > kWatchdogMs || !controllerSafeToArm(now))) {

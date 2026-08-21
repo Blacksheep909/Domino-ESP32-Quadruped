@@ -21,8 +21,11 @@ Start the Virtual Lab first. Then open a second PowerShell window in
 `simulation/standalone` and choose one physical link:
 
 ```powershell
-# Wi-Fi TCP endpoint on the robot
-.\start-live-companion.ps1 -Transport wifi -RobotHost 192.168.4.1
+# Match DOMINO_LIVE_LINK_KEY in the robot's local secrets header.
+$env:DOMINO_ROBOT_LINK_KEY = "your-separate-long-random-key"
+
+# Wi-Fi TCP endpoint on the robot (IP is printed on USB serial after joining)
+.\start-live-companion.ps1 -Transport wifi -RobotHost 192.168.1.123
 
 # Wired USB serial
 .\start-live-companion.ps1 -Transport usb -Device COM5
@@ -35,6 +38,24 @@ USB and Bluetooth default to 115200 baud, 8 data bits, no parity and one stop
 bit. The launcher configures that serial mode before opening the device. Wi-Fi
 defaults to TCP port 8766. Keep the companion terminal open; Ctrl+C commands
 neutral, closes the robot link and removes the adapter from LIVE.
+
+Wireless firmware is opt-in. Copy `src/live_robot_secrets.example.h` to the
+gitignored `src/live_robot_secrets.h`, set the station SSID/password, a separate
+16+ character LIVE link key, and a non-default Bluetooth PIN, then rebuild and
+flash. Wi-Fi joins the configured WPA2 network and never creates an access
+point. The serial monitor reports its assigned IP without printing credentials.
+Bluetooth must be paired in Windows before its SPP COM port can be passed to
+the launcher. USB works without a link key and remains the recovery path.
+The TCP protocol is not TLS: use it only on a trusted WPA2/WPA3 LAN, do not
+forward port 8766 from a router, and use a different random link key from the
+Wi-Fi password. The key is checked in constant time before any wireless command
+can claim ownership or reach the safety state machine.
+
+The first authenticated transport to send a command owns the robot command
+stream. Other transports remain telemetry-only until that owner disconnects or
+becomes idle while safely disarmed. An owner disconnect while armed enters the
+watchdog state immediately; a disconnect in calibration turns every servo off.
+An E-stop is still accepted from any authenticated transport.
 
 The adapter appears in **LIVE -> CONNECT** only after the physical endpoint has
 sent a fresh hello or telemetry message. A stale or disconnected robot is
@@ -205,8 +226,12 @@ watchdog, bounded calibration bench jogs, and persistent calibration profiles.
 Arming additionally requires the Boxer SA switch low; after arming, the normal
 Boxer controls remain primary.
 
-Calibration saves must contain exactly the 12 driven channels with unique IDs,
-bounded offsets, directions and logical limits. Firmware writes a candidate NVS
+Calibration schema v2 saves contain exactly 12 stable logical channels and 12
+unique physical PCA9685 output channels. Each record also carries bounded
+offsets, direction and logical limits. A bench jog names both the logical joint
+used for safety bounds and the physical channel to energize; the firmware keeps
+only one such output active. Firmware turns all outputs off before a map change,
+writes a candidate NVS
 blob, reads it back, validates its checksum and full contents, and only then
 replaces the active profile. At boot, a missing or corrupt active blob falls
 back to the compiled safe defaults. Runtime commands are converted back to a
@@ -214,6 +239,7 @@ neutral-relative logical joint angle, clamped to the saved joint limits, then
 mapped through the saved direction and offset before the existing hard servo
 envelope is applied.
 
-Gait persistence, browser manual driving, Wi-Fi TCP, and Bluetooth SPP remain
-disabled and are advertised as unsupported until their independent robot-side
-enforcement is implemented.
+Gait persistence and browser manual driving remain disabled and are advertised
+as unsupported until their independent robot-side enforcement is implemented.
+Wi-Fi TCP and Bluetooth SPP are implemented but compile disabled until the
+local secrets header explicitly enables them.

@@ -419,6 +419,10 @@
 
             <section class="calibration-panel" data-calibration-panel="1" hidden>
               <div class="calibration-panel-heading"><span>STEP 2 OF 5</span><h2>Select one joint</h2><p>Work through one actuator at a time. The channel map follows the current Domino wiring.</p></div>
+              <div class="calibration-wiring-toolbar">
+                <div><span>PHYSICAL OUTPUT MAP</span><strong id="live-calibration-wiring-summary">12 UNIQUE CHANNELS</strong><small>Logical joints can be assigned to any PCA9685 output from 0-15.</small></div>
+                <button id="live-calibration-edit-wiring" type="button">EDIT CHANNEL MAP</button>
+              </div>
               <div id="live-calibration-joint-list" class="calibration-joint-map" aria-label="Domino calibration joints"></div>
               <div class="calibration-selection-summary"><span>SELECTED</span><strong id="live-calibration-selected-summary">FL HIP / CHANNEL 0</strong><small>Selection is reflected in the neutral and limit steps.</small></div>
             </section>
@@ -468,6 +472,39 @@
             </footer>
           </div>
         </div>
+
+        <dialog id="live-calibration-wiring-dialog" class="calibration-dialog" aria-labelledby="live-calibration-wiring-title">
+          <div class="calibration-dialog-shell">
+            <header><div><span>CALIBRATION / WIRING</span><h2 id="live-calibration-wiring-title">Assign physical servo channels</h2><p>Choose the PCA9685 output physically connected to each logical joint. Every assignment must be unique.</p></div><button id="live-calibration-wiring-close" type="button" aria-label="Close channel map editor">&times;</button></header>
+            <section id="live-calibration-wiring-edit" class="calibration-wiring-stage">
+              <div id="live-calibration-wiring-list" class="calibration-wiring-list"></div>
+              <p id="live-calibration-wiring-error" class="calibration-dialog-status" aria-live="polite"></p>
+            </section>
+            <section id="live-calibration-wiring-confirm" class="calibration-wiring-stage" hidden>
+              <div class="calibration-warning"><strong>CHECK THE PHYSICAL WIRING</strong><p>A wrong mapping can energize a different joint than the one shown on screen. Servo output stays locked while this local map is changed.</p></div>
+              <div id="live-calibration-wiring-changes" class="calibration-wiring-changes"></div>
+              <label class="calibration-confirm"><input id="live-calibration-wiring-ack" type="checkbox"><span>I checked each cable and understand that these assignments control physical PCA9685 outputs.</span></label>
+            </section>
+            <footer>
+              <button id="live-calibration-wiring-cancel" type="button">CANCEL</button>
+              <span></span>
+              <button id="live-calibration-wiring-back" type="button" hidden>BACK</button>
+              <button id="live-calibration-wiring-review" type="button">REVIEW CHANGES</button>
+              <button id="live-calibration-wiring-apply" type="button" hidden disabled>CONFIRM CHANNEL MAP</button>
+            </footer>
+          </div>
+        </dialog>
+
+        <dialog id="live-calibration-robot-confirm" class="calibration-dialog calibration-robot-confirm" aria-labelledby="live-calibration-robot-confirm-title">
+          <div class="calibration-dialog-shell">
+            <header><div><span>CALIBRATION / ROBOT WRITE</span><h2 id="live-calibration-robot-confirm-title">Save this profile to the robot?</h2><p>This replaces the robot's persistent channel map, neutral offsets, directions, and mechanical limits.</p></div><button id="live-calibration-robot-confirm-close" type="button" aria-label="Cancel robot profile write">&times;</button></header>
+            <section class="calibration-wiring-stage">
+              <div class="calibration-warning"><strong>PHYSICAL OUTPUTS WILL USE THIS MAP</strong><p>Keep Domino supported, verify all 12 channel assignments in the review table, and leave the E-stop within reach.</p></div>
+              <label class="calibration-confirm"><input id="live-calibration-robot-confirm-ack" type="checkbox"><span>I reviewed the wiring map and want to persist these changes on the connected robot.</span></label>
+            </section>
+            <footer><button id="live-calibration-robot-confirm-cancel" type="button">CANCEL</button><span></span><button id="live-calibration-robot-confirm-send" type="button" disabled>CONFIRM &amp; SEND</button></footer>
+          </div>
+        </dialog>
       </section>
 
       <section id="live-view-gaits" class="live-view-page live-gaits-page" aria-labelledby="live-gaits-title" hidden>

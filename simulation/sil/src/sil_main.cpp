@@ -16,6 +16,7 @@
 #include "gait_profile.h"
 #include "leg_controller.h"
 #include "manual_control_guard.h"
+#include "power_monitor_math.h"
 #include "sim_pwm.h"
 #include "servo_calibration.h"
 
@@ -158,6 +159,23 @@ bool validateManualControlGuard() {
       releaseValidated;
   if (!passed) std::cerr << "FAIL: manual-control authority or deadman guard failed\n";
   return passed;
+}
+
+bool validatePowerMonitorMath() {
+  // TI INA226 datasheet example: 2 mOhm shunt, 1 mA current LSB,
+  // bus register 9584, current register 10000, and power register 4792.
+  const PowerMonitorScale scale = makeIna226Scale(0.002f, 32.768f);
+  const bool exampleMatches = scale.valid && scale.calibration == 2560 &&
+      fabsf(ina226BusVoltageV(9584) - 11.98f) < 0.001f &&
+      fabsf(ina226CurrentA(10000, scale) - 10.0f) < 0.001f &&
+      fabsf(ina226PowerW(4792, scale) - 119.8f) < 0.03f;
+  const bool negativeCurrentWorks = ina226CurrentA(static_cast<uint16_t>(-500), scale) < 0.0f;
+  const bool unsafeScaleRejected = !makeIna226Scale(0.0f, 30.0f).valid &&
+      !makeIna226Scale(0.002f, NAN).valid;
+  if (!exampleMatches || !negativeCurrentWorks || !unsafeScaleRejected) {
+    std::cerr << "FAIL: INA226 calibration or register scaling failed\n";
+  }
+  return exampleMatches && negativeCurrentWorks && unsafeScaleRejected;
 }
 
 struct Options {
@@ -584,6 +602,7 @@ int main(int argc, char** argv) {
   const bool calibrationMathPassed = validateCalibrationMath();
   const bool gaitProfilesPassed = validateGaitProfiles();
   const bool manualControlPassed = validateManualControlGuard();
+  const bool powerMonitorMathPassed = validatePowerMonitorMath();
   simSetTimeUs(0);
   simResetServoOutputs();
   setup();
@@ -722,6 +741,7 @@ int main(int argc, char** argv) {
   }
 
   const bool passed = calibrationMathPassed && gaitProfilesPassed && manualControlPassed &&
+      powerMonitorMathPassed &&
       validateOutputs(sawStand, sawTilt, sawGait, sawCareful,
                                       gaitTiltInterlockViolation,
                                       motionInputInterlockViolation,

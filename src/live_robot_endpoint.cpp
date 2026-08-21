@@ -47,6 +47,7 @@
 #include "gait_profile.h"
 #include "imu.h"
 #include "leg_controller.h"
+#include "power_monitor.h"
 
 namespace {
 constexpr char kProtocol[] = "domino-robot-link-v1";
@@ -443,7 +444,7 @@ void sendHello() {
   document["type"] = "robot-hello";
   document["robotId"] = "domino-esp32-quadruped";
   document["robotName"] = "Domino";
-  document["firmwareVersion"] = "0.5.0";
+  document["firmwareVersion"] = "0.6.0";
   document["robotState"] = stateName();
   document["wirelessAuth"] = "psk-v1";
   addCapabilities(document["capabilities"].to<JsonObject>());
@@ -466,6 +467,14 @@ void sendTelemetry(uint32_t now) {
   document["robotTimeMs"] = now;
   addCapabilities(document["capabilities"].to<JsonObject>());
   addGaitProfile(document["gaitProfile"].to<JsonObject>(), gaitProfile());
+  const PowerMonitorSample power = powerMonitorSample(now);
+  if (power.valid) {
+    JsonObject powerJson = document["power"].to<JsonObject>();
+    powerJson["timestampMs"] = power.timestampMs;
+    powerJson["voltageV"] = power.voltageV;
+    powerJson["currentA"] = power.currentA;
+    powerJson["powerW"] = power.powerW;
+  }
 
   JsonObject expected = document["expected"].to<JsonObject>();
   expected["timestampMs"] = now;
@@ -502,6 +511,8 @@ void sendTelemetry(uint32_t now) {
   diagnostics["manualDeadman"] = manual.deadman;
   diagnostics["manualFrameAgeMs"] = manualGuard.frameAgeMs(now);
   diagnostics["manualLeaseRemainingMs"] = manualGuard.leaseRemainingMs(now);
+  diagnostics["powerMonitorOnline"] = power.online;
+  diagnostics["powerSampleValid"] = power.valid;
 
   const CrsfLinkStatistics link = crsfLinkStatistics();
   JsonObject controller = document["controller"].to<JsonObject>();
@@ -963,6 +974,7 @@ void liveRobotEndpointBegin(Adafruit_PWMServoDriver &driver) {
   setServoOutputsEnabled(driver, false);
   if (!loadCalibrationProfile()) setServoCalibrationProfile(defaultServoCalibrationProfile());
   if (!loadGaitProfile()) setGaitProfile(defaultGaitProfile());
+  powerMonitorBegin();
   usbInputLine.reserve(1024);
 #if DOMINO_LIVE_WIFI_ENABLED
   wifiInputLine.reserve(1024);
@@ -988,6 +1000,7 @@ void liveRobotEndpointLoop(uint32_t now, Adafruit_PWMServoDriver &driver) {
   updateWirelessTransports(driver, now);
   updateCalibrationJog(driver, now);
   updateManualControl(now);
+  powerMonitorUpdate(now);
   if (state == LiveRobotState::Armed &&
       (now - lastHeartbeatMs > kWatchdogMs || !controllerSafeToArm(now))) {
     disableOutputs(driver, LiveRobotState::Watchdog);

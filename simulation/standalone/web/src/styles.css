@@ -4409,6 +4409,21 @@ body[data-workspace="real-robot"][data-live-view="gaits"] #scene {
 
 body[data-experience="simple"] [data-expert-only] { display: none !important; }
 
+#real-workspace[data-experience="expert"] .experience-toggle {
+  border-color: rgba(93, 150, 214, 0.5);
+  box-shadow: 0 0 0 1px rgba(93, 150, 214, 0.08), 0 0 12px rgba(93, 150, 214, 0.1);
+}
+
+#real-workspace[data-experience="expert"] .experience-toggle button.active {
+  color: #244f7d;
+  background: #e5eef8;
+}
+
+:root[data-theme="dark"] #real-workspace[data-experience="expert"] .experience-toggle button.active {
+  color: #c4ddf8;
+  background: rgba(68, 124, 185, 0.24);
+}
+
 :root[data-theme="dark"] .diagnostics-card { background: #121214; border-color: #303034; }
 :root[data-theme="dark"] .diagnostics-card > header { border-color: #303034; }
 :root[data-theme="dark"] .diagnostics-card > header button,

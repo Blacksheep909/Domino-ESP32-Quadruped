@@ -241,8 +241,8 @@
         </div>
         <button id="live-manual-open" class="live-manual-open" type="button">MANUAL CONTROL</button>
         <div class="experience-toggle" role="group" aria-label="Interface detail">
-          <button type="button" data-experience="simple" class="active" aria-pressed="true">SIMPLE</button>
-          <button type="button" data-experience="expert" aria-pressed="false">EXPERT</button>
+          <button type="button" data-experience="simple" class="active" aria-pressed="true" title="Show the essential robot controls and summaries">SIMPLE</button>
+          <button type="button" data-experience="expert" aria-pressed="false" title="Show detailed joint, packet and diagnostic data">EXPERT</button>
         </div>
       </nav>
 
@@ -303,7 +303,7 @@
           </div>
         </section>
 
-        <section class="live-panel-section joint-comparison">
+        <section class="live-panel-section joint-comparison" data-expert-only>
           <div class="comparison-heading">
             <h2>JOINT ERROR</h2>
             <span>SHOULDER / UPPER / LOWER</span>
@@ -385,7 +385,7 @@
               <em id="live-data-chart-empty">Start recording to populate this graph.</em>
             </div>
           </section>
-          <section class="live-data-card live-data-table-card">
+          <section class="live-data-card live-data-table-card" data-expert-only>
             <header><span>RECENT SYNCHRONIZED SAMPLES</span><strong>NEWEST FIRST</strong></header>
             <div class="live-data-table-wrap"><table><thead><tr><th>TIME</th><th>ALIGN</th><th>PITCH EXP</th><th>PITCH MEAS</th><th>ERROR</th><th>VOLTAGE</th><th>POWER</th></tr></thead><tbody id="live-data-table-body"><tr><td colspan="7">No recorded samples.</td></tr></tbody></table></div>
           </section>

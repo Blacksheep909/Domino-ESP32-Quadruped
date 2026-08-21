@@ -5534,7 +5534,13 @@ function animate(now) {
     ground.visible = !floatingCalibration;
     grid.visible = !floatingCalibration;
     courseVisuals.visible = false;
-    controls.update();
+    if (!updateCameraSnap(now)) controls.update();
+    updateJointCalloutScale();
+    cameraGizmoElapsed += delta;
+    if (cameraGizmoElapsed >= 1 / 30) {
+      cameraGizmoElapsed = 0;
+      updateCameraGizmo();
+    }
     renderer.render(scene, camera);
     requestAnimationFrame(animate);
     return;

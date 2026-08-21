@@ -89,6 +89,23 @@ header {
   font: 700 10px/1 "Cascadia Mono", Consolas, monospace;
 }
 
+.status .pc-link-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.status .pc-link-status::before {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 7px currentColor;
+  content: "";
+}
+
 .status [data-state="online"] {
   color: #246b45;
   background: #edf6f0;

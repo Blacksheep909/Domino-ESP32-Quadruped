@@ -5,6 +5,8 @@ import {
 } from "./live-connection-protocol.js";
 
 export const LIVE_ADAPTER_FRESH_MS = 4_000;
+export const LIVE_RECONNECT_BASE_MS = 1_000;
+export const LIVE_RECONNECT_MAX_MS = 10_000;
 
 const safeText = (value, fallback = "") => typeof value === "string" ? value.slice(0, 96) : fallback;
 
@@ -47,21 +49,75 @@ export function createLiveConnectionState() {
     pendingAction: "",
     lastDiscoveryAt: 0,
     connectedAt: 0,
+    reconnectAdapterId: "",
+    reconnectAttempt: 0,
+    reconnectAt: 0,
+    reconnectReason: "",
     status: "Choose a transport and search for a compatible Domino adapter.",
     error: "",
   };
 }
 
-export function setLiveConnectionBridge(state, connected) {
+export function scheduleLiveReconnect(state, reason, now = Date.now()) {
+  if (!state?.reconnectAdapterId) return false;
+  state.sessionId = "";
+  state.robotState = "unknown";
+  state.pendingRequestId = "";
+  state.pendingAction = "";
+  state.phase = "reconnecting";
+  state.reconnectAttempt += 1;
+  const delay = Math.min(
+    LIVE_RECONNECT_MAX_MS,
+    LIVE_RECONNECT_BASE_MS * 2 ** Math.max(0, state.reconnectAttempt - 1),
+  );
+  state.reconnectAt = now + delay;
+  state.reconnectReason = safeText(reason, "The engineering session was interrupted.");
+  state.status = `${state.reconnectReason} Commands remain blocked while reconnecting.`;
+  return true;
+}
+
+export function liveReconnectDue(state, now = Date.now()) {
+  const adapter = state?.adapters?.[state.reconnectAdapterId];
+  return Boolean(
+    state?.bridgeConnected && state.phase === "reconnecting" && !state.sessionId &&
+    !state.pendingRequestId && adapter && now - adapter.receivedAt <= LIVE_ADAPTER_FRESH_MS &&
+    now >= state.reconnectAt
+  );
+}
+
+export function liveConnectionStatus(state, now = Date.now()) {
+  if (state?.phase !== "reconnecting") return state?.status || "";
+  const remaining = Math.max(0, state.reconnectAt - now);
+  const wait = remaining > 0
+    ? ` Retry in ${(remaining / 1_000).toFixed(1)} s.`
+    : " Waiting for the paired adapter...";
+  return `${state.reconnectReason || "The engineering session was interrupted."}${wait} Commands remain blocked.`;
+}
+
+export function cancelLiveReconnect(state) {
+  if (!state || state.phase !== "reconnecting" || state.sessionId) return false;
+  state.reconnectAdapterId = "";
+  state.reconnectAttempt = 0;
+  state.reconnectAt = 0;
+  state.reconnectReason = "";
+  state.phase = "disconnected";
+  state.status = "Automatic reconnect cancelled. Robot commands remain blocked.";
+  return true;
+}
+
+export function setLiveConnectionBridge(state, connected, now = Date.now()) {
   if (!state) return false;
   state.bridgeConnected = Boolean(connected);
   if (!connected) {
-    state.phase = state.sessionId ? "lost" : "disconnected";
+    const shouldReconnect = Boolean(state.sessionId || state.reconnectAdapterId);
+    state.phase = shouldReconnect ? "reconnecting" : "disconnected";
     state.sessionId = "";
     state.pendingRequestId = "";
     state.pendingAction = "";
     state.robotState = "unknown";
-    state.status = "The local bridge is offline. Robot commands remain blocked.";
+    if (!shouldReconnect || !scheduleLiveReconnect(state, "The local bridge is offline.", now)) {
+      state.status = "The local bridge is offline. Robot commands remain blocked.";
+    }
   }
   return true;
 }
@@ -76,12 +132,12 @@ export function acceptLiveAdapterAnnouncement(state, message, receivedAt = Date.
   if (!state || !validLiveAdapterAnnouncement(message)) return false;
   const adapter = sanitizeAdapter(message, receivedAt);
   state.adapters[adapter.adapterId] = adapter;
+  if (state.phase === "reconnecting" && state.reconnectAdapterId === adapter.adapterId) {
+    state.selectedAdapterId = adapter.adapterId;
+  }
   if (!state.selectedAdapterId) state.selectedAdapterId = adapter.adapterId;
   if (state.sessionId && state.selectedAdapterId === adapter.adapterId && adapter.state === "error") {
-    state.phase = "lost";
-    state.sessionId = "";
-    state.robotState = "unknown";
-    state.status = `${adapter.name} reported a connection fault.`;
+    scheduleLiveReconnect(state, `${adapter.name} reported a connection fault.`, receivedAt);
   }
   return true;
 }
@@ -109,10 +165,7 @@ export function pruneLiveAdapters(state, now = Date.now()) {
     delete state.adapters[adapter.adapterId];
     changed = true;
     if (state.selectedAdapterId === adapter.adapterId && state.sessionId) {
-      state.phase = "lost";
-      state.sessionId = "";
-      state.robotState = "unknown";
-      state.status = `Lost the ${adapter.name} adapter heartbeat. Commands are blocked.`;
+      scheduleLiveReconnect(state, `Lost the ${adapter.name} adapter heartbeat.`, now);
     }
   });
   if (state.selectedAdapterId && !state.adapters[state.selectedAdapterId] && !state.sessionId) {
@@ -126,10 +179,7 @@ export function removeLiveAdapter(state, adapterId, reason = "offline") {
   const adapter = state.adapters[adapterId];
   delete state.adapters[adapterId];
   if (state.selectedAdapterId === adapterId && state.sessionId) {
-    state.phase = "lost";
-    state.sessionId = "";
-    state.robotState = "unknown";
-    state.status = `The ${adapter.name} adapter went ${reason}. Commands are blocked.`;
+    scheduleLiveReconnect(state, `The ${adapter.name} adapter went ${reason}.`, Date.now());
   }
   if (state.selectedAdapterId === adapterId && !state.sessionId) state.selectedAdapterId = "";
   return true;
@@ -187,6 +237,11 @@ export function acceptLiveConnectionAcknowledgement(state, message, receivedAt =
   state.pendingRequestId = "";
   state.pendingAction = "";
   if (!message.accepted) {
+    if (!state.sessionId && state.reconnectAdapterId) {
+      state.error = safeText(message.reason, "The adapter rejected the reconnect request.");
+      scheduleLiveReconnect(state, state.error, receivedAt);
+      return true;
+    }
     state.phase = state.sessionId ? "connected" : "disconnected";
     state.error = safeText(message.reason, "The adapter rejected the request.");
     state.status = state.error;
@@ -201,6 +256,10 @@ export function acceptLiveConnectionAcknowledgement(state, message, receivedAt =
     state.robotState = message.robotState;
     state.phase = "connected";
     state.connectedAt = receivedAt;
+    state.reconnectAdapterId = message.adapterId;
+    state.reconnectAttempt = 0;
+    state.reconnectAt = 0;
+    state.reconnectReason = "";
     state.status = message.robotState === "disarmed"
       ? "Engineering session established. Robot commands remain explicitly gated."
       : `Connected while the robot reports ${message.robotState.toUpperCase()}. Motion commands are blocked.`;
@@ -208,6 +267,10 @@ export function acceptLiveConnectionAcknowledgement(state, message, receivedAt =
     state.phase = "disconnected";
     state.sessionId = "";
     state.robotState = "unknown";
+    state.reconnectAdapterId = "";
+    state.reconnectAttempt = 0;
+    state.reconnectAt = 0;
+    state.reconnectReason = "";
     state.status = "Engineering session disconnected safely.";
   }
   return true;
@@ -241,6 +304,11 @@ export function failLiveConnectionRequest(state, requestId, reason) {
   if (!state || state.pendingRequestId !== requestId) return false;
   state.pendingRequestId = "";
   state.pendingAction = "";
+  if (!state.sessionId && state.reconnectAdapterId) {
+    state.error = reason;
+    scheduleLiveReconnect(state, reason);
+    return true;
+  }
   state.phase = state.sessionId ? "connected" : "disconnected";
   state.error = reason;
   state.status = reason;

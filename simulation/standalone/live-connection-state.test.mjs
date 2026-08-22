@@ -4,10 +4,13 @@ import assert from "node:assert/strict";
 import {
   acceptLiveAdapterAnnouncement,
   acceptLiveConnectionAcknowledgement,
+  cancelLiveReconnect,
   createLiveConnectionCommand,
   createLiveConnectionState,
   liveConnectionEnvelope,
   liveConnectionIsReady,
+  liveConnectionStatus,
+  liveReconnectDue,
   markLiveConnectionPending,
   pruneLiveAdapters,
   setLiveConnectionBridge,
@@ -92,9 +95,48 @@ test("a stale adapter tears down the engineering session", () => {
     adapterId: "domino-adapter-a", sessionId: "session-a", robotState: "disarmed",
   }, 1_020);
   assert.equal(pruneLiveAdapters(state, 5_100), true);
-  assert.equal(state.phase, "lost");
+  assert.equal(state.phase, "reconnecting");
   assert.equal(state.sessionId, "");
   assert.equal(liveConnectionIsReady(state, 5_100), false);
+  assert.equal(liveReconnectDue(state, 6_099), false);
+  acceptLiveAdapterAnnouncement(state, announcement(6_100), 6_100);
+  assert.equal(liveReconnectDue(state, 6_100), true);
+});
+
+test("a paired adapter reconnects with bounded backoff and an explicit cancel", () => {
+  const state = createLiveConnectionState();
+  setLiveConnectionBridge(state, true, 1_000);
+  acceptLiveAdapterAnnouncement(state, announcement(), 1_010);
+  let command = createLiveConnectionCommand(state, "connect", "request-1", 1_020);
+  markLiveConnectionPending(state, command);
+  acceptLiveConnectionAcknowledgement(state, {
+    type: "live-connection-ack", action: "connect", requestId: "request-1", accepted: true,
+    adapterId: "domino-adapter-a", sessionId: "session-a", robotState: "disarmed",
+  }, 1_030);
+
+  setLiveConnectionBridge(state, false, 2_000);
+  assert.equal(state.phase, "reconnecting");
+  assert.equal(state.reconnectAdapterId, "domino-adapter-a");
+  assert.match(liveConnectionStatus(state, 2_500), /Retry in 0\.5 s/);
+  assert.match(liveConnectionStatus(state, 2_500), /Commands remain blocked/);
+
+  setLiveConnectionBridge(state, true, 2_600);
+  acceptLiveAdapterAnnouncement(state, announcement(3_000), 3_000);
+  assert.equal(liveReconnectDue(state, 3_000), true);
+  command = createLiveConnectionCommand(state, "connect", "request-2", 3_000);
+  markLiveConnectionPending(state, command);
+  acceptLiveConnectionAcknowledgement(state, {
+    type: "live-connection-ack", action: "connect", requestId: "request-2", accepted: true,
+    adapterId: "domino-adapter-a", sessionId: "session-b", robotState: "disarmed",
+  }, 3_010);
+  assert.equal(state.phase, "connected");
+  assert.equal(state.reconnectAttempt, 0);
+
+  setLiveConnectionBridge(state, false, 4_000);
+  assert.equal(cancelLiveReconnect(state), true);
+  assert.equal(state.phase, "disconnected");
+  assert.equal(state.reconnectAdapterId, "");
+  assert.equal(liveReconnectDue(state, 20_000), false);
 });
 
 test("rejected connection acknowledgements leave commands locked", () => {

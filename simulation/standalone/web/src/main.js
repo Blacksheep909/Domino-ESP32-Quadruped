@@ -80,11 +80,14 @@ import {
 import {
   acceptLiveAdapterAnnouncement,
   acceptLiveConnectionAcknowledgement,
+  cancelLiveReconnect,
   createLiveConnectionCommand,
   createLiveConnectionState,
   failLiveConnectionRequest,
   liveConnectionEnvelope,
   liveConnectionIsReady,
+  liveConnectionStatus,
+  liveReconnectDue,
   markLiveConnectionPending,
   pruneLiveAdapters,
   removeLiveAdapter,
@@ -398,7 +401,8 @@ document.querySelector("#live-connection-connect").addEventListener("click", () 
   sendLiveConnectionRequest("connect");
 });
 document.querySelector("#live-connection-disconnect").addEventListener("click", () => {
-  sendLiveConnectionRequest("disconnect");
+  if (cancelLiveReconnect(liveConnectionState)) renderLiveConnectionUi();
+  else sendLiveConnectionRequest("disconnect");
 });
 
 const liveArmButton = document.querySelector("#live-safety-arm");
@@ -2606,14 +2610,15 @@ function renderLiveConnectionUi() {
   const connected = liveConnectionIsReady(liveConnectionState, now);
   const adapters = visibleLiveAdapters(liveConnectionState, now);
   const selected = liveConnectionState.adapters[liveConnectionState.selectedAdapterId] || null;
+  const reconnecting = liveConnectionState.phase === "reconnecting";
   const phase = document.querySelector("#live-connection-phase");
   phase.textContent = liveConnectionState.phase.toUpperCase();
   phase.dataset.state = connected ? "connected" : liveConnectionState.phase;
-  document.querySelector("#live-connection-status").textContent = liveConnectionState.status;
+  document.querySelector("#live-connection-status").textContent = liveConnectionStatus(liveConnectionState, now);
 
   document.querySelectorAll("[data-live-transport]").forEach((button) => {
     button.setAttribute("aria-pressed", String(button.dataset.liveTransport === liveConnectionState.transportFilter));
-    button.disabled = Boolean(liveConnectionState.sessionId || liveConnectionState.pendingRequestId);
+    button.disabled = Boolean(liveConnectionState.sessionId || liveConnectionState.pendingRequestId || reconnecting);
   });
 
   const list = document.querySelector("#live-adapter-list");
@@ -2625,7 +2630,7 @@ function renderLiveConnectionUi() {
     button.dataset.adapterId = adapter.adapterId;
     button.setAttribute("role", "option");
     button.setAttribute("aria-selected", String(adapter.adapterId === liveConnectionState.selectedAdapterId));
-    button.disabled = Boolean(liveConnectionState.sessionId || liveConnectionState.pendingRequestId);
+    button.disabled = Boolean(liveConnectionState.sessionId || liveConnectionState.pendingRequestId || reconnecting);
     const title = document.createElement("strong");
     title.textContent = adapter.name;
     const transport = document.createElement("span");
@@ -2655,11 +2660,13 @@ function renderLiveConnectionUi() {
   });
 
   document.querySelector("#live-connection-discover").disabled =
-    !liveConnectionState.bridgeConnected || Boolean(liveConnectionState.pendingRequestId || liveConnectionState.sessionId);
+    !liveConnectionState.bridgeConnected || reconnecting || Boolean(liveConnectionState.pendingRequestId || liveConnectionState.sessionId);
   document.querySelector("#live-connection-connect").disabled =
-    !liveConnectionState.bridgeConnected || !selected || Boolean(liveConnectionState.pendingRequestId || liveConnectionState.sessionId);
-  document.querySelector("#live-connection-disconnect").disabled =
-    !connected || liveSafetyState.robotState === "armed" || Boolean(liveConnectionState.pendingRequestId);
+    !liveConnectionState.bridgeConnected || !selected || reconnecting || Boolean(liveConnectionState.pendingRequestId || liveConnectionState.sessionId);
+  const disconnectButton = document.querySelector("#live-connection-disconnect");
+  disconnectButton.textContent = reconnecting ? "CANCEL RETRY" : "DISCONNECT";
+  disconnectButton.disabled =
+    (!connected && !reconnecting) || liveSafetyState.robotState === "armed" || Boolean(liveConnectionState.pendingRequestId);
 
   const openButton = document.querySelector("#live-connection-open");
   openButton.textContent = connected ? "MANAGE LINK" : "PAIR ROBOT";
@@ -2691,6 +2698,13 @@ function sendLiveConnectionRequest(action) {
   renderLiveConnectionUi();
   return true;
 }
+
+function serviceLiveReconnect() {
+  if (liveReconnectDue(liveConnectionState)) sendLiveConnectionRequest("connect");
+  if (liveConnectionState.phase === "reconnecting") renderLiveConnectionUi();
+}
+
+setInterval(serviceLiveReconnect, 250);
 
 function acceptLiveConnectionAck(message) {
   if (!acceptLiveConnectionAcknowledgement(liveConnectionState, message)) return false;

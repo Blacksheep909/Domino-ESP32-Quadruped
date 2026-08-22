@@ -80,6 +80,12 @@ unsolicited acknowledgements are rejected. Connecting never arms or moves the
 robot, and losing either the local bridge or adapter heartbeat immediately
 relocks hardware commands.
 
+After a successfully paired adapter is interrupted, LIVE automatically retries
+only that adapter's read-only handshake while every command remains locked. The
+connection manager shows a `RECONNECTING` phase with a bounded 1-10 second
+backoff countdown. `CANCEL RETRY` forgets the reconnect target without sending
+any robot command.
+
 The repository now includes a runnable physical companion process for Wi-Fi
 TCP, USB serial, and Bluetooth SPP serial links. It reconnects the browser relay
 and robot independently, refuses a read-only session until the robot has sent a

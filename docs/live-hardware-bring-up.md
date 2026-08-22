@@ -13,7 +13,7 @@ physical means of isolating servo power.
   voltage required by the installed servos.
 - Disconnect or disable the high-current servo rail for the first USB session.
 - Keep the Boxer SA switch low and verify the receiver is bound.
-- Build firmware 0.7.0 with Wi-Fi, Bluetooth, and INA226 disabled initially.
+- Build firmware 0.8.0 with Wi-Fi, Bluetooth, and INA226 disabled initially.
 
 ```powershell
 pio run

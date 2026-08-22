@@ -155,7 +155,7 @@
         </dl>
       </section>
       <section>
-        <h2>COMMAND</h2>
+        <h2 class="panel-heading-action">COMMAND <button id="gamepad-setup-open" type="button">MAP</button></h2>
         <dl>
           <div><dt>Source</dt><dd id="gamepad-name">KEYBOARD</dd></div>
           <div><dt>Pitch</dt><dd id="forward-value">0.00</dd></div>
@@ -214,6 +214,22 @@
         </div>
       </section>
     </aside>
+
+    <div id="gamepad-setup" class="gamepad-setup simulation-only" role="dialog" aria-modal="true" aria-labelledby="gamepad-setup-title" hidden>
+      <form>
+        <header><div><span>INPUT / CONTROLLER</span><h2 id="gamepad-setup-title">Controller mapping</h2><p id="gamepad-setup-device">Connect a gamepad to configure it.</p></div><button id="gamepad-setup-close" type="button" aria-label="Close controller mapping">&times;</button></header>
+        <div class="gamepad-map-grid">
+          <label>ROLL AXIS <select id="gamepad-map-roll"></select><span><input id="gamepad-invert-roll" type="checkbox"> INVERT</span></label>
+          <label>FORWARD AXIS <select id="gamepad-map-forward"></select><span><input id="gamepad-invert-forward" type="checkbox"> INVERT</span></label>
+          <label>TURN AXIS <select id="gamepad-map-turn"></select><span><input id="gamepad-invert-turn" type="checkbox"> INVERT</span></label>
+          <label>STAND BUTTON <select id="gamepad-map-stand"></select></label>
+          <label>TILT BUTTON <select id="gamepad-map-tilt"></select></label>
+          <label>RESET BUTTON <select id="gamepad-map-reset"></select></label>
+        </div>
+        <p class="gamepad-map-note">Mappings are saved for this exact controller name. CRSF radios keep their direct channel mapping.</p>
+        <footer><button id="gamepad-map-default" type="button">RESTORE DEFAULT</button><button id="gamepad-map-save" type="submit">SAVE MAPPING</button></footer>
+      </form>
+    </div>
 
     <main id="real-workspace" class="real-robot-only" aria-label="Live robot digital twin" hidden>
       <nav class="live-toolbar" aria-label="Live robot tools">

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { identifyInputDevice, normalizedGamepadControls } from "./web/src/gamepad-profile.js";
+import { identifyInputDevice, normalizedGamepadControls, readGamepadMappings, sanitizeGamepadMapping } from "./web/src/gamepad-profile.js";
 
 const pad = (id, axes = [0.25, -0.5, 0.75, -0.25]) => ({ id, axes });
 
@@ -29,4 +29,26 @@ test("recognizes representative EdgeTX and OpenTX CRSF radios", () => {
     assert.equal(controls.profile.family, "crsf-radio");
     assert.equal(controls.radioAxes.length, 8);
   }
+});
+
+test("custom mappings support non-standard axes, inversion, and buttons", () => {
+  const controls = normalizedGamepadControls(pad("Odd USB Pad", [0.1, 0.2, 0.3, 0.4]), {
+    rollAxis: 3, forwardAxis: 2, turnAxis: 1,
+    invertRoll: true, invertForward: false, invertTurn: true,
+    standButton: 5, tiltButton: 6, resetButton: 7,
+  });
+  assert.equal(controls.roll, -0.4);
+  assert.equal(controls.forward, 0.3);
+  assert.equal(controls.turn, -0.2);
+  assert.deepEqual(controls.buttons, { stand: 5, tilt: 6, reset: 7 });
+});
+
+test("persisted mappings are bounded and malformed entries fall back safely", () => {
+  const mapping = sanitizeGamepadMapping({ rollAxis: 999, forwardAxis: 4, standButton: -1, invertForward: false });
+  assert.equal(mapping.rollAxis, 0);
+  assert.equal(mapping.forwardAxis, 4);
+  assert.equal(mapping.standButton, 0);
+  assert.equal(mapping.invertForward, false);
+  assert.deepEqual(readGamepadMappings(null), {});
+  assert.equal(Object.keys(readGamepadMappings({ "Test Pad": mapping })).length, 1);
 });

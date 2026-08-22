@@ -969,6 +969,97 @@ nav button.active {
   min-width: 88px;
 }
 
+.panel-heading-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.panel-heading-action button {
+  padding: 3px 7px;
+  color: #6f736c;
+  background: transparent;
+  border: 1px solid #cfd1cb;
+  border-radius: 3px;
+  cursor: pointer;
+  font: 750 7px/1 "Cascadia Mono", Consolas, monospace;
+}
+
+.gamepad-setup {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(15, 16, 15, 0.58);
+  backdrop-filter: blur(3px);
+}
+
+.gamepad-setup[hidden] { display: none; }
+
+.gamepad-setup form {
+  width: min(620px, calc(100vw - 32px));
+  padding: 22px;
+  color: #30322e;
+  background: #f7f7f4;
+  border: 1px solid #cfd1cb;
+  border-radius: 7px;
+  box-shadow: 0 20px 70px rgba(0, 0, 0, 0.3);
+}
+
+.gamepad-setup header,
+.gamepad-setup footer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.gamepad-setup header {
+  position: static;
+  inset: auto;
+  width: auto;
+  height: auto;
+  padding: 0;
+  background: transparent;
+  border: 0;
+}
+
+.gamepad-setup header span,
+.gamepad-setup label,
+.gamepad-map-note {
+  color: #777a74;
+  font: 750 8px/1.4 "Cascadia Mono", Consolas, monospace;
+}
+
+.gamepad-setup h2 { margin: 5px 0; font-size: 22px; }
+.gamepad-setup header p { margin: 0; color: #656861; font-size: 10px; }
+.gamepad-setup header > button { padding: 0; border: 0; background: transparent; font-size: 24px; cursor: pointer; }
+
+.gamepad-map-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 22px 0 14px;
+}
+
+.gamepad-map-grid label { display: grid; gap: 7px; }
+.gamepad-map-grid select { min-width: 0; height: 32px; padding: 0 8px; border: 1px solid #cfd1cb; border-radius: 3px; background: #fff; }
+.gamepad-map-grid label span { display: flex; align-items: center; gap: 5px; }
+.gamepad-map-note { margin: 0 0 18px; font-weight: 600; }
+.gamepad-setup footer { align-items: center; border-top: 1px solid #d8dad4; padding-top: 14px; }
+.gamepad-setup footer button { min-height: 34px; padding: 0 14px; border: 1px solid #bfc2bb; border-radius: 3px; cursor: pointer; font: 750 8px/1 "Cascadia Mono", Consolas, monospace; }
+#gamepad-map-save { margin-left: auto; color: #174f30; border-color: #75ae88; background: #e6f4ea; }
+
+:root[data-theme="dark"] .gamepad-setup form { color: #ededeb; background: #171718; border-color: #373739; }
+:root[data-theme="dark"] .gamepad-map-grid select { color: #ededeb; background: #222224; border-color: #3b3b3e; }
+:root[data-theme="dark"] .gamepad-setup footer { border-color: #333336; }
+
+@media (max-width: 700px) {
+  .gamepad-map-grid { grid-template-columns: 1fr; }
+}
+
 .inspection-control {
   color: #777a75;
 }

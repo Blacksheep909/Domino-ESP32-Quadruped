@@ -15,13 +15,13 @@ compiling firmware is not presented as proof that a real robot was connected.
 | Data, graphs, logging, and export | Synchronized recording, expected/measured/error graphs, bounded session archive, CSV export, and diagnostic JSON bundle. | Session, telemetry, and diagnostics tests. |
 | Guided calibration | Five steps, floating/floor preview, safe bench acknowledgement, one-servo limited jog, offsets, directions, limits, JSON backup, and persistent ESP32 profile. | Calibration tests, SIL routing check, ESP32 build. |
 | Remappable servo channels | All 12 logical joints can select unique PCA9685 outputs 0-15; changed-only confirmation and separate robot-write confirmation. | Channel-map test, current screenshot, firmware routing assertion. |
-| Boxer/ELRS telemetry | All 16 channels, frame age/rate, failsafe, link quality, RSSI, SNR, RF mode, transmit power, and antenna are forwarded by the ESP32. | Controller-state tests and endpoint telemetry source. |
+| CRSF/ELRS and gamepad input | RadioMaster/EdgeTX/OpenTX transmitters retain direct CRSF channels and detected identity. Xbox, PlayStation, and generic gamepads use normalized or per-device persistent axis/button mappings. All 16 robot-side CRSF channels, RF statistics, and failsafe evidence remain available in LIVE. | HID, gamepad-profile, controller-state, and endpoint tests. |
 | Simple and Expert modes | Presentation detail is independent of workspace; Expert exposes deeper diagnostics and manual body controls. | Application-state and view-state tests. |
 | Separate but compatible gait labs | Simulation experiments and LIVE drafts are separate while sharing versioned JSON profiles; robot apply is disarmed-only with two-slot NVS rollback. | Gait, companion, and SIL tests; both ESP32 builds. |
-| Guarded browser manual control | Maximum 30-second authority, constant-time token check, deadman, monotonic sequence, bounded axes, 250 ms neutral timeout, and Boxer-link prerequisite. | Manual-control browser tests, physical guard SIL tests, ESP32 build. |
+| Guarded browser manual control | Maximum 30-second authority, constant-time token check, deadman, monotonic sequence, bounded axes, 250 ms neutral timeout, and CRSF-link prerequisite. | Manual-control browser tests, physical guard SIL tests, ESP32 build. |
 | Repository media and local run instructions | Source is locally runnable; README contains current screenshots and a 6.8-second workflow GIF. | Production Vite build and committed media. |
 
-The complete standalone/state suite currently contains 124 passing tests. The
+The complete standalone/state suite currently contains 130 passing tests. The
 same C++ controller passes the native SIL scenario, and firmware 0.6.0 builds
 with both the default configuration and the optional power-monitor path.
 
@@ -59,7 +59,7 @@ The remaining robot-side gates are sequenced in the
 
 ```powershell
 cd simulation/standalone
-node --test app-state.test.mjs boxer-hid.test.mjs cad-endpoint.test.mjs control-state.test.mjs firmware-service.test.mjs gait-lab.test.mjs heartbeat-state.test.mjs linkage.test.mjs live-calibration-state.test.mjs live-companion-adapter.test.mjs live-companion-core.test.mjs live-connection-state.test.mjs live-controller-state.test.mjs live-diagnostics-state.test.mjs live-gait-state.test.mjs live-manual-control-state.test.mjs live-safety-state.test.mjs live-session-state.test.mjs live-telemetry-state.test.mjs live-view-state.test.mjs physics.test.mjs
+node --test app-state.test.mjs boxer-hid.test.mjs cad-endpoint.test.mjs control-state.test.mjs firmware-service.test.mjs gait-lab.test.mjs gamepad-profile.test.mjs heartbeat-state.test.mjs linkage.test.mjs live-calibration-state.test.mjs live-companion-adapter.test.mjs live-companion-core.test.mjs live-connection-state.test.mjs live-controller-state.test.mjs live-diagnostics-state.test.mjs live-gait-state.test.mjs live-manual-control-state.test.mjs live-safety-state.test.mjs live-session-state.test.mjs live-telemetry-state.test.mjs live-view-state.test.mjs physics.test.mjs
 node node_modules/vite/bin/vite.js build
 
 cd ../sil

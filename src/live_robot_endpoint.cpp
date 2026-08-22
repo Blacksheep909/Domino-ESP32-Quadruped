@@ -485,6 +485,15 @@ void sendTelemetry(uint32_t now) {
   JsonArray servoAngles = expected["servoAngleDeg"].to<JsonArray>();
   const float *angles = commandedServoAnglesDeg();
   for (uint8_t channel = 0; channel < 16; ++channel) servoAngles.add(angles[channel]);
+  JsonArray servoPulseUs = expected["servoPulseUs"].to<JsonArray>();
+  JsonArray servoPhysicalChannel = expected["servoPhysicalChannel"].to<JsonArray>();
+  const uint16_t *pulses = commandedServoPulseUs();
+  const ServoCalibrationProfile &calibration = servoCalibrationProfile();
+  for (uint8_t logicalChannel = 0; logicalChannel < 16; ++logicalChannel) {
+    servoPulseUs.add(pulses[logicalChannel]);
+    servoPhysicalChannel.add(
+        servoCalibrationPhysicalChannel(calibration, logicalChannel));
+  }
   JsonArray footTargets = expected["footTargetMm"].to<JsonArray>();
   for (uint8_t leg = 0; leg < 4; ++leg) {
     JsonArray target = footTargets.add<JsonArray>();

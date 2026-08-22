@@ -249,6 +249,13 @@ slider values. It continues to follow robot-reported expected telemetry, so the
 display distinguishes what the browser requested from what the robot actually
 accepted and intended to execute.
 
+With Inspect enabled in LIVE, selecting a leg and driven joint also shows the
+final calibrated microsecond pulse and its mapped PCA9685 output. The value is
+captured in firmware after offset, inversion, mechanical limiting, and channel
+remapping. It remains labelled as a commanded servo output because Domino does
+not currently have joint encoders; the separate output-enabled diagnostic says
+whether that command is physically energized.
+
 ![LIVE command-chain diagnostics using local relay verification data](images/virtual-lab-live-diagnostics.png)
 
 The screenshot above deliberately injects missing packets, low voltage, an IK

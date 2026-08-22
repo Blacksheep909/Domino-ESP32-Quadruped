@@ -30,9 +30,10 @@ radio indicator appear connected.
 
 Xbox/XInput, DualShock 4, DualSense, and standards-compliant generic gamepads
 are identified by name. The Command panel's **MAP** action stores independent
-axis, inversion, and button choices for each exact controller identity, making
-non-standard USB pads usable without changing source code. CRSF radios bypass
-this mapping and preserve their first eight transmitter channels directly.
+axis, inversion, button, deadzone, and response-curve choices for each exact
+controller identity, making non-standard USB pads and sticks with centre drift
+usable without changing source code. CRSF radios bypass this mapping and
+preserve their first eight transmitter channels directly.
 
 ![Per-controller axis and button mapping in the current offline build](images/virtual-lab-controller-mapping.png)
 

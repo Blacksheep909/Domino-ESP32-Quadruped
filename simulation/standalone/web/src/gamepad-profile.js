@@ -10,6 +10,8 @@ export const DEFAULT_GAMEPAD_MAPPING = Object.freeze({
   invertRoll: false,
   invertForward: true,
   invertTurn: false,
+  deadzone: 0.1,
+  responseCurve: 1,
   standButton: 0,
   tiltButton: 1,
   resetButton: 3,
@@ -21,6 +23,10 @@ const boundedIndex = (value, fallback, maximum = 31) => {
 };
 
 export function sanitizeGamepadMapping(candidate = {}) {
+  const boundedNumber = (value, fallback, minimum, maximum) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? Math.min(maximum, Math.max(minimum, parsed)) : fallback;
+  };
   return {
     rollAxis: boundedIndex(candidate.rollAxis, DEFAULT_GAMEPAD_MAPPING.rollAxis, 15),
     forwardAxis: boundedIndex(candidate.forwardAxis, DEFAULT_GAMEPAD_MAPPING.forwardAxis, 15),
@@ -28,10 +34,21 @@ export function sanitizeGamepadMapping(candidate = {}) {
     invertRoll: candidate.invertRoll === true,
     invertForward: candidate.invertForward !== false,
     invertTurn: candidate.invertTurn === true,
+    deadzone: boundedNumber(candidate.deadzone, DEFAULT_GAMEPAD_MAPPING.deadzone, 0, 0.4),
+    responseCurve: boundedNumber(candidate.responseCurve, DEFAULT_GAMEPAD_MAPPING.responseCurve, 1, 3),
     standButton: boundedIndex(candidate.standButton, DEFAULT_GAMEPAD_MAPPING.standButton),
     tiltButton: boundedIndex(candidate.tiltButton, DEFAULT_GAMEPAD_MAPPING.tiltButton),
     resetButton: boundedIndex(candidate.resetButton, DEFAULT_GAMEPAD_MAPPING.resetButton),
   };
+}
+
+export function shapeGamepadAxis(value, mapping = DEFAULT_GAMEPAD_MAPPING) {
+  const profile = sanitizeGamepadMapping(mapping);
+  const input = Math.min(1, Math.max(-1, Number(value) || 0));
+  const magnitude = Math.abs(input);
+  if (magnitude <= profile.deadzone) return 0;
+  const normalized = (magnitude - profile.deadzone) / (1 - profile.deadzone);
+  return Math.sign(input) * normalized ** profile.responseCurve;
 }
 
 export function readGamepadMappings(value) {

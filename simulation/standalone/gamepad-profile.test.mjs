@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { identifyInputDevice, normalizedGamepadControls, readGamepadMappings, sanitizeGamepadMapping } from "./web/src/gamepad-profile.js";
+import { identifyInputDevice, normalizedGamepadControls, readGamepadMappings, sanitizeGamepadMapping, shapeGamepadAxis } from "./web/src/gamepad-profile.js";
 
 const pad = (id, axes = [0.25, -0.5, 0.75, -0.25]) => ({ id, axes });
 
@@ -44,11 +44,21 @@ test("custom mappings support non-standard axes, inversion, and buttons", () => 
 });
 
 test("persisted mappings are bounded and malformed entries fall back safely", () => {
-  const mapping = sanitizeGamepadMapping({ rollAxis: 999, forwardAxis: 4, standButton: -1, invertForward: false });
+  const mapping = sanitizeGamepadMapping({ rollAxis: 999, forwardAxis: 4, standButton: -1, invertForward: false, deadzone: 2, responseCurve: 99 });
   assert.equal(mapping.rollAxis, 0);
   assert.equal(mapping.forwardAxis, 4);
   assert.equal(mapping.standButton, 0);
   assert.equal(mapping.invertForward, false);
+  assert.equal(mapping.deadzone, 0.4);
+  assert.equal(mapping.responseCurve, 3);
   assert.deepEqual(readGamepadMappings(null), {});
   assert.equal(Object.keys(readGamepadMappings({ "Test Pad": mapping })).length, 1);
+});
+
+test("configurable deadzone and response curve shape gamepad motion", () => {
+  const mapping = { deadzone: 0.1, responseCurve: 2 };
+  assert.equal(shapeGamepadAxis(0.05, mapping), 0);
+  assert.equal(shapeGamepadAxis(-0.1, mapping), 0);
+  assert.ok(Math.abs(shapeGamepadAxis(0.55, mapping) - 0.25) < 1e-9);
+  assert.equal(shapeGamepadAxis(-1, mapping), -1);
 });

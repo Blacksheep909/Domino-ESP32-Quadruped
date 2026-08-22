@@ -10,7 +10,7 @@ compiling firmware is not presented as proof that a real robot was connected.
 | --- | --- | --- |
 | Separate Simulation and LIVE workspaces | Independent top-level tabs and state ownership; hidden Simulation controls cannot own inputs while LIVE is active. | Application-state tests and current usage tour. |
 | Simulation heartbeat | Browser, relay, and firmware-in-the-loop acknowledgement age/RTT are tracked independently. | Heartbeat-state tests. |
-| Physical connection and safety | Read-only discovery plus USB, Wi-Fi TCP, and Bluetooth SPP companion transports; robot-reported state, hold-to-arm, latched E-stop, and 400 ms armed watchdog. | Companion, connection, and safety tests; ESP32 build. |
+| Physical connection and safety | Read-only discovery plus USB, Wi-Fi TCP, and Bluetooth SPP companion transports; paired-adapter automatic reconnect with visible bounded backoff; robot-reported state, hold-to-arm, latched E-stop, and 400 ms armed watchdog. | Companion, connection, and safety tests; ESP32 build. |
 | Expected versus measured digital twin | Commanded joint/body state and independently timestamped physical feedback are aligned; stale or malformed streams disappear. | LIVE telemetry tests. |
 | Data, graphs, logging, and export | Synchronized recording, expected/measured/error graphs, IndexedDB-backed session archive restored across reloads, bounded retention, baseline/candidate optimization comparison, CSV export, and diagnostic JSON bundle. | Session analysis/persistence, telemetry, and diagnostics tests. |
 | Guided calibration | Five steps, floating/floor preview, safe bench acknowledgement, one-servo limited jog, offsets, directions, limits, JSON backup, and persistent ESP32 profile. | Calibration tests, SIL routing check, ESP32 build. |
@@ -22,7 +22,7 @@ compiling firmware is not presented as proof that a real robot was connected.
 | Repository media and local run instructions | Source is locally runnable; README contains current screenshots and a 6.8-second workflow GIF. | Production Vite build and committed media. |
 | Public build documentation framework | Start-to-finish build/commissioning manual, evidence labels, functional BOM, wiring architecture, default channel map, layered gates, and a reusable as-built measurement record. | Cross-linked repository documentation and source-derived interface audit. |
 
-The complete standalone/state suite currently contains 134 passing tests. The
+The complete standalone/state suite currently contains 135 passing tests. The
 same C++ controller passes the native SIL scenario, and firmware 0.6.0 builds
 with both the default configuration and the optional power-monitor path.
 

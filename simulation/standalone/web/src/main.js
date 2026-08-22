@@ -136,11 +136,13 @@ import {
   createLiveSessionState,
   liveSessionCsv,
   liveSessionSummary,
+  mergeArchivedLiveSessions,
   recordLiveComparisonSample,
   removeArchivedLiveSession,
   startLiveSession,
   stopLiveSession,
 } from "./live-session-state.js";
+import { createLiveSessionRepository } from "./live-session-storage.js";
 import {
   calibrationPreviewServoAngles,
   calibrationChannelMap,
@@ -184,6 +186,8 @@ const liveControllerState = createLiveControllerState();
 const liveDiagnosticsState = createLiveDiagnosticsState();
 const liveSessionState = createLiveSessionState();
 const liveSessionArchive = [];
+const liveSessionRepository = createLiveSessionRepository();
+let liveSessionStorageState = liveSessionRepository.available ? "loading" : "unavailable";
 const liveViewState = createLiveViewState();
 const liveGaitState = createLiveGaitState(createLiveGaitProfile(defaultGaitLabSettings, "Balanced"));
 const liveGaitPreviewLab = createGaitLab(liveGaitState.draft.settings);
@@ -2894,6 +2898,9 @@ function renderLiveSessionArchive() {
   document.querySelector("#live-sessions-current-samples").textContent = summary.sampleCount.toLocaleString();
   document.querySelector("#live-sessions-current-duration").textContent = formatSessionDuration(summary.durationMs);
   document.querySelector("#live-session-archive-count").textContent = `${liveSessionArchive.length} SAVED`;
+  document.querySelector("#live-session-storage-state").textContent = liveSessionStorageState === "ready"
+    ? "LOCAL ARCHIVE"
+    : liveSessionStorageState === "loading" ? "LOADING" : "MEMORY ONLY";
   const list = document.querySelector("#live-session-list");
   list.replaceChildren();
   document.querySelector("#live-session-list-empty").hidden = liveSessionArchive.length > 0;
@@ -2919,9 +2926,15 @@ function renderLiveSessionArchive() {
     deleteButton.type = "button";
     deleteButton.className = "delete-session";
     deleteButton.textContent = "DELETE";
-    deleteButton.addEventListener("click", () => {
+    deleteButton.addEventListener("click", async () => {
       removeArchivedLiveSession(liveSessionArchive, session.id);
       renderLiveSessionArchive();
+      try {
+        await liveSessionRepository.remove(session.id);
+      } catch {
+        liveSessionStorageState = "unavailable";
+        renderLiveSessionArchive();
+      }
     });
     entry.append(exportButton, deleteButton);
     list.append(entry);
@@ -3851,7 +3864,13 @@ function toggleLiveRecording() {
   const snapshot = liveComparisonSnapshot(liveTelemetryState);
   if (liveSessionState.status === "recording") {
     stopLiveSession(liveSessionState);
-    archiveLiveSession(liveSessionArchive, liveSessionState, `live-${liveSessionState.stoppedAt}`);
+    const entry = archiveLiveSession(liveSessionArchive, liveSessionState, `live-${liveSessionState.stoppedAt}`);
+    if (entry) {
+      liveSessionRepository.save(entry).catch(() => {
+        liveSessionStorageState = "unavailable";
+        renderLiveSessionArchive();
+      });
+    }
   } else if (snapshot.paired) {
     startLiveSession(liveSessionState);
   }
@@ -3860,6 +3879,19 @@ function toggleLiveRecording() {
 
 document.querySelector("#live-recording-toggle").addEventListener("click", toggleLiveRecording);
 document.querySelector("#live-data-recording-toggle").addEventListener("click", toggleLiveRecording);
+
+if (liveSessionRepository.available) {
+  liveSessionRepository.load().then((sessions) => {
+    mergeArchivedLiveSessions(liveSessionArchive, sessions);
+    liveSessionStorageState = "ready";
+    renderLiveSessionArchive();
+  }).catch(() => {
+    liveSessionStorageState = "unavailable";
+    renderLiveSessionArchive();
+  });
+} else {
+  renderLiveSessionArchive();
+}
 
 liveChartSignal.addEventListener("change", () => {
   const definition = liveChartDefinitions[liveChartSignal.value] || liveChartDefinitions.pitchDeg;

@@ -12,7 +12,7 @@ compiling firmware is not presented as proof that a real robot was connected.
 | Simulation heartbeat | Browser, relay, and firmware-in-the-loop acknowledgement age/RTT are tracked independently. | Heartbeat-state tests. |
 | Physical connection and safety | Read-only discovery plus USB, Wi-Fi TCP, and Bluetooth SPP companion transports; robot-reported state, hold-to-arm, latched E-stop, and 400 ms armed watchdog. | Companion, connection, and safety tests; ESP32 build. |
 | Expected versus measured digital twin | Commanded joint/body state and independently timestamped physical feedback are aligned; stale or malformed streams disappear. | LIVE telemetry tests. |
-| Data, graphs, logging, and export | Synchronized recording, expected/measured/error graphs, bounded session archive, CSV export, and diagnostic JSON bundle. | Session, telemetry, and diagnostics tests. |
+| Data, graphs, logging, and export | Synchronized recording, expected/measured/error graphs, IndexedDB-backed session archive restored across reloads, bounded retention, CSV export, and diagnostic JSON bundle. | Session, persistence-validation, telemetry, and diagnostics tests. |
 | Guided calibration | Five steps, floating/floor preview, safe bench acknowledgement, one-servo limited jog, offsets, directions, limits, JSON backup, and persistent ESP32 profile. | Calibration tests, SIL routing check, ESP32 build. |
 | Remappable servo channels | All 12 logical joints can select unique PCA9685 outputs 0-15; changed-only confirmation and separate robot-write confirmation. | Channel-map test, current screenshot, firmware routing assertion. |
 | CRSF/ELRS and gamepad input | RadioMaster/EdgeTX/OpenTX transmitters retain direct CRSF channels and detected identity. Xbox, PlayStation, and generic gamepads use normalized or per-device persistent axis/button mappings. All 16 robot-side CRSF channels, RF statistics, and failsafe evidence remain available in LIVE. | HID, gamepad-profile, controller-state, and endpoint tests. |
@@ -21,7 +21,7 @@ compiling firmware is not presented as proof that a real robot was connected.
 | Guarded browser manual control | Maximum 30-second authority, constant-time token check, deadman, monotonic sequence, bounded axes, 250 ms neutral timeout, and CRSF-link prerequisite. | Manual-control browser tests, physical guard SIL tests, ESP32 build. |
 | Repository media and local run instructions | Source is locally runnable; README contains current screenshots and a 6.8-second workflow GIF. | Production Vite build and committed media. |
 
-The complete standalone/state suite currently contains 130 passing tests. The
+The complete standalone/state suite currently contains 131 passing tests. The
 same C++ controller passes the native SIL scenario, and firmware 0.6.0 builds
 with both the default configuration and the optional power-monitor path.
 

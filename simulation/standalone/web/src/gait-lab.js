@@ -297,7 +297,7 @@ export function createGaitLab(initialSettings = {}) {
   let lastOutputState = null;
   let activeMode = null;
   const seeds = Object.fromEntries(legs.map((leg) => [leg.label, { upper: 0, lower: 0 }]));
-  let telemetry = { active: false, phase: 0, speedMmPerSec: 0, stanceCount: 4, reachableCount: 4 };
+  let telemetry = { active: false, phase: 0, speedMmPerSec: 0, stanceCount: 4, reachableCount: 4, legDetails: [] };
 
   function setSettings(nextSettings) {
     settings = sanitizeGaitLabSettings(nextSettings);
@@ -389,6 +389,7 @@ export function createGaitLab(initialSettings = {}) {
       : [...standServoReference];
     let stanceCount = 0;
     let reachableCount = 0;
+    const legDetails = [];
 
     for (const leg of legs) {
       const left = leg.label.endsWith("L");
@@ -432,6 +433,21 @@ export function createGaitLab(initialSettings = {}) {
         const channel = leg.channels[joint];
         servoAngles[channel] = standServoReference[channel] + leg.directions[joint] * solved[joint];
       }
+      const jointDeltaDeg = {
+        shoulder: solved.shoulder,
+        upper: solved.upper,
+        lower: solved.lower,
+      };
+      legDetails.push({
+        leg: leg.label,
+        targetMm: [...command],
+        reachable: solved.reachable,
+        stance: foot.stance,
+        jointDeltaDeg,
+        limitedJoints: Object.entries(jointDeltaDeg)
+          .filter(([, value]) => Math.abs(value) >= MAX_SERVO_DELTA_DEG - 0.01)
+          .map(([joint]) => joint),
+      });
     }
 
     telemetry = {
@@ -440,6 +456,7 @@ export function createGaitLab(initialSettings = {}) {
       speedMmPerSec: motionSettings.cadenceHz * motionSettings.strideMm * activity,
       stanceCount,
       reachableCount,
+      legDetails,
       activity,
       transition: smooth01(transitionProgress),
     };
@@ -469,7 +486,15 @@ export function createGaitLab(initialSettings = {}) {
     update,
     setSettings,
     getSettings: () => ({ ...settings }),
-    getTelemetry: () => ({ ...telemetry }),
+    getTelemetry: () => ({
+      ...telemetry,
+      legDetails: telemetry.legDetails.map((detail) => ({
+        ...detail,
+        targetMm: [...detail.targetMm],
+        jointDeltaDeg: { ...detail.jointDeltaDeg },
+        limitedJoints: [...detail.limitedJoints],
+      })),
+    }),
     reset: () => {
       phase = 0;
       filteredForward = 0;

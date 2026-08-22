@@ -12,6 +12,10 @@ const editableSettings = (settings = {}) => Object.fromEntries(
   gaitLabControls.map(({ key }) => [key, sanitizeGaitLabSettings(settings)[key]]),
 );
 
+const invalidatePreviewAssessment = (state) => {
+  state.previewAssessment = { available: false, safe: false, reachableCount: 0, limitedJointCount: 0 };
+};
+
 export function createLiveGaitProfile(candidate = {}, fallbackName = "Untitled gait") {
   const settingsSource = candidate.settings && typeof candidate.settings === "object"
     ? candidate.settings
@@ -47,6 +51,7 @@ export function createLiveGaitState(initialProfile = createLiveGaitProfile(defau
     previewMode: "trot",
     previewForward: 0.65,
     previewTurn: 0,
+    previewAssessment: { available: false, safe: false, reachableCount: 0, limitedJointCount: 0 },
     robotState: "unknown",
     persistentApplySupported: false,
     pendingRequestId: "",
@@ -63,6 +68,7 @@ export function updateLiveGaitDraft(state, patch = {}) {
     settings: { ...state.draft.settings, ...patch, preset: "custom" },
   }, state.draft.name);
   state.dirty = true;
+  invalidatePreviewAssessment(state);
   return true;
 }
 
@@ -74,6 +80,7 @@ export function selectLiveGaitPreset(state, preset) {
     settings: { ...gaitLabPresets[preset], enabled: true, preset },
   }, state.draft.name);
   state.dirty = true;
+  invalidatePreviewAssessment(state);
   return true;
 }
 
@@ -81,6 +88,7 @@ export function replaceLiveGaitDraft(state, candidate, source = "import") {
   if (!state) return false;
   state.draft = createLiveGaitProfile({ ...candidate, source }, candidate?.name || "Imported gait");
   state.dirty = source !== "robot";
+  invalidatePreviewAssessment(state);
   return true;
 }
 
@@ -134,6 +142,27 @@ export function liveGaitCanApply(state) {
     state.persistentApplySupported &&
     !state.pendingRequestId,
   );
+}
+
+export function updateLiveGaitPreviewAssessment(state, telemetry) {
+  if (!state) return false;
+  const details = Array.isArray(telemetry?.legDetails) ? telemetry.legDetails : [];
+  const reachableCount = details.filter((detail) => detail?.reachable === true).length;
+  const limitedJointCount = details.reduce(
+    (count, detail) => count + (Array.isArray(detail?.limitedJoints) ? detail.limitedJoints.length : 0),
+    0,
+  );
+  state.previewAssessment = {
+    available: details.length === 4,
+    safe: details.length === 4 && reachableCount === 4 && limitedJointCount === 0,
+    reachableCount,
+    limitedJointCount,
+  };
+  return state.previewAssessment.safe;
+}
+
+export function liveGaitCanApplyDraft(state) {
+  return liveGaitCanApply(state) && state.previewAssessment?.safe === true;
 }
 
 export function createLiveGaitCommand(state, action, requestId, now = Date.now()) {

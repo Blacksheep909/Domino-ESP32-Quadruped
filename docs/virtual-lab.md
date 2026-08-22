@@ -203,6 +203,13 @@ remains available for explicit rollback. Active robot settings are included in
 LIVE telemetry so the comparison view reflects what the controller is actually
 running.
 
+The local preview also feeds a per-leg IK inspector. For every frame it reports
+the X/Y/Z foot target, solve validity, q1/q2/q3 commanded delta, stance or swing
+state, and any contact with the conservative 45-degree actuator envelope. A
+fresh four-leg preview must be reachable and unclipped before Apply Draft is
+enabled; changing a profile invalidates the prior assessment until the new
+preview has been solved. Robot rollback remains independently available.
+
 Diagnostics traces eight stages from the PC command packet through expected and
 measured poses, ESP32 acknowledgement, gait target, IK, limit checking, and all
 12 servo outputs. It reports packet rate, latency, missing/rejected/stale packet

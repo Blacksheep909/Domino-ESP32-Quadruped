@@ -582,6 +582,12 @@
               <div id="live-gait-settings" class="live-gait-settings"></div>
             </section>
 
+            <section class="live-gait-card live-gait-ik-card">
+              <header><div><span>IK INSPECTOR</span><strong id="live-gait-ik-summary">WAITING FOR PREVIEW</strong></div><small>LOCAL PREVIEW / NO HARDWARE OUTPUT</small></header>
+              <div class="live-gait-ik-table-wrap"><table><thead><tr><th>LEG</th><th>FOOT TARGET X / Y / Z</th><th>IK</th><th>q1 / q2 / q3 DELTA</th><th>CONTACT</th></tr></thead><tbody id="live-gait-ik-body"></tbody></table></div>
+              <p id="live-gait-ik-warning" class="live-gait-ik-warning" data-state="ok">All four targets solve inside the bounded CAD linkage envelope.</p>
+            </section>
+
             <section class="live-gait-card live-gait-compare-card">
               <header><div><span>DRAFT VS ROBOT</span><strong id="live-gait-compare-summary">ROBOT PROFILE NOT REPORTED</strong></div><button id="live-gait-request-profile" type="button">REQUEST ROBOT PROFILE</button></header>
               <div class="live-gait-compare-table-wrap"><table><thead><tr><th>PARAMETER</th><th>LOCAL DRAFT</th><th>ROBOT</th><th>DELTA</th></tr></thead><tbody id="live-gait-compare-body"></tbody></table></div>

@@ -228,6 +228,9 @@ void commandLeg(Adafruit_PWMServoDriver &driver,
   silLegCommandY[legIndex] = y;
   silLegCommandZ[legIndex] = z;
 #endif
+#ifndef DOMINO_SIL
+  liveRobotEndpointSetExpectedFootTarget(static_cast<uint8_t>(legIndex), x, y, z);
+#endif
   kMoveLegFns[legIndex](driver, x, y, z);
 }
 

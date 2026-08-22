@@ -12,6 +12,7 @@ const pose = (timestampMs, angle = 0, body = {}) => ({
   timestampMs,
   servoAngleDeg: Array(16).fill(angle),
   body: { rollDeg: 0, pitchDeg: 0, yawDeg: 0, heightMm: 260, ...body },
+  footTargetMm: [[-15, 38, 280], [-15, -38, 280], [-15, 38, 280], [-15, -38, 280]],
 });
 
 test("accepts independently timestamped expected and measured poses", () => {
@@ -27,6 +28,7 @@ test("accepts independently timestamped expected and measured poses", () => {
   assert.equal(snapshot.paired, true);
   assert.equal(snapshot.alignmentMs, 12);
   assert.equal(snapshot.worstJointErrorDeg, 2);
+  assert.equal(snapshot.expected.footTargetMm[0][2], 280);
   assert.ok(Math.abs(snapshot.power.powerW - 45.6) < 1e-9);
 });
 
@@ -64,6 +66,11 @@ test("rejects malformed and out-of-order robot packets", () => {
     sequence: 3,
     measured: { ...pose(10_020), servoAngleDeg: [0, 1] },
   }, 20_020), false);
+  assert.equal(acceptLiveTelemetryPacket(state, {
+    type: "live-telemetry",
+    sequence: 4,
+    expected: { ...pose(10_030), footTargetMm: [[0, 0]] },
+  }, 20_030), false);
 });
 
 test("stale streams disappear instead of masquerading as live telemetry", () => {

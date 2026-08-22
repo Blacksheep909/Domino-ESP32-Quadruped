@@ -31,7 +31,16 @@ function sanitizePose(pose, receivedAt, allowPartial = false) {
   if (!allowPartial && !servoAngleDeg) return null;
   const body = sanitizeBody(pose.body, allowPartial);
   if (!body) return null;
-  return { timestampMs, receivedAt, servoAngleDeg, body };
+  let footTargetMm = null;
+  if (Array.isArray(pose.footTargetMm) && pose.footTargetMm.length === 4) {
+    footTargetMm = pose.footTargetMm.map((target) => Array.isArray(target) && target.length === 3
+      ? target.map(finiteNumber)
+      : null);
+    if (footTargetMm.some((target) => !target || target.some((value) => value === null))) return null;
+  } else if (Object.hasOwn(pose, "footTargetMm")) {
+    return null;
+  }
+  return { timestampMs, receivedAt, servoAngleDeg, footTargetMm, body };
 }
 
 function sanitizePower(power, receivedAt) {

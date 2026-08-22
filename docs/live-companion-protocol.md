@@ -83,7 +83,7 @@ The robot sends this after boot and whenever a link is established:
   "type": "robot-hello",
   "robotId": "domino-1",
   "robotName": "Domino",
-  "firmwareVersion": "0.6.0",
+  "firmwareVersion": "0.7.0",
   "robotState": "disarmed",
   "capabilities": {
     "telemetry": true,
@@ -229,7 +229,7 @@ For each `safety-heartbeat`, return the same sequence:
 
 ## Current ESP32 endpoint
 
-Firmware `0.6.0` implements the matching USB serial endpoint. Build and flash
+Firmware `0.7.0` implements the matching USB serial endpoint. Build and flash
 the normal PlatformIO `esp32dev` environment, connect the ESP32 over USB, then
 run the companion with `-Transport usb -Device COMx`.
 
@@ -252,11 +252,14 @@ neutral-relative logical joint angle, clamped to the saved joint limits, then
 mapped through the saved direction and offset before the existing hard servo
 envelope is applied.
 
-Gait profiles use the same v1 schema and bounds as Simulation. Apply and revert
+Gait profiles use the same v2 schema and bounds as Simulation. Apply and revert
 are accepted only while disarmed, outside calibration bench mode, with every
 servo output disabled. Cadence, stride, lift, duty factor, body height, stance
-width, turn gain, response time, swing shape, diagonal phase, and the enabled
-flag all feed the production gait loop. A candidate is written to the inactive
+width, turn gain, response time, swing shape, diagonal phase, neutral touchdown
+X, maximum forward-command scale, maximum turn-command scale, and the enabled
+flag all feed the production gait loop. Schema-v1 browser files and NVS slots
+migrate to preset-specific bounded defaults for the three new Expert fields.
+A candidate is written to the inactive
 NVS slot, read back, checksum-validated, and selected only after verification;
 the other valid slot remains the rollback profile. Telemetry reports the active
 profile and persistent-profile capabilities to LIVE.

@@ -732,6 +732,12 @@ nav button.active {
   font-size: 10px;
 }
 
+.gait-setting > span small {
+  color: #9a6a23;
+  font: 750 7px/1 "Cascadia Mono", Consolas, monospace;
+  letter-spacing: 0.06em;
+}
+
 .gait-setting-info-button {
   width: 13px;
   height: 13px;

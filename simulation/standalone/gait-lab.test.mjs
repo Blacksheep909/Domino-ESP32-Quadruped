@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { legs, standServoReference } from "./web/src/domino-config.js";
 import {
   createGaitLab,
   defaultGaitLabSettings,
+  gaitLabControls,
   gaitLabPresets,
 } from "./web/src/gait-lab.js";
 
@@ -25,6 +27,13 @@ function state(mode = "GAIT", heightMm = 260) {
     ],
   };
 }
+
+test("every shared gait setting has a Simulation editor control", () => {
+  const html = readFileSync(new URL("./web/index.html", import.meta.url), "utf8");
+  gaitLabControls.forEach(({ key }) => {
+    assert.match(html, new RegExp(`data-gait-setting=["']${key}["']`), `${key} is missing from Simulation`);
+  });
+});
 
 test("gait lab is simulation-only and does not mutate firmware state", () => {
   const source = state();
@@ -76,6 +85,24 @@ test("higher cadence advances the gait phase faster", () => {
   slow.update(0.05, state(), { forward: 1, turn: 0 });
   fast.update(0.05, state(), { forward: 1, turn: 0 });
   assert.ok(fast.getTelemetry().phase > slow.getTelemetry().phase * 3.5);
+});
+
+test("expert gait limits bound command axes and shift nominal foot X", () => {
+  const lab = createGaitLab({
+    ...defaultGaitLabSettings,
+    responseMs: 60,
+    touchdownXMm: -30,
+    maxForwardScale: 0.35,
+    maxTurnScale: 0.25,
+  });
+  let output;
+  for (let frame = 0; frame < 180; frame += 1) {
+    output = lab.update(1 / 120, state(), { forward: 1, turn: 1 });
+  }
+  assert.ok(Math.abs(output.gait_command[0]) <= 0.3501);
+  assert.ok(Math.abs(output.gait_command[1]) <= 0.2501);
+  const meanTargetX = output.leg_command_xyz_mm.reduce((sum, command) => sum + command[0], 0) / 4;
+  assert.ok(meanTargetX < -25);
 });
 
 test("careful gait keeps at least three feet in support", () => {

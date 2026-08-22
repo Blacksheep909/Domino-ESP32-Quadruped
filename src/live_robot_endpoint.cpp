@@ -124,6 +124,36 @@ struct StoredCalibrationProfile {
   uint32_t checksum;
 };
 
+// Retained solely to migrate the two-slot NVS profile written by firmware 0.6.
+// Keep this layout byte-for-byte compatible with gait schema v1.
+struct GaitProfileSettingsV1 {
+  bool enabled;
+  char preset[12];
+  float cadenceHz;
+  float strideMm;
+  float liftMm;
+  float dutyFactor;
+  float bodyHeightMm;
+  float stanceWidthMm;
+  float turnGain;
+  float responseMs;
+  float swingShape;
+  float diagonalPhase;
+};
+
+struct GaitProfileV1 {
+  uint16_t schemaVersion;
+  uint64_t updatedAt;
+  char name[33];
+  GaitProfileSettingsV1 settings;
+};
+
+struct StoredGaitProfileV1 {
+  uint32_t magic;
+  GaitProfileV1 profile;
+  uint32_t checksum;
+};
+
 struct StoredGaitProfile {
   uint32_t magic;
   GaitProfile profile;
@@ -201,11 +231,53 @@ bool storedGaitValid(const StoredGaitProfile &stored) {
       validateGaitProfile(stored.profile);
 }
 
+bool migrateStoredGaitV1(const StoredGaitProfileV1 &stored, StoredGaitProfile *migrated) {
+  if (!migrated || stored.magic != kGaitMagic || stored.profile.schemaVersion != 1 ||
+      stored.checksum != checksumBytes(
+          reinterpret_cast<const uint8_t *>(&stored.profile), sizeof(stored.profile))) return false;
+  GaitProfile profile = defaultGaitProfile();
+  profile.updatedAt = stored.profile.updatedAt;
+  memcpy(profile.name, stored.profile.name, sizeof(profile.name));
+  profile.name[sizeof(profile.name) - 1] = '\0';
+  profile.settings.enabled = stored.profile.settings.enabled;
+  memcpy(profile.settings.preset, stored.profile.settings.preset, sizeof(profile.settings.preset));
+  profile.settings.preset[sizeof(profile.settings.preset) - 1] = '\0';
+  profile.settings.cadenceHz = stored.profile.settings.cadenceHz;
+  profile.settings.strideMm = stored.profile.settings.strideMm;
+  profile.settings.liftMm = stored.profile.settings.liftMm;
+  profile.settings.dutyFactor = stored.profile.settings.dutyFactor;
+  profile.settings.bodyHeightMm = stored.profile.settings.bodyHeightMm;
+  profile.settings.stanceWidthMm = stored.profile.settings.stanceWidthMm;
+  profile.settings.turnGain = stored.profile.settings.turnGain;
+  profile.settings.responseMs = stored.profile.settings.responseMs;
+  profile.settings.swingShape = stored.profile.settings.swingShape;
+  profile.settings.diagonalPhase = stored.profile.settings.diagonalPhase;
+  if (!strcmp(profile.settings.preset, "balanced")) {
+    profile.settings.maxForwardScale = 0.80f;
+    profile.settings.maxTurnScale = 0.70f;
+  } else if (!strcmp(profile.settings.preset, "fast")) {
+    profile.settings.maxForwardScale = 1.0f;
+    profile.settings.maxTurnScale = 0.90f;
+  }
+  if (!validateGaitProfile(profile)) return false;
+  *migrated = storedGaitFor(profile);
+  return true;
+}
+
 bool readGaitSlot(Preferences &preferences, uint8_t slot, StoredGaitProfile *stored) {
   const char *key = slot == 0 ? "slot0" : "slot1";
-  return stored && preferences.getBytesLength(key) == sizeof(*stored) &&
-      preferences.getBytes(key, stored, sizeof(*stored)) == sizeof(*stored) &&
-      storedGaitValid(*stored);
+  if (!stored) return false;
+  const size_t length = preferences.getBytesLength(key);
+  if (length == sizeof(*stored)) {
+    return preferences.getBytes(key, stored, sizeof(*stored)) == sizeof(*stored) &&
+        storedGaitValid(*stored);
+  }
+  if (length == sizeof(StoredGaitProfileV1)) {
+    StoredGaitProfileV1 legacy{};
+    return preferences.getBytes(key, &legacy, sizeof(legacy)) == sizeof(legacy) &&
+        migrateStoredGaitV1(legacy, stored);
+  }
+  return false;
 }
 
 bool loadGaitProfile() {
@@ -302,6 +374,9 @@ bool parseGaitProfile(JsonObjectConst source, GaitProfile *profile) {
   candidate.settings.responseMs = settings["responseMs"] | NAN;
   candidate.settings.swingShape = settings["swingShape"] | NAN;
   candidate.settings.diagonalPhase = settings["diagonalPhase"] | NAN;
+  candidate.settings.touchdownXMm = settings["touchdownXMm"] | NAN;
+  candidate.settings.maxForwardScale = settings["maxForwardScale"] | NAN;
+  candidate.settings.maxTurnScale = settings["maxTurnScale"] | NAN;
   if (!validateGaitProfile(candidate)) return false;
   *profile = candidate;
   return true;
@@ -326,6 +401,9 @@ void addGaitProfile(JsonObject target, const GaitProfile &profile) {
   settings["responseMs"] = profile.settings.responseMs;
   settings["swingShape"] = profile.settings.swingShape;
   settings["diagonalPhase"] = profile.settings.diagonalPhase;
+  settings["touchdownXMm"] = profile.settings.touchdownXMm;
+  settings["maxForwardScale"] = profile.settings.maxForwardScale;
+  settings["maxTurnScale"] = profile.settings.maxTurnScale;
 }
 
 bool parseCalibrationProfile(JsonObjectConst source, ServoCalibrationProfile *profile) {
@@ -448,7 +526,7 @@ void sendHello() {
   document["type"] = "robot-hello";
   document["robotId"] = "domino-esp32-quadruped";
   document["robotName"] = "Domino";
-  document["firmwareVersion"] = "0.6.0";
+  document["firmwareVersion"] = "0.7.0";
   document["robotState"] = stateName();
   document["wirelessAuth"] = "psk-v1";
   addCapabilities(document["capabilities"].to<JsonObject>());
@@ -838,7 +916,7 @@ void handleGait(JsonObjectConst command, JsonObjectConst payload) {
     GaitProfile profile{};
     if (!parseGaitProfile(payload["profile"].as<JsonObjectConst>(), &profile)) {
       acknowledgeGait(action, requestId, false,
-                      "Profile schema or one of the ten bounded gait settings is invalid.");
+                      "Profile schema or one of the thirteen bounded gait settings is invalid.");
     } else if (!persistGaitProfile(profile)) {
       acknowledgeGait(action, requestId, false,
                       "NVS verification failed; the previous gait remains active.");

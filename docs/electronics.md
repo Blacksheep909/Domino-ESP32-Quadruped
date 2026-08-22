@@ -57,7 +57,7 @@ Bring-up checks:
 
 The current PCB documentation does not identify an installed voltage/current
 monitor, so the firmware reports power as unavailable by default. It never
-estimates current from servo commands. Firmware 0.6.0 includes an optional
+estimates current from servo commands. Firmware 0.7.0 includes an optional
 INA226 interface for a future high-side monitor and external shunt. The INA226
 supports the 4S bus-voltage range, while the shunt, PCB copper, connectors, and
 monitor module must all be selected for the robot's real peak and stall current.

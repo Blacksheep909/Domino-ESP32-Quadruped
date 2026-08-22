@@ -1410,7 +1410,7 @@ function loadGaitProfiles() {
       .slice(0, 40)
       .map(([name, settings]) => [
         name.trim().slice(0, 32),
-        sanitizeGaitLabSettings(settings.schemaVersion === 1 && settings.settings ? settings.settings : settings),
+        sanitizeGaitLabSettings([1, 2].includes(settings.schemaVersion) && settings.settings ? settings.settings : settings),
       ]),
   );
 }
@@ -3500,6 +3500,7 @@ function rebuildLiveGaitSettings() {
   gaitLabControls.forEach((control) => {
     const label = document.createElement("label");
     label.dataset.gaitKey = control.key;
+    if (control.expert) label.dataset.expertOnly = "";
     const heading = document.createElement("span");
     const name = document.createElement("strong");
     const output = document.createElement("output");

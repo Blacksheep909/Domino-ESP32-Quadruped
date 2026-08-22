@@ -103,9 +103,13 @@ above uses local relay verification data, not a connected physical robot.
 The LIVE navigation has six working views. Compare keeps the digital twin,
 pose deltas, power readings, and compact scope together. Data provides a larger
 signal graph, recorder controls, live robot metrics, and a newest-first
-table of synchronized samples. Sessions keeps completed recordings for the
-current app run, summarizes duration, sample count, peak joint error, and average
-power, and gives every session independent CSV export and delete actions.
+table of synchronized samples. Sessions keeps completed recordings in a local
+IndexedDB archive across app reloads, summarizes duration, sample count, peak
+joint error, and average power, and gives every session independent CSV export
+and delete actions. The archive validates restored records and retains the 20
+newest sessions, with the same 18,000-sample bound used by the recorder. If
+durable browser storage is unavailable, the page says `MEMORY ONLY` rather than
+claiming persistence.
 Recording state is shared across all three views, so moving between them cannot
 interrupt or split a capture.
 
@@ -224,8 +228,8 @@ control optimization. Safety limits remain active in both modes.
 ![Current LIVE recorded-sessions workspace](images/virtual-lab-live-sessions.png)
 
 Sessions is intentionally quiet before a recording exists. Completed captures
-remain available for the current application run and can be inspected or
-exported without reconnecting the robot.
+remain available in the same browser after restarting the application and can
+be inspected or exported without reconnecting the robot.
 
 ## Current architecture
 

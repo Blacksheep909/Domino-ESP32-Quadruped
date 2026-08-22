@@ -6,8 +6,10 @@ import {
   createLiveSessionState,
   liveSessionCsv,
   liveSessionSummary,
+  mergeArchivedLiveSessions,
   recordLiveComparisonSample,
   removeArchivedLiveSession,
+  sanitizeArchivedLiveSession,
   startLiveSession,
   stopLiveSession,
 } from "./web/src/live-session-state.js";
@@ -27,6 +29,20 @@ const snapshot = (expectedTimestampMs = 1_000, measuredTimestampMs = 1_012) => (
   jointErrorsDeg: Array.from({ length: 16 }, (_, index) => index / 10),
   worstJointErrorDeg: 1.5,
   power: { voltageV: 15.2, currentA: 3, powerW: 45.6 },
+});
+
+test("validates restored sessions and merges newest-first without duplicates", () => {
+  const session = createLiveSessionState();
+  startLiveSession(session, 10_000);
+  recordLiveComparisonSample(session, snapshot(), 10_100);
+  stopLiveSession(session, 10_500);
+  const persisted = archiveLiveSession([], session, "run-1");
+  assert.ok(sanitizeArchivedLiveSession(persisted));
+  assert.equal(sanitizeArchivedLiveSession({ ...persisted, samples: [] }), null);
+  const archive = [{ ...persisted, stoppedAt: 10_400 }];
+  assert.equal(mergeArchivedLiveSessions(archive, [persisted, { nonsense: true }]), 1);
+  assert.equal(archive.length, 1);
+  assert.equal(archive[0].stoppedAt, 10_500);
 });
 
 test("records each synchronized source pair once", () => {

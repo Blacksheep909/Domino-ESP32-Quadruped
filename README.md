@@ -292,7 +292,7 @@ The firmware can be built with PlatformIO:
 pio run
 ```
 
-The LIVE workspace can connect to firmware `0.6.0` over ESP32 USB serial,
+The LIVE workspace can connect to firmware `0.7.0` over ESP32 USB serial,
 Wi-Fi TCP, or a paired Bluetooth SPP port through the fail-closed PC companion. See
 [`docs/live-companion-protocol.md`](docs/live-companion-protocol.md) for the
 protocol, startup command, supported capabilities, and hardware safety rules.

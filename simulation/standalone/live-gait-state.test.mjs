@@ -22,7 +22,7 @@ import {
 
 test("simulation settings upgrade into a versioned cross-workspace profile", () => {
   const library = readLiveGaitLibrary({ Track: gaitLabPresets.fast });
-  assert.equal(library.Track.schemaVersion, 1);
+  assert.equal(library.Track.schemaVersion, 2);
   assert.equal(library.Track.source, "simulation");
   assert.equal(Object.keys(library.Track.settings).length, gaitLabControls.length + 2);
 });
@@ -99,6 +99,16 @@ test("versioned and raw simulation JSON both import safely", () => {
   assert.equal(restored.source, "import");
   const raw = parseLiveGaitProfileJson(JSON.stringify(gaitLabPresets.stable));
   assert.equal(raw.name, "Imported simulation gait");
+  const migrated = parseLiveGaitProfileJson(JSON.stringify({
+    ...profile,
+    schemaVersion: 1,
+    settings: Object.fromEntries(Object.entries(profile.settings).filter(
+      ([key]) => !["touchdownXMm", "maxForwardScale", "maxTurnScale"].includes(key),
+    )),
+  }));
+  assert.equal(migrated.schemaVersion, 2);
+  assert.equal(migrated.settings.touchdownXMm, -15.75);
+  assert.equal(migrated.settings.maxForwardScale, 0.8);
   assert.throws(() => parseLiveGaitProfileJson('{"schemaVersion":9,"robot":"domino-esp32-quadruped"}'));
 });
 

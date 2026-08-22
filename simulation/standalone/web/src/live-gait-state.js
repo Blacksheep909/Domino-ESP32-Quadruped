@@ -5,7 +5,7 @@ import {
   sanitizeGaitLabSettings,
 } from "./gait-lab.js";
 
-export const LIVE_GAIT_SCHEMA_VERSION = 1;
+export const LIVE_GAIT_SCHEMA_VERSION = 2;
 export const LIVE_GAIT_LIBRARY_KEY = "domino-gait-profiles-v1";
 
 const editableSettings = (settings = {}) => Object.fromEntries(
@@ -189,7 +189,7 @@ export function parseLiveGaitProfileJson(text) {
   if (candidate?.schemaVersion === undefined && candidate && typeof candidate === "object") {
     return createLiveGaitProfile({ settings: candidate, source: "import" }, "Imported simulation gait");
   }
-  if (candidate?.schemaVersion !== LIVE_GAIT_SCHEMA_VERSION) throw new Error("Unsupported gait profile version.");
+  if (![1, LIVE_GAIT_SCHEMA_VERSION].includes(candidate?.schemaVersion)) throw new Error("Unsupported gait profile version.");
   if (candidate?.robot !== "domino-esp32-quadruped") throw new Error("This gait profile targets a different robot.");
   return createLiveGaitProfile({ ...candidate, source: "import" }, candidate.name);
 }

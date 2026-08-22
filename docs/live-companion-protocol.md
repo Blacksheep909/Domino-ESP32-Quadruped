@@ -121,6 +121,7 @@ commands and calling them feedback.
   "expected": {
     "timestampMs": 1723600000000,
     "servoAngleDeg": [135,135,135,135,135,135,135,135,135,135,135,135,135,135,135,135],
+    "footTargetMm": [[-15.75,38,280],[-15.75,-38,280],[-15.75,38,280],[-15.75,-38,280]],
     "body": {"rollDeg":0,"pitchDeg":0,"yawDeg":0,"heightMm":280}
   },
   "measured": {

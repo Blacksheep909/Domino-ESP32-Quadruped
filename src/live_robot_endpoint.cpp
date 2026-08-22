@@ -90,6 +90,7 @@ enum class LiveTransport : uint8_t { None, Usb, Wifi, Bluetooth };
 
 LiveRobotState state = LiveRobotState::Disarmed;
 LiveRobotPoseSnapshot expectedPose{};
+float expectedFootTargetsMm[4][3] = {};
 uint32_t lastTelemetryMs = 0;
 uint32_t lastHelloMs = 0;
 uint32_t lastHeartbeatMs = 0;
@@ -481,6 +482,11 @@ void sendTelemetry(uint32_t now) {
   JsonArray servoAngles = expected["servoAngleDeg"].to<JsonArray>();
   const float *angles = commandedServoAnglesDeg();
   for (uint8_t channel = 0; channel < 16; ++channel) servoAngles.add(angles[channel]);
+  JsonArray footTargets = expected["footTargetMm"].to<JsonArray>();
+  for (uint8_t leg = 0; leg < 4; ++leg) {
+    JsonArray target = footTargets.add<JsonArray>();
+    for (uint8_t axis = 0; axis < 3; ++axis) target.add(expectedFootTargetsMm[leg][axis]);
+  }
   addBody(expected["body"].to<JsonObject>(), expectedPose);
 
   if (gImuState.online && gImuState.has_sample) {
@@ -1016,6 +1022,13 @@ void liveRobotEndpointLoop(uint32_t now, Adafruit_PWMServoDriver &driver) {
 }
 
 void liveRobotEndpointSetExpectedPose(const LiveRobotPoseSnapshot &pose) { expectedPose = pose; }
+
+void liveRobotEndpointSetExpectedFootTarget(uint8_t legIndex, float xMm, float yMm, float zMm) {
+  if (legIndex >= 4) return;
+  expectedFootTargetsMm[legIndex][0] = xMm;
+  expectedFootTargetsMm[legIndex][1] = yMm;
+  expectedFootTargetsMm[legIndex][2] = zMm;
+}
 LiveRobotState liveRobotEndpointState() { return state; }
 bool liveRobotEndpointAllowsLocomotion() { return state == LiveRobotState::Armed; }
 LiveManualControlSnapshot liveRobotEndpointManualControl() { return manualGuard.snapshot(); }

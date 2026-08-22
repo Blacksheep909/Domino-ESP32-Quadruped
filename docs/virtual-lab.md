@@ -112,10 +112,14 @@ powered robot. A physical E-stop remains the primary power-isolation control.
 ![LIVE synchronized recording using local relay verification data](images/virtual-lab-live-recording.png)
 
 The comparison scope records each synchronized source pair once and graphs body
-pitch, roll, yaw, or height as expected, measured, and error series. A telemetry
+pose, battery voltage/current/power, command alignment, all four commanded foot
+Z targets, or any of the 12 driven-joint angles. Expected, measured, and error
+series appear only when the corresponding source exists, so encoderless joints
+remain honestly command-only rather than displaying fabricated feedback. A telemetry
 interruption creates a visible gap without ending the session or reusing stale
 values. Stopped sessions export analysis-ready CSV containing timestamps, time
-alignment, body pose, power, and all 12 driven-joint errors. The screenshot
+alignment, body pose, power, commanded foot Z, commanded joint angles, and all
+12 driven-joint errors. The screenshot
 above uses local relay verification data, not a connected physical robot.
 
 The LIVE navigation has six working views. Compare keeps the digital twin,

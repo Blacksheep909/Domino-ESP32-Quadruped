@@ -22,6 +22,7 @@ struct LiveRobotPoseSnapshot {
 void liveRobotEndpointBegin(Adafruit_PWMServoDriver &driver);
 void liveRobotEndpointLoop(uint32_t now, Adafruit_PWMServoDriver &driver);
 void liveRobotEndpointSetExpectedPose(const LiveRobotPoseSnapshot &pose);
+void liveRobotEndpointSetExpectedFootTarget(uint8_t legIndex, float xMm, float yMm, float zMm);
 LiveRobotState liveRobotEndpointState();
 bool liveRobotEndpointAllowsLocomotion();
 LiveManualControlSnapshot liveRobotEndpointManualControl();

@@ -46,6 +46,13 @@ export function recordLiveComparisonSample(state, snapshot, capturedAt = Date.no
     bodyError: { ...snapshot.bodyError },
     worstJointErrorDeg: snapshot.worstJointErrorDeg,
     jointErrorsDeg: LIVE_SERVO_CHANNELS.map((channel) => snapshot.jointErrorsDeg[channel]),
+    expectedJointAnglesDeg: LIVE_SERVO_CHANNELS.map((channel) => snapshot.expected.servoAngleDeg?.[channel] ?? null),
+    measuredJointAnglesDeg: Array.isArray(snapshot.measured.servoAngleDeg)
+      ? LIVE_SERVO_CHANNELS.map((channel) => snapshot.measured.servoAngleDeg[channel])
+      : null,
+    expectedFootTargetsMm: Array.isArray(snapshot.expected.footTargetMm)
+      ? snapshot.expected.footTargetMm.map((target) => [...target])
+      : null,
     power: snapshot.power ? { ...snapshot.power } : null,
   };
   state.samples.push(sample);
@@ -80,6 +87,9 @@ export function archiveLiveSession(archive, state, identifier = `session-${Date.
       measuredBody: { ...sample.measuredBody },
       bodyError: { ...sample.bodyError },
       jointErrorsDeg: [...sample.jointErrorsDeg],
+      expectedJointAnglesDeg: [...sample.expectedJointAnglesDeg],
+      measuredJointAnglesDeg: sample.measuredJointAnglesDeg ? [...sample.measuredJointAnglesDeg] : null,
+      expectedFootTargetsMm: sample.expectedFootTargetsMm?.map((target) => [...target]) || null,
       power: sample.power ? { ...sample.power } : null,
     })),
   };
@@ -105,6 +115,15 @@ export function sanitizeArchivedLiveSession(candidate) {
       measuredBody: { ...sample.measuredBody },
       bodyError: { ...sample.bodyError },
       jointErrorsDeg: sample.jointErrorsDeg.map((value) => Number.isFinite(value) ? value : null),
+      expectedJointAnglesDeg: Array.isArray(sample.expectedJointAnglesDeg)
+        ? sample.expectedJointAnglesDeg.map((value) => Number.isFinite(value) ? value : null)
+        : Array(LIVE_SERVO_CHANNELS.length).fill(null),
+      measuredJointAnglesDeg: Array.isArray(sample.measuredJointAnglesDeg)
+        ? sample.measuredJointAnglesDeg.map((value) => Number.isFinite(value) ? value : null)
+        : null,
+      expectedFootTargetsMm: Array.isArray(sample.expectedFootTargetsMm)
+        ? sample.expectedFootTargetsMm.map((target) => Array.isArray(target) ? target.map((value) => Number.isFinite(value) ? value : null) : [null, null, null])
+        : null,
       power: sample.power && typeof sample.power === "object" ? { ...sample.power } : null,
     });
   }
@@ -190,6 +209,7 @@ const csvNumber = (value, digits = 4) => Number.isFinite(value) ? Number(value).
 
 export function liveSessionCsv(state) {
   const jointHeaders = LIVE_SERVO_CHANNELS.map((channel) => `joint_${channel}_error_deg`);
+  const jointCommandHeaders = LIVE_SERVO_CHANNELS.map((channel) => `joint_${channel}_expected_deg`);
   const headers = [
     "captured_at_iso",
     "elapsed_ms",
@@ -212,6 +232,11 @@ export function liveSessionCsv(state) {
     "voltage_v",
     "current_a",
     "power_w",
+    "fl_foot_target_z_mm",
+    "fr_foot_target_z_mm",
+    "bl_foot_target_z_mm",
+    "br_foot_target_z_mm",
+    ...jointCommandHeaders,
     ...jointHeaders,
   ];
   const rows = (state?.samples || []).map((sample) => [
@@ -236,6 +261,8 @@ export function liveSessionCsv(state) {
     csvNumber(sample.power?.voltageV),
     csvNumber(sample.power?.currentA),
     csvNumber(sample.power?.powerW),
+    ...Array.from({ length: 4 }, (_, leg) => csvNumber(sample.expectedFootTargetsMm?.[leg]?.[2])),
+    ...sample.expectedJointAnglesDeg.map((value) => csvNumber(value)),
     ...sample.jointErrorsDeg.map((value) => csvNumber(value)),
   ]);
   return [headers.join(","), ...rows.map((row) => row.join(","))].join("\n");

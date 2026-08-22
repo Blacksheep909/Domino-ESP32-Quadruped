@@ -110,6 +110,13 @@ and delete actions. The archive validates restored records and retains the 20
 newest sessions, with the same 18,000-sample bound used by the recorder. If
 durable browser storage is unavailable, the page says `MEMORY ONLY` rather than
 claiming persistence.
+
+Two saved runs can be selected as baseline and candidate. The comparison panel
+calculates mean pitch error, P95 joint error, average power, integrated energy,
+minimum voltage, and peak current, then marks candidate deltas as improvements
+or regressions. Its normalized-time chart overlays pitch, roll, yaw, height
+error, or power so runs with different durations can still be inspected side by
+side. Raw samples remain available through each session's CSV export.
 Recording state is shared across all three views, so moving between them cannot
 interrupt or split a capture.
 
@@ -229,7 +236,7 @@ control optimization. Safety limits remain active in both modes.
 
 Sessions is intentionally quiet before a recording exists. Completed captures
 remain available in the same browser after restarting the application and can
-be inspected or exported without reconnecting the robot.
+be compared, inspected, or exported without reconnecting the robot.
 
 ## Current architecture
 

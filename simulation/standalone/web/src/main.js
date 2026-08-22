@@ -24,6 +24,7 @@ import {
   createLiveGaitProfile,
   createLiveGaitState,
   liveGaitCanApply,
+  liveGaitCanApplyDraft,
   liveGaitDiff,
   liveGaitProfileJson,
   liveGaitRiskAssessment,
@@ -33,6 +34,7 @@ import {
   replaceLiveGaitDraft,
   selectLiveGaitPreset,
   updateLiveGaitDraft,
+  updateLiveGaitPreviewAssessment,
 } from "./live-gait-state.js";
 import { contactSurfaceError, createDominoPhysics } from "./physics.js";
 import { environmentBallSpecs, logSpecs, terrainSpecs } from "./course-config.js";
@@ -3545,6 +3547,52 @@ function renderLiveGaitComparison() {
   });
 }
 
+function renderLiveGaitIkInspector(telemetry = liveGaitPreviewLab.getTelemetry()) {
+  const body = document.querySelector("#live-gait-ik-body");
+  const summary = document.querySelector("#live-gait-ik-summary");
+  const warning = document.querySelector("#live-gait-ik-warning");
+  if (!body || !summary || !warning) return;
+  body.replaceChildren();
+  const details = Array.isArray(telemetry.legDetails) ? telemetry.legDetails : [];
+  details.forEach((detail) => {
+    const row = body.insertRow();
+    const limited = Array.isArray(detail.limitedJoints) && detail.limitedJoints.length > 0;
+    row.dataset.state = !detail.reachable ? "fault" : limited ? "warning" : "ok";
+    const target = detail.targetMm.map((value) => Math.round(value)).join(" / ");
+    const joints = ["shoulder", "upper", "lower"]
+      .map((joint) => `${Number(detail.jointDeltaDeg[joint]).toFixed(1)}°`)
+      .join(" / ");
+    [
+      detail.leg,
+      `${target} mm`,
+      detail.reachable ? limited ? "LIMITED" : "VALID" : "UNREACHABLE",
+      joints,
+      detail.stance ? "STANCE" : "SWING",
+    ].forEach((value) => {
+      const cell = row.insertCell();
+      cell.textContent = value;
+    });
+  });
+  const reachable = details.filter((detail) => detail.reachable).length;
+  const limited = details.flatMap((detail) => detail.limitedJoints || []);
+  updateLiveGaitPreviewAssessment(liveGaitState, telemetry);
+  summary.textContent = details.length ? `${reachable} / ${details.length} TARGETS VALID` : "WAITING FOR PREVIEW";
+  summary.dataset.state = reachable === details.length && !limited.length ? "ok" : "fault";
+  warning.dataset.state = reachable < details.length ? "fault" : limited.length ? "warning" : "ok";
+  warning.textContent = reachable < details.length
+    ? `${details.length - reachable} target${details.length - reachable === 1 ? " is" : "s are"} outside the CAD linkage workspace. Do not apply this profile.`
+    : limited.length
+      ? `A preview joint reached the ±45° safety envelope (${[...new Set(limited)].join(", ")}). Reduce stride, height, lift, or stance width.`
+      : "All four targets solve inside the bounded CAD linkage envelope.";
+  const apply = document.querySelector("#live-gait-apply");
+  const adapter = liveConnectionState.adapters[liveConnectionState.selectedAdapterId];
+  const gaitLinkReady = liveConnectionIsReady(liveConnectionState) && adapter?.capabilities.gaitProfiles === true;
+  if (apply) apply.disabled = !gaitLinkReady || !liveGaitCanApplyDraft(liveGaitState);
+  if (details.length && !liveGaitState.previewAssessment.safe && !liveGaitState.pendingRequestId) {
+    document.querySelector("#live-gait-apply-state").textContent = "PREVIEW BLOCKED / FIX IK";
+  }
+}
+
 function renderLiveGaitUi() {
   const adapter = liveConnectionState.adapters[liveConnectionState.selectedAdapterId];
   const gaitLinkReady = liveConnectionIsReady(liveConnectionState) && adapter?.capabilities.gaitProfiles === true;
@@ -3580,7 +3628,7 @@ function renderLiveGaitUi() {
     ? `WAITING / ${liveGaitState.pendingAction.toUpperCase()}`
     : liveGaitCanApply(liveGaitState) ? "DISARMED / READY TO APPLY" : "PREVIEW ONLY";
   document.querySelector("#live-gait-status").textContent = liveGaitState.status;
-  document.querySelector("#live-gait-apply").disabled = !gaitLinkReady || !liveGaitCanApply(liveGaitState);
+  document.querySelector("#live-gait-apply").disabled = !gaitLinkReady || !liveGaitCanApplyDraft(liveGaitState);
   document.querySelector("#live-gait-use-robot").disabled = !gaitLinkReady || !liveGaitState.robotProfile || Boolean(liveGaitState.pendingRequestId);
   document.querySelector("#live-gait-revert").disabled = !gaitLinkReady || !liveGaitState.previousRobotProfile || !liveGaitCanApply(liveGaitState);
   document.querySelector("#live-gait-request-profile").disabled = !gaitLinkReady || Boolean(liveGaitState.pendingRequestId);
@@ -4367,7 +4415,7 @@ document.querySelector("#live-gait-use-robot").addEventListener("click", () => {
   renderLiveGaitUi();
 });
 document.querySelector("#live-gait-apply").addEventListener("click", () => {
-  if (liveGaitCanApply(liveGaitState)) sendLiveGaitCommand("apply-profile");
+  if (liveGaitCanApplyDraft(liveGaitState)) sendLiveGaitCommand("apply-profile");
 });
 document.querySelector("#live-gait-revert").addEventListener("click", () => {
   if (liveGaitCanApply(liveGaitState) && liveGaitState.previousRobotProfile) sendLiveGaitCommand("revert-profile");
@@ -5418,6 +5466,7 @@ function updateLiveTwinPose(delta) {
       const previewHealth = document.querySelector("#live-gait-preview-health");
       previewHealth.textContent = `${preview.reachableCount ?? 4} / 4 REACHABLE`;
       previewHealth.dataset.state = preview.reachableCount === 4 ? "ok" : "fault";
+      renderLiveGaitIkInspector(preview);
     }
     return;
   }

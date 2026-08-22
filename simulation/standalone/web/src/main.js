@@ -74,6 +74,7 @@ import {
   normalizedGamepadControls,
   readGamepadMappings,
   sanitizeGamepadMapping,
+  shapeGamepadAxis,
 } from "./gamepad-profile.js";
 import {
   acceptLiveAdapterAnnouncement,
@@ -4851,6 +4852,10 @@ function renderGamepadMappingDialog() {
   document.querySelector("#gamepad-invert-roll").checked = mapping.invertRoll;
   document.querySelector("#gamepad-invert-forward").checked = mapping.invertForward;
   document.querySelector("#gamepad-invert-turn").checked = mapping.invertTurn;
+  document.querySelector("#gamepad-map-deadzone").value = String(mapping.deadzone);
+  document.querySelector("#gamepad-map-response").value = String(mapping.responseCurve);
+  document.querySelector("#gamepad-map-deadzone-value").textContent = mapping.deadzone.toFixed(2);
+  document.querySelector("#gamepad-map-response-value").textContent = mapping.responseCurve.toFixed(1);
   dialog.querySelectorAll("select, input, footer button").forEach((control) => { control.disabled = !configurable; });
   document.querySelector("#gamepad-setup-close").disabled = false;
 }
@@ -4867,6 +4872,12 @@ document.querySelector("#gamepad-map-default").addEventListener("click", () => {
   localStorage.setItem(GAMEPAD_MAPPING_STORAGE_KEY, JSON.stringify(gamepadMappings));
   renderGamepadMappingDialog();
 });
+document.querySelector("#gamepad-map-deadzone").addEventListener("input", (event) => {
+  document.querySelector("#gamepad-map-deadzone-value").textContent = Number(event.currentTarget.value).toFixed(2);
+});
+document.querySelector("#gamepad-map-response").addEventListener("input", (event) => {
+  document.querySelector("#gamepad-map-response-value").textContent = Number(event.currentTarget.value).toFixed(1);
+});
 document.querySelector("#gamepad-setup form").addEventListener("submit", (event) => {
   event.preventDefault();
   const gamepad = activeGamepad();
@@ -4881,6 +4892,8 @@ document.querySelector("#gamepad-setup form").addEventListener("submit", (event)
     invertRoll: document.querySelector("#gamepad-invert-roll").checked,
     invertForward: document.querySelector("#gamepad-invert-forward").checked,
     invertTurn: document.querySelector("#gamepad-invert-turn").checked,
+    deadzone: Number(document.querySelector("#gamepad-map-deadzone").value),
+    responseCurve: Number(document.querySelector("#gamepad-map-response").value),
   });
   localStorage.setItem(GAMEPAD_MAPPING_STORAGE_KEY, JSON.stringify(gamepadMappings));
   document.querySelector("#gamepad-setup").hidden = true;
@@ -5010,9 +5023,9 @@ function updateInput() {
       turnInput = deadzone((channels[3] - 1500) / 500);
       applyPhysicalModeChannels();
     } else {
-      rollInput = deadzone(controls.roll);
-      forwardInput = deadzone(controls.forward);
-      turnInput = deadzone(controls.turn);
+      rollInput = shapeGamepadAxis(controls.roll, controls.mapping);
+      forwardInput = shapeGamepadAxis(controls.forward, controls.mapping);
+      turnInput = shapeGamepadAxis(controls.turn, controls.mapping);
       pressedOnce(gamepad, controls.buttons.stand, () => requestStand(!standRequested));
       pressedOnce(gamepad, controls.buttons.tilt, () => requestTilt(!tiltRequested));
       pressedOnce(gamepad, controls.buttons.reset, resetRobot);

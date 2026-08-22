@@ -484,6 +484,7 @@
                 <label>DIRECTION <select id="live-calibration-direction"><option value="1">NORMAL</option><option value="-1">INVERTED</option></select><span>logical to servo</span></label>
                 <label class="calibration-preview-toggle"><input id="live-calibration-preview" type="checkbox" checked><strong>PREVIEW CALIBRATED NEUTRAL</strong><span>3D model only</span></label>
               </div>
+              <div class="calibration-secondary-actions"><button id="live-calibration-restore-joint" type="button">RESTORE SELECTED JOINT</button><span>Resets offset, direction and limits; keeps its physical PCA9685 channel.</span></div>
               <div class="calibration-jog-control">
                 <div><span>LIMITED JOG</span><strong id="live-calibration-jog-value">+0.0&deg;</strong><small>&plusmn;10&deg; preview envelope / 5&deg;/s hardware contract</small></div>
                 <div role="group" aria-label="Calibration jog controls"><button type="button" data-calibration-jog="-1">-1&deg;</button><button type="button" data-calibration-jog="-0.1">-0.1&deg;</button><button type="button" data-calibration-jog-reset>NEUTRAL</button><button type="button" data-calibration-jog="0.1">+0.1&deg;</button><button type="button" data-calibration-jog="1">+1&deg;</button></div>
@@ -508,6 +509,7 @@
                 <button id="live-calibration-save-browser" type="button">SAVE BROWSER COPY</button>
                 <button id="live-calibration-export" type="button">EXPORT JSON</button>
                 <button id="live-calibration-import" type="button">IMPORT JSON</button>
+                <button id="live-calibration-restore-all" type="button">RESTORE DEFAULTS</button>
                 <button id="live-calibration-apply-robot" type="button" disabled>SEND TO ROBOT</button>
                 <input id="live-calibration-import-file" type="file" accept="application/json,.json" hidden>
               </div>
@@ -552,6 +554,18 @@
               <label class="calibration-confirm"><input id="live-calibration-robot-confirm-ack" type="checkbox"><span>I reviewed the wiring map and want to persist these changes on the connected robot.</span></label>
             </section>
             <footer><button id="live-calibration-robot-confirm-cancel" type="button">CANCEL</button><span></span><button id="live-calibration-robot-confirm-send" type="button" disabled>CONFIRM &amp; SEND</button></footer>
+          </div>
+        </dialog>
+
+        <dialog id="live-calibration-restore-confirm" class="calibration-dialog calibration-robot-confirm" aria-labelledby="live-calibration-restore-title">
+          <div class="calibration-dialog-shell">
+            <header><div><span>CALIBRATION / LOCAL DRAFT</span><h2 id="live-calibration-restore-title">Restore calibration defaults?</h2><p id="live-calibration-restore-copy">Review the affected settings before changing the local calibration draft.</p></div><button id="live-calibration-restore-close" type="button" aria-label="Cancel calibration restore">&times;</button></header>
+            <section class="calibration-wiring-stage">
+              <div class="calibration-warning"><strong>THIS DOES NOT MOVE OR WRITE THE ROBOT</strong><p>The restored values remain a local draft until you explicitly save a browser copy or send the complete profile to a bench-mode robot.</p></div>
+              <label id="live-calibration-restore-wiring-option" class="calibration-confirm"><input id="live-calibration-restore-wiring" type="checkbox"><span>Also restore the compiled PCA9685 channel map. Leave this off to preserve the robot's physical wiring.</span></label>
+              <label class="calibration-confirm"><input id="live-calibration-restore-ack" type="checkbox"><span id="live-calibration-restore-ack-copy">I understand which calibration values will be replaced.</span></label>
+            </section>
+            <footer><button id="live-calibration-restore-cancel" type="button">CANCEL</button><span></span><button id="live-calibration-restore-confirm-button" type="button" disabled>RESTORE LOCAL DRAFT</button></footer>
           </div>
         </dialog>
       </section>

@@ -169,6 +169,8 @@ import {
   LIVE_CALIBRATION_STEPS,
   LIVE_CALIBRATION_STORAGE_KEY,
   parseCalibrationProfileJson,
+  restoreCalibrationDefaults,
+  restoreSelectedCalibrationJoint,
   selectCalibrationJoint,
   selectCalibrationStep,
   updateCalibrationJoint,
@@ -248,6 +250,7 @@ let calibrationRequestTimeout = null;
 let calibrationFloatEnabled = true;
 let calibrationChannelDraft = null;
 let calibrationWiringStage = "edit";
+let calibrationRestoreScope = "joint";
 let calibrationOpenWiringAfterExit = false;
 let liveConnectionRequestTimeout = null;
 let liveSafetyRequestTimeout = null;
@@ -3432,6 +3435,28 @@ function openRobotCalibrationConfirmation() {
   document.querySelector("#live-calibration-robot-confirm").showModal();
 }
 
+function openCalibrationRestoreConfirmation(scope) {
+  calibrationRestoreScope = scope === "all" ? "all" : "joint";
+  const definition = selectedCalibrationDefinition();
+  const all = calibrationRestoreScope === "all";
+  document.querySelector("#live-calibration-restore-title").textContent = all
+    ? "Restore all calibration defaults?"
+    : `Restore ${definition?.label || "selected joint"}?`;
+  document.querySelector("#live-calibration-restore-copy").textContent = all
+    ? "Offsets, directions, and mechanical limits for all 12 joints will return to the compiled Domino defaults."
+    : "The selected joint's offset, direction, and mechanical limits will return to the compiled Domino defaults.";
+  document.querySelector("#live-calibration-restore-wiring-option").hidden = !all;
+  document.querySelector("#live-calibration-restore-wiring").checked = false;
+  document.querySelector("#live-calibration-restore-ack").checked = false;
+  document.querySelector("#live-calibration-restore-confirm-button").disabled = true;
+  document.querySelector("#live-calibration-restore-confirm").showModal();
+}
+
+function closeCalibrationRestoreConfirmation() {
+  const dialog = document.querySelector("#live-calibration-restore-confirm");
+  if (dialog.open) dialog.close();
+}
+
 function downloadCalibrationJson() {
   const blob = new Blob([calibrationProfileJson(liveCalibrationState.profile)], {
     type: "application/json;charset=utf-8",
@@ -4335,6 +4360,33 @@ document.querySelector("#live-calibration-next").addEventListener("click", () =>
   selectCalibrationStep(liveCalibrationState, liveCalibrationState.step + 1);
   renderLiveCalibrationUi();
 });
+document.querySelector("#live-calibration-restore-joint").addEventListener("click", () => {
+  openCalibrationRestoreConfirmation("joint");
+});
+document.querySelector("#live-calibration-restore-all").addEventListener("click", () => {
+  openCalibrationRestoreConfirmation("all");
+});
+document.querySelector("#live-calibration-restore-ack").addEventListener("change", (event) => {
+  document.querySelector("#live-calibration-restore-confirm-button").disabled = !event.target.checked;
+});
+document.querySelector("#live-calibration-restore-confirm-button").addEventListener("click", () => {
+  const restoreWiring = calibrationRestoreScope === "all" &&
+    document.querySelector("#live-calibration-restore-wiring").checked;
+  const restored = calibrationRestoreScope === "all"
+    ? restoreCalibrationDefaults(liveCalibrationState, restoreWiring)
+    : restoreSelectedCalibrationJoint(liveCalibrationState);
+  if (!restored) return;
+  const definition = selectedCalibrationDefinition();
+  document.querySelector("#live-calibration-review-status").textContent = calibrationRestoreScope === "all"
+    ? `Restored all local calibration defaults${restoreWiring ? ", including the compiled PCA9685 channel map" : " while preserving the physical channel map"}. Review before saving or sending.`
+    : `Restored ${definition?.label || "the selected joint"} defaults while preserving its physical channel. Review before saving or sending.`;
+  closeCalibrationRestoreConfirmation();
+  renderLiveCalibrationUi();
+});
+[
+  "#live-calibration-restore-close",
+  "#live-calibration-restore-cancel",
+].forEach((selector) => document.querySelector(selector).addEventListener("click", closeCalibrationRestoreConfirmation));
 document.querySelector("#live-calibration-save-browser").addEventListener("click", () => {
   liveCalibrationState.profile.savedAt = Date.now();
   localStorage.setItem(

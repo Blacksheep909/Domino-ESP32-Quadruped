@@ -89,7 +89,10 @@ deeper engineering tools:
 | **Sessions** | Durable local captures restored across reloads, portable validated JSON import/export, baseline/candidate optimization metrics, trend overlays, deletion, and independent CSV export. |
 
 Simple mode keeps the operating views compact. Expert mode reveals joint-level,
-RF, packet, and sample detail without weakening any safety limit.
+RF, packet, and sample detail without weakening any safety limit. The app
+remembers that presentation choice and the last LIVE tool locally, while every
+reload still starts in Simulation and never restores a robot connection, armed
+state, bench acknowledgement, or browser-control authority.
 
 ### Program walkthrough
 

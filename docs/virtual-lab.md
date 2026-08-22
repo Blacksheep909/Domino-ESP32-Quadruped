@@ -319,6 +319,12 @@ Simple mode will present the normal operating workflow. Expert mode will expose
 the detailed signals and settings needed for mechanism, gait, power, and
 control optimization. Safety limits remain active in both modes.
 
+Theme, floating-panel geometry, Simple/Expert detail, the last selected LIVE
+tool, and calibration float/floor presentation are local user preferences. They
+use bounded versioned records and fail back to safe defaults if malformed. A
+reload always opens Simulation and never restores connection, arming, E-stop
+recovery, bench mode, manual-control authority, or telemetry state.
+
 ![Current LIVE recorded-sessions workspace](images/virtual-lab-live-sessions.png)
 
 Sessions is intentionally quiet before a recording exists. Completed captures

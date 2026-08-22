@@ -186,12 +186,25 @@ import {
   LIVE_VIEW_SESSIONS,
   selectLiveView,
 } from "./live-view-state.js";
+import {
+  parsePresentationPreferencesJson,
+  presentationPreferencesJson,
+  PRESENTATION_PREFERENCES_STORAGE_KEY,
+} from "./presentation-preferences.js";
 import "./styles.css";
 
 initializeFirmwareWorkspace();
 
 const canvas = document.querySelector("#scene");
-const applicationState = createApplicationState();
+let presentationPreferences = parsePresentationPreferencesJson("");
+try {
+  presentationPreferences = parsePresentationPreferencesJson(
+    localStorage.getItem(PRESENTATION_PREFERENCES_STORAGE_KEY) || "",
+  );
+} catch {
+  // Presentation preferences are optional; safety state is never restored here.
+}
+const applicationState = createApplicationState({ experience: presentationPreferences.experience });
 const liveTelemetryState = createLiveTelemetryState();
 const liveConnectionState = createLiveConnectionState();
 const liveSafetyState = createLiveSafetyState();
@@ -206,6 +219,7 @@ let liveSessionImportStatus = "Import a Domino engineering-session JSON package 
 let liveSessionBaselineId = "";
 let liveSessionCandidateId = "";
 const liveViewState = createLiveViewState();
+selectLiveView(liveViewState, presentationPreferences.liveView);
 const liveGaitState = createLiveGaitState(createLiveGaitProfile(defaultGaitLabSettings, "Balanced"));
 const liveGaitPreviewLab = createGaitLab(liveGaitState.draft.settings);
 let gamepadMappings = {};
@@ -247,7 +261,7 @@ const liveCalibrationState = createLiveCalibrationState(
 let calibrationPendingRequestId = "";
 let calibrationPendingAction = "";
 let calibrationRequestTimeout = null;
-let calibrationFloatEnabled = true;
+let calibrationFloatEnabled = presentationPreferences.calibrationFloat;
 let calibrationChannelDraft = null;
 let calibrationWiringStage = "edit";
 let calibrationRestoreScope = "joint";
@@ -261,6 +275,18 @@ const workspaceButtons = {
   [WORKSPACE_SIMULATION]: document.querySelector("#workspace-simulation"),
   [WORKSPACE_REAL_ROBOT]: document.querySelector("#workspace-real-robot"),
 };
+
+function persistPresentationPreferences() {
+  try {
+    localStorage.setItem(PRESENTATION_PREFERENCES_STORAGE_KEY, presentationPreferencesJson({
+      experience: applicationState.experience,
+      liveView: liveViewState.selected,
+      calibrationFloat: calibrationFloatEnabled,
+    }));
+  } catch {
+    // The application remains fully usable when browser storage is unavailable.
+  }
+}
 
 function applyWorkspace(workspace) {
   if (workspace !== WORKSPACE_REAL_ROBOT && liveManualState.authorityToken) {
@@ -307,6 +333,7 @@ function applyLiveView(view) {
   const leavingGaits = liveViewState.selected === LIVE_VIEW_GAITS && view !== LIVE_VIEW_GAITS;
   const enteringGaits = liveViewState.selected !== LIVE_VIEW_GAITS && view === LIVE_VIEW_GAITS;
   if (!selectLiveView(liveViewState, view)) return false;
+  persistPresentationPreferences();
   if (liveViewState.selected !== LIVE_VIEW_COMPARE && jointOverlayVisible) {
     jointOverlayVisible = false;
     updateJointOverlay();
@@ -364,27 +391,30 @@ Object.entries(workspaceButtons).forEach(([workspace, button]) => {
   button.addEventListener("click", () => applyWorkspace(workspace));
 });
 
-document.body.dataset.experience = applicationState.experience;
+function applyExperience(experience, persist = true) {
+  selectExperience(applicationState, experience);
+  document.body.dataset.experience = applicationState.experience;
+  realWorkspace.dataset.experience = applicationState.experience;
+  document.querySelectorAll("[data-experience]").forEach((candidate) => {
+    const active = candidate.dataset.experience === applicationState.experience;
+    candidate.classList.toggle("active", active);
+    candidate.setAttribute("aria-pressed", String(active));
+  });
+  document.querySelector("#real-workspace .live-toolbar").setAttribute(
+    "aria-label",
+    `Live robot tools / ${applicationState.experience} view`,
+  );
+  if (persist) persistPresentationPreferences();
+}
+
+applyExperience(applicationState.experience, false);
 
 document.querySelectorAll("[data-live-view]").forEach((button) => {
   button.addEventListener("click", () => applyLiveView(button.dataset.liveView));
 });
 
 document.querySelectorAll("[data-experience]").forEach((button) => {
-  button.addEventListener("click", () => {
-    selectExperience(applicationState, button.dataset.experience);
-    document.body.dataset.experience = applicationState.experience;
-    realWorkspace.dataset.experience = applicationState.experience;
-    document.querySelectorAll("[data-experience]").forEach((candidate) => {
-      const active = candidate.dataset.experience === applicationState.experience;
-      candidate.classList.toggle("active", active);
-      candidate.setAttribute("aria-pressed", String(active));
-    });
-    document.querySelector("#real-workspace .live-toolbar").setAttribute(
-      "aria-label",
-      `Live robot tools / ${applicationState.experience} view`,
-    );
-  });
+  button.addEventListener("click", () => applyExperience(button.dataset.experience));
 });
 
 const liveConnectionDialog = document.querySelector("#live-connection-dialog");
@@ -4326,6 +4356,7 @@ document.querySelector("#live-calibration-preview").addEventListener("change", (
 });
 document.querySelector("#live-calibration-float").addEventListener("click", () => {
   calibrationFloatEnabled = !calibrationFloatEnabled;
+  persistPresentationPreferences();
   renderCalibrationPresentationMode();
 });
 document.querySelectorAll("[data-calibration-jog]").forEach((button) => {

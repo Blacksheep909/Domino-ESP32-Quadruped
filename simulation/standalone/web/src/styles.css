@@ -118,6 +118,41 @@ header {
   border-color: #ddb3a9;
 }
 
+.status .live-header-battery[data-state="unavailable"] {
+  color: #777a75;
+}
+
+.status .live-header-battery[data-state="ok"] {
+  color: #246b45;
+  background: #edf6f0;
+  border-color: #a9cfb7;
+}
+
+.status .live-header-battery[data-state="warning"] {
+  color: #9b5b19;
+  background: #fff4df;
+  border-color: #e1bd79;
+}
+
+.status .live-global-estop {
+  min-width: 58px;
+  padding: 7px 9px;
+  color: #fff;
+  background: #b43e2d;
+  border: 1px solid #d05a47;
+  border-radius: 4px;
+  cursor: pointer;
+  font: 800 10px/1 "Cascadia Mono", Consolas, monospace;
+}
+
+.status .live-global-estop:disabled {
+  color: #9d7771;
+  background: #3a2927;
+  border-color: #60403b;
+  cursor: not-allowed;
+  opacity: .72;
+}
+
 .status .theme-toggle {
   min-width: 28px;
   width: 28px;

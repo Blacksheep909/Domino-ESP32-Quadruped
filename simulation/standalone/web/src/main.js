@@ -435,6 +435,7 @@ liveArmButton.addEventListener("keyup", (event) => {
 });
 document.querySelector("#live-safety-disarm").addEventListener("click", () => sendLiveSafetyCommand("disarm"));
 document.querySelector("#live-safety-estop").addEventListener("click", () => sendLiveSafetyCommand("estop"));
+document.querySelector("#live-global-estop").addEventListener("click", () => sendLiveSafetyCommand("estop"));
 document.querySelector("#live-safety-reset-estop").addEventListener("click", () => sendLiveSafetyCommand("reset-estop"));
 
 const liveManualDialog = document.querySelector("#live-manual-dialog");
@@ -2539,6 +2540,8 @@ function renderLiveSafetyUi() {
     liveSafetyState.robotState !== "armed" || Boolean(liveSafetyState.pendingRequestId);
   document.querySelector("#live-safety-estop").disabled =
     !connected || Boolean(liveSafetyState.pendingRequestId) || ["estopped", "watchdog"].includes(liveSafetyState.robotState);
+  document.querySelector("#live-global-estop").disabled =
+    !connected || Boolean(liveSafetyState.pendingRequestId) || ["estopped", "watchdog"].includes(liveSafetyState.robotState);
   document.querySelector("#live-safety-reset-estop").disabled =
     liveSafetyState.robotState !== "estopped" || Boolean(liveSafetyState.pendingRequestId);
   document.querySelector("#live-safety-status").textContent = liveSafetyState.status;
@@ -4086,6 +4089,16 @@ function updateLiveComparisonUi() {
   document.querySelector("#live-data-voltage").textContent = snapshot.power
     ? `${snapshot.power.voltageV.toFixed(2)} V`
     : "--.- V";
+  const headerBattery = document.querySelector("#real-battery-status");
+  headerBattery.textContent = snapshot.power ? `BAT ${snapshot.power.voltageV.toFixed(1)} V` : "BAT --.- V";
+  headerBattery.dataset.state = !snapshot.power
+    ? "unavailable"
+    : snapshot.power.voltageV < 14.0 ? "warning" : "ok";
+  headerBattery.title = !snapshot.power
+    ? "No fresh measured battery telemetry"
+    : snapshot.power.voltageV < 14.0
+      ? `Measured battery voltage ${snapshot.power.voltageV.toFixed(2)} V is below the 14.0 V warning threshold`
+      : `Measured robot battery voltage ${snapshot.power.voltageV.toFixed(2)} V`;
   document.querySelector("#live-current").textContent = snapshot.power
     ? `${snapshot.power.currentA.toFixed(2)} A`
     : "--.- A";

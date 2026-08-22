@@ -1048,13 +1048,27 @@ nav button.active {
 .gamepad-map-grid select { min-width: 0; height: 32px; padding: 0 8px; border: 1px solid #cfd1cb; border-radius: 3px; background: #fff; }
 .gamepad-map-grid label span { display: flex; align-items: center; gap: 5px; }
 .gamepad-map-note { margin: 0 0 18px; font-weight: 600; }
+.gamepad-signal-trace { margin: 0 0 14px; padding: 12px; background: #eceee9; border: 1px solid #d4d7cf; border-radius: 4px; }
+.gamepad-signal-trace > header { margin-bottom: 8px; align-items: center; }
+.gamepad-signal-trace > header span,
+.gamepad-signal-trace > header strong { color: #777a74; font: 750 8px/1.2 "Cascadia Mono", Consolas, monospace; }
+.gamepad-signal-trace > div { display: grid; gap: 5px; }
+.gamepad-signal-trace > div > div { display: grid; grid-template-columns: 64px 58px 1fr; align-items: center; gap: 8px; min-height: 25px; padding: 0 8px; background: rgba(255, 255, 255, .55); border-radius: 3px; }
+.gamepad-signal-trace strong,
+.gamepad-signal-trace span,
+.gamepad-signal-trace output { font: 700 8px/1.2 "Cascadia Mono", Consolas, monospace; }
+.gamepad-signal-trace span { color: #858881; }
+.gamepad-signal-trace output { color: #326f49; text-align: right; }
 .gamepad-setup footer { align-items: center; border-top: 1px solid #d8dad4; padding-top: 14px; }
 .gamepad-setup footer button { min-height: 34px; padding: 0 14px; border: 1px solid #bfc2bb; border-radius: 3px; cursor: pointer; font: 750 8px/1 "Cascadia Mono", Consolas, monospace; }
 #gamepad-map-save { margin-left: auto; color: #174f30; border-color: #75ae88; background: #e6f4ea; }
 .gamepad-setup footer button:disabled { color: #73756f; background: #252527; border-color: #3b3b3e; cursor: default; opacity: .55; }
+#gamepad-map-save:disabled { color: #73756f; background: #252527; border-color: #3b3b3e; }
 
 :root[data-theme="dark"] .gamepad-setup form { color: #ededeb; background: #171718; border-color: #373739; }
 :root[data-theme="dark"] .gamepad-map-grid select { color: #ededeb; background: #222224; border-color: #3b3b3e; }
+:root[data-theme="dark"] .gamepad-signal-trace { background: #202022; border-color: #353538; }
+:root[data-theme="dark"] .gamepad-signal-trace > div > div { background: rgba(255, 255, 255, .035); }
 :root[data-theme="dark"] .gamepad-setup footer { border-color: #333336; }
 
 @media (max-width: 700px) {

@@ -228,6 +228,14 @@
           <label>DEADZONE <span><input id="gamepad-map-deadzone" type="range" min="0" max="0.4" step="0.01"><output id="gamepad-map-deadzone-value">0.10</output></span></label>
           <label>RESPONSE CURVE <span><input id="gamepad-map-response" type="range" min="1" max="3" step="0.1"><output id="gamepad-map-response-value">1.0</output></span></label>
         </div>
+        <section class="gamepad-signal-trace" aria-label="Live controller signal trace">
+          <header><span>LIVE SIGNAL TRACE</span><strong>RAW → PROCESSED → ROBOT COMMAND</strong></header>
+          <div id="gamepad-signal-rows">
+            <div data-gamepad-signal="roll"><strong>ROLL</strong><span>AXIS --</span><output>+0.000 → +0.000 → BODY ROLL +0.000</output></div>
+            <div data-gamepad-signal="forward"><strong>FORWARD</strong><span>AXIS --</span><output>+0.000 → +0.000 → FORWARD +0.000</output></div>
+            <div data-gamepad-signal="turn"><strong>TURN</strong><span>AXIS --</span><output>+0.000 → +0.000 → YAW +0.000</output></div>
+          </div>
+        </section>
         <p class="gamepad-map-note">Deadzone removes stick drift. Higher response curves soften movement near centre while preserving full travel. Settings are saved for this exact controller name; CRSF radios keep direct channel mapping.</p>
         <footer><button id="gamepad-map-default" type="button">RESTORE DEFAULT</button><button id="gamepad-map-save" type="submit">SAVE MAPPING</button></footer>
       </form>

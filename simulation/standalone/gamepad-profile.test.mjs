@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { identifyInputDevice, normalizedGamepadControls, readGamepadMappings, sanitizeGamepadMapping, shapeGamepadAxis } from "./web/src/gamepad-profile.js";
+import { gamepadAxisDiagnostics, identifyInputDevice, normalizedGamepadControls, readGamepadMappings, sanitizeGamepadMapping, shapeGamepadAxis } from "./web/src/gamepad-profile.js";
 
 const pad = (id, axes = [0.25, -0.5, 0.75, -0.25]) => ({ id, axes });
 
@@ -61,4 +61,20 @@ test("configurable deadzone and response curve shape gamepad motion", () => {
   assert.equal(shapeGamepadAxis(-0.1, mapping), 0);
   assert.ok(Math.abs(shapeGamepadAxis(0.55, mapping) - 0.25) < 1e-9);
   assert.equal(shapeGamepadAxis(-1, mapping), -1);
+});
+
+test("diagnostics expose raw, processed, and resulting command axes", () => {
+  const diagnostics = gamepadAxisDiagnostics(pad("Odd USB Pad", [0.55, -0.55, 0.25]), {
+    rollAxis: 2, forwardAxis: 1, turnAxis: 0,
+    invertRoll: true, invertForward: true, invertTurn: false,
+    deadzone: 0.1, responseCurve: 2,
+  });
+  assert.deepEqual(diagnostics.map(({ axis, command, index, inverted }) => ({ axis, command, index, inverted })), [
+    { axis: "roll", command: "body roll", index: 2, inverted: true },
+    { axis: "forward", command: "forward", index: 1, inverted: true },
+    { axis: "turn", command: "yaw", index: 0, inverted: false },
+  ]);
+  assert.equal(diagnostics[0].raw, 0.25);
+  assert.ok(diagnostics[0].processed < 0);
+  assert.ok(Math.abs(diagnostics[1].processed - 0.25) < 1e-9);
 });

@@ -70,6 +70,7 @@ import {
 import {
   DEFAULT_GAMEPAD_MAPPING,
   GAMEPAD_MAPPING_STORAGE_KEY,
+  gamepadAxisDiagnostics,
   identifyInputDevice,
   normalizedGamepadControls,
   readGamepadMappings,
@@ -4860,6 +4861,30 @@ function renderGamepadMappingDialog() {
   document.querySelector("#gamepad-setup-close").disabled = false;
 }
 
+function gamepadMappingFromDialog() {
+  return sanitizeGamepadMapping({
+    rollAxis: Number(document.querySelector("#gamepad-map-roll").value),
+    forwardAxis: Number(document.querySelector("#gamepad-map-forward").value),
+    turnAxis: Number(document.querySelector("#gamepad-map-turn").value),
+    invertRoll: document.querySelector("#gamepad-invert-roll").checked,
+    invertForward: document.querySelector("#gamepad-invert-forward").checked,
+    invertTurn: document.querySelector("#gamepad-invert-turn").checked,
+    deadzone: Number(document.querySelector("#gamepad-map-deadzone").value),
+    responseCurve: Number(document.querySelector("#gamepad-map-response").value),
+  });
+}
+
+function renderGamepadSignalTrace(gamepad) {
+  const dialog = document.querySelector("#gamepad-setup");
+  if (dialog.hidden || !gamepad || identifyInputDevice(gamepad).family === "crsf-radio") return;
+  const signed = (value) => `${value >= 0 ? "+" : ""}${value.toFixed(3)}`;
+  gamepadAxisDiagnostics(gamepad, gamepadMappingFromDialog()).forEach((signal) => {
+    const row = document.querySelector(`[data-gamepad-signal="${signal.axis}"]`);
+    row.querySelector("span").textContent = `AXIS ${signal.index}${signal.inverted ? " INV" : ""}`;
+    row.querySelector("output").textContent = `${signed(signal.raw)} → ${signed(signal.processed)} → ${signal.command.toUpperCase()} ${signed(signal.processed)}`;
+  });
+}
+
 document.querySelector("#gamepad-setup-open").addEventListener("click", () => {
   renderGamepadMappingDialog();
   document.querySelector("#gamepad-setup").hidden = false;
@@ -4945,6 +4970,7 @@ function applyPhysicalModeChannels() {
 function updateInput() {
   let directRadioChannels = false;
   const gamepad = activeGamepad();
+  renderGamepadSignalTrace(gamepad);
 
   if (demoMode) {
     boxerHeartbeat = { connected: false, name: "", updatedAt: 0 };

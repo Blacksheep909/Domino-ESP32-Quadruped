@@ -35,6 +35,11 @@ controller identity, making non-standard USB pads and sticks with centre drift
 usable without changing source code. CRSF radios bypass this mapping and
 preserve their first eight transmitter channels directly.
 
+While the mapping panel is open, a live signal trace shows each selected raw
+axis, the value after inversion/deadzone/response shaping, and the resulting
+body-roll, forward, or yaw command. This makes controller faults distinguishable
+from transport, gait, and servo-output faults without opening developer tools.
+
 ![Per-controller axis and button mapping in the current offline build](images/virtual-lab-controller-mapping.png)
 
 The offline capture keeps Save and Restore disabled because no configurable

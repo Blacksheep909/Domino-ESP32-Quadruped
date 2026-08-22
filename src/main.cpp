@@ -356,6 +356,11 @@ float manualRollFootZOffset(float lateralMm) {
   return 0.0f;
 }
 
+constexpr float kManualMaxPitchDeg = 8.0f;
+constexpr float kManualMaxYawDeg = 8.0f;
+constexpr float kManualMaxBodyXMm = 15.0f;
+constexpr float kManualMaxBodyYMm = 12.0f;
+
 void logDebugState(uint32_t now,
                    bool linkAlive,
                    bool standCommand,
@@ -1287,9 +1292,16 @@ void loop() {
       const float bodyZ = rampZ + STAND_HEIGHT_Z;
       float rollDeg = 0.0f;
       float pitchDeg = 0.0f;
+      float yawDeg = 0.0f;
+      float bodyX = 0.0f;
+      float bodyY = 0.0f;
 #ifndef DOMINO_SIL
       if (activeManualControl.active && activeManualControl.deadman) {
         rollDeg = activeManualControl.roll * kMaxRollDeg;
+        pitchDeg = activeManualControl.pitch * kManualMaxPitchDeg;
+        yawDeg = activeManualControl.yaw * kManualMaxYawDeg;
+        bodyX = activeManualControl.bodyX * kManualMaxBodyXMm;
+        bodyY = activeManualControl.bodyY * kManualMaxBodyYMm;
       }
 #endif
       bool useBalanceZOffsets = false;
@@ -1404,7 +1416,7 @@ void loop() {
         // Keep body orientation level and adjust each leg's Z independently.
         moveLegsFromBodyPoseWithZOffsets(pca, 0.0f, 0.0f, bodyZ, balanceZOffsets);
       } else {
-        moveLegsFromBodyPose(pca, 0.0f, 0.0f, bodyZ, rollDeg, pitchDeg, 0.0f);
+        moveLegsFromBodyPose(pca, bodyX, bodyY, bodyZ, rollDeg, pitchDeg, yawDeg);
       }
     }
   }

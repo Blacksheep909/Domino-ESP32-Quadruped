@@ -67,6 +67,10 @@ export function validLiveManualControlFrame(message) {
     !boundedAxis(message.axes?.forward) ||
     !boundedAxis(message.axes?.turn) ||
     !boundedAxis(message.axes?.roll) ||
+    !boundedAxis(message.axes?.pitch) ||
+    !boundedAxis(message.axes?.yaw) ||
+    !boundedAxis(message.axes?.bodyX) ||
+    !boundedAxis(message.axes?.bodyY) ||
     !boundedAxis(message.axes?.height) ||
     message.safety?.requiresArmed !== true ||
     message.safety?.neutralOnExpiry !== true ||

@@ -18,7 +18,7 @@ export function createLiveManualControlState() {
     deadmanActive: false,
     frameSequence: 0,
     mode: "stand",
-    axes: { forward: 0, turn: 0, roll: 0, height: 0 },
+    axes: { forward: 0, turn: 0, roll: 0, pitch: 0, yaw: 0, bodyX: 0, bodyY: 0, height: 0 },
     status: "Connect an armed, compatible robot to request browser control.",
   };
 }
@@ -113,6 +113,10 @@ export function updateLiveManualAxes(state, patch = {}) {
     forward: clampAxis(patch.forward ?? state.axes.forward),
     turn: clampAxis(patch.turn ?? state.axes.turn),
     roll: clampAxis(patch.roll ?? state.axes.roll),
+    pitch: clampAxis(patch.pitch ?? state.axes.pitch),
+    yaw: clampAxis(patch.yaw ?? state.axes.yaw),
+    bodyX: clampAxis(patch.bodyX ?? state.axes.bodyX),
+    bodyY: clampAxis(patch.bodyY ?? state.axes.bodyY),
     height: clampAxis(patch.height ?? state.axes.height),
   };
   if (["stand", "careful", "trot"].includes(patch.mode)) state.mode = patch.mode;
@@ -156,7 +160,7 @@ export function createLiveManualControlFrame(state, connection, now = Date.now()
     deadman: !neutral,
     neutral,
     mode: neutral ? "stand" : state.mode,
-    axes: neutral ? { forward: 0, turn: 0, roll: 0, height: 0 } : { ...state.axes },
+    axes: neutral ? { forward: 0, turn: 0, roll: 0, pitch: 0, yaw: 0, bodyX: 0, bodyY: 0, height: 0 } : { ...state.axes },
     safety: {
       requiresArmed: true,
       neutralOnExpiry: true,
@@ -190,7 +194,7 @@ export function revokeLiveManualControl(state, reason = "Manual-control authorit
   state.deadmanActive = false;
   state.phase = state.supported ? "available" : "unavailable";
   state.mode = "stand";
-  state.axes = { forward: 0, turn: 0, roll: 0, height: 0 };
+  state.axes = { forward: 0, turn: 0, roll: 0, pitch: 0, yaw: 0, bodyX: 0, bodyY: 0, height: 0 };
   state.status = reason;
   return true;
 }

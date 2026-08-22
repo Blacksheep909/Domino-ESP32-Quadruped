@@ -882,13 +882,22 @@ void handleManualControl(JsonObjectConst command, uint32_t now) {
   float forward = 0.0f;
   float turn = 0.0f;
   float roll = 0.0f;
+  float pitch = 0.0f;
+  float yaw = 0.0f;
+  float bodyX = 0.0f;
+  float bodyY = 0.0f;
   float height = 0.0f;
   if (state != LiveRobotState::Armed || !controllerSafeToArm(now) ||
       !boundedManualAxis(axes["forward"], &forward) ||
       !boundedManualAxis(axes["turn"], &turn) ||
       !boundedManualAxis(axes["roll"], &roll) ||
+      !boundedManualAxis(axes["pitch"], &pitch) ||
+      !boundedManualAxis(axes["yaw"], &yaw) ||
+      !boundedManualAxis(axes["bodyX"], &bodyX) ||
+      !boundedManualAxis(axes["bodyY"], &bodyY) ||
       !boundedManualAxis(axes["height"], &height)) return;
-  manualGuard.acceptFrame(token, sequence, now, parsedMode, forward, turn, roll, height, timeoutMs);
+  manualGuard.acceptFrame(token, sequence, now, parsedMode, forward, turn, roll,
+                          pitch, yaw, bodyX, bodyY, height, timeoutMs);
 }
 
 void updateManualControl(uint32_t now) {

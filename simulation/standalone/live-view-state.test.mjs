@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   createLiveViewState,
@@ -35,4 +36,13 @@ test("unimplemented or unknown views cannot replace the active page", () => {
   selectLiveView(state, LIVE_VIEW_DATA);
   assert.equal(selectLiveView(state, "controls"), false);
   assert.equal(state.selected, LIVE_VIEW_DATA);
+});
+
+test("LIVE keeps measured battery state and E-stop in the persistent header", () => {
+  const html = readFileSync(new URL("./web/index.html", import.meta.url), "utf8");
+  const main = readFileSync(new URL("./web/src/main.js", import.meta.url), "utf8");
+  const header = html.match(/<header>[\s\S]*?<\/header>/)?.[0] || "";
+  assert.match(header, /id="real-battery-status"[^>]*real-robot-only/);
+  assert.match(header, /id="live-global-estop"[^>]*real-robot-only/);
+  assert.match(main, /#live-global-estop"\)\.addEventListener\("click", \(\) => sendLiveSafetyCommand\("estop"\)/);
 });

@@ -139,6 +139,11 @@ The launcher starts the local service and opens the source-built application.
 Full setup, controller notes, connection transports, safety contracts, and
 troubleshooting are in the [Virtual Lab guide](docs/virtual-lab.md).
 
+For a physical build, start with the [public build and bring-up manual](docs/build-guide.md),
+then copy the [as-built record template](docs/build-record-template.md). The
+manual separates repository-confirmed interfaces from dimensions, ratings, and
+test results that still need to be measured on the actual robot.
+
 ## Current Status
 
 Implemented or documented:
@@ -159,21 +164,23 @@ Still in progress:
 
 - Gait tuning beyond the first slow diagonal sinusoidal trot.
 - Dynamic balance tuning.
-- A complete measured BOM.
-- Wiring diagrams and annotated cable-routing photos.
-- Printed-part orientation, fastener, bearing, insert, and rod-length documentation.
-- A validated start-to-finish public build manual.
+- A completed measured as-built record and exact BOM.
+- An as-built wiring diagram and annotated cable-routing photos.
+- Measured printed-part orientation, fastener, bearing, insert, and rod-length evidence.
+- Physical validation of the new public build manual's commissioning gates.
 
 ## Where To Start
 
 If you are looking to build the project start here:
 
-1. [docs/engineering-overview.md](docs/engineering-overview.md) - portfolio overview, architecture, data flow, code tour, and current boundaries.
-2. [docs/control-notes.md](docs/control-notes.md) - coordinate frames, IK constants, servo mapping, and mode flow.
-3. [docs/crsf.md](docs/crsf.md) - CRSF/ExpressLRS parser and receiver migration notes.
-4. [docs/cad-design.md](docs/cad-design.md) - mechanical structure, STEP exports, composite cage, and simulation limitations.
-5. [docs/electronics.md](docs/electronics.md) - electronics architecture, PCB evolution, and power/control notes.
-6. [hardware/pcb/domino-quadruped-pcb-v1.1b](hardware/pcb/domino-quadruped-pcb-v1.1b) - Domino PCB V1.1B Gerber package.
+1. [docs/build-guide.md](docs/build-guide.md) - public build sequence, evidence labels, functional BOM, wiring architecture, and commissioning gates.
+2. [docs/build-record-template.md](docs/build-record-template.md) - copyable record for exact parts, measurements, calibration, and acceptance evidence.
+3. [docs/engineering-overview.md](docs/engineering-overview.md) - portfolio overview, architecture, data flow, code tour, and current boundaries.
+4. [docs/control-notes.md](docs/control-notes.md) - coordinate frames, IK constants, servo mapping, and mode flow.
+5. [docs/crsf.md](docs/crsf.md) - CRSF/ExpressLRS parser and receiver migration notes.
+6. [docs/cad-design.md](docs/cad-design.md) - mechanical structure, STEP exports, composite cage, and simulation limitations.
+7. [docs/electronics.md](docs/electronics.md) - electronics architecture, PCB evolution, and power/control notes.
+8. [hardware/pcb/domino-quadruped-pcb-v1.1b](hardware/pcb/domino-quadruped-pcb-v1.1b) - Domino PCB V1.1B Gerber package.
 
 ## Mechanical Design
 

@@ -129,7 +129,12 @@ table of synchronized samples. Sessions keeps completed recordings in a local
 IndexedDB archive across app reloads, summarizes duration, sample count, peak
 joint error, and average power, and gives every session independent CSV export
 and delete actions. The archive validates restored records and retains the 20
-newest sessions, with the same 18,000-sample bound used by the recorder. If
+newest sessions, with the same 18,000-sample bound used by the recorder. Every
+stopped or archived run can be exported either as flat analysis-ready CSV or as
+a versioned JSON engineering package. The JSON retains the complete synchronized
+sample structure, calculated optimization metrics, and explicit expected versus
+measured signal semantics so another tool can reproduce or extend the analysis.
+If
 durable browser storage is unavailable, the page says `MEMORY ONLY` rather than
 claiming persistence.
 

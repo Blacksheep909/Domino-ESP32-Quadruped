@@ -144,6 +144,7 @@ import {
   compareLiveSessions,
   createLiveSessionState,
   liveSessionCsv,
+  liveSessionJson,
   liveSessionSummary,
   mergeArchivedLiveSessions,
   recordLiveComparisonSample,
@@ -2930,6 +2931,17 @@ function downloadLiveSessionCsv(session, name = "domino-live-session") {
   setTimeout(() => URL.revokeObjectURL(link.href), 0);
 }
 
+function downloadLiveSessionJson(session, name = "domino-live-engineering-session") {
+  const contents = liveSessionJson(session);
+  if (!contents) return;
+  const blob = new Blob([contents], { type: "application/json;charset=utf-8" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `${name}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 0);
+}
+
 function archivedSessionMetrics(session) {
   const durationMs = session.startedAt && session.stoppedAt
     ? Math.max(0, session.stoppedAt - session.startedAt)
@@ -3094,6 +3106,10 @@ function renderLiveSessionArchive() {
     exportButton.type = "button";
     exportButton.textContent = "EXPORT CSV";
     exportButton.addEventListener("click", () => downloadLiveSessionCsv(session, "domino-live-archive"));
+    const exportJsonButton = document.createElement("button");
+    exportJsonButton.type = "button";
+    exportJsonButton.textContent = "EXPORT JSON";
+    exportJsonButton.addEventListener("click", () => downloadLiveSessionJson(session, "domino-live-archive"));
     const deleteButton = document.createElement("button");
     deleteButton.type = "button";
     deleteButton.className = "delete-session";
@@ -3108,7 +3124,7 @@ function renderLiveSessionArchive() {
         renderLiveSessionArchive();
       }
     });
-    entry.append(exportButton, deleteButton);
+    entry.append(exportButton, exportJsonButton, deleteButton);
     list.append(entry);
   });
 }
@@ -3891,7 +3907,7 @@ function updateLiveSessionUi(snapshot) {
     recordingButton.textContent = recordingLabel;
     recordingButton.dataset.state = recording ? "recording" : "idle";
   });
-  ["#live-export-csv", "#live-data-export-csv"].forEach((selector) => {
+  ["#live-export-csv", "#live-data-export-csv", "#live-export-json", "#live-data-export-json"].forEach((selector) => {
     document.querySelector(selector).disabled = recording || summary.sampleCount === 0;
   });
   document.querySelector("#live-session-state").textContent = recording
@@ -4133,6 +4149,12 @@ document.querySelector("#live-export-csv").addEventListener("click", () => {
 });
 document.querySelector("#live-data-export-csv").addEventListener("click", () => {
   downloadLiveSessionCsv(liveSessionState);
+});
+document.querySelector("#live-export-json").addEventListener("click", () => {
+  downloadLiveSessionJson(liveSessionState);
+});
+document.querySelector("#live-data-export-json").addEventListener("click", () => {
+  downloadLiveSessionJson(liveSessionState);
 });
 document.querySelector("#live-sessions-open-data").addEventListener("click", () => {
   applyLiveView(LIVE_VIEW_DATA);

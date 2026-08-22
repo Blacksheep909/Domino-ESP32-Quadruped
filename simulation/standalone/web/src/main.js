@@ -67,7 +67,14 @@ import {
   liveControllerDiagnosticExport,
   liveControllerSnapshot,
 } from "./live-controller-state.js";
-import { identifyInputDevice, normalizedGamepadControls } from "./gamepad-profile.js";
+import {
+  DEFAULT_GAMEPAD_MAPPING,
+  GAMEPAD_MAPPING_STORAGE_KEY,
+  identifyInputDevice,
+  normalizedGamepadControls,
+  readGamepadMappings,
+  sanitizeGamepadMapping,
+} from "./gamepad-profile.js";
 import {
   acceptLiveAdapterAnnouncement,
   acceptLiveConnectionAcknowledgement,
@@ -180,6 +187,12 @@ const liveSessionArchive = [];
 const liveViewState = createLiveViewState();
 const liveGaitState = createLiveGaitState(createLiveGaitProfile(defaultGaitLabSettings, "Balanced"));
 const liveGaitPreviewLab = createGaitLab(liveGaitState.draft.settings);
+let gamepadMappings = {};
+try {
+  gamepadMappings = readGamepadMappings(JSON.parse(localStorage.getItem(GAMEPAD_MAPPING_STORAGE_KEY) || "{}"));
+} catch {
+  gamepadMappings = {};
+}
 let liveGaitLibrary = {};
 try {
   liveGaitLibrary = readLiveGaitLibrary(JSON.parse(localStorage.getItem(LIVE_GAIT_LIBRARY_KEY) || "{}"));
@@ -4657,6 +4670,71 @@ document.querySelector("#float-button").addEventListener("click", () => {
 });
 
 const gamepadButtonState = new Map();
+const activeGamepad = () => [...(globalThis.navigator?.getGamepads?.() || [])].find(Boolean) || null;
+
+function setMappingOptions(select, count, prefix) {
+  select.replaceChildren(...Array.from({ length: Math.max(1, count) }, (_, index) => {
+    const option = document.createElement("option");
+    option.value = String(index);
+    option.textContent = `${prefix} ${index}`;
+    return option;
+  }));
+}
+
+function renderGamepadMappingDialog() {
+  const gamepad = activeGamepad();
+  const dialog = document.querySelector("#gamepad-setup");
+  const profile = identifyInputDevice(gamepad);
+  const configurable = Boolean(gamepad) && profile.family !== "crsf-radio";
+  document.querySelector("#gamepad-setup-device").textContent = gamepad
+    ? configurable ? `${profile.label} / ${profile.id}` : `${profile.label} / direct CRSF channels do not require remapping`
+    : "Connect a gamepad and press any button, then reopen this panel.";
+  const mapping = sanitizeGamepadMapping(gamepadMappings[profile.id] || DEFAULT_GAMEPAD_MAPPING);
+  for (const id of ["roll", "forward", "turn"]) setMappingOptions(document.querySelector(`#gamepad-map-${id}`), gamepad?.axes?.length || 4, "AXIS");
+  for (const id of ["stand", "tilt", "reset"]) setMappingOptions(document.querySelector(`#gamepad-map-${id}`), gamepad?.buttons?.length || 16, "BUTTON");
+  document.querySelector("#gamepad-map-roll").value = String(mapping.rollAxis);
+  document.querySelector("#gamepad-map-forward").value = String(mapping.forwardAxis);
+  document.querySelector("#gamepad-map-turn").value = String(mapping.turnAxis);
+  document.querySelector("#gamepad-map-stand").value = String(mapping.standButton);
+  document.querySelector("#gamepad-map-tilt").value = String(mapping.tiltButton);
+  document.querySelector("#gamepad-map-reset").value = String(mapping.resetButton);
+  document.querySelector("#gamepad-invert-roll").checked = mapping.invertRoll;
+  document.querySelector("#gamepad-invert-forward").checked = mapping.invertForward;
+  document.querySelector("#gamepad-invert-turn").checked = mapping.invertTurn;
+  dialog.querySelectorAll("select, input, footer button").forEach((control) => { control.disabled = !configurable; });
+  document.querySelector("#gamepad-setup-close").disabled = false;
+}
+
+document.querySelector("#gamepad-setup-open").addEventListener("click", () => {
+  renderGamepadMappingDialog();
+  document.querySelector("#gamepad-setup").hidden = false;
+});
+document.querySelector("#gamepad-setup-close").addEventListener("click", () => { document.querySelector("#gamepad-setup").hidden = true; });
+document.querySelector("#gamepad-map-default").addEventListener("click", () => {
+  const gamepad = activeGamepad();
+  if (!gamepad) return;
+  delete gamepadMappings[gamepad.id];
+  localStorage.setItem(GAMEPAD_MAPPING_STORAGE_KEY, JSON.stringify(gamepadMappings));
+  renderGamepadMappingDialog();
+});
+document.querySelector("#gamepad-setup form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const gamepad = activeGamepad();
+  if (!gamepad || identifyInputDevice(gamepad).family === "crsf-radio") return;
+  gamepadMappings[gamepad.id] = sanitizeGamepadMapping({
+    rollAxis: Number(document.querySelector("#gamepad-map-roll").value),
+    forwardAxis: Number(document.querySelector("#gamepad-map-forward").value),
+    turnAxis: Number(document.querySelector("#gamepad-map-turn").value),
+    standButton: Number(document.querySelector("#gamepad-map-stand").value),
+    tiltButton: Number(document.querySelector("#gamepad-map-tilt").value),
+    resetButton: Number(document.querySelector("#gamepad-map-reset").value),
+    invertRoll: document.querySelector("#gamepad-invert-roll").checked,
+    invertForward: document.querySelector("#gamepad-invert-forward").checked,
+    invertTurn: document.querySelector("#gamepad-invert-turn").checked,
+  });
+  localStorage.setItem(GAMEPAD_MAPPING_STORAGE_KEY, JSON.stringify(gamepadMappings));
+  document.querySelector("#gamepad-setup").hidden = true;
+});
 function pressedOnce(gamepad, index, action) {
   const key = `${gamepad.index}:${index}`;
   const pressed = Boolean(gamepad.buttons[index]?.pressed);
@@ -4703,7 +4781,7 @@ function applyPhysicalModeChannels() {
 
 function updateInput() {
   let directRadioChannels = false;
-  const gamepad = [...(globalThis.navigator?.getGamepads?.() || [])].find(Boolean);
+  const gamepad = activeGamepad();
 
   if (demoMode) {
     boxerHeartbeat = { connected: false, name: "", updatedAt: 0 };
@@ -4758,7 +4836,7 @@ function updateInput() {
     applyPhysicalModeChannels();
   } else if (gamepad) {
     const axes = [...gamepad.axes];
-    const controls = normalizedGamepadControls(gamepad);
+    const controls = normalizedGamepadControls(gamepad, gamepadMappings[gamepad.id]);
     const profile = identifyInputDevice(gamepad);
     const isCrsfRadio = profile.family === "crsf-radio";
     boxerHeartbeat = isCrsfRadio

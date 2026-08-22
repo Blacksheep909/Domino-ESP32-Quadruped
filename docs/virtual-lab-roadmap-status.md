@@ -15,14 +15,14 @@ compiling firmware is not presented as proof that a real robot was connected.
 | Data, graphs, logging, and export | Synchronized recording, expected/measured/error graphs, IndexedDB-backed session archive restored across reloads, bounded retention, baseline/candidate optimization comparison, CSV export, and diagnostic JSON bundle. | Session analysis/persistence, telemetry, and diagnostics tests. |
 | Guided calibration | Five steps, floating/floor preview, safe bench acknowledgement, one-servo limited jog, offsets, directions, limits, JSON backup, and persistent ESP32 profile. | Calibration tests, SIL routing check, ESP32 build. |
 | Remappable servo channels | All 12 logical joints can select unique PCA9685 outputs 0-15; changed-only confirmation and separate robot-write confirmation. | Channel-map test, current screenshot, firmware routing assertion. |
-| CRSF/ELRS and gamepad input | RadioMaster/EdgeTX/OpenTX transmitters retain direct CRSF channels and detected identity. Xbox, PlayStation, and generic gamepads use normalized or per-device persistent axis/button mappings. All 16 robot-side CRSF channels, RF statistics, and failsafe evidence remain available in LIVE. | HID, gamepad-profile, controller-state, and endpoint tests. |
+| CRSF/ELRS and gamepad input | RadioMaster/EdgeTX/OpenTX transmitters retain direct CRSF channels and detected identity. Xbox, PlayStation, and generic gamepads use normalized or per-device persistent axis/button mappings, inversion, deadzone, and response curves. All 16 robot-side CRSF channels, RF statistics, and failsafe evidence remain available in LIVE. | HID, gamepad-profile, controller-state, and endpoint tests. |
 | Simple and Expert modes | Presentation detail is independent of workspace; Expert exposes deeper diagnostics and manual body controls. | Application-state and view-state tests. |
 | Separate but compatible gait labs | Simulation experiments and LIVE drafts are separate while sharing versioned JSON profiles; robot apply is disarmed-only with two-slot NVS rollback. | Gait, companion, and SIL tests; both ESP32 builds. |
 | Guarded browser manual control | Maximum 30-second authority, constant-time token check, deadman, monotonic sequence, bounded axes, 250 ms neutral timeout, and CRSF-link prerequisite. | Manual-control browser tests, physical guard SIL tests, ESP32 build. |
 | Repository media and local run instructions | Source is locally runnable; README contains current screenshots and a 6.8-second workflow GIF. | Production Vite build and committed media. |
 | Public build documentation framework | Start-to-finish build/commissioning manual, evidence labels, functional BOM, wiring architecture, default channel map, layered gates, and a reusable as-built measurement record. | Cross-linked repository documentation and source-derived interface audit. |
 
-The complete standalone/state suite currently contains 132 passing tests. The
+The complete standalone/state suite currently contains 133 passing tests. The
 same C++ controller passes the native SIL scenario, and firmware 0.6.0 builds
 with both the default configuration and the optional power-monitor path.
 

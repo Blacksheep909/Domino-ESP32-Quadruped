@@ -127,6 +127,29 @@ export function updateCalibrationJoint(state, patch = {}) {
   return true;
 }
 
+export function restoreSelectedCalibrationJoint(state) {
+  const definition = LIVE_CALIBRATION_JOINTS.find((joint) => joint.channel === state?.selectedChannel);
+  const joint = state?.profile?.joints?.find((candidate) => candidate.logicalChannel === state.selectedChannel);
+  if (!definition || !joint) return false;
+  const physicalChannel = joint.channel;
+  Object.assign(joint, defaultJointCalibration(definition), { channel: physicalChannel });
+  state.jogOffsetDeg = 0;
+  state.dirty = true;
+  return true;
+}
+
+export function restoreCalibrationDefaults(state, restoreChannelMap = false) {
+  if (!state?.profile) return false;
+  const physicalChannels = calibrationChannelMap(state.profile);
+  state.profile = createLiveCalibrationProfile();
+  if (!restoreChannelMap) {
+    state.profile.joints.forEach((joint, index) => { joint.channel = physicalChannels[index]; });
+  }
+  state.jogOffsetDeg = 0;
+  state.dirty = true;
+  return true;
+}
+
 export function jogCalibrationJoint(state, incrementDeg) {
   if (!state) return false;
   const increment = finite(incrementDeg, 0);

@@ -183,6 +183,11 @@ wired joints, neutral offset and direction, conservative mechanical limits, and
 profile review. It provides a dedicated 3D neutral-pose preview, supports visual
 joint selection by double-clicking the model, bounds preview jogging to 10
 degrees, stores a browser copy, and imports/exports versioned JSON backups.
+The operator can restore the selected joint or all 12 joints to the compiled
+Domino calibration defaults through an acknowledged local-draft confirmation.
+Both actions preserve the physical PCA9685 channel map by default; resetting
+that wiring map is a separate, initially unchecked choice during a full restore.
+Restore never moves hardware or writes robot storage by itself.
 
 The calibration preview opens in a floating, floor-free presentation so joint
 motion is easier to inspect without implying that the model is carrying body

@@ -1051,6 +1051,7 @@ nav button.active {
 .gamepad-setup footer { align-items: center; border-top: 1px solid #d8dad4; padding-top: 14px; }
 .gamepad-setup footer button { min-height: 34px; padding: 0 14px; border: 1px solid #bfc2bb; border-radius: 3px; cursor: pointer; font: 750 8px/1 "Cascadia Mono", Consolas, monospace; }
 #gamepad-map-save { margin-left: auto; color: #174f30; border-color: #75ae88; background: #e6f4ea; }
+.gamepad-setup footer button:disabled { color: #73756f; background: #252527; border-color: #3b3b3e; cursor: default; opacity: .55; }
 
 :root[data-theme="dark"] .gamepad-setup form { color: #ededeb; background: #171718; border-color: #373739; }
 :root[data-theme="dark"] .gamepad-map-grid select { color: #ededeb; background: #222224; border-color: #3b3b3e; }

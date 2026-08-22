@@ -108,6 +108,10 @@ claiming a physical robot connection.
 | --- | --- |
 | ![Current robot pairing manager](docs/images/virtual-lab-live-pairing.png) | ![Current LIVE data workspace](docs/images/virtual-lab-live-data.png) |
 
+| Controller mapping | Saved-run optimization |
+| --- | --- |
+| ![Per-controller gamepad mapping](docs/images/virtual-lab-controller-mapping.png) | ![Durable session comparison workspace](docs/images/virtual-lab-session-comparison.png) |
+
 | Guided servo calibration | Gait profile transfer |
 | --- | --- |
 | ![Current servo calibration workflow](docs/images/virtual-lab-live-calibration.png) | ![Current gait profile workspace](docs/images/virtual-lab-live-gaits.png) |
@@ -116,7 +120,9 @@ claiming a physical robot connection.
 | --- | --- |
 | ![Current command-chain diagnostics](docs/images/virtual-lab-live-diagnostics.png) | ![Current recorded sessions workspace](docs/images/virtual-lab-live-sessions.png) |
 
-The gallery above shows the current local build in its honest offline state.
+The gallery above shows the current local build in its honest offline state;
+controls requiring a controller, physical robot, telemetry, or saved sessions
+remain visibly unavailable rather than being populated with invented data.
 The deeper [Virtual Lab guide](docs/virtual-lab.md) also contains clearly
 labelled synthetic-adapter captures that demonstrate armed-state, synchronized
 telemetry, and failure diagnostics without implying that a powered physical

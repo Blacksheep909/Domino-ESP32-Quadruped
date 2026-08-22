@@ -51,6 +51,20 @@ export function shapeGamepadAxis(value, mapping = DEFAULT_GAMEPAD_MAPPING) {
   return Math.sign(input) * normalized ** profile.responseCurve;
 }
 
+export function gamepadAxisDiagnostics(gamepad, customMapping = null) {
+  const mapping = sanitizeGamepadMapping(customMapping || DEFAULT_GAMEPAD_MAPPING);
+  const axes = Array.from(gamepad?.axes || []);
+  return [
+    { axis: "roll", command: "body roll", index: mapping.rollAxis, inverted: mapping.invertRoll },
+    { axis: "forward", command: "forward", index: mapping.forwardAxis, inverted: mapping.invertForward },
+    { axis: "turn", command: "yaw", index: mapping.turnAxis, inverted: mapping.invertTurn },
+  ].map((definition) => {
+    const raw = Math.min(1, Math.max(-1, Number(axes[definition.index]) || 0));
+    const mapped = raw * (definition.inverted ? -1 : 1);
+    return { ...definition, raw, processed: shapeGamepadAxis(mapped, mapping) };
+  });
+}
+
 export function readGamepadMappings(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return Object.fromEntries(Object.entries(value).slice(0, 32).map(([id, mapping]) => [String(id).slice(0, 160), sanitizeGamepadMapping(mapping)]));

@@ -20,6 +20,7 @@ compiling firmware is not presented as proof that a real robot was connected.
 | Separate but compatible gait labs | Simulation experiments and LIVE drafts are separate while sharing versioned JSON profiles; robot apply is disarmed-only with two-slot NVS rollback. | Gait, companion, and SIL tests; both ESP32 builds. |
 | Guarded browser manual control | Maximum 30-second authority, constant-time token check, deadman, monotonic sequence, bounded axes, 250 ms neutral timeout, and CRSF-link prerequisite. | Manual-control browser tests, physical guard SIL tests, ESP32 build. |
 | Repository media and local run instructions | Source is locally runnable; README contains current screenshots and a 6.8-second workflow GIF. | Production Vite build and committed media. |
+| Public build documentation framework | Start-to-finish build/commissioning manual, evidence labels, functional BOM, wiring architecture, default channel map, layered gates, and a reusable as-built measurement record. | Cross-linked repository documentation and source-derived interface audit. |
 
 The complete standalone/state suite currently contains 132 passing tests. The
 same C++ controller passes the native SIL scenario, and firmware 0.6.0 builds
@@ -50,7 +51,10 @@ with both the default configuration and the optional power-monitor path.
   voltage/current instruments.
 - Joint encoders or another feedback source if per-joint physical pose comparison
   is required rather than expected servo output plus measured IMU attitude.
-- A validated start-to-finish public build manual and measured BOM.
+- A completed and physically validated as-built record containing the measured
+  BOM, print settings, wiring diagram, power results, calibration, gate evidence,
+  and final media. The repository now supplies the manual and record template,
+  but a template is not physical validation.
 
 The remaining robot-side gates are sequenced in the
 [LIVE hardware bring-up procedure](live-hardware-bring-up.md).

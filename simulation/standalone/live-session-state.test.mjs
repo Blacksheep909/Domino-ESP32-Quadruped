@@ -13,6 +13,7 @@ import {
   recordLiveComparisonSample,
   removeArchivedLiveSession,
   sanitizeArchivedLiveSession,
+  selectLiveSessionPlotSamples,
   startLiveSession,
   stopLiveSession,
 } from "./web/src/live-session-state.js";
@@ -122,6 +123,18 @@ test("reports duration and sample count for recording and stopped sessions", () 
   });
   stopLiveSession(session, 10_700);
   assert.equal(liveSessionSummary(session, 20_000).durationMs, 700);
+});
+
+test("selects true time-based scope windows and downsamples without losing endpoints", () => {
+  const samples = Array.from({ length: 121 }, (_, index) => ({ elapsedMs: index * 1_000 }));
+  const thirtySeconds = selectLiveSessionPlotSamples(samples, 30);
+  assert.equal(thirtySeconds.length, 31);
+  assert.equal(thirtySeconds[0].elapsedMs, 90_000);
+  assert.equal(thirtySeconds.at(-1).elapsedMs, 120_000);
+  const fullDownsampled = selectLiveSessionPlotSamples(samples, "all", 10);
+  assert.equal(fullDownsampled.length, 10);
+  assert.equal(fullDownsampled[0].elapsedMs, 0);
+  assert.equal(fullDownsampled.at(-1).elapsedMs, 120_000);
 });
 
 test("exports analysis-ready CSV with power, pose, timing and joint error", () => {

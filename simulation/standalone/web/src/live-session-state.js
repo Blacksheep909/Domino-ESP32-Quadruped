@@ -75,6 +75,23 @@ export function liveSessionSummary(state, now = Date.now()) {
   };
 }
 
+export function selectLiveSessionPlotSamples(samples, windowSeconds = 30, maximumPoints = 1_200) {
+  if (!Array.isArray(samples) || samples.length === 0) return [];
+  const seconds = Number(windowSeconds);
+  const latestElapsedMs = Number(samples.at(-1)?.elapsedMs);
+  const windowed = Number.isFinite(seconds) && seconds > 0 && Number.isFinite(latestElapsedMs)
+    ? samples.filter((sample) => Number(sample?.elapsedMs) >= latestElapsedMs - seconds * 1_000)
+    : samples.slice();
+  const limit = Math.max(2, Math.floor(Number(maximumPoints) || 1_200));
+  if (windowed.length <= limit) return windowed;
+  const selected = [];
+  const lastIndex = windowed.length - 1;
+  for (let index = 0; index < limit; index += 1) {
+    selected.push(windowed[Math.round((index * lastIndex) / (limit - 1))]);
+  }
+  return selected;
+}
+
 export function archiveLiveSession(archive, state, identifier = `session-${Date.now()}`, maximumEntries = 20) {
   if (!Array.isArray(archive) || !state || state.status === "recording" || state.samples.length === 0) {
     return null;

@@ -3288,8 +3288,8 @@ body[data-workspace="real-robot"] #telemetry-panel:has(#joint-legend:not([hidden
   font-size: 9px;
 }
 
-.live-data-summary { grid-column: span 7; }
-.live-data-controls { grid-column: span 5; }
+.live-data-summary { grid-column: span 6; }
+.live-data-controls { grid-column: span 6; }
 .live-data-chart-card { grid-column: 1 / -1; }
 .live-data-table-card { grid-column: 1 / -1; }
 
@@ -3315,7 +3315,7 @@ body[data-workspace="real-robot"] #telemetry-panel:has(#joint-legend:not([hidden
 .live-data-controls > div {
   padding-top: 14px;
   display: grid;
-  grid-template-columns: minmax(120px, 1fr) repeat(3, auto);
+  grid-template-columns: minmax(120px, 1fr) minmax(76px, .55fr) repeat(3, auto);
   align-items: end;
   gap: 9px;
 }

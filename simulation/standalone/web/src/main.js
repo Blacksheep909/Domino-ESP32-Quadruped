@@ -149,6 +149,7 @@ import {
   mergeArchivedLiveSessions,
   recordLiveComparisonSample,
   removeArchivedLiveSession,
+  selectLiveSessionPlotSamples,
   startLiveSession,
   stopLiveSession,
 } from "./live-session-state.js";
@@ -2783,8 +2784,10 @@ function setLiveStreamState(selector, connected) {
 
 const liveChartCanvas = document.querySelector("#live-comparison-chart");
 const liveChartSignal = document.querySelector("#live-chart-signal");
+const liveChartWindow = document.querySelector("#live-chart-window");
 const liveDataChartCanvas = document.querySelector("#live-data-chart");
 const liveDataChartSignal = document.querySelector("#live-data-chart-signal");
+const liveDataChartWindow = document.querySelector("#live-data-chart-window");
 const bodyChartDefinition = (title, field) => ({
   title,
   expected: (sample) => sample.expectedBody?.[field],
@@ -2849,7 +2852,7 @@ function drawLiveSeries(context, points, color, width, height, xAt, yAt) {
   context.stroke();
 }
 
-function renderLiveChart(canvas, signal, emptySelector) {
+function renderLiveChart(canvas, signal, windowSelector, emptySelector) {
   if (applicationState.workspace !== WORKSPACE_REAL_ROBOT) return;
   const bounds = canvas.getBoundingClientRect();
   if (bounds.width < 10 || bounds.height < 10) return;
@@ -2866,7 +2869,7 @@ function renderLiveChart(canvas, signal, emptySelector) {
   context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
   context.clearRect(0, 0, width, height);
 
-  const samples = liveSessionState.samples.slice(-300);
+  const samples = selectLiveSessionPlotSamples(liveSessionState.samples, windowSelector.value);
   const emptyState = document.querySelector(emptySelector);
   emptyState.hidden = samples.length > 1;
   if (samples.length < 2) return;
@@ -2917,8 +2920,8 @@ function renderLiveChart(canvas, signal, emptySelector) {
 }
 
 function renderLiveComparisonChart() {
-  renderLiveChart(liveChartCanvas, liveChartSignal, "#live-chart-empty");
-  renderLiveChart(liveDataChartCanvas, liveDataChartSignal, "#live-data-chart-empty");
+  renderLiveChart(liveChartCanvas, liveChartSignal, liveChartWindow, "#live-chart-empty");
+  renderLiveChart(liveDataChartCanvas, liveDataChartSignal, liveDataChartWindow, "#live-data-chart-empty");
 }
 
 function downloadLiveSessionCsv(session, name = "domino-live-session") {
@@ -4137,12 +4140,14 @@ liveChartSignal.addEventListener("change", () => {
   document.querySelector("#live-chart-title").textContent = definition.title;
   renderLiveComparisonChart();
 });
+liveChartWindow.addEventListener("change", renderLiveComparisonChart);
 
 liveDataChartSignal.addEventListener("change", () => {
   const definition = liveChartDefinitions[liveDataChartSignal.value] || liveChartDefinitions.pitchDeg;
   document.querySelector("#live-data-chart-title").textContent = definition.title;
   renderLiveComparisonChart();
 });
+liveDataChartWindow.addEventListener("change", renderLiveComparisonChart);
 
 document.querySelector("#live-export-csv").addEventListener("click", () => {
   downloadLiveSessionCsv(liveSessionState);

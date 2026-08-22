@@ -117,7 +117,10 @@ Z targets, or any of the 12 driven-joint angles. Expected, measured, and error
 series appear only when the corresponding source exists, so encoderless joints
 remain honestly command-only rather than displaying fabricated feedback. A telemetry
 interruption creates a visible gap without ending the session or reusing stale
-values. Stopped sessions export analysis-ready CSV containing timestamps, time
+values. Both Compare and Data provide true 10, 30, or 60 second rolling windows
+plus a full-session view. Long windows are evenly downsampled for drawing while
+preserving their first and last samples; the recorder and exports retain every
+bounded raw sample. Stopped sessions export analysis-ready CSV containing timestamps, time
 alignment, body pose, power, commanded foot Z, commanded joint angles, and all
 12 driven-joint errors. The screenshot
 above uses local relay verification data, not a connected physical robot.

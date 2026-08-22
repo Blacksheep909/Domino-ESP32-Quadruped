@@ -25,7 +25,9 @@
         <span id="real-drive-status" class="real-robot-only" data-state="offline">DRIVE LINK</span>
         <span id="real-engineering-status" class="real-robot-only pc-link-status" data-state="offline" title="PC-to-robot telemetry and configuration link">PC LINK</span>
         <button id="live-connection-open" class="live-connection-open real-robot-only" type="button" aria-haspopup="dialog" title="Find and pair this PC with Domino">PAIR ROBOT</button>
+        <span id="real-battery-status" class="real-robot-only live-header-battery" data-state="unavailable" title="Measured robot battery voltage">BAT --.- V</span>
         <span id="real-safety-status" class="real-robot-only" data-state="safe">DISARMED</span>
+        <button id="live-global-estop" class="real-robot-only live-global-estop" type="button" title="Latch the robot emergency stop" disabled>E-STOP</button>
         <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false" title="Switch to dark theme">
           <span id="theme-icon" aria-hidden="true">&#9788;</span>
           <span id="theme-label" class="sr-only">Light theme</span>

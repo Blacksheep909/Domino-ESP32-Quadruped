@@ -52,6 +52,10 @@ profile; CRSF transmitters continue to use direct channel routing.
 
 The Live real-robot workspace is deliberately separate from Simulation. It opens
 disarmed and cannot own simulation controls, firmware state, or physics state.
+Its top bar keeps the measured battery voltage, robot arm state, PC/drive links,
+and an acknowledged E-stop visible while moving between every LIVE tool. Battery
+telemetry remains unavailable when no physical power sample exists and changes
+to a warning state below 14.0 V; it never borrows a simulated value.
 It keeps the same CAD viewport as a digital-twin surface: commanded geometry
 will be shown as the expected pose, physical joint/IMU telemetry as the measured
 pose, and the difference as joint, body-pose, timing, and graph errors. Until a

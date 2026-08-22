@@ -110,9 +110,14 @@ bool validateGaitProfiles() {
   candidate.settings.cadenceHz = 1.25f;
   candidate.settings.strideMm = 72.0f;
   candidate.settings.stanceWidthMm = 44.0f;
+  candidate.settings.touchdownXMm = -24.0f;
+  candidate.settings.maxForwardScale = 0.6f;
+  candidate.settings.maxTurnScale = 0.4f;
   const bool accepted = validateGaitProfile(candidate) && setGaitProfile(candidate) &&
       fabsf(gaitProfile().settings.cadenceHz - 1.25f) < 0.001f &&
-      fabsf(gaitProfile().settings.stanceWidthMm - 44.0f) < 0.001f;
+      fabsf(gaitProfile().settings.stanceWidthMm - 44.0f) < 0.001f &&
+      fabsf(gaitProfile().settings.touchdownXMm + 24.0f) < 0.001f &&
+      fabsf(gaitProfile().settings.maxForwardScale - 0.6f) < 0.001f;
   candidate.settings.strideMm = 121.0f;
   const bool outOfBoundsRejected = !validateGaitProfile(candidate) && !setGaitProfile(candidate);
   candidate = defaultGaitProfile();

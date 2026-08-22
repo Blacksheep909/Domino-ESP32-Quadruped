@@ -9,11 +9,12 @@ const gaitBounds = Object.freeze({
   dutyFactor: [0.5, 0.82], bodyHeightMm: [220, 280], stanceWidthMm: [34, 70],
   turnGain: [0, 1.5], responseMs: [60, 700], swingShape: [0.8, 3],
   diagonalPhase: [0.4, 0.6],
+  touchdownXMm: [-35, 10], maxForwardScale: [0.2, 1], maxTurnScale: [0.2, 1],
 });
 
 export function validLiveGaitProfile(profile) {
   if (
-    profile?.schemaVersion !== 1 || profile?.robot !== "domino-esp32-quadruped" ||
+    profile?.schemaVersion !== 2 || profile?.robot !== "domino-esp32-quadruped" ||
     typeof profile.name !== "string" || !profile.name.trim() || profile.name.length > 32 ||
     typeof profile.settings?.enabled !== "boolean" ||
     typeof profile.settings?.preset !== "string" || !profile.settings.preset ||

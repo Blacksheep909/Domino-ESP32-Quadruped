@@ -2,7 +2,7 @@
 
 #include <stdint.h>
 
-constexpr uint16_t DOMINO_GAIT_SCHEMA_VERSION = 1;
+constexpr uint16_t DOMINO_GAIT_SCHEMA_VERSION = 2;
 
 struct GaitProfileSettings {
   bool enabled;
@@ -17,6 +17,9 @@ struct GaitProfileSettings {
   float responseMs;
   float swingShape;
   float diagonalPhase;
+  float touchdownXMm;
+  float maxForwardScale;
+  float maxTurnScale;
 };
 
 struct GaitProfile {

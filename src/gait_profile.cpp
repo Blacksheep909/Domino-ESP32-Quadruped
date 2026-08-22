@@ -31,6 +31,9 @@ GaitProfile defaultGaitProfile() {
   profile.settings.responseMs = 650.0f;
   profile.settings.swingShape = 2.0f;
   profile.settings.diagonalPhase = 0.50f;
+  profile.settings.touchdownXMm = -15.75f;
+  profile.settings.maxForwardScale = 0.55f;
+  profile.settings.maxTurnScale = 0.45f;
   return profile;
 }
 
@@ -48,7 +51,10 @@ bool validateGaitProfile(const GaitProfile &profile) {
       bounded(settings.turnGain, 0.0f, 1.50f) &&
       bounded(settings.responseMs, 60.0f, 700.0f) &&
       bounded(settings.swingShape, 0.80f, 3.0f) &&
-      bounded(settings.diagonalPhase, 0.40f, 0.60f);
+      bounded(settings.diagonalPhase, 0.40f, 0.60f) &&
+      bounded(settings.touchdownXMm, -35.0f, 10.0f) &&
+      bounded(settings.maxForwardScale, 0.20f, 1.0f) &&
+      bounded(settings.maxTurnScale, 0.20f, 1.0f);
 }
 
 const GaitProfile &gaitProfile() { return activeProfile; }

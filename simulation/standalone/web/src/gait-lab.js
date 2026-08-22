@@ -25,6 +25,9 @@ export const gaitLabPresets = Object.freeze({
     responseMs: 360,
     swingShape: 2.0,
     diagonalPhase: 0.5,
+    touchdownXMm: -15.75,
+    maxForwardScale: 0.55,
+    maxTurnScale: 0.45,
   },
   balanced: {
     cadenceHz: 1.25,
@@ -37,6 +40,9 @@ export const gaitLabPresets = Object.freeze({
     responseMs: 220,
     swingShape: 1.7,
     diagonalPhase: 0.5,
+    touchdownXMm: -15.75,
+    maxForwardScale: 0.8,
+    maxTurnScale: 0.7,
   },
   fast: {
     cadenceHz: 1.85,
@@ -49,6 +55,9 @@ export const gaitLabPresets = Object.freeze({
     responseMs: 130,
     swingShape: 1.45,
     diagonalPhase: 0.5,
+    touchdownXMm: -15.75,
+    maxForwardScale: 1,
+    maxTurnScale: 0.9,
   },
 });
 
@@ -98,6 +107,18 @@ export const gaitLabControls = Object.freeze([
   {
     key: "diagonalPhase", label: "Diagonal phase", min: 0.4, max: 0.6, step: 0.01, unit: "%", scale: 100, decimals: 0,
     description: "Timing offset between the two diagonal leg pairs in trot. Fifty percent gives even alternation; offsets bias the contact timing.",
+  },
+  {
+    key: "touchdownXMm", label: "Foot X neutral", min: -35, max: 10, step: 1, unit: "mm", decimals: 0, expert: true,
+    description: "Nominal fore-aft foot position below each hip. Negative values place the feet behind the hip; preview IK must remain valid before apply.",
+  },
+  {
+    key: "maxForwardScale", label: "Forward limit", min: 0.2, max: 1, step: 0.05, unit: "%", scale: 100, decimals: 0, expert: true,
+    description: "Maximum fraction of forward/reverse stick accepted by this profile. Use a reduced limit for first physical tests.",
+  },
+  {
+    key: "maxTurnScale", label: "Turn limit", min: 0.2, max: 1, step: 0.05, unit: "%", scale: 100, decimals: 0, expert: true,
+    description: "Maximum fraction of yaw stick accepted by this profile. This bounds turning before turn gain and stride are applied.",
   },
 ]);
 
@@ -271,7 +292,10 @@ function sampleCareful(cycle, halfStride, lift, dutyFactor, swingShape) {
 }
 
 export function sanitizeGaitLabSettings(candidate = {}) {
-  const settings = { ...defaultGaitLabSettings, ...candidate };
+  const presetDefaults = Object.hasOwn(gaitLabPresets, candidate.preset)
+    ? gaitLabPresets[candidate.preset]
+    : defaultGaitLabSettings;
+  const settings = { ...defaultGaitLabSettings, ...presetDefaults, ...candidate };
   gaitLabControls.forEach(({ key, min, max }) => {
     const numericValue = Number(settings[key]);
     settings[key] = clamp(
@@ -367,8 +391,8 @@ export function createGaitLab(initialSettings = {}) {
       motionSettings[key] = approach(motionSettings[key], settings[key], settingsBlend);
     });
     const blend = 1 - Math.exp(-delta / responseSeconds);
-    filteredForward = approach(filteredForward, clamp(Number(input.forward) || 0, -1, 1), blend);
-    filteredTurn = approach(filteredTurn, clamp(Number(input.turn) || 0, -1, 1), blend);
+    filteredForward = approach(filteredForward, clamp(Number(input.forward) || 0, -1, 1) * motionSettings.maxForwardScale, blend);
+    filteredTurn = approach(filteredTurn, clamp(Number(input.turn) || 0, -1, 1) * motionSettings.maxTurnScale, blend);
     const activity = clamp(Math.hypot(filteredForward, filteredTurn), 0, 1);
     if (activity > 0.02) {
       phase = wrap01(
@@ -421,7 +445,7 @@ export function createGaitLab(initialSettings = {}) {
       }
       if (foot.stance) stanceCount += 1;
       const command = [
-        COMMAND_X_MM + foot.x,
+        motionSettings.touchdownXMm + foot.x,
         side * motionSettings.stanceWidthMm,
         motionSettings.bodyHeightMm + foot.z,
       ];

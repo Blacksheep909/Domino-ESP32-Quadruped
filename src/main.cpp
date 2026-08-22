@@ -797,9 +797,9 @@ void applySinusoidalGait(Adafruit_PWMServoDriver &driver, float baseZ) {
       gaitBodyTargetZ,
       bodySlewMmPerSec * kControlStepSeconds);
   const float targetForward = profile.enabled
-      ? applyGaitDeadband(readMotionChannelNormalized(PITCH_CH_INDEX)) : 0.0f;
+      ? applyGaitDeadband(readMotionChannelNormalized(PITCH_CH_INDEX)) * profile.maxForwardScale : 0.0f;
   const float targetTurn = profile.enabled
-      ? applyGaitDeadband(readMotionChannelNormalized(YAW_CH_INDEX)) : 0.0f;
+      ? applyGaitDeadband(readMotionChannelNormalized(YAW_CH_INDEX)) * profile.maxTurnScale : 0.0f;
   const float maximumCommandStep = commandSlewPerSec * kControlStepSeconds;
   gaitForwardCommand = approachGaitCommand(gaitForwardCommand, targetForward, maximumCommandStep);
   gaitTurnCommand = approachGaitCommand(gaitTurnCommand, targetTurn, maximumCommandStep);
@@ -844,7 +844,7 @@ void applySinusoidalGait(Adafruit_PWMServoDriver &driver, float baseZ) {
                        profile.swingShape,
                        &xOffsetMm,
                        &zOffsetMm);
-    const float x = FOOT_BACK_OFFSET_X + xOffsetMm;
+    const float x = profile.touchdownXMm + xOffsetMm;
     const float y = sideSign * profile.stanceWidthMm;
     const float z = gaitBodyZ + zOffsetMm + manualRollFootZOffset(y);
     commandLeg(driver, i, x, y, z);
@@ -860,9 +860,9 @@ void applyCarefulWalk(Adafruit_PWMServoDriver &driver, float baseZ) {
   gaitBodyZ = approachGaitCommand(
       gaitBodyZ, gaitBodyTargetZ, (60.0f / responseSeconds) * kControlStepSeconds);
   const float targetForward = profile.enabled
-      ? applyGaitDeadband(readMotionChannelNormalized(PITCH_CH_INDEX)) : 0.0f;
+      ? applyGaitDeadband(readMotionChannelNormalized(PITCH_CH_INDEX)) * profile.maxForwardScale : 0.0f;
   const float targetTurn = profile.enabled
-      ? applyGaitDeadband(readMotionChannelNormalized(YAW_CH_INDEX)) : 0.0f;
+      ? applyGaitDeadband(readMotionChannelNormalized(YAW_CH_INDEX)) * profile.maxTurnScale : 0.0f;
   const float maximumCommandStep = commandSlewPerSec * kControlStepSeconds;
   gaitForwardCommand = approachGaitCommand(gaitForwardCommand, targetForward, maximumCommandStep);
   gaitTurnCommand = approachGaitCommand(gaitTurnCommand, targetTurn, maximumCommandStep);
@@ -910,7 +910,7 @@ void applyCarefulWalk(Adafruit_PWMServoDriver &driver, float baseZ) {
     }
     commandLeg(driver,
                leg,
-               FOOT_BACK_OFFSET_X + xOffsetMm,
+               profile.touchdownXMm + xOffsetMm,
                sideSign * profile.stanceWidthMm,
                gaitBodyZ + zOffsetMm +
                    manualRollFootZOffset(sideSign * profile.stanceWidthMm));

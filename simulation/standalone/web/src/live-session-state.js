@@ -1,6 +1,7 @@
 import { LIVE_SERVO_CHANNELS } from "./live-telemetry-state.js";
 
 export const LIVE_SESSION_MAX_SAMPLES = 18_000;
+export const LIVE_SESSION_MAX_ARCHIVE_ENTRIES = 20;
 
 export function createLiveSessionState(maxSamples = LIVE_SESSION_MAX_SAMPLES) {
   return {
@@ -85,6 +86,45 @@ export function archiveLiveSession(archive, state, identifier = `session-${Date.
   archive.unshift(entry);
   archive.splice(Math.max(1, Math.floor(maximumEntries)));
   return entry;
+}
+
+const finiteBody = (body) => body && ["rollDeg", "pitchDeg", "yawDeg", "heightMm"].every((key) => Number.isFinite(body[key]));
+
+export function sanitizeArchivedLiveSession(candidate) {
+  if (!candidate || typeof candidate !== "object" || !String(candidate.id || "").trim()) return null;
+  if (!Number.isFinite(candidate.startedAt) || !Number.isFinite(candidate.stoppedAt) || candidate.stoppedAt < candidate.startedAt) return null;
+  if (!Array.isArray(candidate.samples) || candidate.samples.length === 0 || candidate.samples.length > LIVE_SESSION_MAX_SAMPLES) return null;
+  const samples = [];
+  for (const sample of candidate.samples) {
+    if (!sample || !Number.isFinite(sample.capturedAt) || !Number.isFinite(sample.elapsedMs) ||
+      !finiteBody(sample.expectedBody) || !finiteBody(sample.measuredBody) || !finiteBody(sample.bodyError) ||
+      !Array.isArray(sample.jointErrorsDeg) || sample.jointErrorsDeg.length !== LIVE_SERVO_CHANNELS.length) return null;
+    samples.push({
+      ...sample,
+      expectedBody: { ...sample.expectedBody },
+      measuredBody: { ...sample.measuredBody },
+      bodyError: { ...sample.bodyError },
+      jointErrorsDeg: sample.jointErrorsDeg.map((value) => Number.isFinite(value) ? value : null),
+      power: sample.power && typeof sample.power === "object" ? { ...sample.power } : null,
+    });
+  }
+  return { id: String(candidate.id).slice(0, 120), startedAt: candidate.startedAt, stoppedAt: candidate.stoppedAt, samples };
+}
+
+export function mergeArchivedLiveSessions(archive, candidates, maximumEntries = LIVE_SESSION_MAX_ARCHIVE_ENTRIES) {
+  if (!Array.isArray(archive) || !Array.isArray(candidates)) return 0;
+  const byId = new Map(archive.map((entry) => [entry.id, entry]));
+  let accepted = 0;
+  for (const candidate of candidates) {
+    const session = sanitizeArchivedLiveSession(candidate);
+    if (!session) continue;
+    byId.set(session.id, session);
+    accepted += 1;
+  }
+  archive.splice(0, archive.length, ...[...byId.values()]
+    .sort((left, right) => right.stoppedAt - left.stoppedAt)
+    .slice(0, Math.max(1, Math.floor(maximumEntries))));
+  return accepted;
 }
 
 export function removeArchivedLiveSession(archive, identifier) {

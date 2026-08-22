@@ -94,6 +94,7 @@ constexpr CadGeometry kLeftCad{
 float gCadUpperSeedDeg[kLegCount] = {};
 float gCadLowerSeedDeg[kLegCount] = {};
 float gCommandedServoAnglesDeg[kPcaChannelCount] = {};
+uint16_t gCommandedServoPulseUs[kPcaChannelCount] = {};
 bool gServoOutputsEnabled = false;
 uint32_t gServoSafetyClipCount = 0;
 ServoCalibrationProfile gServoCalibration = defaultServoCalibrationProfile();
@@ -419,11 +420,15 @@ void write270(Adafruit_PWMServoDriver &driver, uint8_t logicalChannel, float ang
   const float calibratedAngle = applyServoCalibration(gServoCalibration, logicalChannel, angleDegrees);
   const float safeAngle = applyServoSafetyLimit(logicalChannel, calibratedAngle);
   const uint8_t physicalChannel = servoCalibrationPhysicalChannel(gServoCalibration, logicalChannel);
-  if (logicalChannel < kPcaChannelCount) gCommandedServoAnglesDeg[logicalChannel] = safeAngle;
+  const uint16_t pulseUs = angleToPulse(safeAngle);
+  if (logicalChannel < kPcaChannelCount) {
+    gCommandedServoAnglesDeg[logicalChannel] = safeAngle;
+    gCommandedServoPulseUs[logicalChannel] = pulseUs;
+  }
 #ifdef DOMINO_SIL
-  driver.writeMicroseconds(physicalChannel, angleToPulse(safeAngle));
+  driver.writeMicroseconds(physicalChannel, pulseUs);
 #else
-  if (gServoOutputsEnabled) driver.writeMicroseconds(physicalChannel, angleToPulse(safeAngle));
+  if (gServoOutputsEnabled) driver.writeMicroseconds(physicalChannel, pulseUs);
 #endif
 }
 
@@ -567,6 +572,7 @@ void setServoOutputsEnabled(Adafruit_PWMServoDriver &driver, bool enabled) {
 
 bool servoOutputsEnabled() { return gServoOutputsEnabled; }
 const float* commandedServoAnglesDeg() { return gCommandedServoAnglesDeg; }
+const uint16_t* commandedServoPulseUs() { return gCommandedServoPulseUs; }
 uint32_t servoSafetyClipCount() { return gServoSafetyClipCount; }
 
 bool commandCalibrationServoAngle(Adafruit_PWMServoDriver &driver,
@@ -578,8 +584,10 @@ bool commandCalibrationServoAngle(Adafruit_PWMServoDriver &driver,
       !findServoCalibrationJoint(gServoCalibration, logicalChannel)) return false;
   // Bench targets are already absolute calibrated servo angles from the wizard.
   const float safeAngle = applyServoSafetyLimit(logicalChannel, angleDeg);
+  const uint16_t pulseUs = angleToPulse(safeAngle);
   gCommandedServoAnglesDeg[logicalChannel] = safeAngle;
-  driver.writeMicroseconds(physicalChannel, angleToPulse(safeAngle));
+  gCommandedServoPulseUs[logicalChannel] = pulseUs;
+  driver.writeMicroseconds(physicalChannel, pulseUs);
   return true;
 }
 

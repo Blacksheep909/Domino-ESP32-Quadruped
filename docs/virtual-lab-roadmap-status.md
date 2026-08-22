@@ -10,7 +10,7 @@ compiling firmware is not presented as proof that a real robot was connected.
 | --- | --- | --- |
 | Separate Simulation and LIVE workspaces | Independent top-level tabs and state ownership; hidden Simulation controls cannot own inputs while LIVE is active. | Application-state tests and current usage tour. |
 | Simulation heartbeat | Browser, relay, and firmware-in-the-loop acknowledgement age/RTT are tracked independently. | Heartbeat-state tests. |
-| Physical connection and safety | Read-only discovery plus USB, Wi-Fi TCP, and Bluetooth SPP companion transports; paired-adapter automatic reconnect with visible bounded backoff; robot-reported state, measured CRSF command age, ESP32 loop rate and uptime; hold-to-arm, latched E-stop, and 400 ms armed watchdog. LIVE keeps measured battery state, arm state, both links, and the acknowledged E-stop visible in the global header across every tool. | Companion, connection, diagnostics, view, and safety tests; ESP32 build. |
+| Physical connection and safety | Read-only discovery plus USB, Wi-Fi TCP, and Bluetooth SPP companion transports; paired-adapter automatic reconnect with visible bounded backoff; robot-reported state, measured CRSF command age, ESP32 loop rate and uptime; hold-to-arm, latched E-stop, and 400 ms armed watchdog. LIVE keeps measured battery state, arm state, both links, and the acknowledged E-stop visible in the global header across every tool. With the optional calibrated monitor enabled, a sustained robot-side critical-voltage condition latches a reasoned fault, disables outputs, blocks re-arm, and requires fresh recovery-voltage evidence plus acknowledged clearing. | Companion, connection, diagnostics, view, safety, and power-fault SIL tests; ESP32 build. |
 | Expected versus measured digital twin | Commanded joint/body state and independently timestamped physical feedback are aligned; the joint inspector shows the final calibrated pulse and mapped PCA9685 output without presenting either as measured feedback; stale or malformed streams disappear. | LIVE telemetry tests and ESP32 build. |
 | Data, graphs, logging, and export | Synchronized recording; selectable body, voltage, current, power, command-alignment, four foot-Z, all 12 joint-angle, and all 12 calibrated-PWM graphs; true 10/30/60-second and full-session scope windows with bounded display downsampling; every sample retains the logical joint-to-PCA output map; IndexedDB-backed session archive restored across reloads; bounded retention; baseline/candidate optimization comparison; expanded CSV plus versioned raw-sample/analysis JSON session exports; and diagnostic JSON bundle. | Session analysis/persistence, telemetry, and diagnostics tests. |
 | Guided calibration | Five steps, floating/floor preview, safe bench acknowledgement, one-servo limited jog, offsets, directions, limits, JSON backup, and persistent ESP32 profile. | Calibration tests, SIL routing check, ESP32 build. |
@@ -22,8 +22,8 @@ compiling firmware is not presented as proof that a real robot was connected.
 | Repository media and local run instructions | Source is locally runnable; README contains current screenshots and a 6.8-second workflow GIF. | Production Vite build and committed media. |
 | Public build documentation framework | Start-to-finish build/commissioning manual, evidence labels, functional BOM, wiring architecture, default channel map, layered gates, and a reusable as-built measurement record. | Cross-linked repository documentation and source-derived interface audit. |
 
-The complete standalone/state suite currently contains 143 passing tests. The
-same C++ controller passes the native SIL scenario, and firmware 0.7.0 builds
+The complete standalone/state suite currently contains 145 passing tests. The
+same C++ controller passes the native SIL scenario, and firmware 0.8.0 builds
 with both the default configuration and the optional power-monitor path.
 
 ## Implemented but awaiting physical validation

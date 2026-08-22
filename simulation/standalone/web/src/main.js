@@ -437,6 +437,7 @@ document.querySelector("#live-safety-disarm").addEventListener("click", () => se
 document.querySelector("#live-safety-estop").addEventListener("click", () => sendLiveSafetyCommand("estop"));
 document.querySelector("#live-global-estop").addEventListener("click", () => sendLiveSafetyCommand("estop"));
 document.querySelector("#live-safety-reset-estop").addEventListener("click", () => sendLiveSafetyCommand("reset-estop"));
+document.querySelector("#live-safety-ack-fault").addEventListener("click", () => sendLiveSafetyCommand("acknowledge-fault"));
 
 const liveManualDialog = document.querySelector("#live-manual-dialog");
 document.querySelector("#live-manual-open").addEventListener("click", () => {
@@ -2287,7 +2288,7 @@ function ingestLiveTelemetry(packet, receivedAt = Date.now()) {
       gaitStateChanged ||= robotState !== liveGaitState.robotState;
       liveGaitState.robotState = robotState;
       liveConnectionState.robotState = robotState;
-      setLiveSafetyRobotState(liveSafetyState, robotState);
+      setLiveSafetyRobotState(liveSafetyState, robotState, "telemetry", packet.diagnostics?.faultReason);
     }
     if (typeof packet.capabilities?.persistentGaitProfiles === "boolean") {
       gaitStateChanged ||= packet.capabilities.persistentGaitProfiles !== liveGaitState.persistentApplySupported;
@@ -2544,6 +2545,8 @@ function renderLiveSafetyUi() {
     !connected || Boolean(liveSafetyState.pendingRequestId) || ["estopped", "watchdog"].includes(liveSafetyState.robotState);
   document.querySelector("#live-safety-reset-estop").disabled =
     liveSafetyState.robotState !== "estopped" || Boolean(liveSafetyState.pendingRequestId);
+  document.querySelector("#live-safety-ack-fault").disabled =
+    liveSafetyState.robotState !== "fault" || Boolean(liveSafetyState.pendingRequestId);
   document.querySelector("#live-safety-status").textContent = liveSafetyState.status;
   const watchdog = document.querySelector("#live-safety-watchdog");
   watchdog.textContent = liveSafetyState.robotState === "armed"
@@ -4035,7 +4038,9 @@ function updateLiveComparisonUi() {
         ? liveManualState.authorityToken
           ? "The robot reports armed. Guarded browser authority is active; motion streams only while its deadman is held."
           : "The robot reports armed. Guarded browser control still requires an explicit, time-limited authority lease."
-        : `The robot reports ${robotState}. Physical commands remain blocked.`;
+        : robotState === "fault"
+          ? `FAULT: ${liveSafetyState.faultReason || "The robot did not provide a reason."} Acknowledge only after correcting the physical cause.`
+          : `The robot reports ${robotState}. Physical commands remain blocked.`;
   const safetyBadge = document.querySelector("#real-safety-status");
   safetyBadge.textContent = robotState.toUpperCase();
   safetyBadge.dataset.state = robotState === "disarmed" || robotState === "disconnected" ? "safe" : "offline";

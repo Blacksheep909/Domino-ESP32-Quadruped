@@ -104,6 +104,15 @@ CRSF/ELRS drive link all remain fresh. Arm, disarm, E-stop, and E-stop reset do
 not update optimistically: the UI waits for a session-bound robot
 acknowledgement and preserves the reported state on rejection or timeout.
 
+Firmware 0.8.0 also has a latched low-voltage fault path when the optional,
+physically calibrated INA226 monitor is enabled. While armed, voltage at or
+below the configured 12.8 V critical threshold for 750 ms disables every servo
+output and reports the measured cause. Re-arming remains blocked. The operator
+can acknowledge the fault only after fresh robot-side power telemetry reaches
+the separate 13.6 V recovery threshold; the acknowledgement is rejected if the
+sample is missing or the cause remains present. These thresholds are build-time
+settings that must be replaced with validated pack limits during bring-up.
+
 ![LIVE latched E-stop using a synthetic local adapter](images/virtual-lab-live-safety.png)
 
 While armed, the browser sends a 10 Hz safety heartbeat and requires robot
@@ -195,7 +204,7 @@ during bench jog, and turns all outputs off before activating a new map.
 Physical movement and robot persistence are deliberately locked until a robot
 adapter acknowledges bench mode, safe jogging at no more than 5 degrees per
 second, and persistent profile storage. The localhost relay validates this
-command/acknowledgement contract, and firmware 0.7.0 now enforces it on USB,
+command/acknowledgement contract, and firmware 0.8.0 now enforces it on USB,
 Wi-Fi TCP, and Bluetooth SPP transports.
 
 Gaits is now a separate LIVE profile-transfer workspace. It shares the same
@@ -208,7 +217,7 @@ warnings make the differences visible before hardware is involved.
 
 The apply path requires the adapter to advertise persistent-profile support and
 report the robot disarmed. The relay validates a two-stage apply contract and
-firmware 0.7.0 validates all thirteen numeric bounds again with every output off.
+firmware 0.8.0 validates all thirteen numeric bounds again with every output off.
 The ESP32 writes the candidate into the inactive NVS slot, reads back and
 checksums it, then atomically changes the active slot. The prior verified slot
 remains available for explicit rollback. Active robot settings are included in
@@ -263,7 +272,7 @@ release sends neutral stand immediately. Hiding the tab, leaving LIVE, losing a
 safety prerequisite, disarming, or losing the adapter revokes the browser
 authority. The E-stop remains available inside the control window.
 
-Firmware 0.7.0 enforces that contract on the ESP32 as well as in the companion.
+Firmware 0.8.0 enforces that contract on the ESP32 as well as in the companion.
 It independently checks the authority token, maximum lease, monotonic sequence,
 deadman, axis bounds, armed state, and CRSF link. A missing frame neutralizes
 within 250 ms, while disarm, watchdog, lease expiry, controller failure, or

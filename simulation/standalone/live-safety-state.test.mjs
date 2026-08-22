@@ -89,3 +89,21 @@ test("E-stop is valid without arm prerequisites and rejected replies preserve re
   assert.equal(state.robotState, "fault");
   assert.equal(state.status, "Hardware line unavailable");
 });
+
+test("faults retain their reason and require a robot-acknowledged recovery", () => {
+  const state = createLiveSafetyState();
+  setLiveSafetyRobotState(state, "fault", "telemetry", "Battery remained below 12.80 V.");
+  assert.equal(state.faultReason, "Battery remained below 12.80 V.");
+  assert.equal(liveSafetyCanArm(state, safeContext), false);
+  const command = createLiveSafetyCommand(state, "acknowledge-fault", connection, "fault-1", 3_000);
+  assert.equal(validLiveSafetyCommand(command), true);
+  assert.equal(command.safety.requiresFaultState, true);
+  markLiveSafetyPending(state, command);
+  assert.equal(acceptLiveSafetyAcknowledgement(state, {
+    type: "live-safety-ack", action: "acknowledge-fault", requestId: "fault-1", accepted: true,
+    ...connection, robotState: "disarmed",
+  }, connection, 3_010), true);
+  assert.equal(state.robotState, "disarmed");
+  assert.equal(state.faultReason, "");
+  assert.match(state.status, /fault condition is clear/i);
+});

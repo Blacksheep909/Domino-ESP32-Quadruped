@@ -83,7 +83,7 @@ The robot sends this after boot and whenever a link is established:
   "type": "robot-hello",
   "robotId": "domino-1",
   "robotName": "Domino",
-  "firmwareVersion": "0.7.0",
+  "firmwareVersion": "0.8.0",
   "robotState": "disarmed",
   "capabilities": {
     "telemetry": true,
@@ -223,13 +223,17 @@ For each `safety-heartbeat`, return the same sequence:
   deadman commands all locomotion and body-pose axes neutral within 250 ms.
 - The armed watchdog commands neutral and enters `watchdog` after 400 ms without
   a browser safety heartbeat.
+- A robot-reported `fault` blocks arm and ordinary disarm. The browser shows the
+  bounded robot reason and sends `acknowledge-fault` only from that state. For
+  the firmware low-voltage cause, the ESP32 accepts acknowledgement only with a
+  fresh power sample at or above its separate recovery threshold.
 - Calibration and gait writes are rejected while armed.
 - PC request timeouts produce explicit rejection; they never produce an
   optimistic success state.
 
 ## Current ESP32 endpoint
 
-Firmware `0.7.0` implements the matching USB serial endpoint. Build and flash
+Firmware `0.8.0` implements the matching USB serial endpoint. Build and flash
 the normal PlatformIO `esp32dev` environment, connect the ESP32 over USB, then
 run the companion with `-Transport usb -Device COMx`.
 

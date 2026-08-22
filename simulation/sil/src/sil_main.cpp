@@ -135,22 +135,22 @@ bool validateManualControlGuard() {
   const bool granted = guard.grant("sil-authority-token", 1000, 100);
   const bool grantDoesNotMove = granted && guard.authorityActive() && !guard.snapshot().active;
   const bool wrongTokenRejected = !guard.acceptFrame(
-      "wrong-token", 0, 120, LiveManualMode::Trot, 0.2f, 0.1f, 0.0f, 0.0f,
+      "wrong-token", 0, 120, LiveManualMode::Trot, 0.2f, 0.1f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
       DOMINO_MANUAL_TIMEOUT_MS);
   const bool frameAccepted = guard.acceptFrame(
-      "sil-authority-token", 0, 120, LiveManualMode::Trot, 0.2f, 0.1f, -0.3f, 0.4f,
+      "sil-authority-token", 0, 120, LiveManualMode::Trot, 0.2f, 0.1f, -0.3f, 0.25f, -0.2f, 0.15f, -0.1f, 0.4f,
       DOMINO_MANUAL_TIMEOUT_MS);
   const bool replayRejected = !guard.acceptFrame(
-      "sil-authority-token", 0, 130, LiveManualMode::Trot, 0.3f, 0.0f, 0.0f, 0.0f,
+      "sil-authority-token", 0, 130, LiveManualMode::Trot, 0.3f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
       DOMINO_MANUAL_TIMEOUT_MS);
   const bool axisRejected = !guard.acceptFrame(
-      "sil-authority-token", 1, 130, LiveManualMode::Trot, 1.01f, 0.0f, 0.0f, 0.0f,
+      "sil-authority-token", 1, 130, LiveManualMode::Trot, 1.01f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
       DOMINO_MANUAL_TIMEOUT_MS);
   guard.tick(371, true);
   const bool timeoutNeutral = guard.authorityActive() && guard.snapshot().active &&
       !guard.snapshot().deadman && guard.snapshot().mode == LiveManualMode::Stand;
   const bool resumed = guard.acceptFrame(
-      "sil-authority-token", 1, 400, LiveManualMode::Careful, -0.2f, 0.0f, 0.0f, -0.4f,
+      "sil-authority-token", 1, 400, LiveManualMode::Careful, -0.2f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, -0.4f,
       DOMINO_MANUAL_TIMEOUT_MS);
   guard.tick(1100, true);
   const bool leaseRevoked = !guard.authorityActive() && !guard.snapshot().active;

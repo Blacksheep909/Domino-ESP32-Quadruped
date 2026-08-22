@@ -14,6 +14,10 @@ struct LiveManualControlSnapshot {
   float forward = 0.0f;
   float turn = 0.0f;
   float roll = 0.0f;
+  float pitch = 0.0f;
+  float yaw = 0.0f;
+  float bodyX = 0.0f;
+  float bodyY = 0.0f;
   float height = 0.0f;
 };
 
@@ -23,7 +27,8 @@ class ManualControlGuard {
   bool release(const char *token);
   bool acceptFrame(const char *token, uint32_t sequence, uint32_t now,
                    LiveManualMode mode, float forward, float turn,
-                   float roll, float height, uint32_t timeoutMs);
+                   float roll, float pitch, float yaw, float bodyX,
+                   float bodyY, float height, uint32_t timeoutMs);
   void acceptNeutral(uint32_t now);
   void tick(uint32_t now, bool prerequisitesValid);
   void revoke();

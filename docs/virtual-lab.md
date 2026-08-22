@@ -256,7 +256,10 @@ It independently checks the authority token, maximum lease, monotonic sequence,
 deadman, axis bounds, armed state, and CRSF link. A missing frame neutralizes
 within 250 ms, while disarm, watchdog, lease expiry, controller failure, or
 release revokes the override. Browser stand, careful, and trot use the same
-production motion path as the radio; Expert height and body roll remain bounded.
+production motion path as the radio. In Stand, Expert adds independently bounded
+body roll and pitch (±8°), yaw (±8°), fore/aft translation (±15 mm), lateral
+translation (±12 mm), and ride height. Locomotion turn remains a separate axis,
+so rotating the standing body cannot be confused with steering a gait.
 
 The expected 3D pose is intentionally not driven optimistically from local
 slider values. It continues to follow robot-reported expected telemetry, so the

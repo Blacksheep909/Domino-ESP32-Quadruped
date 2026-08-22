@@ -14,7 +14,7 @@ installed.
 
 The Simulation workspace combines the production control firmware compiled as
 a native process with the actual Domino CAD, a closed-linkage solver, Rapier 3D
-physics, the RadioMaster Boxer, keyboard/gamepad fallback, gait tuning, joint
+physics, CRSF transmitters, keyboard and configurable gamepads, gait tuning, joint
 inspection, and session recording.
 
 Simulation is the place for unrestricted gait experimentation. Its connection
@@ -22,10 +22,17 @@ indicators refer only to the local firmware bridge, controller, and physics
 runtime; they do not claim that the physical dog is connected.
 
 The link panel keeps those signals independent. The browser/server heartbeat
-shows bridge health, acknowledgement age, and round-trip time. Boxer status is
-based only on fresh RadioMaster HID/gamepad packets, while CRSF status and its
-accepted-frame count come from the firmware-in-the-loop controller. Keyboard
-or demo input therefore cannot make the Boxer indicator appear connected.
+shows bridge health, acknowledgement age, and round-trip time. Radio status is
+based only on fresh compatible transmitter HID/gamepad packets, while CRSF
+status and its accepted-frame count come from the firmware-in-the-loop
+controller. Keyboard, ordinary gamepad, or demo input therefore cannot make the
+radio indicator appear connected.
+
+Xbox/XInput, DualShock 4, DualSense, and standards-compliant generic gamepads
+are identified by name. The Command panel's **MAP** action stores independent
+axis, inversion, and button choices for each exact controller identity, making
+non-standard USB pads usable without changing source code. CRSF radios bypass
+this mapping and preserve their first eight transmitter channels directly.
 
 ### Live
 
@@ -71,7 +78,7 @@ are documented in [LIVE companion protocol](live-companion-protocol.md).
 The LIVE safety dock now reflects the robot-reported state and implements an
 independent safety command protocol. Arming requires a continuous 1.5-second
 hold while the PC link, expected/measured telemetry, and robot-side
-Boxer/ELRS drive link all remain fresh. Arm, disarm, E-stop, and E-stop reset do
+CRSF/ELRS drive link all remain fresh. Arm, disarm, E-stop, and E-stop reset do
 not update optimistically: the UI waits for a session-bound robot
 acknowledgement and preserves the reported state on rejection or timeout.
 
@@ -167,23 +174,23 @@ a severity-filtered event log. Expert mode adds the last packet and command
 inspectors. A diagnostic bundle exports those stages, recent events, packet
 summary, active recording summary, and current calibration profile as JSON.
 
-The controller section separately validates the robot-side Boxer / ExpressLRS
+The controller section separately validates the robot-side CRSF / ExpressLRS
 path. Simple mode shows the eight active controls, CRSF frame age and rate,
 link quality, dual RSSI, receiver voltage, and failsafe state. Expert mode adds
 all 16 channels, SNR, RF mode, transmitter power, active antenna, cumulative
 frame loss and failsafe counts, plus a timestamped transition log.
 
-![LIVE Boxer and ELRS controller diagnostics using local verification data](images/virtual-lab-live-controller-diagnostics.png)
+![LIVE CRSF and ELRS controller diagnostics using local verification data](images/virtual-lab-live-controller-diagnostics.png)
 
 The drive badge and hold-to-arm prerequisite require fresh bounded
-`boxer-elrs` controller telemetry with failsafe clear, at least 50% link
+`crsf-radio` controller telemetry (with legacy `boxer-elrs` compatibility) with failsafe clear, at least 50% link
 quality, and RSSI no worse than -105 dBm. A legacy boolean cannot make the link
 look ready. Controller telemetry and its event history are included in the
 downloadable diagnostic bundle, while rejected packet bursts are counted
 without flooding the event log.
 
 The LIVE toolbar also exposes guarded browser manual control without hiding the
-normal Boxer path. The page can be opened offline to inspect the workflow, but
+normal radio path. The page can be opened offline to inspect the workflow, but
 the robot must explicitly grant a session-bound, maximum 30-second authority
 lease before the deadman becomes available. Forward, turn, gait mode, and the
 Expert body controls remain bounded; frames transmit at 20 Hz only while HOLD
@@ -194,7 +201,7 @@ authority. The E-stop remains available inside the control window.
 
 Firmware 0.6.0 enforces that contract on the ESP32 as well as in the companion.
 It independently checks the authority token, maximum lease, monotonic sequence,
-deadman, axis bounds, armed state, and Boxer link. A missing frame neutralizes
+deadman, axis bounds, armed state, and CRSF link. A missing frame neutralizes
 within 250 ms, while disarm, watchdog, lease expiry, controller failure, or
 release revokes the override. Browser stand, careful, and trot use the same
 production motion path as the radio; Expert height and body roll remain bounded.
@@ -232,7 +239,7 @@ The local application runs three cooperating pieces:
 
 The physical implementation will keep two independent wireless paths:
 
-- Boxer/ExpressLRS/CRSF for driving, essential telemetry, and an operator stop;
+- ExpressLRS/CRSF for driving, essential telemetry, and an operator stop;
 - ESP32 Wi-Fi for high-rate engineering telemetry, calibration, profiles,
   logs, graphs, and diagnostics.
 

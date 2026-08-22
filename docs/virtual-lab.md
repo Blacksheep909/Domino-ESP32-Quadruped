@@ -34,6 +34,12 @@ axis, inversion, and button choices for each exact controller identity, making
 non-standard USB pads usable without changing source code. CRSF radios bypass
 this mapping and preserve their first eight transmitter channels directly.
 
+![Per-controller axis and button mapping in the current offline build](images/virtual-lab-controller-mapping.png)
+
+The offline capture keeps Save and Restore disabled because no configurable
+gamepad is present. Connecting a non-radio controller enables its own persisted
+profile; CRSF transmitters continue to use direct channel routing.
+
 ### Live
 
 ![Domino LIVE digital-twin workspace](images/virtual-lab-real-robot-workspace.png)
@@ -117,6 +123,11 @@ minimum voltage, and peak current, then marks candidate deltas as improvements
 or regressions. Its normalized-time chart overlays pitch, roll, yaw, height
 error, or power so runs with different durations can still be inspected side by
 side. Raw samples remain available through each session's CSV export.
+
+![Durable baseline/candidate session comparison workspace](images/virtual-lab-session-comparison.png)
+
+This capture intentionally shows the empty durable archive. The selectors and
+chart activate only after two real or verification-adapter recordings exist.
 Recording state is shared across all three views, so moving between them cannot
 interrupt or split a capture.
 

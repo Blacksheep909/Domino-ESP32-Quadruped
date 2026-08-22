@@ -121,6 +121,8 @@ commands and calling them feedback.
   "expected": {
     "timestampMs": 1723600000000,
     "servoAngleDeg": [135,135,135,135,135,135,135,135,135,135,135,135,135,135,135,135],
+    "servoPulseUs": [1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500],
+    "servoPhysicalChannel": [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],
     "footTargetMm": [[-15.75,38,280],[-15.75,-38,280],[-15.75,38,280],[-15.75,-38,280]],
     "body": {"rollDeg":0,"pitchDeg":0,"yawDeg":0,"heightMm":280}
   },
@@ -153,6 +155,11 @@ commands and calling them feedback.
 `commandLatencyMs` is the age of the latest accepted CRSF command when the
 telemetry packet is emitted. `esp32LoopHz` is measured over a rolling one-second
 firmware window, and `uptimeMs` comes directly from the ESP32 monotonic clock.
+`servoPulseUs` is the final commanded pulse after calibration and safety
+limiting, indexed by logical joint. `servoPhysicalChannel` reports the PCA9685
+output selected by the active calibration map. These are command-path evidence,
+not measured joint feedback; `diagnostics.outputsEnabled` states whether the
+servo rail is currently being driven.
 
 An ESP32 may use `millis()` for `robotTimeMs` and each nested timestamp. The
 companion translates those monotonic values into the host clock domain while

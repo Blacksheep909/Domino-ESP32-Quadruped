@@ -15,6 +15,23 @@ const pose = (timestampMs, angle = 0, body = {}) => ({
   footTargetMm: [[-15, 38, 280], [-15, -38, 280], [-15, 38, 280], [-15, -38, 280]],
 });
 
+test("preserves calibrated pulse and mapped PCA output metadata", () => {
+  const state = createLiveTelemetryState();
+  const expected = {
+    ...pose(10_000, 135),
+    servoPulseUs: Array.from({ length: 16 }, (_, channel) => 1400 + channel),
+    servoPhysicalChannel: Array.from({ length: 16 }, (_, channel) => 15 - channel),
+  };
+  assert.equal(acceptLiveTelemetryPacket(state, {
+    type: "live-telemetry",
+    sequence: 1,
+    expected,
+  }, 20_000), true);
+  const snapshot = liveComparisonSnapshot(state, 20_100);
+  assert.equal(snapshot.expected.servoPulseUs[4], 1404);
+  assert.equal(snapshot.expected.servoPhysicalChannel[4], 11);
+});
+
 test("accepts independently timestamped expected and measured poses", () => {
   const state = createLiveTelemetryState();
   assert.equal(acceptLiveTelemetryPacket(state, {

@@ -29,6 +29,23 @@ function sanitizePose(pose, receivedAt, allowPartial = false) {
   }
   if (allowPartial && Object.hasOwn(pose, "servoAngleDeg") && !servoAngleDeg) return null;
   if (!allowPartial && !servoAngleDeg) return null;
+
+  let servoPulseUs = null;
+  if (Array.isArray(pose.servoPulseUs) && pose.servoPulseUs.length >= 16) {
+    servoPulseUs = pose.servoPulseUs.slice(0, 16).map(finiteNumber);
+    if (LIVE_SERVO_CHANNELS.some((channel) => servoPulseUs[channel] === null)) servoPulseUs = null;
+  }
+  if (Object.hasOwn(pose, "servoPulseUs") && !servoPulseUs) return null;
+
+  let servoPhysicalChannel = null;
+  if (Array.isArray(pose.servoPhysicalChannel) && pose.servoPhysicalChannel.length >= 16) {
+    servoPhysicalChannel = pose.servoPhysicalChannel.slice(0, 16).map((value) => {
+      const channel = finiteNumber(value);
+      return Number.isInteger(channel) && channel >= 0 && channel < 16 ? channel : null;
+    });
+    if (LIVE_SERVO_CHANNELS.some((channel) => servoPhysicalChannel[channel] === null)) servoPhysicalChannel = null;
+  }
+  if (Object.hasOwn(pose, "servoPhysicalChannel") && !servoPhysicalChannel) return null;
   const body = sanitizeBody(pose.body, allowPartial);
   if (!body) return null;
   let footTargetMm = null;
@@ -40,7 +57,7 @@ function sanitizePose(pose, receivedAt, allowPartial = false) {
   } else if (Object.hasOwn(pose, "footTargetMm")) {
     return null;
   }
-  return { timestampMs, receivedAt, servoAngleDeg, footTargetMm, body };
+  return { timestampMs, receivedAt, servoAngleDeg, servoPulseUs, servoPhysicalChannel, footTargetMm, body };
 }
 
 function sanitizePower(power, receivedAt) {

@@ -4703,6 +4703,7 @@ function updateJointLegendValues() {
   const values = ["#joint-q1-value", "#joint-q2-value", "#joint-q3-value"];
   const footTarget = document.querySelector("#joint-foot-target");
   const footState = document.querySelector("#joint-foot-state");
+  const servoOutput = document.querySelector("#joint-servo-output");
   if (!displayState || !selectedLeg) {
     values.forEach((selector) => {
       document.querySelector(selector).textContent = selectedJointLeg === "ALL" ? "MULTI" : "--";
@@ -4710,6 +4711,7 @@ function updateJointLegendValues() {
     footTarget.textContent = selectedJointLeg === "ALL" ? "MULTI" : "--";
     footState.textContent = selectedJointLeg === "ALL" ? "MULTI" : "--";
     footState.dataset.state = "unknown";
+    servoOutput.textContent = selectedJointLeg === "ALL" ? "MULTI" : "--";
     return;
   }
   const selectedRuntime = linkageRuntimes.find(
@@ -4750,6 +4752,16 @@ function updateJointLegendValues() {
   const planted = Boolean(physicsState?.footContacts?.[legIndex]);
   footState.textContent = planted ? "PLANTED" : "AIR";
   footState.dataset.state = planted ? "ok" : "air";
+
+  const liveSnapshot = applicationState.workspace === WORKSPACE_REAL_ROBOT
+    ? liveComparisonSnapshot(liveTelemetryState)
+    : null;
+  const selectedChannel = selectedLeg.channels[selectedDriveJoint];
+  const pulseUs = liveSnapshot?.expected?.servoPulseUs?.[selectedChannel];
+  const physicalChannel = liveSnapshot?.expected?.servoPhysicalChannel?.[selectedChannel];
+  servoOutput.textContent = Number.isFinite(pulseUs) && Number.isInteger(physicalChannel)
+    ? `${Math.round(pulseUs)} µs / PCA OUT ${physicalChannel}`
+    : applicationState.workspace === WORKSPACE_REAL_ROBOT ? "AWAITING ROBOT" : "LIVE ONLY";
 
   const closure = document.querySelector("#joint-closure-value");
   const pinHealth = document.querySelector("#pin-error");

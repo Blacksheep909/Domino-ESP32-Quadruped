@@ -133,6 +133,7 @@ import {
 } from "./live-diagnostics-state.js";
 import {
   archiveLiveSession,
+  compareLiveSessions,
   createLiveSessionState,
   liveSessionCsv,
   liveSessionSummary,
@@ -188,6 +189,8 @@ const liveSessionState = createLiveSessionState();
 const liveSessionArchive = [];
 const liveSessionRepository = createLiveSessionRepository();
 let liveSessionStorageState = liveSessionRepository.available ? "loading" : "unavailable";
+let liveSessionBaselineId = "";
+let liveSessionCandidateId = "";
 const liveViewState = createLiveViewState();
 const liveGaitState = createLiveGaitState(createLiveGaitProfile(defaultGaitLabSettings, "Balanced"));
 const liveGaitPreviewLab = createGaitLab(liveGaitState.draft.settings);
@@ -2892,6 +2895,116 @@ function createSessionMetric(label, value) {
   return metric;
 }
 
+const sessionComparisonDefinitions = {
+  pitchDeg: { label: "Pitch error / deg", value: (sample) => sample.bodyError?.pitchDeg },
+  rollDeg: { label: "Roll error / deg", value: (sample) => sample.bodyError?.rollDeg },
+  yawDeg: { label: "Yaw error / deg", value: (sample) => sample.bodyError?.yawDeg },
+  heightMm: { label: "Height error / mm", value: (sample) => sample.bodyError?.heightMm },
+  powerW: { label: "Power / W", value: (sample) => sample.power?.powerW },
+};
+
+function renderSessionComparisonSelectors() {
+  const baseline = document.querySelector("#live-session-baseline");
+  const candidate = document.querySelector("#live-session-candidate");
+  const previousBaseline = liveSessionBaselineId;
+  const previousCandidate = liveSessionCandidateId;
+  const options = liveSessionArchive.map((session, index) => {
+    const option = document.createElement("option");
+    option.value = session.id;
+    option.textContent = `${index + 1} / ${new Date(session.startedAt).toLocaleString()}`;
+    return option;
+  });
+  baseline.replaceChildren(...options.map((option) => option.cloneNode(true)));
+  candidate.replaceChildren(...options.map((option) => option.cloneNode(true)));
+  const ids = new Set(liveSessionArchive.map((session) => session.id));
+  liveSessionBaselineId = ids.has(previousBaseline) ? previousBaseline : liveSessionArchive[1]?.id || liveSessionArchive[0]?.id || "";
+  liveSessionCandidateId = ids.has(previousCandidate) ? previousCandidate : liveSessionArchive[0]?.id || "";
+  baseline.value = liveSessionBaselineId;
+  candidate.value = liveSessionCandidateId;
+  baseline.disabled = liveSessionArchive.length < 2;
+  candidate.disabled = liveSessionArchive.length < 2;
+}
+
+function comparisonMetric(label, baseline, candidate, delta, digits = 2, unit = "", higherIsBetter = false) {
+  const element = document.createElement("div");
+  const caption = document.createElement("span");
+  const output = document.createElement("strong");
+  const detail = document.createElement("small");
+  caption.textContent = label;
+  output.textContent = Number.isFinite(candidate) ? `${candidate.toFixed(digits)}${unit}` : "--";
+  detail.textContent = Number.isFinite(delta) ? `${delta >= 0 ? "+" : ""}${delta.toFixed(digits)}${unit} VS BASELINE` : "NO COMPARISON";
+  if (Number.isFinite(delta) && Math.abs(delta) > 1e-9) output.dataset.state = (higherIsBetter ? delta > 0 : delta < 0) ? "better" : "worse";
+  element.append(caption, output, detail);
+  return element;
+}
+
+function renderLiveSessionComparisonChart(baseline, candidate) {
+  const canvas = document.querySelector("#live-session-compare-chart");
+  const empty = document.querySelector("#live-session-compare-empty");
+  const bounds = canvas.getBoundingClientRect();
+  const valid = baseline?.samples?.length > 1 && candidate?.samples?.length > 1 && bounds.width > 10;
+  empty.hidden = valid;
+  if (!valid) return;
+  const ratio = Math.min(window.devicePixelRatio || 1, 2);
+  const width = Math.round(bounds.width);
+  const height = Math.round(bounds.height);
+  canvas.width = Math.round(width * ratio);
+  canvas.height = Math.round(height * ratio);
+  const context = canvas.getContext("2d");
+  context.setTransform(ratio, 0, 0, ratio, 0, 0);
+  context.clearRect(0, 0, width, height);
+  const definition = sessionComparisonDefinitions[document.querySelector("#live-session-compare-signal").value] || sessionComparisonDefinitions.pitchDeg;
+  const series = [baseline, candidate].map((session) => session.samples.map((sample) => ({
+    x: session.samples.at(-1).elapsedMs > 0 ? sample.elapsedMs / session.samples.at(-1).elapsedMs : 0,
+    value: definition.value(sample),
+  })).filter((point) => Number.isFinite(point.value)));
+  const values = series.flat().map((point) => point.value);
+  let minimum = Math.min(0, ...values);
+  let maximum = Math.max(0, ...values);
+  if (maximum - minimum < 1e-6) { minimum -= 1; maximum += 1; }
+  const padding = (maximum - minimum) * 0.12;
+  minimum -= padding; maximum += padding;
+  const plot = { left: 12, right: width - 12, top: 34, bottom: height - 12 };
+  const xAt = (value) => plot.left + value * (plot.right - plot.left);
+  const yAt = (value) => plot.bottom - ((value - minimum) / (maximum - minimum)) * (plot.bottom - plot.top);
+  const dark = document.documentElement.dataset.theme === "dark";
+  context.strokeStyle = dark ? "rgba(255,255,255,.08)" : "rgba(40,45,40,.1)";
+  for (let index = 0; index <= 4; index += 1) {
+    const y = plot.top + ((plot.bottom - plot.top) * index) / 4;
+    context.beginPath(); context.moveTo(plot.left, y); context.lineTo(plot.right, y); context.stroke();
+  }
+  const draw = (points, color) => {
+    if (points.length < 2) return;
+    context.beginPath();
+    points.forEach((point, index) => index ? context.lineTo(xAt(point.x), yAt(point.value)) : context.moveTo(xAt(point.x), yAt(point.value)));
+    context.strokeStyle = color; context.lineWidth = 1.8; context.stroke();
+  };
+  draw(series[0], dark ? "#a4a4aa" : "#777b75");
+  draw(series[1], "#55b979");
+}
+
+function renderLiveSessionComparison() {
+  renderSessionComparisonSelectors();
+  const baseline = liveSessionArchive.find((session) => session.id === liveSessionBaselineId);
+  const candidate = liveSessionArchive.find((session) => session.id === liveSessionCandidateId);
+  const metrics = document.querySelector("#live-session-compare-metrics");
+  metrics.replaceChildren();
+  if (!baseline || !candidate || baseline.id === candidate.id) {
+    renderLiveSessionComparisonChart(null, null);
+    return;
+  }
+  const comparison = compareLiveSessions(baseline, candidate);
+  metrics.append(
+    comparisonMetric("MEAN PITCH ERROR", comparison.baseline.meanAbsPitchErrorDeg, comparison.candidate.meanAbsPitchErrorDeg, comparison.delta.meanAbsPitchErrorDeg, 2, "°"),
+    comparisonMetric("P95 JOINT ERROR", comparison.baseline.p95JointErrorDeg, comparison.candidate.p95JointErrorDeg, comparison.delta.p95JointErrorDeg, 2, "°"),
+    comparisonMetric("AVERAGE POWER", comparison.baseline.averagePowerW, comparison.candidate.averagePowerW, comparison.delta.averagePowerW, 1, " W"),
+    comparisonMetric("ENERGY", comparison.baseline.energyWh, comparison.candidate.energyWh, comparison.delta.energyWh, 3, " Wh"),
+    comparisonMetric("MIN VOLTAGE", comparison.baseline.minimumVoltageV, comparison.candidate.minimumVoltageV, comparison.delta.minimumVoltageV, 2, " V", true),
+    comparisonMetric("PEAK CURRENT", comparison.baseline.peakCurrentA, comparison.candidate.peakCurrentA, comparison.delta.peakCurrentA, 2, " A"),
+  );
+  renderLiveSessionComparisonChart(baseline, candidate);
+}
+
 function renderLiveSessionArchive() {
   const summary = liveSessionSummary(liveSessionState);
   document.querySelector("#live-sessions-current-state").textContent = summary.status.toUpperCase();
@@ -2904,6 +3017,7 @@ function renderLiveSessionArchive() {
   const list = document.querySelector("#live-session-list");
   list.replaceChildren();
   document.querySelector("#live-session-list-empty").hidden = liveSessionArchive.length > 0;
+  renderLiveSessionComparison();
 
   liveSessionArchive.forEach((session) => {
     const metrics = archivedSessionMetrics(session);
@@ -2940,6 +3054,10 @@ function renderLiveSessionArchive() {
     list.append(entry);
   });
 }
+
+document.querySelector("#live-session-baseline").addEventListener("change", (event) => { liveSessionBaselineId = event.currentTarget.value; renderLiveSessionComparison(); });
+document.querySelector("#live-session-candidate").addEventListener("change", (event) => { liveSessionCandidateId = event.currentTarget.value; renderLiveSessionComparison(); });
+document.querySelector("#live-session-compare-signal").addEventListener("change", renderLiveSessionComparison);
 
 function renderLiveDataTable() {
   const body = document.querySelector("#live-data-table-body");

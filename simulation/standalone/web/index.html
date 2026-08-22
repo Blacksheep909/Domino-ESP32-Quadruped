@@ -661,6 +661,22 @@
           <div><span>DURATION</span><strong id="live-sessions-current-duration">0.0 S</strong></div>
           <button id="live-sessions-open-data" type="button">OPEN DATA</button>
         </section>
+        <section class="live-session-comparison" aria-labelledby="live-session-comparison-title">
+          <header>
+            <div><span>OPTIMIZATION</span><h2 id="live-session-comparison-title">Compare saved runs</h2><p>Choose a baseline and candidate to quantify pose tracking and power changes.</p></div>
+            <div class="live-session-compare-controls">
+              <label>BASELINE<select id="live-session-baseline" aria-label="Baseline session"></select></label>
+              <label>CANDIDATE<select id="live-session-candidate" aria-label="Candidate session"></select></label>
+              <label>SIGNAL<select id="live-session-compare-signal" aria-label="Comparison chart signal"><option value="pitchDeg">PITCH ERROR</option><option value="rollDeg">ROLL ERROR</option><option value="yawDeg">YAW ERROR</option><option value="heightMm">HEIGHT ERROR</option><option value="powerW">POWER</option></select></label>
+            </div>
+          </header>
+          <div id="live-session-compare-metrics" class="live-session-compare-metrics"></div>
+          <div class="live-session-compare-chart-wrap">
+            <canvas id="live-session-compare-chart" aria-label="Baseline and candidate session trend comparison"></canvas>
+            <div class="live-session-compare-legend"><span><i></i>BASELINE</span><span><i></i>CANDIDATE</span></div>
+            <em id="live-session-compare-empty">Save at least two sessions to compare runs.</em>
+          </div>
+        </section>
         <div id="live-session-list" class="live-session-list" aria-live="polite"></div>
         <p id="live-session-list-empty" class="live-session-list-empty">No completed sessions yet. Start a recording from Compare or Data.</p>
       </section>

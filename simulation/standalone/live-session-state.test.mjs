@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 
 import {
   archiveLiveSession,
+  analyzeLiveSession,
+  compareLiveSessions,
   createLiveSessionState,
   liveSessionCsv,
   liveSessionSummary,
@@ -43,6 +45,31 @@ test("validates restored sessions and merges newest-first without duplicates", (
   assert.equal(mergeArchivedLiveSessions(archive, [persisted, { nonsense: true }]), 1);
   assert.equal(archive.length, 1);
   assert.equal(archive[0].stoppedAt, 10_500);
+});
+
+test("analyzes and compares optimization metrics including integrated energy", () => {
+  const build = (id, powerW, pitchError) => {
+    const session = createLiveSessionState();
+    startLiveSession(session, 10_000);
+    const first = snapshot(1_000, 1_010);
+    first.power.powerW = powerW;
+    first.bodyError.pitchDeg = pitchError;
+    recordLiveComparisonSample(session, first, 10_000);
+    const second = snapshot(2_000, 2_010);
+    second.power.powerW = powerW;
+    second.bodyError.pitchDeg = pitchError;
+    recordLiveComparisonSample(session, second, 13_600);
+    stopLiveSession(session, 13_600);
+    return archiveLiveSession([], session, id);
+  };
+  const baseline = build("baseline", 50, 2);
+  const candidate = build("candidate", 40, 1);
+  const analysis = analyzeLiveSession(baseline);
+  assert.equal(analysis.meanAbsPitchErrorDeg, 2);
+  assert.equal(analysis.energyWh, 0.05);
+  const comparison = compareLiveSessions(baseline, candidate);
+  assert.equal(comparison.delta.meanAbsPitchErrorDeg, -1);
+  assert.equal(comparison.delta.averagePowerW, -10);
 });
 
 test("records each synchronized source pair once", () => {

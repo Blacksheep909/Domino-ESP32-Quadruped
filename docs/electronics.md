@@ -57,7 +57,7 @@ Bring-up checks:
 
 The current PCB documentation does not identify an installed voltage/current
 monitor, so the firmware reports power as unavailable by default. It never
-estimates current from servo commands. Firmware 0.7.0 includes an optional
+estimates current from servo commands. Firmware 0.8.0 includes an optional
 INA226 interface for a future high-side monitor and external shunt. The INA226
 supports the 4S bus-voltage range, while the shunt, PCB copper, connectors, and
 monitor module must all be selected for the robot's real peak and stall current.
@@ -71,6 +71,12 @@ Enable the commented `DOMINO_POWER_*` flags in `platformio.ini` only after:
 - Choosing a maximum-current scale that covers the protected electrical path.
 - Comparing voltage and current against independent bench instruments.
 - Verifying shunt dissipation, creepage, wiring, fuse, and connector ratings.
+
+Firmware 0.8.0 also uses the configured critical and recovery voltages for its
+latched armed-state power fault. The defaults are 12.8 V sustained for 750 ms
+and 13.6 V to recover. Treat these as placeholders until the actual 4S pack,
+load sag, wiring loss, and desired cell minimum have been measured. The recovery
+threshold must remain higher than the critical threshold to provide hysteresis.
 
 When enabled, the endpoint samples at 10 Hz and publishes only fresh, finite
 measured voltage, signed current, and power. A missing or unreadable monitor

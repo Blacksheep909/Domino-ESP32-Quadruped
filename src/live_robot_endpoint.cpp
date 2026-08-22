@@ -35,6 +35,12 @@
 #ifndef DOMINO_LIVE_LINK_KEY
 #define DOMINO_LIVE_LINK_KEY ""
 #endif
+#ifndef DOMINO_POWER_CRITICAL_VOLTAGE_MV
+#define DOMINO_POWER_CRITICAL_VOLTAGE_MV 12800
+#endif
+#ifndef DOMINO_POWER_FAULT_RECOVERY_VOLTAGE_MV
+#define DOMINO_POWER_FAULT_RECOVERY_VOLTAGE_MV 13600
+#endif
 
 #if DOMINO_LIVE_WIFI_ENABLED
 #include <WiFi.h>
@@ -48,6 +54,7 @@
 #include "imu.h"
 #include "leg_controller.h"
 #include "power_monitor.h"
+#include "power_fault_guard.h"
 
 namespace {
 constexpr char kProtocol[] = "domino-robot-link-v1";
@@ -63,6 +70,11 @@ constexpr uint32_t kGaitMagic = 0x44474149;  // DGAI
 constexpr char kGaitNamespace[] = "domino-gait";
 constexpr uint32_t kTransportOwnerIdleMs = 2000;
 constexpr uint32_t kWirelessAuthenticationMs = 2000;
+constexpr uint32_t kLowVoltageFaultHoldMs = 750;
+constexpr float kPowerCriticalVoltageV = DOMINO_POWER_CRITICAL_VOLTAGE_MV / 1000.0f;
+constexpr float kPowerFaultRecoveryVoltageV = DOMINO_POWER_FAULT_RECOVERY_VOLTAGE_MV / 1000.0f;
+static_assert(DOMINO_POWER_FAULT_RECOVERY_VOLTAGE_MV > DOMINO_POWER_CRITICAL_VOLTAGE_MV,
+              "Power fault recovery voltage must exceed the critical threshold");
 
 #if DOMINO_LIVE_WIFI_ENABLED
 static_assert(sizeof(DOMINO_LIVE_WIFI_SSID) > 1, "Wi-Fi SSID must not be empty");
@@ -117,6 +129,9 @@ float calibrationTargetDeg = 135.0f;
 float calibrationCurrentDeg = 135.0f;
 uint32_t calibrationUpdatedMs = 0;
 ManualControlGuard manualGuard;
+PowerFaultGuard powerFaultGuard(kPowerCriticalVoltageV, kPowerFaultRecoveryVoltageV,
+                                kLowVoltageFaultHoldMs);
+char faultReason[96] = {};
 
 struct StoredCalibrationProfile {
   uint32_t magic;
@@ -526,8 +541,9 @@ void sendHello() {
   document["type"] = "robot-hello";
   document["robotId"] = "domino-esp32-quadruped";
   document["robotName"] = "Domino";
-  document["firmwareVersion"] = "0.7.0";
+  document["firmwareVersion"] = "0.8.0";
   document["robotState"] = stateName();
+  if (state == LiveRobotState::Fault && faultReason[0]) document["faultReason"] = faultReason;
   document["wirelessAuth"] = "psk-v1";
   addCapabilities(document["capabilities"].to<JsonObject>());
   addGaitProfile(document["gaitProfile"].to<JsonObject>(), gaitProfile());
@@ -594,6 +610,7 @@ void sendTelemetry(uint32_t now) {
   // exist this remains diagnostics rather than a fabricated measured skeleton.
   JsonObject diagnostics = document["diagnostics"].to<JsonObject>();
   diagnostics["robotState"] = stateName();
+  if (state == LiveRobotState::Fault && faultReason[0]) diagnostics["faultReason"] = faultReason;
   diagnostics["outputsEnabled"] = servoOutputsEnabled();
   diagnostics["imuOnline"] = gImuState.online && gImuState.has_sample;
   diagnostics["imuAxG"] = gImuState.ax_g_filt;
@@ -647,6 +664,7 @@ void acknowledge(const char *kind, const char *action, const char *requestId,
   document["accepted"] = accepted;
   document["robotState"] = stateName();
   if (reason) document["reason"] = reason;
+  else if (state == LiveRobotState::Fault && faultReason[0]) document["reason"] = faultReason;
   writeDocument(document);
 }
 
@@ -696,6 +714,17 @@ void disableOutputs(Adafruit_PWMServoDriver &driver, LiveRobotState nextState) {
   state = nextState;
 }
 
+void updatePowerFault(Adafruit_PWMServoDriver &driver, uint32_t now) {
+  const PowerMonitorSample power = powerMonitorSample(now);
+  if (!powerFaultGuard.observe(now, state == LiveRobotState::Armed,
+                               power.valid, power.voltageV)) return;
+  snprintf(faultReason, sizeof(faultReason),
+           "Battery %.2f V remained below %.2f V for at least %lu ms.",
+           powerFaultGuard.tripVoltageV(), kPowerCriticalVoltageV,
+           static_cast<unsigned long>(kLowVoltageFaultHoldMs));
+  disableOutputs(driver, LiveRobotState::Fault);
+}
+
 bool controllerSafeToArm(uint32_t now) {
   const CrsfLinkStatistics link = crsfLinkStatistics();
   return crsfLinkAlive(now) && link.valid && now - link.timestampMs <= kLinkStatsFreshMs &&
@@ -723,6 +752,9 @@ void handleSafety(JsonObjectConst command, JsonObjectConst payload,
   } else if (!strcmp(action, "disarm")) {
     if (state == LiveRobotState::Estopped) {
       acknowledge("safety", action, requestId, false, "E-stop is latched until the ESP32 is physically reset.");
+    } else if (state == LiveRobotState::Fault) {
+      acknowledge("safety", action, requestId, false,
+                  "Fault is latched. Correct the cause and use ACKNOWLEDGE FAULT.");
     } else {
       disableOutputs(driver, LiveRobotState::Disarmed);
       acknowledge("safety", action, requestId, true);
@@ -732,6 +764,32 @@ void handleSafety(JsonObjectConst command, JsonObjectConst payload,
     acknowledge("safety", action, requestId, true);
   } else if (!strcmp(action, "reset-estop")) {
     acknowledge("safety", action, requestId, false, "E-stop is latched until the ESP32 is physically reset.");
+  } else if (!strcmp(action, "acknowledge-fault")) {
+    if (state != LiveRobotState::Fault) {
+      acknowledge("safety", action, requestId, false, "Robot is not in the fault state.");
+    } else if (powerFaultGuard.latched()) {
+      const PowerMonitorSample power = powerMonitorSample(now);
+      if (!powerFaultGuard.canAcknowledge(power.valid, power.voltageV)) {
+        if (!power.valid) {
+          acknowledge("safety", action, requestId, false,
+                      "Fresh power telemetry is required before clearing the low-voltage fault.");
+        } else {
+          char reason[96] = {};
+          snprintf(reason, sizeof(reason),
+                   "Battery is %.2f V; recover to at least %.2f V before acknowledging.",
+                   power.voltageV, kPowerFaultRecoveryVoltageV);
+          acknowledge("safety", action, requestId, false, reason);
+        }
+      } else {
+        powerFaultGuard.acknowledge(power.valid, power.voltageV);
+        faultReason[0] = '\0';
+        disableOutputs(driver, LiveRobotState::Disarmed);
+        acknowledge("safety", action, requestId, true);
+      }
+    } else {
+      acknowledge("safety", action, requestId, false,
+                  "The active fault has no verified recovery condition.");
+    }
   } else {
     acknowledge("safety", action, requestId, false, "Unsupported safety action.");
   }
@@ -1123,6 +1181,7 @@ void liveRobotEndpointLoop(uint32_t now, Adafruit_PWMServoDriver &driver) {
   updateCalibrationJog(driver, now);
   updateManualControl(now);
   powerMonitorUpdate(now);
+  updatePowerFault(driver, now);
   if (state == LiveRobotState::Armed &&
       (now - lastHeartbeatMs > kWatchdogMs || !controllerSafeToArm(now))) {
     disableOutputs(driver, LiveRobotState::Watchdog);

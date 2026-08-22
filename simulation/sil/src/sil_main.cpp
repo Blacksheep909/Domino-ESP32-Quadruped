@@ -17,6 +17,7 @@
 #include "leg_controller.h"
 #include "manual_control_guard.h"
 #include "power_monitor_math.h"
+#include "power_fault_guard.h"
 #include "sim_pwm.h"
 #include "servo_calibration.h"
 
@@ -181,6 +182,25 @@ bool validatePowerMonitorMath() {
     std::cerr << "FAIL: INA226 calibration or register scaling failed\n";
   }
   return exampleMatches && negativeCurrentWorks && unsafeScaleRejected;
+}
+
+bool validatePowerFaultGuard() {
+  PowerFaultGuard guard(12.8f, 13.6f, 750);
+  const bool transientIgnored = !guard.observe(100, true, true, 12.7f) &&
+      !guard.observe(700, true, true, 12.6f) && !guard.latched();
+  const bool recoveredWindowReset = !guard.observe(710, true, true, 13.0f) &&
+      !guard.observe(800, true, true, 12.7f) && !guard.observe(1500, true, true, 12.6f);
+  const bool sustainedTrip = guard.observe(1550, true, true, 12.5f) && guard.latched();
+  const bool badRecoveryRejected = !guard.acknowledge(false, 14.0f) &&
+      !guard.acknowledge(true, 13.59f) && guard.latched();
+  const bool recovered = guard.acknowledge(true, 13.6f) && !guard.latched();
+  PowerFaultGuard disarmedGuard(12.8f, 13.6f, 750);
+  const bool disarmedCannotTrip = !disarmedGuard.observe(0, false, true, 10.0f) &&
+      !disarmedGuard.observe(2000, false, true, 10.0f) && !disarmedGuard.latched();
+  const bool passed = transientIgnored && recoveredWindowReset && sustainedTrip &&
+      badRecoveryRejected && recovered && disarmedCannotTrip;
+  if (!passed) std::cerr << "FAIL: low-voltage fault latch or recovery hysteresis failed\n";
+  return passed;
 }
 
 struct Options {
@@ -608,6 +628,7 @@ int main(int argc, char** argv) {
   const bool gaitProfilesPassed = validateGaitProfiles();
   const bool manualControlPassed = validateManualControlGuard();
   const bool powerMonitorMathPassed = validatePowerMonitorMath();
+  const bool powerFaultGuardPassed = validatePowerFaultGuard();
   simSetTimeUs(0);
   simResetServoOutputs();
   setup();
@@ -746,7 +767,7 @@ int main(int argc, char** argv) {
   }
 
   const bool passed = calibrationMathPassed && gaitProfilesPassed && manualControlPassed &&
-      powerMonitorMathPassed &&
+      powerMonitorMathPassed && powerFaultGuardPassed &&
       validateOutputs(sawStand, sawTilt, sawGait, sawCareful,
                                       gaitTiltInterlockViolation,
                                       motionInputInterlockViolation,

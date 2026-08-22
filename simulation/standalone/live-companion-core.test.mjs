@@ -114,6 +114,27 @@ test("physical acknowledgements gate safety state and heartbeat responses", () =
   assert.equal(core.robotState, "watchdog");
 });
 
+test("fault acknowledgement is forwarded only from a reported fault state", () => {
+  const core = connectedCore();
+  const request = {
+    type: "live-safety-command", action: "acknowledge-fault", requestId: "fault-1",
+    timestampMs: 1_050, adapterId, sessionId: core.sessionId,
+    safety: { requiresFaultState: true },
+  };
+  const rejected = core.handleRelay(request, 1_050);
+  assert.equal(rejected.relay[0].accepted, false);
+  assert.equal(rejected.robot.length, 0);
+  core.robotState = "fault";
+  const forwarded = core.handleRelay({ ...request, requestId: "fault-2" }, 1_060);
+  assert.equal(forwarded.robot[0].action, "acknowledge-fault");
+  const acknowledged = core.handleRobot({
+    type: "robot-ack", protocol: DOMINO_ROBOT_LINK_PROTOCOL, kind: "safety",
+    action: "acknowledge-fault", requestId: "fault-2", accepted: true, robotState: "disarmed",
+  }, 1_070);
+  assert.equal(acknowledged.relay[0].accepted, true);
+  assert.equal(core.robotState, "disarmed");
+});
+
 test("manual control requires robot authority and neutralizes after 250 ms", () => {
   const core = connectedCore();
   core.robotState = "armed";

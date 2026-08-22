@@ -18,21 +18,27 @@ export function createLiveSafetyState() {
     lastHeartbeatSequence: -1,
     watchdogRemainingMs: 0,
     watchdogTripped: false,
+    faultReason: "",
     status: "Connect a robot to inspect its safety state.",
   };
 }
 
-export function setLiveSafetyRobotState(state, robotState, source = "telemetry") {
+export function setLiveSafetyRobotState(state, robotState, source = "telemetry", faultReason = "") {
   if (!state || !LIVE_ROBOT_STATES.includes(robotState)) return false;
   if (state.watchdogTripped && robotState === "armed") return false;
   const changed = state.robotState !== robotState;
   state.robotState = robotState;
+  state.faultReason = robotState === "fault"
+    ? String(faultReason || state.faultReason || "The robot reported an unspecified fault.").slice(0, 256)
+    : "";
   if (robotState !== "armed") {
     state.watchdogTripped = robotState === "watchdog";
     state.lastHeartbeatAckAt = 0;
     state.watchdogRemainingMs = 0;
   }
-  if (changed && source === "telemetry") state.status = `Robot reports ${robotState.toUpperCase()}.`;
+  if (changed && source === "telemetry") state.status = robotState === "fault"
+    ? state.faultReason
+    : `Robot reports ${robotState.toUpperCase()}.`;
   return changed;
 }
 
@@ -45,6 +51,7 @@ export function lockLiveSafetyState(state, reason = "The engineering session is 
   state.armHoldProgress = 0;
   state.lastHeartbeatAckAt = 0;
   state.watchdogRemainingMs = 0;
+  state.faultReason = "";
   state.status = reason;
   return true;
 }
@@ -106,6 +113,7 @@ export function createLiveSafetyCommand(state, action, connection, requestId, no
     };
   } else if (action === "disarm" && state.robotState !== "armed") return null;
   else if (action === "reset-estop") command.safety = { physicalResetRequired: true };
+  else if (action === "acknowledge-fault" && state.robotState === "fault") command.safety = { requiresFaultState: true };
   else if (!['request-state', 'estop'].includes(action)) return null;
   return command;
 }
@@ -134,17 +142,25 @@ export function acceptLiveSafetyAcknowledgement(state, message, connection, rece
   state.pendingAction = "";
   if (!message.accepted) {
     state.robotState = message.robotState;
+    state.faultReason = message.robotState === "fault"
+      ? String(message.reason || state.faultReason || "The robot reported an unspecified fault.").slice(0, 256)
+      : "";
     state.status = message.reason || `Robot rejected ${message.action.toUpperCase()}.`;
     return true;
   }
   state.robotState = message.robotState;
+  state.faultReason = message.robotState === "fault"
+    ? String(message.reason || state.faultReason || "The robot reported an unspecified fault.").slice(0, 256)
+    : "";
   state.status = message.action === "arm"
     ? "Robot armed. Browser heartbeat watchdog is active."
     : message.action === "estop"
       ? "Emergency stop acknowledged and latched by the robot."
       : message.action === "reset-estop"
         ? "Robot confirmed the physical E-stop latch is reset."
-        : `Robot confirmed ${message.robotState.toUpperCase()}.`;
+        : message.action === "acknowledge-fault"
+          ? "Robot confirmed the fault condition is clear and remains disarmed."
+          : `Robot confirmed ${message.robotState.toUpperCase()}.`;
   if (message.robotState === "armed") {
     state.lastHeartbeatAckAt = receivedAt;
     state.watchdogRemainingMs = LIVE_SAFETY_WATCHDOG_MS;

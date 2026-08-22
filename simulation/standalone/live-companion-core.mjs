@@ -250,6 +250,7 @@ export class LiveCompanionCore {
       if (message.action === "arm" && !this.telemetryFresh(now)) reason = "Fresh physical telemetry is required before arming.";
       if (message.action === "arm" && !this.driveLinkReady(now)) reason = "A fresh failsafe-clear CRSF/ELRS link is required before arming.";
       if (message.action === "reset-estop" && this.robotState !== "estopped") reason = "Robot is not in the E-stop state.";
+      if (message.action === "acknowledge-fault" && this.robotState !== "fault") reason = "Robot is not in the fault state.";
       if (reason) {
         relay.push(this.safetyAck(message, false, reason));
       } else {

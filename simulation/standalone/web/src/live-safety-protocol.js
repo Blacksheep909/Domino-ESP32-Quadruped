@@ -1,6 +1,6 @@
 import { validSessionEnvelope } from "./live-connection-protocol.js";
 
-export const LIVE_SAFETY_ACTIONS = Object.freeze(["request-state", "arm", "disarm", "estop", "reset-estop"]);
+export const LIVE_SAFETY_ACTIONS = Object.freeze(["request-state", "arm", "disarm", "estop", "reset-estop", "acknowledge-fault"]);
 export const LIVE_ROBOT_STATES = Object.freeze(["unknown", "disarmed", "arming", "armed", "disarming", "estopped", "fault", "watchdog"]);
 export const LIVE_ARM_HOLD_MS = 1_500;
 export const LIVE_SAFETY_HEARTBEAT_INTERVAL_MS = 100;
@@ -28,6 +28,7 @@ export function validLiveSafetyCommand(message) {
     );
   }
   if (message.action === "reset-estop") return message.safety?.physicalResetRequired === true;
+  if (message.action === "acknowledge-fault") return message.safety?.requiresFaultState === true;
   return true;
 }
 

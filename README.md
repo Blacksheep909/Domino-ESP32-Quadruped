@@ -83,7 +83,7 @@ deeper engineering tools:
 | --- | --- |
 | **Compare** | Expected-versus-measured CAD, body/joint error, power, safety state, recording, and guarded manual control. |
 | **Data** | Larger synchronized graphs, recorder controls, CSV export, and an Expert sample table. |
-| **Calibration** | Five-step servo setup, remappable PCA9685 channels, neutral offsets, direction, limits, safe jog contracts, and JSON backup. |
+| **Calibration** | Five-step servo setup, remappable PCA9685 channels, neutral offsets, direction, limits, guarded default restoration, safe jog contracts, and JSON backup. |
 | **Gaits** | Cross-compatible Simulation profiles, local animated preview, risk checks, robot comparison, persistent apply, and rollback. |
 | **Diagnostics** | Command-pipeline tracing, CRSF/ELRS health, packet counters, event history, and Expert raw packet inspection. |
 | **Sessions** | Durable local captures restored across reloads, portable validated JSON import/export, baseline/candidate optimization metrics, trend overlays, deletion, and independent CSV export. |

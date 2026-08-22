@@ -4257,6 +4257,10 @@ body[data-workspace="real-robot"][data-live-view="gaits"] #scene {
 .calibration-review-table-wrap th { color: #858781; font-size: 8px; }
 
 .calibration-review-actions { margin-top: 15px; display: flex; flex-wrap: wrap; gap: 8px; }
+.calibration-secondary-actions { margin-top: 12px; display: flex; align-items: center; gap: 12px; }
+.calibration-secondary-actions button { min-height: 34px; }
+.calibration-secondary-actions span { color: #7d807a; font-size: 9px; }
+.calibration-confirm[hidden] { display: none; }
 .calibration-review-actions button:disabled,
 .calibration-wizard-footer > button:disabled { color: #9b9d98; background: #ededE9; border-color: #d8d8d3; cursor: default; }
 

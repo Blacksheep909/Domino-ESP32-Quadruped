@@ -13,6 +13,8 @@ import {
   LIVE_CALIBRATION_JOG_LIMIT_DEG,
   LIVE_CALIBRATION_JOINTS,
   parseCalibrationProfileJson,
+  restoreCalibrationDefaults,
+  restoreSelectedCalibrationJoint,
   selectCalibrationJoint,
   selectCalibrationStep,
   updateCalibrationJoint,
@@ -59,6 +61,37 @@ test("calibration edits are clamped to conservative configuration bounds", () =>
     maximumDeg: 90,
   });
   assert.equal(state.dirty, true);
+});
+
+test("restores one joint without changing its physical servo assignment", () => {
+  const state = createLiveCalibrationState();
+  const remapped = calibrationChannelMap(state.profile);
+  [remapped[0], remapped[11]] = [remapped[11], remapped[0]];
+  updateCalibrationChannelMap(state, remapped);
+  updateCalibrationJoint(state, { offsetDeg: 12, direction: -1, minimumDeg: -20, maximumDeg: 30 });
+  state.jogOffsetDeg = 4;
+  assert.equal(restoreSelectedCalibrationJoint(state), true);
+  const joint = state.profile.joints.find((candidate) => candidate.logicalChannel === state.selectedChannel);
+  const definition = LIVE_CALIBRATION_JOINTS.find((candidate) => candidate.channel === state.selectedChannel);
+  assert.equal(joint.channel, remapped[0]);
+  assert.equal(joint.offsetDeg, 0);
+  assert.equal(joint.direction, definition.defaultDirection);
+  assert.equal(joint.minimumDeg, -45);
+  assert.equal(joint.maximumDeg, 45);
+  assert.equal(state.jogOffsetDeg, 0);
+});
+
+test("restores all tuning defaults while resetting wiring only when requested", () => {
+  const state = createLiveCalibrationState();
+  const remapped = calibrationChannelMap(state.profile);
+  [remapped[0], remapped[11]] = [remapped[11], remapped[0]];
+  updateCalibrationChannelMap(state, remapped);
+  updateCalibrationJoint(state, { offsetDeg: 9, minimumDeg: -12, maximumDeg: 22 });
+  assert.equal(restoreCalibrationDefaults(state), true);
+  assert.deepEqual(calibrationChannelMap(state.profile), remapped);
+  assert.ok(state.profile.joints.every((joint) => joint.offsetDeg === 0 && joint.minimumDeg === -45 && joint.maximumDeg === 45));
+  assert.equal(restoreCalibrationDefaults(state, true), true);
+  assert.deepEqual(calibrationChannelMap(state.profile), LIVE_CALIBRATION_JOINTS.map((joint) => joint.channel));
 });
 
 test("channel mapping is atomic, unique and retained in versioned JSON", () => {

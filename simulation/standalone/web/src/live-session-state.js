@@ -283,3 +283,27 @@ export function liveSessionCsv(state) {
   ]);
   return [headers.join(","), ...rows.map((row) => row.join(","))].join("\n");
 }
+
+export function liveSessionJson(session, exportedAt = Date.now()) {
+  if (!session || !Array.isArray(session.samples) || session.samples.length === 0) return "";
+  const identifier = String(session.id || `live-${session.startedAt || exportedAt}`).slice(0, 120);
+  return JSON.stringify({
+    schema: "domino-live-engineering-session",
+    version: 1,
+    exportedAt,
+    robotId: "domino-esp32-quadruped",
+    session: {
+      id: identifier,
+      startedAt: Number.isFinite(session.startedAt) ? session.startedAt : null,
+      stoppedAt: Number.isFinite(session.stoppedAt) ? session.stoppedAt : null,
+      samples: session.samples,
+    },
+    analysis: analyzeLiveSession(session),
+    signalSemantics: {
+      expected: "Robot-reported commanded state after firmware processing",
+      measured: "Independent physical feedback only; unavailable values remain null",
+      servoPulseUs: "Commanded calibrated PWM pulse, not encoder feedback",
+      servoPhysicalChannel: "Mapped PCA9685 output for each logical joint",
+    },
+  }, null, 2);
+}

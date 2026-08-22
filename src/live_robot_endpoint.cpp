@@ -96,6 +96,9 @@ uint32_t lastHelloMs = 0;
 uint32_t lastHeartbeatMs = 0;
 uint32_t lastHeartbeatSequence = 0;
 bool haveHeartbeatSequence = false;
+uint32_t loopRateWindowStartedMs = 0;
+uint32_t loopRateIterations = 0;
+float measuredLoopRateHz = 0.0f;
 bool benchMode = false;
 String usbInputLine;
 #if DOMINO_LIVE_WIFI_ENABLED
@@ -519,6 +522,12 @@ void sendTelemetry(uint32_t now) {
   diagnostics["manualLeaseRemainingMs"] = manualGuard.leaseRemainingMs(now);
   diagnostics["powerMonitorOnline"] = power.online;
   diagnostics["powerSampleValid"] = power.valid;
+  diagnostics["uptimeMs"] = now;
+  diagnostics["esp32LoopHz"] = measuredLoopRateHz;
+  diagnostics["controllerHz"] = crsfPacketRateHz();
+  if (crsfHasReceivedFrame() && now >= lastCrsfMs) {
+    diagnostics["commandLatencyMs"] = now - lastCrsfMs;
+  }
 
   const CrsfLinkStatistics link = crsfLinkStatistics();
   JsonObject controller = document["controller"].to<JsonObject>();
@@ -981,6 +990,9 @@ void liveRobotEndpointBegin(Adafruit_PWMServoDriver &driver) {
   if (!loadCalibrationProfile()) setServoCalibrationProfile(defaultServoCalibrationProfile());
   if (!loadGaitProfile()) setGaitProfile(defaultGaitProfile());
   powerMonitorBegin();
+  loopRateWindowStartedMs = millis();
+  loopRateIterations = 0;
+  measuredLoopRateHz = 0.0f;
   usbInputLine.reserve(1024);
 #if DOMINO_LIVE_WIFI_ENABLED
   wifiInputLine.reserve(1024);
@@ -1002,6 +1014,14 @@ void liveRobotEndpointBegin(Adafruit_PWMServoDriver &driver) {
 }
 
 void liveRobotEndpointLoop(uint32_t now, Adafruit_PWMServoDriver &driver) {
+  loopRateIterations += 1;
+  const uint32_t loopWindowElapsedMs = now - loopRateWindowStartedMs;
+  if (loopWindowElapsedMs >= 1000) {
+    measuredLoopRateHz = static_cast<float>(loopRateIterations) * 1000.0f /
+                         static_cast<float>(loopWindowElapsedMs);
+    loopRateIterations = 0;
+    loopRateWindowStartedMs = now;
+  }
   readTransport(Serial, usbInputLine, LiveTransport::Usb, driver, now);
   updateWirelessTransports(driver, now);
   updateCalibrationJog(driver, now);

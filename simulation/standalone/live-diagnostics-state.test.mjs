@@ -67,10 +67,13 @@ test("a stale transition is logged once and recovers cleanly", () => {
 
 test("diagnostic bundle includes context, current stages, events and packet summary", () => {
   const state = createLiveDiagnosticsState();
-  observeLiveDiagnosticPacket(state, packet(7, { esp32LoopHz: 500 }), true, 1_000);
+  observeLiveDiagnosticPacket(state, packet(7, { esp32LoopHz: 500, commandLatencyMs: 8, uptimeMs: 86_400_000 }), true, 1_000);
   const bundle = liveDiagnosticBundle(state, liveSnapshot(), { calibration: { schemaVersion: 1 } }, 1_100);
   assert.equal(bundle.schemaVersion, 1);
   assert.equal(bundle.context.calibration.schemaVersion, 1);
   assert.equal(bundle.diagnostics.lastPacket.sequence, 7);
+  assert.equal(bundle.diagnostics.telemetry.esp32LoopHz, 500);
+  assert.equal(bundle.diagnostics.telemetry.commandLatencyMs, 8);
+  assert.equal(bundle.diagnostics.telemetry.uptimeMs, 86_400_000);
   assert.ok(bundle.diagnostics.events.length > 0);
 });

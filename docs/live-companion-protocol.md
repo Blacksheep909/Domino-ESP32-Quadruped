@@ -220,7 +220,7 @@ For each `safety-heartbeat`, return the same sequence:
   Boxer/ELRS controller frame with acceptable RF quality.
 - Browser manual control requires a robot acknowledgement before the PC assumes
   authority. Loss of the token, lease, telemetry, controller, session, or
-  deadman commands neutral within 250 ms.
+  deadman commands all locomotion and body-pose axes neutral within 250 ms.
 - The armed watchdog commands neutral and enters `watchdog` after 400 ms without
   a browser safety heartbeat.
 - Calibration and gait writes are rejected while armed.
@@ -267,12 +267,15 @@ profile and persistent-profile capabilities to LIVE.
 Browser manual driving is guarded independently on the ESP32. Authority is
 granted only while armed with a healthy Boxer/ELRS link, is bound to one
 constant-time-compared token, and expires after at most 30 seconds. Frames must
-carry a strictly increasing sequence, four finite bounded axes, a supported
+carry a strictly increasing sequence, eight finite bounded axes (`forward`,
+`turn`, `roll`, `pitch`, `yaw`, `bodyX`, `bodyY`, and `height`), a supported
 mode, deadman, and the exact 250 ms timeout contract. A stale frame becomes a
 neutral stand command; lease expiry, disarm, watchdog, controller failure, or
 explicit release revokes the override. Granting authority alone never moves
-the robot. LIVE diagnostics report lease time, frame age, override state, and
-deadman state without exposing the token.
+the robot. Static body yaw is deliberately separate from gait steering. In
+Stand, normalized pose axes are bounded again on the ESP32 to ±8° pitch/yaw,
+±15 mm fore/aft and ±12 mm lateral translation. LIVE diagnostics report lease
+time, frame age, override state, and deadman state without exposing the token.
 
 Power telemetry is present only when the optional INA226 monitor has a fresh
 verified sample. The physical endpoint then adds `power.timestampMs`,

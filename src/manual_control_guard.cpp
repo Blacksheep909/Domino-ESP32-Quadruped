@@ -53,17 +53,23 @@ bool ManualControlGuard::release(const char *token) {
 
 bool ManualControlGuard::acceptFrame(const char *token, uint32_t sequence, uint32_t now,
                                      LiveManualMode mode, float forward, float turn,
-                                     float roll, float height, uint32_t timeoutMs) {
+                                     float roll, float pitch, float yaw, float bodyX,
+                                     float bodyY, float height, uint32_t timeoutMs) {
   if (!tokenMatches(token) || !before(now, expiresMs_) ||
       timeoutMs != DOMINO_MANUAL_TIMEOUT_MS ||
       (haveSequence_ && sequence <= lastSequence_) ||
-      !bounded(forward) || !bounded(turn) || !bounded(roll) || !bounded(height)) return false;
+      !bounded(forward) || !bounded(turn) || !bounded(roll) || !bounded(pitch) ||
+      !bounded(yaw) || !bounded(bodyX) || !bounded(bodyY) || !bounded(height)) return false;
   snapshot_.active = true;
   snapshot_.deadman = true;
   snapshot_.mode = mode;
   snapshot_.forward = forward;
   snapshot_.turn = turn;
   snapshot_.roll = roll;
+  snapshot_.pitch = pitch;
+  snapshot_.yaw = yaw;
+  snapshot_.bodyX = bodyX;
+  snapshot_.bodyY = bodyY;
   snapshot_.height = height;
   frameReceived_ = true;
   lastFrameMs_ = now;

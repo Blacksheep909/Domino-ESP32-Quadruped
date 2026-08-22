@@ -117,7 +117,7 @@ function neutralManualCommand(now, reason) {
     deadman: false,
     neutral: true,
     mode: "stand",
-    axes: { forward: 0, turn: 0, roll: 0, height: 0 },
+    axes: { forward: 0, turn: 0, roll: 0, pitch: 0, yaw: 0, bodyX: 0, bodyY: 0, height: 0 },
     timeoutMs: LIVE_MANUAL_TIMEOUT_MS,
   };
 }

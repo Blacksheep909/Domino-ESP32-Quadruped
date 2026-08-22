@@ -64,13 +64,13 @@ test("control frames only stream while deadman is held", () => {
   endLiveManualDeadman(state);
   const neutral = createLiveManualControlFrame(state, connection, 1_040, true);
   assert.equal(validLiveManualControlFrame(neutral), true);
-  assert.deepEqual(neutral.axes, { forward: 0, turn: 0, roll: 0, height: 0 });
+  assert.deepEqual(neutral.axes, { forward: 0, turn: 0, roll: 0, pitch: 0, yaw: 0, bodyX: 0, bodyY: 0, height: 0 });
 });
 
 test("axes are bounded and neutral frames always command stand", () => {
   const state = authorizedState();
-  updateLiveManualAxes(state, { forward: 4, turn: -4, roll: 2, height: -2, mode: "trot" });
-  assert.deepEqual(state.axes, { forward: 1, turn: -1, roll: 1, height: -1 });
+  updateLiveManualAxes(state, { forward: 4, turn: -4, roll: 2, pitch: -2, yaw: 3, bodyX: -3, bodyY: 4, height: -2, mode: "trot" });
+  assert.deepEqual(state.axes, { forward: 1, turn: -1, roll: 1, pitch: -1, yaw: 1, bodyX: -1, bodyY: 1, height: -1 });
   const neutral = createLiveManualControlFrame(state, connection, 1_050, true);
   assert.equal(neutral.mode, "stand");
   assert.equal(neutral.neutral, true);

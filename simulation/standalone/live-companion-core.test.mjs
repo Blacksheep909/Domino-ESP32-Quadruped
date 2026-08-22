@@ -134,7 +134,7 @@ test("manual control requires robot authority and neutralizes after 250 ms", () 
   const frame = core.handleRelay({
     type: "live-manual-control-frame", adapterId, sessionId: core.sessionId,
     authorityToken: token, sequence: 0, timestampMs: 1_050, deadman: true, neutral: false,
-    mode: "careful", axes: { forward: 0.2, turn: -0.1, roll: 0, height: 0 },
+    mode: "careful", axes: { forward: 0.2, turn: -0.1, roll: 0, pitch: 0.1, yaw: -0.1, bodyX: 0.2, bodyY: -0.2, height: 0 },
     safety: { requiresArmed: true, neutralOnExpiry: true, timeoutMs: 250 },
   }, 1_050);
   assert.equal(frame.robot[0].kind, "manual-control");
@@ -142,7 +142,7 @@ test("manual control requires robot authority and neutralizes after 250 ms", () 
   const futureFrame = core.handleRelay({
     type: "live-manual-control-frame", adapterId, sessionId: core.sessionId,
     authorityToken: token, sequence: 1, timestampMs: 2_000, deadman: true, neutral: false,
-    mode: "careful", axes: { forward: 0.2, turn: 0, roll: 0, height: 0 },
+    mode: "careful", axes: { forward: 0.2, turn: 0, roll: 0, pitch: 0, yaw: 0, bodyX: 0, bodyY: 0, height: 0 },
     safety: { requiresArmed: true, neutralOnExpiry: true, timeoutMs: 250 },
   }, 1_060);
   assert.equal(futureFrame.robot.length, 0);

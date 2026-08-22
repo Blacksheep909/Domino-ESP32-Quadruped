@@ -2821,6 +2821,10 @@ LIVE_SERVO_CHANNELS.forEach((channel, index) => {
     measured: (sample) => sample.measuredJointAnglesDeg?.[index],
     error: (sample) => sample.jointErrorsDeg?.[index],
   };
+  liveChartDefinitions[`pulse${channel}`] = {
+    title: `${jointLabels.get(channel)} calibrated servo pulse / microseconds`,
+    expected: (sample) => sample.expectedServoPulseUs?.[index],
+  };
 });
 
 function formatSessionDuration(durationMs) {

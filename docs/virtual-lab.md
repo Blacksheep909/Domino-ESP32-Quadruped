@@ -263,6 +263,13 @@ remapping. It remains labelled as a commanded servo output because Domino does
 not currently have joint encoders; the separate output-enabled diagnostic says
 whether that command is physically energized.
 
+Recordings preserve those pulse and output-map values for all 12 driven joints.
+The Data scope can graph each calibrated PWM command alongside body, power,
+timing, foot-target, and joint-angle signals, while CSV exports include both the
+microsecond pulse and mapped PCA9685 output per logical joint. This makes a
+calibration remap or actuator-demand change visible in later optimization
+comparisons instead of losing it when the live packet scrolls away.
+
 ![LIVE command-chain diagnostics using local relay verification data](images/virtual-lab-live-diagnostics.png)
 
 The screenshot above deliberately injects missing packets, low voltage, an IK

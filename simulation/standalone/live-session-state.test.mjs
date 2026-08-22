@@ -22,6 +22,8 @@ const snapshot = (expectedTimestampMs = 1_000, measuredTimestampMs = 1_012) => (
     timestampMs: expectedTimestampMs,
     body: { rollDeg: 0, pitchDeg: 1, yawDeg: 2, heightMm: 260 },
     servoAngleDeg: Array.from({ length: 16 }, (_, index) => 130 + index),
+    servoPulseUs: Array.from({ length: 16 }, (_, index) => 1400 + index),
+    servoPhysicalChannel: Array.from({ length: 16 }, (_, index) => 15 - index),
     footTargetMm: [[-15, 38, 280], [-15, -38, 281], [-15, 38, 282], [-15, -38, 283]],
   },
   measured: {
@@ -85,6 +87,8 @@ test("records each synchronized source pair once", () => {
   assert.equal(session.samples[0].expectedJointAnglesDeg[0], 130);
   assert.equal(session.samples[0].measuredJointAnglesDeg[0], 131);
   assert.equal(session.samples[0].expectedFootTargetsMm[3][2], 283);
+  assert.equal(session.samples[0].expectedServoPulseUs[1], 1401);
+  assert.equal(session.samples[0].expectedServoPhysicalChannels[1], 14);
 });
 
 test("does not record unpaired or stopped telemetry", () => {
@@ -127,6 +131,8 @@ test("exports analysis-ready CSV with power, pose, timing and joint error", () =
   assert.match(csv, /expected_pitch_deg/);
   assert.match(csv, /joint_15_error_deg/);
   assert.match(csv, /joint_15_expected_deg/);
+  assert.match(csv, /joint_15_command_pulse_us/);
+  assert.match(csv, /joint_15_pca_output/);
   assert.match(csv, /fl_foot_target_z_mm/);
   assert.match(csv, /45\.6000/);
   assert.equal(csv.split("\n").length, 2);

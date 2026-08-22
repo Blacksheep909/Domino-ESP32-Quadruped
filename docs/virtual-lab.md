@@ -150,7 +150,10 @@ stopped or archived run can be exported either as flat analysis-ready CSV or as
 a versioned JSON engineering package. The JSON retains the complete synchronized
 sample structure, calculated optimization metrics, and explicit expected versus
 measured signal semantics so another tool can reproduce or extend the analysis.
-If
+The Sessions page imports the same package after validating its schema, version,
+robot identity, timestamps, sample structure, and bounded recording size.
+Imported runs enter the same durable archive and baseline/candidate tools, so a
+capture can move to another workstation without reconnecting the robot. If
 durable browser storage is unavailable, the page says `MEMORY ONLY` rather than
 claiming persistence.
 

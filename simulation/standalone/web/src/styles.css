@@ -3453,13 +3453,20 @@ body[data-workspace="real-robot"] #telemetry-panel:has(#joint-legend:not([hidden
   margin: 0 auto 15px;
   padding: 14px 16px;
   display: grid;
-  grid-template-columns: repeat(3, minmax(120px, 1fr)) auto;
+  grid-template-columns: repeat(3, minmax(120px, 1fr)) auto auto;
   align-items: center;
   gap: 18px;
   background: rgba(250, 250, 248, 0.9);
   border: 1px solid #d2d2cd;
   border-left: 4px solid #4c9b69;
   border-radius: 8px;
+}
+
+.live-session-import-status {
+  max-width: 1240px;
+  margin: -5px auto 15px;
+  color: #747771;
+  font: 650 9px/1.5 "Cascadia Mono", Consolas, monospace;
 }
 
 .live-session-current > div {

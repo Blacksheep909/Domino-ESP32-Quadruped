@@ -147,6 +147,7 @@ import {
   liveSessionJson,
   liveSessionSummary,
   mergeArchivedLiveSessions,
+  parseLiveSessionJson,
   recordLiveComparisonSample,
   removeArchivedLiveSession,
   selectLiveSessionPlotSamples,
@@ -199,6 +200,7 @@ const liveSessionState = createLiveSessionState();
 const liveSessionArchive = [];
 const liveSessionRepository = createLiveSessionRepository();
 let liveSessionStorageState = liveSessionRepository.available ? "loading" : "unavailable";
+let liveSessionImportStatus = "Import a Domino engineering-session JSON package to restore a run for offline analysis.";
 let liveSessionBaselineId = "";
 let liveSessionCandidateId = "";
 const liveViewState = createLiveViewState();
@@ -3093,6 +3095,7 @@ function renderLiveSessionArchive() {
   document.querySelector("#live-session-storage-state").textContent = liveSessionStorageState === "ready"
     ? "LOCAL ARCHIVE"
     : liveSessionStorageState === "loading" ? "LOADING" : "MEMORY ONLY";
+  document.querySelector("#live-session-import-status").textContent = liveSessionImportStatus;
   const list = document.querySelector("#live-session-list");
   list.replaceChildren();
   document.querySelector("#live-session-list-empty").hidden = liveSessionArchive.length > 0;
@@ -3141,6 +3144,35 @@ function renderLiveSessionArchive() {
 document.querySelector("#live-session-baseline").addEventListener("change", (event) => { liveSessionBaselineId = event.currentTarget.value; renderLiveSessionComparison(); });
 document.querySelector("#live-session-candidate").addEventListener("change", (event) => { liveSessionCandidateId = event.currentTarget.value; renderLiveSessionComparison(); });
 document.querySelector("#live-session-compare-signal").addEventListener("change", renderLiveSessionComparison);
+document.querySelector("#live-sessions-import").addEventListener("click", () => {
+  document.querySelector("#live-sessions-import-file").click();
+});
+document.querySelector("#live-sessions-import-file").addEventListener("change", async (event) => {
+  const [file] = event.target.files || [];
+  if (!file) return;
+  try {
+    if (file.size > 50 * 1024 * 1024) throw new Error("Engineering session files must be 50 MB or smaller.");
+    const session = parseLiveSessionJson(await file.text());
+    const replaced = liveSessionArchive.some((entry) => entry.id === session.id);
+    mergeArchivedLiveSessions(liveSessionArchive, [session]);
+    if (!liveSessionArchive.some((entry) => entry.id === session.id)) {
+      throw new Error("The archive already contains 20 newer sessions. Delete one before importing this older run.");
+    }
+    liveSessionImportStatus = `${replaced ? "Updated" : "Imported"} ${file.name}: ${session.samples.length.toLocaleString()} samples ready for comparison.`;
+    renderLiveSessionArchive();
+    try {
+      const saved = await liveSessionRepository.save(session);
+      if (!saved) liveSessionImportStatus += " Stored in memory for this browser session only.";
+    } catch {
+      liveSessionStorageState = "unavailable";
+      liveSessionImportStatus += " Persistent storage failed; the imported run remains in memory.";
+    }
+  } catch (error) {
+    liveSessionImportStatus = error instanceof Error ? error.message : "Engineering session import failed.";
+  }
+  event.target.value = "";
+  renderLiveSessionArchive();
+});
 
 function renderLiveDataTable() {
   const body = document.querySelector("#live-data-table-body");

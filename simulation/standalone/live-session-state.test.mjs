@@ -10,6 +10,7 @@ import {
   liveSessionJson,
   liveSessionSummary,
   mergeArchivedLiveSessions,
+  parseLiveSessionJson,
   recordLiveComparisonSample,
   removeArchivedLiveSession,
   sanitizeArchivedLiveSession,
@@ -166,6 +167,34 @@ test("exports a versioned engineering JSON package with raw samples and analysis
   assert.equal(exported.analysis.sampleCount, 1);
   assert.match(exported.signalSemantics.measured, /physical feedback/);
   assert.equal(liveSessionJson({ samples: [] }), "");
+});
+
+test("imports a versioned engineering session for offline comparison", () => {
+  const session = createLiveSessionState();
+  startLiveSession(session, 10_000);
+  recordLiveComparisonSample(session, snapshot(), 10_100);
+  stopLiveSession(session, 10_500);
+  const exported = liveSessionJson({ ...session, id: "portable-run" }, 20_000);
+  const imported = parseLiveSessionJson(exported);
+  assert.equal(imported.id, "portable-run");
+  assert.equal(imported.samples.length, 1);
+  assert.equal(imported.samples[0].power.powerW, 45.6);
+  assert.equal(imported.samples[0].expectedServoPhysicalChannels[1], 14);
+});
+
+test("session import fails closed for unknown, foreign, and malformed packages", () => {
+  assert.throws(() => parseLiveSessionJson("not json"), /not valid JSON/);
+  assert.throws(() => parseLiveSessionJson(JSON.stringify({ schema: "something-else", version: 1 })), /not a Domino/);
+  assert.throws(() => parseLiveSessionJson(JSON.stringify({
+    schema: "domino-live-engineering-session", version: 2, robotId: "domino-esp32-quadruped",
+  })), /Unsupported/);
+  assert.throws(() => parseLiveSessionJson(JSON.stringify({
+    schema: "domino-live-engineering-session", version: 1, robotId: "another-robot",
+  })), /different robot/);
+  assert.throws(() => parseLiveSessionJson(JSON.stringify({
+    schema: "domino-live-engineering-session", version: 1, robotId: "domino-esp32-quadruped",
+    session: { id: "empty", startedAt: 1, stoppedAt: 2, samples: [] },
+  })), /incomplete/);
 });
 
 test("archives stopped sessions without sharing mutable sample objects", () => {

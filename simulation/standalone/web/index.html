@@ -681,7 +681,7 @@
 
       <section id="live-view-sessions" class="live-view-page" aria-labelledby="live-sessions-title" hidden>
         <header class="live-page-heading">
-          <div><span>LIVE / SESSIONS</span><h1 id="live-sessions-title">Recorded sessions</h1><p>Completed recordings are stored locally in this browser for later inspection and CSV export.</p></div>
+          <div><span>LIVE / SESSIONS</span><h1 id="live-sessions-title">Recorded sessions</h1><p>Store recordings locally, move them between machines as JSON, and compare pose tracking and power.</p></div>
           <div class="live-page-status"><span id="live-session-storage-state">LOADING</span><strong id="live-session-archive-count">0 SAVED</strong></div>
         </header>
         <section class="live-session-current">
@@ -689,7 +689,10 @@
           <div><span>SAMPLES</span><strong id="live-sessions-current-samples">0</strong></div>
           <div><span>DURATION</span><strong id="live-sessions-current-duration">0.0 S</strong></div>
           <button id="live-sessions-open-data" type="button">OPEN DATA</button>
+          <button id="live-sessions-import" type="button">IMPORT JSON</button>
+          <input id="live-sessions-import-file" type="file" accept="application/json,.json" hidden>
         </section>
+        <p id="live-session-import-status" class="live-session-import-status" role="status">Import a Domino engineering-session JSON package to restore a run for offline analysis.</p>
         <section class="live-session-comparison" aria-labelledby="live-session-comparison-title">
           <header>
             <div><span>OPTIMIZATION</span><h2 id="live-session-comparison-title">Compare saved runs</h2><p>Choose a baseline and candidate to quantify pose tracking and power changes.</p></div>

@@ -146,9 +146,13 @@ commands and calling them feedback.
     "receiverVoltageV":5.1,
     "channelsUs":[1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500]
   },
-  "diagnostics": {"robotState":"disarmed"}
+  "diagnostics": {"robotState":"disarmed","uptimeMs":48250,"esp32LoopHz":8120.4,"controllerHz":149.8,"commandLatencyMs":3}
 }
 ```
+
+`commandLatencyMs` is the age of the latest accepted CRSF command when the
+telemetry packet is emitted. `esp32LoopHz` is measured over a rolling one-second
+firmware window, and `uptimeMs` comes directly from the ESP32 monotonic clock.
 
 An ESP32 may use `millis()` for `robotTimeMs` and each nested timestamp. The
 companion translates those monotonic values into the host clock domain while

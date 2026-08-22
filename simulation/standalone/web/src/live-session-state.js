@@ -127,6 +127,57 @@ export function mergeArchivedLiveSessions(archive, candidates, maximumEntries = 
   return accepted;
 }
 
+const average = (values) => values.length ? values.reduce((total, value) => total + value, 0) / values.length : null;
+const percentile = (values, fraction) => {
+  if (!values.length) return null;
+  const sorted = [...values].sort((left, right) => left - right);
+  return sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * fraction) - 1))];
+};
+
+export function analyzeLiveSession(session) {
+  const samples = Array.isArray(session?.samples) ? session.samples : [];
+  const finite = (selector) => samples.map(selector).filter(Number.isFinite);
+  const worstJoint = finite((sample) => sample.worstJointErrorDeg);
+  const power = finite((sample) => sample.power?.powerW);
+  const voltage = finite((sample) => sample.power?.voltageV);
+  const current = finite((sample) => sample.power?.currentA);
+  let energyWh = 0;
+  for (let index = 1; index < samples.length; index += 1) {
+    const prior = samples[index - 1];
+    const currentSample = samples[index];
+    const deltaHours = Math.max(0, currentSample.elapsedMs - prior.elapsedMs) / 3_600_000;
+    if (Number.isFinite(prior.power?.powerW) && Number.isFinite(currentSample.power?.powerW)) {
+      energyWh += ((prior.power.powerW + currentSample.power.powerW) / 2) * deltaHours;
+    }
+  }
+  return {
+    sampleCount: samples.length,
+    durationMs: Number.isFinite(session?.startedAt) && Number.isFinite(session?.stoppedAt) ? Math.max(0, session.stoppedAt - session.startedAt) : 0,
+    meanAbsPitchErrorDeg: average(finite((sample) => Math.abs(sample.bodyError?.pitchDeg))),
+    meanAbsRollErrorDeg: average(finite((sample) => Math.abs(sample.bodyError?.rollDeg))),
+    meanAbsYawErrorDeg: average(finite((sample) => Math.abs(sample.bodyError?.yawDeg))),
+    meanAbsHeightErrorMm: average(finite((sample) => Math.abs(sample.bodyError?.heightMm))),
+    peakJointErrorDeg: worstJoint.length ? Math.max(...worstJoint) : null,
+    p95JointErrorDeg: percentile(worstJoint, 0.95),
+    averagePowerW: average(power),
+    energyWh: power.length > 1 ? energyWh : null,
+    minimumVoltageV: voltage.length ? Math.min(...voltage) : null,
+    peakCurrentA: current.length ? Math.max(...current) : null,
+  };
+}
+
+export function compareLiveSessions(baseline, candidate) {
+  const baselineMetrics = analyzeLiveSession(baseline);
+  const candidateMetrics = analyzeLiveSession(candidate);
+  const delta = {};
+  for (const key of ["meanAbsPitchErrorDeg", "meanAbsRollErrorDeg", "meanAbsYawErrorDeg", "meanAbsHeightErrorMm", "peakJointErrorDeg", "p95JointErrorDeg", "averagePowerW", "energyWh", "minimumVoltageV", "peakCurrentA"]) {
+    delta[key] = Number.isFinite(baselineMetrics[key]) && Number.isFinite(candidateMetrics[key])
+      ? candidateMetrics[key] - baselineMetrics[key]
+      : null;
+  }
+  return { baseline: baselineMetrics, candidate: candidateMetrics, delta };
+}
+
 export function removeArchivedLiveSession(archive, identifier) {
   if (!Array.isArray(archive)) return false;
   const index = archive.findIndex((entry) => entry.id === identifier);

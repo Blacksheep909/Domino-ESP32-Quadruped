@@ -324,3 +324,26 @@ export function liveSessionJson(session, exportedAt = Date.now()) {
     },
   }, null, 2);
 }
+
+export function parseLiveSessionJson(contents) {
+  let candidate;
+  try {
+    candidate = JSON.parse(String(contents));
+  } catch {
+    throw new Error("Session file is not valid JSON.");
+  }
+  if (candidate?.schema !== "domino-live-engineering-session") {
+    throw new Error("This is not a Domino LIVE engineering session.");
+  }
+  if (candidate.version !== 1) {
+    throw new Error("Unsupported engineering session version.");
+  }
+  if (candidate.robotId !== "domino-esp32-quadruped") {
+    throw new Error("This engineering session targets a different robot.");
+  }
+  const session = sanitizeArchivedLiveSession(candidate.session);
+  if (!session) {
+    throw new Error("Engineering session data is incomplete, malformed, or exceeds the recording limit.");
+  }
+  return session;
+}

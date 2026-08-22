@@ -47,6 +47,8 @@ export function recordLiveComparisonSample(state, snapshot, capturedAt = Date.no
     worstJointErrorDeg: snapshot.worstJointErrorDeg,
     jointErrorsDeg: LIVE_SERVO_CHANNELS.map((channel) => snapshot.jointErrorsDeg[channel]),
     expectedJointAnglesDeg: LIVE_SERVO_CHANNELS.map((channel) => snapshot.expected.servoAngleDeg?.[channel] ?? null),
+    expectedServoPulseUs: LIVE_SERVO_CHANNELS.map((channel) => snapshot.expected.servoPulseUs?.[channel] ?? null),
+    expectedServoPhysicalChannels: LIVE_SERVO_CHANNELS.map((channel) => snapshot.expected.servoPhysicalChannel?.[channel] ?? null),
     measuredJointAnglesDeg: Array.isArray(snapshot.measured.servoAngleDeg)
       ? LIVE_SERVO_CHANNELS.map((channel) => snapshot.measured.servoAngleDeg[channel])
       : null,
@@ -88,6 +90,8 @@ export function archiveLiveSession(archive, state, identifier = `session-${Date.
       bodyError: { ...sample.bodyError },
       jointErrorsDeg: [...sample.jointErrorsDeg],
       expectedJointAnglesDeg: [...sample.expectedJointAnglesDeg],
+      expectedServoPulseUs: [...sample.expectedServoPulseUs],
+      expectedServoPhysicalChannels: [...sample.expectedServoPhysicalChannels],
       measuredJointAnglesDeg: sample.measuredJointAnglesDeg ? [...sample.measuredJointAnglesDeg] : null,
       expectedFootTargetsMm: sample.expectedFootTargetsMm?.map((target) => [...target]) || null,
       power: sample.power ? { ...sample.power } : null,
@@ -117,6 +121,12 @@ export function sanitizeArchivedLiveSession(candidate) {
       jointErrorsDeg: sample.jointErrorsDeg.map((value) => Number.isFinite(value) ? value : null),
       expectedJointAnglesDeg: Array.isArray(sample.expectedJointAnglesDeg)
         ? sample.expectedJointAnglesDeg.map((value) => Number.isFinite(value) ? value : null)
+        : Array(LIVE_SERVO_CHANNELS.length).fill(null),
+      expectedServoPulseUs: Array.isArray(sample.expectedServoPulseUs)
+        ? sample.expectedServoPulseUs.slice(0, LIVE_SERVO_CHANNELS.length).map((value) => Number.isFinite(value) ? value : null)
+        : Array(LIVE_SERVO_CHANNELS.length).fill(null),
+      expectedServoPhysicalChannels: Array.isArray(sample.expectedServoPhysicalChannels)
+        ? sample.expectedServoPhysicalChannels.slice(0, LIVE_SERVO_CHANNELS.length).map((value) => Number.isInteger(value) && value >= 0 && value < 16 ? value : null)
         : Array(LIVE_SERVO_CHANNELS.length).fill(null),
       measuredJointAnglesDeg: Array.isArray(sample.measuredJointAnglesDeg)
         ? sample.measuredJointAnglesDeg.map((value) => Number.isFinite(value) ? value : null)
@@ -210,6 +220,8 @@ const csvNumber = (value, digits = 4) => Number.isFinite(value) ? Number(value).
 export function liveSessionCsv(state) {
   const jointHeaders = LIVE_SERVO_CHANNELS.map((channel) => `joint_${channel}_error_deg`);
   const jointCommandHeaders = LIVE_SERVO_CHANNELS.map((channel) => `joint_${channel}_expected_deg`);
+  const servoPulseHeaders = LIVE_SERVO_CHANNELS.map((channel) => `joint_${channel}_command_pulse_us`);
+  const servoOutputHeaders = LIVE_SERVO_CHANNELS.map((channel) => `joint_${channel}_pca_output`);
   const headers = [
     "captured_at_iso",
     "elapsed_ms",
@@ -237,6 +249,8 @@ export function liveSessionCsv(state) {
     "bl_foot_target_z_mm",
     "br_foot_target_z_mm",
     ...jointCommandHeaders,
+    ...servoPulseHeaders,
+    ...servoOutputHeaders,
     ...jointHeaders,
   ];
   const rows = (state?.samples || []).map((sample) => [
@@ -263,6 +277,8 @@ export function liveSessionCsv(state) {
     csvNumber(sample.power?.powerW),
     ...Array.from({ length: 4 }, (_, leg) => csvNumber(sample.expectedFootTargetsMm?.[leg]?.[2])),
     ...sample.expectedJointAnglesDeg.map((value) => csvNumber(value)),
+    ...sample.expectedServoPulseUs.map((value) => csvNumber(value, 0)),
+    ...sample.expectedServoPhysicalChannels.map((value) => Number.isInteger(value) ? value : ""),
     ...sample.jointErrorsDeg.map((value) => csvNumber(value)),
   ]);
   return [headers.join(","), ...rows.map((row) => row.join(","))].join("\n");

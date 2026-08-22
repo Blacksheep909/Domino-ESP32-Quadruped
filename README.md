@@ -86,7 +86,7 @@ deeper engineering tools:
 | **Calibration** | Five-step servo setup, remappable PCA9685 channels, neutral offsets, direction, limits, safe jog contracts, and JSON backup. |
 | **Gaits** | Cross-compatible Simulation profiles, local animated preview, risk checks, robot comparison, persistent apply, and rollback. |
 | **Diagnostics** | Command-pipeline tracing, CRSF/ELRS health, packet counters, event history, and Expert raw packet inspection. |
-| **Sessions** | Durable local captures restored across reloads, with baseline/candidate optimization metrics, trend overlays, deletion, and independent CSV export. |
+| **Sessions** | Durable local captures restored across reloads, portable validated JSON import/export, baseline/candidate optimization metrics, trend overlays, deletion, and independent CSV export. |
 
 Simple mode keeps the operating views compact. Expert mode reveals joint-level,
 RF, packet, and sample detail without weakening any safety limit.

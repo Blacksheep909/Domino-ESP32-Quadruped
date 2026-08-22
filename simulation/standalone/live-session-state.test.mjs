@@ -7,6 +7,7 @@ import {
   compareLiveSessions,
   createLiveSessionState,
   liveSessionCsv,
+  liveSessionJson,
   liveSessionSummary,
   mergeArchivedLiveSessions,
   recordLiveComparisonSample,
@@ -136,6 +137,22 @@ test("exports analysis-ready CSV with power, pose, timing and joint error", () =
   assert.match(csv, /fl_foot_target_z_mm/);
   assert.match(csv, /45\.6000/);
   assert.equal(csv.split("\n").length, 2);
+});
+
+test("exports a versioned engineering JSON package with raw samples and analysis", () => {
+  const session = createLiveSessionState();
+  startLiveSession(session, 10_000);
+  recordLiveComparisonSample(session, snapshot(), 10_100);
+  stopLiveSession(session, 10_500);
+  const exported = JSON.parse(liveSessionJson(session, 20_000));
+  assert.equal(exported.schema, "domino-live-engineering-session");
+  assert.equal(exported.version, 1);
+  assert.equal(exported.exportedAt, 20_000);
+  assert.equal(exported.session.samples[0].expectedServoPulseUs[1], 1401);
+  assert.equal(exported.session.samples[0].expectedServoPhysicalChannels[1], 14);
+  assert.equal(exported.analysis.sampleCount, 1);
+  assert.match(exported.signalSemantics.measured, /physical feedback/);
+  assert.equal(liveSessionJson({ samples: [] }), "");
 });
 
 test("archives stopped sessions without sharing mutable sample objects", () => {

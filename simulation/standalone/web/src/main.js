@@ -60,6 +60,7 @@ import {
   acceptLiveTelemetryPacket,
   createLiveTelemetryState,
   liveComparisonSnapshot,
+  LIVE_SERVO_CHANNELS,
 } from "./live-telemetry-state.js";
 import {
   acceptLiveControllerTelemetry,
@@ -2781,12 +2782,44 @@ const liveChartCanvas = document.querySelector("#live-comparison-chart");
 const liveChartSignal = document.querySelector("#live-chart-signal");
 const liveDataChartCanvas = document.querySelector("#live-data-chart");
 const liveDataChartSignal = document.querySelector("#live-data-chart-signal");
+const bodyChartDefinition = (title, field) => ({
+  title,
+  expected: (sample) => sample.expectedBody?.[field],
+  measured: (sample) => sample.measuredBody?.[field],
+  error: (sample) => sample.bodyError?.[field],
+});
+const measuredChartDefinition = (title, value) => ({ title, measured: value });
 const liveChartDefinitions = {
-  pitchDeg: { title: "Body pitch / degrees", field: "pitchDeg" },
-  rollDeg: { title: "Body roll / degrees", field: "rollDeg" },
-  yawDeg: { title: "Body yaw / degrees", field: "yawDeg" },
-  heightMm: { title: "Body height / millimetres", field: "heightMm" },
+  pitchDeg: bodyChartDefinition("Body pitch / degrees", "pitchDeg"),
+  rollDeg: bodyChartDefinition("Body roll / degrees", "rollDeg"),
+  yawDeg: bodyChartDefinition("Body yaw / degrees", "yawDeg"),
+  heightMm: bodyChartDefinition("Body height / millimetres", "heightMm"),
+  voltageV: measuredChartDefinition("Battery voltage / volts", (sample) => sample.power?.voltageV),
+  currentA: measuredChartDefinition("Battery current / amperes", (sample) => sample.power?.currentA),
+  powerW: measuredChartDefinition("Calculated power / watts", (sample) => sample.power?.powerW),
+  alignmentMs: measuredChartDefinition("Command-to-measurement alignment / milliseconds", (sample) => sample.alignmentMs),
 };
+const footLabels = ["FL", "FR", "BL", "BR"];
+footLabels.forEach((label, leg) => {
+  liveChartDefinitions[`footZ${leg}`] = {
+    title: `${label} commanded foot Z / millimetres`,
+    expected: (sample) => sample.expectedFootTargetsMm?.[leg]?.[2],
+  };
+});
+const jointLabels = new Map([
+  [0, "FL hip"], [1, "FL upper"], [2, "FL lower"],
+  [3, "FR hip"], [4, "FR upper"], [15, "FR lower"],
+  [14, "BL hip"], [7, "BL upper"], [8, "BL lower"],
+  [9, "BR hip"], [10, "BR upper"], [11, "BR lower"],
+]);
+LIVE_SERVO_CHANNELS.forEach((channel, index) => {
+  liveChartDefinitions[`joint${channel}`] = {
+    title: `${jointLabels.get(channel)} / degrees`,
+    expected: (sample) => sample.expectedJointAnglesDeg?.[index],
+    measured: (sample) => sample.measuredJointAnglesDeg?.[index],
+    error: (sample) => sample.jointErrorsDeg?.[index],
+  };
+});
 
 function formatSessionDuration(durationMs) {
   if (durationMs < 10_000) return `${(durationMs / 1_000).toFixed(1)} S`;
@@ -2832,9 +2865,12 @@ function renderLiveChart(canvas, signal, emptySelector) {
   if (samples.length < 2) return;
 
   const definition = liveChartDefinitions[signal.value] || liveChartDefinitions.pitchDeg;
-  const expected = samples.map((sample) => ({ sample, value: sample.expectedBody[definition.field] }));
-  const measured = samples.map((sample) => ({ sample, value: sample.measuredBody[definition.field] }));
-  const error = samples.map((sample) => ({ sample, value: sample.bodyError[definition.field] }));
+  const series = (selector) => typeof selector === "function"
+    ? samples.map((sample) => ({ sample, value: selector(sample) })).filter((point) => Number.isFinite(point.value))
+    : [];
+  const expected = series(definition.expected);
+  const measured = series(definition.measured);
+  const error = series(definition.error);
   const values = [...expected, ...measured, ...error].map((point) => point.value).filter(Number.isFinite);
   let minimum = Math.min(0, ...values);
   let maximum = Math.max(0, ...values);

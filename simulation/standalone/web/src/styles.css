@@ -3749,6 +3749,20 @@ body[data-workspace="real-robot"][data-live-view="gaits"] #scene {
 .live-gait-risk p { margin: 0; padding: 8px 10px; color: #376847; background: #e7f0e9; border-left: 3px solid #4c9b69; font-size: 9px; }
 .live-gait-risk p[data-severity="warning"] { color: #8b5b13; background: #f8efe1; border-left-color: #cf8c27; }
 
+.live-gait-ik-card > header > small { color: #858781; font: 700 8px/1 "Cascadia Mono", Consolas, monospace; }
+.live-gait-ik-table-wrap { padding-top: 5px; overflow-x: auto; }
+.live-gait-ik-table-wrap table { width: 100%; border-collapse: collapse; font: 650 8px/1.2 "Cascadia Mono", Consolas, monospace; }
+.live-gait-ik-table-wrap th,
+.live-gait-ik-table-wrap td { padding: 8px 7px; border-bottom: 1px solid #dfdfda; text-align: right; white-space: nowrap; }
+.live-gait-ik-table-wrap th:first-child,
+.live-gait-ik-table-wrap td:first-child { text-align: left; }
+.live-gait-ik-table-wrap th { color: #858781; font-size: 7px; }
+.live-gait-ik-table-wrap tr[data-state="warning"] td:nth-child(3) { color: #9b6412; }
+.live-gait-ik-table-wrap tr[data-state="fault"] td:nth-child(3) { color: #b4483b; }
+.live-gait-ik-warning { margin: 9px 0 0; padding: 8px 10px; color: #376847; background: #e7f0e9; border-left: 3px solid #4c9b69; font-size: 8px; line-height: 1.4; }
+.live-gait-ik-warning[data-state="warning"] { color: #8b5b13; background: #f8efe1; border-left-color: #cf8c27; }
+.live-gait-ik-warning[data-state="fault"] { color: #973f35; background: #f6e5e2; border-left-color: #c85b4c; }
+
 .live-gait-apply-card { display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; gap: 8px; border-left: 4px solid #4c9b69; }
 .live-gait-apply-card > div { display: grid; gap: 6px; }
 .live-gait-apply-card > div strong { font: 750 11px/1 "Cascadia Mono", Consolas, monospace; }
@@ -3776,6 +3790,11 @@ body[data-workspace="real-robot"][data-live-view="gaits"] #scene {
 :root[data-theme="dark"] .live-gait-compare-table-wrap tr[data-changed="true"] td { color: #e4ad58; }
 :root[data-theme="dark"] .live-gait-risk p { color: #bce8c9; background: rgba(61, 151, 95, 0.12); }
 :root[data-theme="dark"] .live-gait-risk p[data-severity="warning"] { color: #e4ad58; background: rgba(175, 112, 28, 0.10); }
+:root[data-theme="dark"] .live-gait-ik-table-wrap th,
+:root[data-theme="dark"] .live-gait-ik-table-wrap td { border-color: #29292c; }
+:root[data-theme="dark"] .live-gait-ik-warning { color: #bce8c9; background: rgba(61, 151, 95, 0.12); }
+:root[data-theme="dark"] .live-gait-ik-warning[data-state="warning"] { color: #e4ad58; background: rgba(175, 112, 28, 0.10); }
+:root[data-theme="dark"] .live-gait-ik-warning[data-state="fault"] { color: #ef9182; background: rgba(185, 72, 58, 0.12); }
 
 @media (max-width: 1000px) {
   body[data-workspace="real-robot"][data-live-view="gaits"] #scene { z-index: 0; inset: 0; width: 100%; height: 100%; border: 0; }

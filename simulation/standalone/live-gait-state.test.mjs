@@ -9,6 +9,7 @@ import {
   createLiveGaitProfile,
   createLiveGaitState,
   liveGaitCanApply,
+  liveGaitCanApplyDraft,
   liveGaitDiff,
   liveGaitProfileJson,
   liveGaitRiskAssessment,
@@ -16,6 +17,7 @@ import {
   readLiveGaitLibrary,
   selectLiveGaitPreset,
   updateLiveGaitDraft,
+  updateLiveGaitPreviewAssessment,
 } from "./web/src/live-gait-state.js";
 
 test("simulation settings upgrade into a versioned cross-workspace profile", () => {
@@ -69,6 +71,24 @@ test("robot apply requires disarm and advertised persistent apply support", () =
     ...command,
     profile: { ...command.profile, settings: { ...command.profile.settings, cadenceHz: Number.NaN } },
   }), false);
+});
+
+test("draft apply requires a complete reachable and unclipped IK preview", () => {
+  const state = createLiveGaitState();
+  state.robotState = "disarmed";
+  state.persistentApplySupported = true;
+  assert.equal(liveGaitCanApplyDraft(state), false);
+  const safeLeg = (leg) => ({ leg, reachable: true, limitedJoints: [] });
+  assert.equal(updateLiveGaitPreviewAssessment(state, {
+    legDetails: ["FL", "FR", "BL", "BR"].map(safeLeg),
+  }), true);
+  assert.equal(liveGaitCanApplyDraft(state), true);
+  assert.equal(updateLiveGaitPreviewAssessment(state, {
+    legDetails: [safeLeg("FL"), safeLeg("FR"), safeLeg("BL"), {
+      leg: "BR", reachable: true, limitedJoints: ["lower"],
+    }],
+  }), false);
+  assert.equal(liveGaitCanApplyDraft(state), false);
 });
 
 test("versioned and raw simulation JSON both import safely", () => {

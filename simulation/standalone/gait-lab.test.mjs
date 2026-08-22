@@ -53,6 +53,23 @@ test("gait lab keeps all twelve driven channels inside the mechanical envelope",
   }
 });
 
+test("IK inspector telemetry reports each foot target, solve and joint delta", () => {
+  const lab = createGaitLab(defaultGaitLabSettings);
+  for (let frame = 0; frame < 60; frame += 1) {
+    lab.update(1 / 120, state(), { forward: 0.75, turn: 0.2 });
+  }
+  const telemetry = lab.getTelemetry();
+  assert.equal(telemetry.legDetails.length, 4);
+  assert.deepEqual(telemetry.legDetails.map((detail) => detail.leg).sort(), ["BL", "BR", "FL", "FR"]);
+  telemetry.legDetails.forEach((detail) => {
+    assert.equal(detail.targetMm.length, 3);
+    assert.equal(typeof detail.reachable, "boolean");
+    assert.equal(typeof detail.stance, "boolean");
+    assert.deepEqual(Object.keys(detail.jointDeltaDeg), ["shoulder", "upper", "lower"]);
+    assert.ok(Object.values(detail.jointDeltaDeg).every(Number.isFinite));
+  });
+});
+
 test("higher cadence advances the gait phase faster", () => {
   const slow = createGaitLab({ ...defaultGaitLabSettings, cadenceHz: 0.5 });
   const fast = createGaitLab({ ...defaultGaitLabSettings, cadenceHz: 2 });

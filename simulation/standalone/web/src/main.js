@@ -271,7 +271,43 @@ const liveSafetyState = createLiveSafetyState();
 const liveManualState = createLiveManualControlState();
 const liveControllerState = createLiveControllerState();
 const liveDiagnosticsState = createLiveDiagnosticsState();
+const LIVE_NAVIGATION_PLAN_STORAGE_KEY = "domino-live-navigation-plan-v1";
 const liveNavigationState = createLiveNavigationState();
+let liveNavigationPlanStorageState = "new";
+
+function restoreLiveNavigationPlan() {
+  try {
+    const stored = localStorage.getItem(LIVE_NAVIGATION_PLAN_STORAGE_KEY);
+    if (!stored) return;
+    const restored = parseNavigationMissionJson(stored);
+    liveNavigationState.missionName = restored.name;
+    liveNavigationState.missionDraft = restored.mission;
+    liveNavigationState.plannerOrigin = restored.plannerOrigin || null;
+    liveNavigationState.plannerRangeM = restored.plannerRangeM || 40;
+    if (restored.geofence) liveNavigationState.geofence = { ...liveNavigationState.geofence, ...restored.geofence };
+    if (restored.obstacleBehavior) liveNavigationState.obstacleBehavior = { ...liveNavigationState.obstacleBehavior, ...restored.obstacleBehavior };
+    const missionName = document.querySelector("#live-nav-mission-name");
+    const plannerRange = document.querySelector("#live-nav-planner-range");
+    if (missionName) missionName.value = liveNavigationState.missionName;
+    if (plannerRange) plannerRange.value = String(liveNavigationState.plannerRangeM);
+    liveNavigationPlanStorageState = "restored";
+    liveNavigationState.lastCommandStatus = `Restored ${liveNavigationState.missionDraft.length} local waypoint${liveNavigationState.missionDraft.length === 1 ? "" : "s"} from the last session.`;
+  } catch {
+    localStorage.removeItem(LIVE_NAVIGATION_PLAN_STORAGE_KEY);
+    liveNavigationPlanStorageState = "unavailable";
+  }
+}
+
+function persistLiveNavigationPlan() {
+  try {
+    localStorage.setItem(LIVE_NAVIGATION_PLAN_STORAGE_KEY, navigationMissionJson(liveNavigationState));
+    liveNavigationPlanStorageState = "saved";
+  } catch {
+    liveNavigationPlanStorageState = "unavailable";
+  }
+}
+
+restoreLiveNavigationPlan();
 const liveBatteryAlertState = createLiveBatteryAlertState();
 let liveBatteryControlLocked = false;
 const liveSensorCalibrationState = createLiveSensorCalibrationState();
@@ -3650,8 +3686,9 @@ function renderLiveNavigationPlanner(navigation) {
   const hudPosition = document.querySelector("#live-nav-hud-position");
   const hudObstacle = document.querySelector("#live-nav-hud-obstacle");
   const helpStatus = document.querySelector("#live-nav-planner-help-status");
+  const storageStatus = document.querySelector("#live-nav-plan-storage-status");
   const referencePlan = document.querySelector("#live-nav-reference-plan");
-  if (!map || !route || !markers || !vehicle || !geofence || !status || !hudMode || !hudState || !hudRoute || !hudNext || !hudTotal || !hudEta || !hudPosition || !hudObstacle || !helpStatus || !referencePlan) return;
+  if (!map || !route || !markers || !vehicle || !geofence || !status || !hudMode || !hudState || !hudRoute || !hudNext || !hudTotal || !hudEta || !hudPosition || !hudObstacle || !helpStatus || !storageStatus || !referencePlan) return;
 
   const origin = navigationPlannerOrigin(navigation);
   const range = Math.max(10, Number(liveNavigationState.plannerRangeM) || 40);
@@ -3711,6 +3748,12 @@ function renderLiveNavigationPlanner(navigation) {
     : fenceStatus.outsideCount > 0
       ? `${fenceStatus.outsideCount} waypoint${fenceStatus.outsideCount === 1 ? " is" : "s are"} outside the active ${fenceRadius.toFixed(0)} m radius.`
       : fenceStatus.enabled ? `All waypoints are inside the active ${fenceRadius.toFixed(0)} m radius.` : "All waypoints have GPS coordinates and can pass the vehicle route gate.";
+  storageStatus.textContent = liveNavigationPlanStorageState === "restored"
+    ? "RESTORED LOCAL DRAFT"
+    : liveNavigationPlanStorageState === "unavailable"
+      ? "LOCAL AUTOSAVE UNAVAILABLE"
+      : "LOCAL AUTOSAVE ON";
+  storageStatus.dataset.state = liveNavigationPlanStorageState === "unavailable" ? "warning" : "saved";
   referencePlan.disabled = !hasOrigin || !localOnlyCount;
   hudRoute.textContent = routeCount ? `DRAFT / ${routeCount}` : "DRAFT / 0";
   hudTotal.textContent = formatNavigationDistance(metrics.totalDistanceM, "--");
@@ -3766,6 +3809,7 @@ function addPlannerWaypointFromEvent(event) {
     altM: coordinate?.altM || navigation.gps?.altitudeM || 0,
     label: `WP ${liveNavigationState.missionDraft.length + 1}`,
   });
+  persistLiveNavigationPlan();
   document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
   updateLiveComparisonUi();
 }
@@ -5808,26 +5852,31 @@ document.querySelector("#live-sensor-reset-level").addEventListener("click", () 
 
 document.querySelector("#live-nav-obstacle-enabled").addEventListener("change", (event) => {
   liveNavigationState.obstacleBehavior.enabled = event.target.checked;
+  persistLiveNavigationPlan();
   updateLiveComparisonUi();
 });
 document.querySelector("#live-nav-stop-distance").addEventListener("input", (event) => {
   liveNavigationState.obstacleBehavior.stopDistanceM = Number(event.target.value);
   document.querySelector("#live-nav-stop-distance-value").textContent = `${Number(event.target.value).toFixed(2)} m`;
+  persistLiveNavigationPlan();
   updateLiveComparisonUi();
 });
 document.querySelector("#live-nav-slow-distance").addEventListener("input", (event) => {
   liveNavigationState.obstacleBehavior.slowDistanceM = Number(event.target.value);
   document.querySelector("#live-nav-slow-distance-value").textContent = `${Number(event.target.value).toFixed(2)} m`;
+  persistLiveNavigationPlan();
   updateLiveComparisonUi();
 });
 document.querySelector("#live-nav-mission-name").addEventListener("input", (event) => {
   liveNavigationState.missionName = event.target.value.slice(0, 64) || "Domino patrol";
+  persistLiveNavigationPlan();
   document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
   updateLiveComparisonUi();
 });
 document.querySelector("#live-nav-planner-map").addEventListener("click", addPlannerWaypointFromEvent);
 document.querySelector("#live-nav-planner-range").addEventListener("change", (event) => {
   liveNavigationState.plannerRangeM = Number(event.target.value) || 40;
+  persistLiveNavigationPlan();
   updateLiveComparisonUi();
 });
 document.querySelector("#live-nav-reference-plan").addEventListener("click", () => {
@@ -5843,6 +5892,7 @@ document.querySelector("#live-nav-reference-plan").addEventListener("click", () 
     return { ...waypoint, lat: coordinate.lat, lon: coordinate.lon };
   });
   liveNavigationState.plannerOrigin = origin;
+  persistLiveNavigationPlan();
   document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
   liveNavigationState.lastCommandStatus = referenced
     ? `Referenced ${referenced} local waypoint${referenced === 1 ? "" : "s"} to the active home position.`
@@ -5854,6 +5904,7 @@ document.querySelector("#live-nav-manual-override").addEventListener("click", ()
 });
 document.querySelector("#live-nav-clear-draft").addEventListener("click", () => {
   liveNavigationState.missionDraft = [];
+  persistLiveNavigationPlan();
   document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
   liveNavigationState.lastCommandStatus = "Local route plan cleared. No vehicle command was sent.";
   updateLiveComparisonUi();
@@ -5864,10 +5915,12 @@ document.querySelector("#live-nav-mode-select").addEventListener("change", (even
 });
 document.querySelector("#live-nav-geofence-enabled").addEventListener("change", (event) => {
   liveNavigationState.geofence.enabled = event.target.checked;
+  persistLiveNavigationPlan();
   updateLiveComparisonUi();
 });
 document.querySelector("#live-nav-geofence-radius").addEventListener("input", (event) => {
   liveNavigationState.geofence.maxRadiusM = Number(event.target.value) || 50;
+  persistLiveNavigationPlan();
   updateLiveComparisonUi();
 });
 
@@ -5879,6 +5932,7 @@ document.querySelector("#live-nav-waypoint-list").addEventListener("input", (eve
   const field = input.dataset.waypointField;
   if (!liveNavigationState.missionDraft[index]) return;
   liveNavigationState.missionDraft[index][field] = field === "label" ? input.value : Number(input.value);
+  persistLiveNavigationPlan();
   document.querySelector("#live-nav-waypoint-list").dataset.signature = navigationStateSignature();
   updateNavigationMissionHeader(liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState));
   updateLiveComparisonUi();
@@ -5901,6 +5955,7 @@ document.querySelector("#live-nav-waypoint-list").addEventListener("click", (eve
   if (action === "remove") removeNavigationWaypoint(liveNavigationState, index);
   if (action === "up") moveNavigationWaypoint(liveNavigationState, index, "up");
   if (action === "down") moveNavigationWaypoint(liveNavigationState, index, "down");
+  persistLiveNavigationPlan();
   document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
   updateLiveComparisonUi();
 });
@@ -5918,6 +5973,7 @@ document.querySelector("#live-nav-add-waypoint").addEventListener("click", () =>
     local,
     label: `WP ${liveNavigationState.missionDraft.length + 1}`,
   });
+  persistLiveNavigationPlan();
   document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
   updateLiveComparisonUi();
 });
@@ -5930,6 +5986,7 @@ document.querySelector("#live-nav-add-current").addEventListener("click", () => 
     altM: navigation.gps.altitudeM || 0,
     label: `GPS ${liveNavigationState.missionDraft.length + 1}`,
   });
+  persistLiveNavigationPlan();
   document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
   updateLiveComparisonUi();
 });
@@ -5958,6 +6015,7 @@ document.querySelector("#live-nav-apply-geofence").addEventListener("click", () 
   const enabled = document.querySelector("#live-nav-geofence-enabled").checked;
   liveNavigationState.geofence.enabled = enabled;
   liveNavigationState.geofence.maxRadiusM = Number(document.querySelector("#live-nav-geofence-radius").value) || 50;
+  persistLiveNavigationPlan();
   sendLiveNavigationCommand("set-geofence", {
     enabled,
     maxRadiusM: liveNavigationState.geofence.maxRadiusM,
@@ -5989,6 +6047,7 @@ document.querySelector("#live-nav-import-file").addEventListener("change", async
     liveNavigationState.plannerOrigin = imported.plannerOrigin || null;
     if (imported.geofence) liveNavigationState.geofence = { ...liveNavigationState.geofence, ...imported.geofence };
     if (imported.obstacleBehavior) liveNavigationState.obstacleBehavior = { ...liveNavigationState.obstacleBehavior, ...imported.obstacleBehavior };
+    persistLiveNavigationPlan();
     document.querySelector("#live-nav-mission-name").value = liveNavigationState.missionName;
     document.querySelector("#live-nav-obstacle-enabled").checked = liveNavigationState.obstacleBehavior.enabled;
     document.querySelector("#live-nav-stop-distance").value = liveNavigationState.obstacleBehavior.stopDistanceM;

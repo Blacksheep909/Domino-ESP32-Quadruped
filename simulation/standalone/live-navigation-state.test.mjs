@@ -56,6 +56,9 @@ test("navigation state sanitizes GPS, LiDAR, and ArduPilot telemetry", () => {
 
 test("mission editing supports reorder, removal, export, and import", () => {
   const state = createLiveNavigationState();
+  state.plannerRangeM = 160;
+  state.geofence = { enabled: true, maxRadiusM: 75, polygon: [] };
+  state.obstacleBehavior.stopDistanceM = 0.6;
   assert.equal(addNavigationWaypoint(state, { lat: -36.85, lon: 174.76, label: "A" }), true);
   assert.equal(addNavigationWaypoint(state, { lat: -36.86, lon: 174.77, label: "B" }), true);
   assert.equal(moveNavigationWaypoint(state, 1, "up"), true);
@@ -63,6 +66,9 @@ test("mission editing supports reorder, removal, export, and import", () => {
   const parsed = parseNavigationMissionJson(navigationMissionJson(state));
   assert.equal(parsed.mission.length, 2);
   assert.equal(parsed.mission[0].label, "B");
+  assert.equal(parsed.plannerRangeM, 160);
+  assert.equal(parsed.geofence.maxRadiusM, 75);
+  assert.equal(parsed.obstacleBehavior.stopDistanceM, 0.6);
   assert.equal(removeNavigationWaypoint(state, 0), true);
   assert.equal(state.missionDraft.length, 1);
 });

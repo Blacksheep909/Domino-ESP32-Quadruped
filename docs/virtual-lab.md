@@ -31,6 +31,9 @@ metre frame and retain that frame through import/export; once a GPS or home
 reference is available, new points also carry georeferenced coordinates. Use
 **REFERENCE LOCAL PLAN** to deliberately bind an existing offline draft to the
 active home position; the control stays disabled until that reference exists.
+The current draft, route name, map range, obstacle policy, and geofence settings
+are also autosaved locally and restored on the next launch. This convenience
+record never includes connection, arm, authority, or vehicle-execution state.
 
 The compact Domino Autonomy HUD stays beside the map and shows route progress,
 position quality, next-point distance, total route distance, a conservative

@@ -8,6 +8,7 @@ import {
   liveNavigationSnapshot,
   localOffsetToCoordinate,
   moveNavigationWaypoint,
+  moveNavigationWaypointToLocal,
   navigationMissionMetrics,
   navigationMissionGeofenceStatus,
   navigationMissionJson,
@@ -129,4 +130,15 @@ test("route planner reports waypoints outside the active home radius", () => {
   assert.equal(unreferenced.checked, false);
   assert.equal(unreferenced.outsideCount, 0);
   assert.equal(unreferenced.unresolvedCount, 0);
+});
+
+test("route planner drags a waypoint within the active local frame", () => {
+  const origin = { lat: -36.85, lon: 174.76, altM: 18 };
+  const state = createLiveNavigationState();
+  assert.equal(addNavigationWaypoint(state, { local: { northM: 2, eastM: 1 }, label: "Dock" }), true);
+  assert.equal(moveNavigationWaypointToLocal(state, 0, { northM: 8, eastM: -4 }, origin), true);
+  assert.deepEqual(state.missionDraft[0].local, { northM: 8, eastM: -4 });
+  assert.ok(Number.isFinite(state.missionDraft[0].lat));
+  assert.ok(Number.isFinite(state.missionDraft[0].lon));
+  assert.equal(moveNavigationWaypointToLocal(state, 0, { northM: 20_001, eastM: 0 }, origin), false);
 });

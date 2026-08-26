@@ -46,7 +46,9 @@ row. **OPEN MANUAL OVERRIDE** opens the existing guarded manual-control handoff
 at any time. Sending a plan to a vehicle remains a separate, explicit action:
 local planning works offline, while physical route execution remains closed
 until the selected vehicle adapter, position, EKF, obstacle policy, geofence,
-and safety checks all report ready.
+and safety checks all report ready. Drag a waypoint marker to reposition it in
+the active local planning frame; the planner keeps the GPS conversion and local
+draft data synchronized as the marker moves.
 
 ## Workspaces
 

@@ -25,7 +25,7 @@ compiling firmware is not presented as proof that a real robot was connected.
 | Repository media and local run instructions | Source is locally runnable; README contains current screenshots and a 6.8-second workflow GIF. | Production Vite build and committed media. |
 | Public build documentation framework | Start-to-finish build/commissioning manual, evidence labels, functional BOM, wiring architecture, default channel map, layered gates, and a reusable as-built measurement record. | Cross-linked repository documentation and source-derived interface audit. |
 
-The complete standalone/state suite currently contains 222 passing tests. The
+The complete standalone/state suite currently contains 223 passing tests. The
 same C++ controller passes the native SIL scenario, and firmware 0.8.0 builds
 with both the default configuration and the optional power-monitor path.
 

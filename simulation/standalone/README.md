@@ -90,7 +90,8 @@ autosaved drafts, undo/redo editing with Ctrl+Z/Ctrl+Shift+Z/Ctrl+Y shortcuts,
 fit-to-route framing, home-radius geofence gating, and an offline route preview
 that animates the local vehicle marker without sending a command to the robot.
 The planner HUD also exposes Domino's bounded native forward/turn intent and
-stops it for missing obstacle data, close obstacles, or an active geofence.
+stops it for missing obstacle data, close obstacles, or an active geofence, and
+uses side-range pressure to bias away from nearby left/right obstacles.
 Preview playback can be paused, resumed, stepped one second at a time, or
 slowed/speeded between 0.5x and 4x without affecting the saved route.
 

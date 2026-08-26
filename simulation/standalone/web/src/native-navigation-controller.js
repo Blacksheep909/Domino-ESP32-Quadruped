@@ -120,6 +120,11 @@ export function nativeNavigationCommand({
   }
 
   const turn = clamp(errorDeg / 55, -1, 1) * 0.8;
+  const leftM = finite(obstacle.leftM);
+  const rightM = finite(obstacle.rightM);
+  const leftPressure = leftM === null ? 0 : clamp((slowDistanceM - leftM) / slowDistanceM, 0, 1);
+  const rightPressure = rightM === null ? 0 : clamp((slowDistanceM - rightM) / slowDistanceM, 0, 1);
+  const avoidanceTurn = clamp(leftPressure - rightPressure, -0.5, 0.5) * 0.6;
   const forward = clamp((distanceM / 2) * speedScale * alignment * obstacleScale, 0, 0.8);
   return {
     state: "navigating",
@@ -130,7 +135,7 @@ export function nativeNavigationCommand({
     bearingDeg,
     headingErrorDeg: errorDeg,
     forward,
-    turn,
+    turn: clamp(turn + avoidanceTurn, -1, 1),
     speedScale: obstacleScale,
   };
 }

@@ -63,8 +63,9 @@ completed preview remains visible until the operator starts it again.
 During planning and preview, the HUD also shows the output of Domino's native
 navigation controller. It turns the active local target, vehicle heading,
 front LiDAR range, and home-radius fence into a bounded forward/turn intent,
-and reports `SENSOR WAIT`, `OBSTACLE STOP`, or `GEOFENCE STOP` when a safe
-intent cannot be produced. This is deliberately an app-owned decision layer;
+adds a bounded left/right clearance bias, and reports `SENSOR WAIT`,
+`OBSTACLE STOP`, or `GEOFENCE STOP` when a safe intent cannot be produced.
+This is deliberately an app-owned decision layer;
 physical execution remains disabled until a native adapter implements and
 advertises the corresponding robot-side contract.
 

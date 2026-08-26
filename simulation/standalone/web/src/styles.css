@@ -7001,7 +7001,11 @@ body[data-workspace="real-robot"] .toast-region {
 .live-planner-speed { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 0 6px; color: #737871; border: 1px solid #d0d5ce; border-radius: 4px; font: 800 8px/1 "Cascadia Mono", Consolas, monospace; }
 .live-planner-speed span { color: inherit; font: inherit; letter-spacing: .08em; white-space: nowrap; }
 .live-planner-speed select { height: 22px; min-width: 46px; padding: 0 3px; color: #353833; background: #fff; border: 1px solid #cfd1ca; border-radius: 3px; font: 800 8px/1 "Cascadia Mono", Consolas, monospace; }
+.live-planner-follow { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 0 7px; color: #737871; border: 1px solid #d0d5ce; border-radius: 4px; cursor: pointer; font: 800 8px/1 "Cascadia Mono", Consolas, monospace; white-space: nowrap; }
+.live-planner-follow input { margin: 0; accent-color: #3f925d; }
 .live-planner-actions span { min-width: 0; overflow: hidden; color: #737871; font-size: 8px; line-height: 1.35; text-overflow: ellipsis; }
+.live-planner-actions .live-planner-follow { flex: 0 0 auto; min-width: 84px; }
+.live-planner-actions .live-planner-follow > span { flex: 0 0 auto; min-width: auto; overflow: visible; text-overflow: clip; }
 .live-planner-actions > span:last-child { flex: 1 1 180px; }
 .live-planner-actions #live-nav-plan-storage-status { flex: 0 0 auto; color: #3c8456; font: 800 8px/1 "Cascadia Mono", Consolas, monospace; white-space: nowrap; }
 .live-planner-actions #live-nav-plan-storage-status[data-state="warning"] { color: #ad7621; }
@@ -7143,6 +7147,7 @@ body[data-workspace="real-robot"] .toast-region {
 :root[data-theme="dark"] .live-planner-actions span { color: #96999e; }
 :root[data-theme="dark"] .live-planner-speed { color: #96999e; border-color: #3a3d40; }
 :root[data-theme="dark"] .live-planner-speed select { color: #e1e1e4; background: #292a2d; border-color: #4a4d50; }
+:root[data-theme="dark"] .live-planner-follow { color: #b9bdc2; background: #292a2d; border-color: #3a3d40; }
 :root[data-theme="dark"] .live-planner-actions #live-nav-plan-storage-status { color: #78c894; }
 :root[data-theme="dark"] .live-planner-actions #live-nav-plan-storage-status[data-state="warning"] { color: #e7b45c; }
 :root[data-theme="dark"] .live-plan-library { border-color: #3a3d40; background: rgba(255, 255, 255, .025); }

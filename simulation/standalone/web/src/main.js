@@ -331,6 +331,10 @@ let liveNativeNavigationTargetIndex = null;
 const liveNavigationHistory = { past: [], future: [] };
 const LIVE_NAVIGATION_HISTORY_LIMIT = 50;
 let liveNavigationFieldHistorySnapshot = null;
+const liveNavigationMapView = {
+  center: { northM: 0, eastM: 0 },
+  followVehicle: false,
+};
 
 function renderLiveNavigationActivity() {
   const list = document.querySelector("#live-nav-activity-list");
@@ -4397,6 +4401,29 @@ function plannerPointFromWaypoint(waypoint, origin) {
     : null;
 }
 
+function plannerVehicleLocalPoint(navigation) {
+  const origin = navigationPlannerOrigin(navigation);
+  const preview = liveNavigationPreviewState.phase !== "idle"
+    ? navigationMissionPreview(
+      liveNavigationState.missionDraft,
+      origin,
+      liveNavigationPreviewState.elapsedSeconds,
+      liveNavigationState.loopCount,
+    )
+    : null;
+  if (preview?.ready && preview.position) return preview.position;
+  return navigation.gps?.position && origin
+    ? coordinateToLocalOffset(navigation.gps.position, origin)
+    : null;
+}
+
+function plannerMapDisplayCenter(navigation) {
+  const vehicle = plannerVehicleLocalPoint(navigation);
+  return liveNavigationMapView.followVehicle && vehicle
+    ? vehicle
+    : liveNavigationMapView.center;
+}
+
 let plannerDragIndex = null;
 let plannerDragPointerId = null;
 let plannerDragMoved = false;
@@ -4408,7 +4435,12 @@ function plannerLocalFromPointer(event, map) {
   const x = ((event.clientX - rect.left) / rect.width) * 100;
   const y = ((event.clientY - rect.top) / rect.height) * 100;
   const range = Math.max(10, Number(liveNavigationState.plannerRangeM) || 40);
-  return { eastM: (x - 50) * range / 100, northM: (50 - y) * range / 100 };
+  const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
+  const center = plannerMapDisplayCenter(navigation);
+  return {
+    eastM: center.eastM + (x - 50) * range / 100,
+    northM: center.northM + (50 - y) * range / 100,
+  };
 }
 
 function selectPlannerWaypoint(index) {
@@ -4443,6 +4475,7 @@ function handlePlannerMarkerKeydown(event) {
     const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
     const origin = navigationPlannerOrigin(navigation);
     const stepM = event.shiftKey ? 5 : 0.5;
+    if (!event.repeat) captureLiveNavigationHistory();
     if (!nudgeNavigationWaypoint(liveNavigationState, index, event.key, stepM, origin)) return;
     document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
     persistLiveNavigationPlan();
@@ -4583,18 +4616,21 @@ function renderLiveNavigationPlanner(navigation) {
   const previewStepButton = document.querySelector("#live-nav-preview-step");
   const previewSpeed = document.querySelector("#live-nav-preview-speed");
   const fitButton = document.querySelector("#live-nav-fit-route");
+  const centerVehicleButton = document.querySelector("#live-nav-center-vehicle");
+  const followVehicleInput = document.querySelector("#live-nav-follow-vehicle");
   const reverseButton = document.querySelector("#live-nav-reverse-route");
   const undoButton = document.querySelector("#live-nav-undo");
   const redoButton = document.querySelector("#live-nav-redo");
-  if (!map || !clearance || !track || !route || !returnRoute || !markers || !vehicle || !geofence || !scaleLabel || !trackLegend || !clearanceLegend || !status || !hudMode || !hudState || !hudRoute || !hudNext || !hudTotal || !hudEta || !hudPosition || !hudObstacle || !hudControl || !helpStatus || !storageStatus || !referencePlan) return;
+  if (!map || !clearance || !track || !route || !returnRoute || !markers || !vehicle || !geofence || !scaleLabel || !trackLegend || !clearanceLegend || !status || !hudMode || !hudState || !hudRoute || !hudNext || !hudTotal || !hudEta || !hudPosition || !hudObstacle || !hudControl || !helpStatus || !storageStatus || !referencePlan || !centerVehicleButton || !followVehicleInput) return;
   renderLiveNavigationPlanLibrary();
 
   const origin = navigationPlannerOrigin(navigation);
   const range = Math.max(10, Number(liveNavigationState.plannerRangeM) || 40);
   scaleLabel.textContent = `${Math.round(range / 2)} M`;
+  const mapCenter = plannerMapDisplayCenter(navigation);
   const toMapPoint = (point) => point ? {
-    x: 50 + (Number(point.eastM) / range) * 100,
-    y: 50 - (Number(point.northM) / range) * 100,
+    x: 50 + ((Number(point.eastM) - mapCenter.eastM) / range) * 100,
+    y: 50 - ((Number(point.northM) - mapCenter.northM) / range) * 100,
   } : null;
   const hasOrigin = Boolean(origin);
   const previewSession = liveNavigationPreviewState.phase !== "idle";
@@ -4615,6 +4651,9 @@ function renderLiveNavigationPlanner(navigation) {
   if (previewStepButton) previewStepButton.disabled = liveNavigationPreviewState.phase !== "paused";
   if (previewSpeed) previewSpeed.value = String(liveNavigationPreviewState.speedMultiplier);
   if (fitButton) fitButton.disabled = !liveNavigationState.missionDraft.length;
+  const vehicleLocalPoint = plannerVehicleLocalPoint(navigation);
+  centerVehicleButton.disabled = !vehicleLocalPoint;
+  followVehicleInput.checked = liveNavigationMapView.followVehicle;
   if (reverseButton) reverseButton.disabled = liveNavigationState.missionDraft.length < 2;
   if (undoButton) undoButton.disabled = liveNavigationHistory.past.length === 0;
   if (redoButton) redoButton.disabled = liveNavigationHistory.future.length === 0;
@@ -7098,6 +7137,29 @@ document.querySelector("#live-nav-preview-pause").addEventListener("click", togg
 document.querySelector("#live-nav-preview-step").addEventListener("click", stepLiveNavigationPreview);
 document.querySelector("#live-nav-preview-speed").addEventListener("change", updateLiveNavigationPreviewSpeed);
 document.querySelector("#live-nav-fit-route").addEventListener("click", fitLiveNavigationPlanner);
+document.querySelector("#live-nav-center-vehicle").addEventListener("click", () => {
+  const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
+  const vehicle = plannerVehicleLocalPoint(navigation);
+  if (!vehicle) {
+    showAppToast("Centering needs a fresh GPS position or an active preview.", "warning");
+    return;
+  }
+  liveNavigationMapView.followVehicle = false;
+  liveNavigationMapView.center = { ...vehicle };
+  updateLiveComparisonUi();
+});
+document.querySelector("#live-nav-follow-vehicle").addEventListener("change", (event) => {
+  const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
+  const vehicle = plannerVehicleLocalPoint(navigation);
+  if (event.target.checked && !vehicle) {
+    event.target.checked = false;
+    showAppToast("Follow needs a fresh GPS position or an active preview.", "warning");
+    return;
+  }
+  liveNavigationMapView.followVehicle = event.target.checked;
+  if (vehicle) liveNavigationMapView.center = { ...vehicle };
+  updateLiveComparisonUi();
+});
 document.querySelector("#live-nav-reverse-route").addEventListener("click", reverseLiveNavigationRoute);
 document.querySelector("#live-nav-undo").addEventListener("click", undoLiveNavigationEdit);
 document.querySelector("#live-nav-redo").addEventListener("click", redoLiveNavigationEdit);

@@ -162,6 +162,10 @@ clears; editing a route also stops an active offline preview so it cannot keep
 following stale geometry. The history is an in-memory editing aid and is not
 persisted as vehicle state.
 
+From any LIVE view, press **M** or use **MANUAL CONTROL** in the LIVE toolbar to
+open the guarded manual-control handoff. Opening it neutralizes an active
+Domino route before the operator can request the time-limited manual lease.
+
 ## Workspaces
 
 ### Simulation

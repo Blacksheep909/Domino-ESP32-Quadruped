@@ -4338,6 +4338,7 @@ function renderLiveNavigationPlanner(navigation) {
   const markers = document.querySelector("#live-nav-planner-markers");
   const vehicle = document.querySelector("#live-nav-planner-vehicle");
   const geofence = document.querySelector("#live-nav-planner-geofence");
+  const scaleLabel = document.querySelector("#live-nav-planner-scale-label");
   const status = document.querySelector("#live-nav-planner-status");
   const hudMode = document.querySelector("#live-nav-hud-mode");
   const hudState = document.querySelector("#live-nav-hud-state");
@@ -4359,11 +4360,12 @@ function renderLiveNavigationPlanner(navigation) {
   const reverseButton = document.querySelector("#live-nav-reverse-route");
   const undoButton = document.querySelector("#live-nav-undo");
   const redoButton = document.querySelector("#live-nav-redo");
-  if (!map || !track || !route || !returnRoute || !markers || !vehicle || !geofence || !status || !hudMode || !hudState || !hudRoute || !hudNext || !hudTotal || !hudEta || !hudPosition || !hudObstacle || !hudControl || !helpStatus || !storageStatus || !referencePlan) return;
+  if (!map || !track || !route || !returnRoute || !markers || !vehicle || !geofence || !scaleLabel || !status || !hudMode || !hudState || !hudRoute || !hudNext || !hudTotal || !hudEta || !hudPosition || !hudObstacle || !hudControl || !helpStatus || !storageStatus || !referencePlan) return;
   renderLiveNavigationPlanLibrary();
 
   const origin = navigationPlannerOrigin(navigation);
   const range = Math.max(10, Number(liveNavigationState.plannerRangeM) || 40);
+  scaleLabel.textContent = `${Math.round(range / 2)} M`;
   const toMapPoint = (point) => point ? {
     x: 50 + (Number(point.eastM) / range) * 100,
     y: 50 - (Number(point.northM) / range) * 100,

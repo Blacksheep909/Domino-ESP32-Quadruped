@@ -47,6 +47,9 @@ separate one-shot safety action, and every loop still passes the same fresh
 sensor, geofence, lease, and neutral-on-fault checks.
 When more than one loop is selected, the map also draws that closing leg as a
 dashed return segment so the patrol shape is visible before it is previewed.
+When a live GPS trail is available, the map draws it as a quiet blue dotted
+line beneath the planned route so the operator can compare the dog's actual
+path with the plan.
 
 The compact Domino Autonomy HUD stays beside the map and shows route progress,
 position quality, next-point distance, total route distance, a conservative

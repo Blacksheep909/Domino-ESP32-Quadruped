@@ -89,6 +89,8 @@ supports offline local waypoints, drag-to-edit markers, JSON import/export,
 autosaved drafts, a bounded local saved-route library, project-bundle portability, undo/redo editing with Ctrl+Z/Ctrl+Shift+Z/Ctrl+Y shortcuts,
 fit-to-route framing, live GPS-track-to-plan conversion, home-radius geofence gating, and an offline route preview
 that animates the local vehicle marker without sending a command to the robot.
+When live fixes are available, the planner also shows the recorded GPS trail
+as a quiet blue dotted line beneath the planned route for quick path comparison.
 Each waypoint can also be duplicated from its action row to preserve its local
 or GPS position and movement settings while shaping a route.
 Domino patrols can repeat a reviewed route 1x, 2x, 3x, or 5x; the selected

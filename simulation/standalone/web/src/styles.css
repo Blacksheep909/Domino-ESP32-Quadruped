@@ -6981,6 +6981,9 @@ body[data-workspace="real-robot"] .toast-region {
 .live-planner-scale text { fill: #68756d; font: 800 3.2px/1 "Cascadia Mono", Consolas, monospace; letter-spacing: .05em; }
 .live-planner-map-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-top: 7px; color: #6c756e; font: 800 7px/1.2 "Cascadia Mono", Consolas, monospace; letter-spacing: .04em; }
 .live-planner-map-legend span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.live-planner-map-legend b { color: inherit; font: inherit; font-weight: inherit; }
+.live-planner-map-legend #live-nav-planner-track-legend[data-state="waiting"] { opacity: .7; }
+.live-planner-map-legend #live-nav-planner-track-legend[data-state="warning"] { color: #a36e1d; }
 .live-planner-map-legend i { display: inline-block; width: 16px; height: 0; border-top: 2px solid #3d9662; }
 .live-planner-map-legend i.is-track { border-top: 1px dashed #4b83a1; }
 .live-planner-map-legend i.is-return { border-top: 1px dashed #6b9c7a; }
@@ -7045,6 +7048,7 @@ body[data-workspace="real-robot"] .toast-region {
 :root[data-theme="dark"] .live-planner-map-legend i { border-color: #69c28b; }
 :root[data-theme="dark"] .live-planner-map-legend i.is-track { border-color: #69b7d4; }
 :root[data-theme="dark"] .live-planner-map-legend i.is-return { border-color: #9bd8ad; }
+:root[data-theme="dark"] .live-planner-map-legend #live-nav-planner-track-legend[data-state="warning"] { color: #d8a45a; }
 :root[data-theme="dark"] .live-planner-marker circle { fill: #1e2922; stroke: #71c991; }
 :root[data-theme="dark"] .live-planner-marker text { fill: #a5e3b6; }
 :root[data-theme="dark"] .live-planner-marker.is-active circle { fill: #31543b; stroke: #b0f0bf; }

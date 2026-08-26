@@ -358,6 +358,7 @@ export function navigationMissionJson(state) {
     name: state?.missionName || "Domino patrol",
     mission: state?.missionDraft || [],
     plannerOrigin: state?.plannerOrigin || null,
+    plannerRangeM: state?.plannerRangeM || 40,
     geofence: state?.geofence || null,
     obstacleBehavior: state?.obstacleBehavior || null,
   }, null, 2);
@@ -370,10 +371,14 @@ export function parseNavigationMissionJson(text) {
   }
   const mission = parsed.mission.map((waypoint, index) => normalizeMissionWaypoint(waypoint, index));
   if (mission.some((waypoint) => !waypoint)) throw new Error("Mission contains an invalid coordinate or waypoint limit.");
+  const plannerRangeM = [40, 80, 160].includes(Number(parsed.plannerRangeM))
+    ? Number(parsed.plannerRangeM)
+    : 40;
   return {
     name: boundedText(parsed.name, "Domino patrol"),
     mission,
     plannerOrigin: coordinate(parsed.plannerOrigin),
+    plannerRangeM,
     geofence: parsed.geofence && typeof parsed.geofence === "object" ? parsed.geofence : null,
     obstacleBehavior: parsed.obstacleBehavior && typeof parsed.obstacleBehavior === "object" ? parsed.obstacleBehavior : null,
   };

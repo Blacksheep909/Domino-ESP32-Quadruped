@@ -73,6 +73,8 @@ lease; **RESUME DOMINO ROUTE** rechecks every gate before motion continues.
 **RETURN HOME** is a separate Domino-owned mode: it targets the active home
 origin without changing the saved mission draft, and uses the same guarded
 lease, sensor freshness, geofence, and neutral-on-fault rules.
+Waypoint dwell times are honored by the Domino runner as well; pausing during a
+dwell preserves the remaining hold time before the route advances.
 
 The preview controls also support **PAUSE**, **RESUME**, and one-second
 **STEP** inspection, with selectable 0.5x, 1x, 2x, and 4x playback rates.

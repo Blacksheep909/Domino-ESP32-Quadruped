@@ -7,6 +7,9 @@ export function createNativeNavigationRunnerState() {
     mode: "route",
     currentIndex: 0,
     waypointCount: 0,
+    holdingIndex: -1,
+    holdUntilMs: 0,
+    holdRemainingMs: 0,
     lastCommand: null,
     stopReason: "",
   };
@@ -19,19 +22,30 @@ export function startNativeNavigationRunner(state, waypointCount, mode = "route"
   state.mode = mode;
   state.currentIndex = 0;
   state.waypointCount = count;
+  state.holdingIndex = -1;
+  state.holdUntilMs = 0;
+  state.holdRemainingMs = 0;
   state.lastCommand = null;
   state.stopReason = "";
   return true;
 }
 
-export function pauseNativeNavigationRunner(state) {
+export function pauseNativeNavigationRunner(state, nowMs = Date.now()) {
   if (!state || state.phase !== "running") return false;
+  if (state.holdingIndex === state.currentIndex && state.holdUntilMs > 0) {
+    state.holdRemainingMs = Math.max(0, state.holdUntilMs - Number(nowMs));
+    state.holdUntilMs = 0;
+  }
   state.phase = "paused";
   return true;
 }
 
-export function resumeNativeNavigationRunner(state) {
+export function resumeNativeNavigationRunner(state, nowMs = Date.now()) {
   if (!state || state.phase !== "paused") return false;
+  if (state.holdingIndex === state.currentIndex && state.holdRemainingMs > 0) {
+    state.holdUntilMs = Number(nowMs) + state.holdRemainingMs;
+    state.holdRemainingMs = 0;
+  }
   state.phase = "running";
   return true;
 }
@@ -39,6 +53,9 @@ export function resumeNativeNavigationRunner(state) {
 export function stopNativeNavigationRunner(state, reason = "Route stopped by operator.") {
   if (!state || state.phase === "idle") return false;
   state.phase = "stopped";
+  state.holdingIndex = -1;
+  state.holdUntilMs = 0;
+  state.holdRemainingMs = 0;
   state.stopReason = String(reason || "Route stopped by operator.").slice(0, 256);
   return true;
 }
@@ -46,23 +63,47 @@ export function stopNativeNavigationRunner(state, reason = "Route stopped by ope
 export function blockNativeNavigationRunner(state, reason = "Native route safety gate blocked motion.") {
   if (!state || state.phase === "idle") return false;
   state.phase = "blocked";
+  state.holdingIndex = -1;
+  state.holdUntilMs = 0;
+  state.holdRemainingMs = 0;
   state.stopReason = String(reason || "Native route safety gate blocked motion.").slice(0, 256);
   return true;
 }
 
-export function acceptNativeNavigationCommand(state, command) {
+export function acceptNativeNavigationCommand(state, command, nowMs = Date.now()) {
   if (!state || state.phase !== "running" || !command || typeof command !== "object") return false;
   state.lastCommand = {
     state: String(command.state || "blocked"),
     forward: Number(command.forward) || 0,
     turn: Number(command.turn) || 0,
   };
+  const now = Number(nowMs);
+  if (state.holdingIndex === state.currentIndex && state.holdUntilMs > now) {
+    state.lastCommand = { state: "holding", forward: 0, turn: 0, holdRemainingS: (state.holdUntilMs - now) / 1_000 };
+    return true;
+  }
   if (command.state === "arrived") {
+    if (state.holdingIndex === state.currentIndex) {
+      state.holdingIndex = -1;
+      state.holdUntilMs = 0;
+      state.holdRemainingMs = 0;
+    } else {
+      const holdS = Math.max(0, Number(command.holdS) || 0);
+      if (holdS > 0) {
+        state.holdingIndex = state.currentIndex;
+        state.holdUntilMs = now + holdS * 1_000;
+        state.lastCommand = { state: "holding", forward: 0, turn: 0, holdRemainingS: holdS };
+        return true;
+      }
+    }
     state.currentIndex += 1;
     if (state.currentIndex >= state.waypointCount) state.phase = "complete";
     return true;
   }
   if (command.state === "complete") {
+    state.holdingIndex = -1;
+    state.holdUntilMs = 0;
+    state.holdRemainingMs = 0;
     state.currentIndex = Math.max(0, state.waypointCount - 1);
     state.phase = "complete";
     return true;

@@ -3858,7 +3858,10 @@ function nativeNavigationWaypointsFor(navigation, mode = liveNativeNavigationSta
       : [];
   }
   const gate = liveNativeRouteGate(navigation);
-  return liveNavigationState.missionDraft.map((waypoint) => plannerPointFromWaypoint(waypoint, gate.origin));
+  return liveNavigationState.missionDraft.map((waypoint) => {
+    const local = plannerPointFromWaypoint(waypoint, gate.origin);
+    return local ? { ...waypoint, local } : null;
+  });
 }
 
 function nativeNavigationCommandFor(navigation) {
@@ -3980,13 +3983,13 @@ function serviceLiveNativeNavigation() {
   }
   const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
   const gate = liveNativeRouteGate(navigation);
-  const readiness = nativeNavigationReadiness(navigation, gate.routeReady);
+  const readiness = nativeNavigationReadiness(navigation, gate.routeReady, liveNativeNavigationState.mode);
   if (!readiness.ready) {
     haltLiveNativeNavigation(readiness.reason, true);
     return;
   }
   const command = nativeNavigationCommandFor(navigation);
-  acceptNativeNavigationCommand(liveNativeNavigationState, command);
+  acceptNativeNavigationCommand(liveNativeNavigationState, command, Date.now());
   if (liveNativeNavigationState.phase === "complete") {
     finishLiveNativeNavigation("Domino route complete. Vehicle is held neutral.");
     return;
@@ -3996,7 +3999,9 @@ function serviceLiveNativeNavigation() {
     return;
   }
   updateLiveManualAxes(liveManualState, { mode: "careful", forward: command.forward, turn: command.turn, roll: 0, pitch: 0, yaw: 0, bodyX: 0, bodyY: 0, height: 0 });
-  liveNavigationState.lastCommandStatus = `Domino route / WP ${String(liveNativeNavigationState.currentIndex + 1).padStart(2, "0")}: ${command.reason}`;
+  liveNavigationState.lastCommandStatus = liveNativeNavigationState.lastCommand?.state === "holding"
+    ? `Domino ${liveNativeNavigationState.mode === "return-home" ? "return-home" : "route"} holding at WP ${String(liveNativeNavigationState.currentIndex + 1).padStart(2, "0")}.`
+    : `Domino route / WP ${String(liveNativeNavigationState.currentIndex + 1).padStart(2, "0")}: ${command.reason}`;
 }
 
 function navigationStateSignature() {

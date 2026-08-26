@@ -35,6 +35,17 @@ test("native navigation zeros the command when a waypoint is reached", () => {
   assert.equal(command.turn, 0);
 });
 
+test("native navigation carries waypoint dwell time into the runner contract", () => {
+  const command = nativeNavigationCommand({
+    waypoints: [{ ...route[0], holdS: 2 }],
+    position: { northM: 0, eastM: 0 },
+    headingDeg: 0,
+    obstacle: { enabled: false },
+  });
+  assert.equal(command.state, "arrived");
+  assert.equal(command.holdS, 2);
+});
+
 test("native navigation stops for an obstacle and reports the reason", () => {
   const command = nativeNavigationCommand({
     waypoints: route,

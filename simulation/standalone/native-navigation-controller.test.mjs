@@ -22,6 +22,22 @@ test("native navigation turns toward a local waypoint with bounded axes", () => 
   assert.ok(command.distanceM > 0);
 });
 
+test("native navigation can drive one selected waypoint without the rest of the route", () => {
+  const directWaypoint = [{ local: { northM: 0, eastM: 8 }, radiusM: 1.2, speedMps: 0.8 }];
+  const command = nativeNavigationCommand({
+    waypoints: directWaypoint,
+    position: { northM: 0, eastM: 2 },
+    headingDeg: 90,
+    currentIndex: 0,
+    loopCount: 1,
+    obstacle: { enabled: false },
+  });
+  assert.equal(command.state, "navigating");
+  assert.equal(command.currentIndex, 0);
+  assert.equal(command.target.eastM, 8);
+  assert.ok(command.forward > 0 && command.forward <= 0.8);
+});
+
 test("native navigation zeros the command when a waypoint is reached", () => {
   const command = nativeNavigationCommand({
     waypoints: route,

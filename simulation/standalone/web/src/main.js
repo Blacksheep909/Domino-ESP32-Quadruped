@@ -1252,6 +1252,12 @@ window.addEventListener("keydown", (event) => {
     return;
   }
   const key = event.key.toLowerCase();
+  if (key === "m") {
+    if (applicationState.workspace !== WORKSPACE_REAL_ROBOT) return;
+    event.preventDefault();
+    document.querySelector("#live-manual-open")?.click();
+    return;
+  }
   if (key === "h") {
     if (applicationState.workspace !== WORKSPACE_REAL_ROBOT || liveViewState.selected !== LIVE_VIEW_SENSORS) return;
     event.preventDefault();

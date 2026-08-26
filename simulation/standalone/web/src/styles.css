@@ -6788,10 +6788,11 @@ body[data-workspace="real-robot"] .toast-region {
   cursor: crosshair;
   touch-action: none;
 }
-.live-planner-actions { display: flex; align-items: center; gap: 9px; margin-top: 9px; min-width: 0; }
+.live-planner-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; margin-top: 9px; min-width: 0; }
 .live-planner-actions button { flex: 0 0 auto; min-height: 28px; padding: 0 9px; color: #286442; background: #e3f1e8; border: 1px solid #9bc8aa; border-radius: 4px; cursor: pointer; font: 800 8px/1 "Cascadia Mono", Consolas, monospace; }
 .live-planner-actions button:disabled { color: #8c9089; background: #e7e8e3; border-color: #d2d4ce; cursor: not-allowed; }
 .live-planner-actions span { min-width: 0; overflow: hidden; color: #737871; font-size: 8px; line-height: 1.35; text-overflow: ellipsis; }
+.live-planner-actions > span:last-child { flex: 1 1 180px; }
 .live-planner-actions #live-nav-plan-storage-status { flex: 0 0 auto; color: #3c8456; font: 800 8px/1 "Cascadia Mono", Consolas, monospace; white-space: nowrap; }
 .live-planner-actions #live-nav-plan-storage-status[data-state="warning"] { color: #ad7621; }
 .live-planner-map-surface { fill: #edf1ec; }
@@ -6810,6 +6811,7 @@ body[data-workspace="real-robot"] .toast-region {
 .live-planner-vehicle circle { fill: #2d6792; stroke: #e7f3fb; stroke-width: 1.4; vector-effect: non-scaling-stroke; }
 .live-planner-vehicle path { fill: #2d6792; stroke: #e7f3fb; stroke-width: .8; vector-effect: non-scaling-stroke; }
 .live-planner-vehicle.is-live circle { filter: drop-shadow(0 0 3px rgba(45, 103, 146, .8)); }
+.live-planner-vehicle.is-preview circle { filter: drop-shadow(0 0 4px rgba(51, 132, 87, .9)); }
 .live-planner-map text { fill: #6c7770; font: 800 4px/1 "Cascadia Mono", Consolas, monospace; letter-spacing: .08em; }
 .live-planner-help { margin: 8px 0 0; color: #737871; font-size: 9px; line-height: 1.45; }
 .live-mission-toolbar #live-nav-clear-draft { color: #a24a3a; background: #fff0ec; border-color: #d8a095; }

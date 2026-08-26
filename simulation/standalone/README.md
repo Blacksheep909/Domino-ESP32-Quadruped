@@ -93,6 +93,9 @@ When live fixes are available, the planner also shows the recorded GPS trail
 as a quiet blue dotted line beneath the planned route for quick path comparison.
 Its compact legend distinguishes the plan, live track state, and closing leg,
 while the scale reference follows the selected map range.
+Fresh LiDAR clearance sectors also appear around the vehicle when obstacle
+guard is enabled, with explicit waiting and bypassed states when they are not
+available.
 Each waypoint can also be duplicated from its action row to preserve its local
 or GPS position and movement settings while shaping a route.
 Domino patrols can repeat a reviewed route 1x, 2x, 3x, or 5x; the selected

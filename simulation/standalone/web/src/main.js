@@ -4338,8 +4338,10 @@ function renderLiveNavigationPlanner(navigation) {
   const markers = document.querySelector("#live-nav-planner-markers");
   const vehicle = document.querySelector("#live-nav-planner-vehicle");
   const geofence = document.querySelector("#live-nav-planner-geofence");
+  const clearance = document.querySelector("#live-nav-planner-clearance");
   const scaleLabel = document.querySelector("#live-nav-planner-scale-label");
   const trackLegend = document.querySelector("#live-nav-planner-track-legend");
+  const clearanceLegend = document.querySelector("#live-nav-planner-clearance-legend");
   const status = document.querySelector("#live-nav-planner-status");
   const hudMode = document.querySelector("#live-nav-hud-mode");
   const hudState = document.querySelector("#live-nav-hud-state");
@@ -4361,7 +4363,7 @@ function renderLiveNavigationPlanner(navigation) {
   const reverseButton = document.querySelector("#live-nav-reverse-route");
   const undoButton = document.querySelector("#live-nav-undo");
   const redoButton = document.querySelector("#live-nav-redo");
-  if (!map || !track || !route || !returnRoute || !markers || !vehicle || !geofence || !scaleLabel || !trackLegend || !status || !hudMode || !hudState || !hudRoute || !hudNext || !hudTotal || !hudEta || !hudPosition || !hudObstacle || !hudControl || !helpStatus || !storageStatus || !referencePlan) return;
+  if (!map || !clearance || !track || !route || !returnRoute || !markers || !vehicle || !geofence || !scaleLabel || !trackLegend || !clearanceLegend || !status || !hudMode || !hudState || !hudRoute || !hudNext || !hudTotal || !hudEta || !hudPosition || !hudObstacle || !hudControl || !helpStatus || !storageStatus || !referencePlan) return;
   renderLiveNavigationPlanLibrary();
 
   const origin = navigationPlannerOrigin(navigation);
@@ -4422,6 +4424,41 @@ function renderLiveNavigationPlanner(navigation) {
     : recordedFixCount
       ? "Recorded GPS fixes are waiting for a home reference before they can be drawn on the planner."
       : "The planner will show the recorded GPS trail after at least two fresh fixes.";
+  clearance.replaceChildren();
+  const clearanceSamples = [
+    ["FRONT", navigation.frontM, 0, -1],
+    ["RIGHT", navigation.rightM, 1, 0],
+    ["REAR", navigation.rearM, 0, 1],
+    ["LEFT", navigation.leftM, -1, 0],
+  ];
+  const clearanceLive = liveNavigationState.obstacleBehavior.enabled && navigation.lidarFresh;
+  clearance.dataset.state = clearanceLive ? "online" : liveNavigationState.obstacleBehavior.enabled ? "waiting" : "bypassed";
+  clearance.setAttribute("visibility", clearanceLive ? "visible" : "hidden");
+  const visibleClearanceCount = clearanceSamples.filter(([, distance]) => Number.isFinite(distance)).length;
+  clearanceSamples.forEach(([label, distance, eastDirection, northDirection]) => {
+    if (!clearanceLive || !Number.isFinite(distance)) return;
+    const length = Math.min(47, Math.max(2.5, (Math.max(0, distance) / range) * 50));
+    const endX = 50 + eastDirection * length;
+    const endY = 50 + northDirection * length;
+    const state = distance <= liveNavigationState.obstacleBehavior.stopDistanceM
+      ? "stop"
+      : distance <= liveNavigationState.obstacleBehavior.slowDistanceM ? "slow" : "clear";
+    const ray = plannerSvgElement("line", { class: `live-planner-clearance-ray is-${state}`, x1: 50, y1: 50, x2: endX.toFixed(2), y2: endY.toFixed(2) });
+    const dot = plannerSvgElement("circle", { class: `live-planner-clearance-dot is-${state}`, cx: endX.toFixed(2), cy: endY.toFixed(2), r: state === "stop" ? 1.9 : 1.45 });
+    const title = plannerSvgElement("title");
+    title.textContent = `${label}: ${distance.toFixed(2)} m / ${state.toUpperCase()}`;
+    dot.append(title);
+    clearance.append(ray, dot);
+  });
+  clearanceLegend.dataset.state = clearanceLive ? "online" : liveNavigationState.obstacleBehavior.enabled ? "waiting" : "bypassed";
+  clearanceLegend.querySelector("b").textContent = clearanceLive
+    ? `LIDAR / ${visibleClearanceCount} SECTORS`
+    : liveNavigationState.obstacleBehavior.enabled ? "LIDAR / WAITING" : "LIDAR / BYPASSED";
+  clearanceLegend.title = clearanceLive
+    ? `${visibleClearanceCount} fresh LiDAR clearance sectors are shown around the vehicle.`
+    : liveNavigationState.obstacleBehavior.enabled
+      ? "The planner is waiting for a fresh LiDAR scan before drawing clearance sectors."
+      : "LiDAR obstacle guard is disabled for this route draft.";
   route.setAttribute("points", waypointPoints.filter(Boolean).map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" "));
   const firstPoint = waypointPoints[0];
   const lastPoint = waypointPoints.at(-1);

@@ -722,6 +722,7 @@
                   <path class="live-planner-grid-major" d="M10 0v100M20 0v100M30 0v100M40 0v100M50 0v100M60 0v100M70 0v100M80 0v100M90 0v100M0 10h100M0 20h100M0 30h100M0 40h100M0 50h100M0 60h100M0 70h100M0 80h100M0 90h100"></path>
                   <path class="live-planner-axis" d="M50 0v100M0 50h100"></path>
                   <circle id="live-nav-planner-geofence" class="live-planner-geofence" cx="50" cy="50" r="0" visibility="hidden"></circle>
+                  <g id="live-nav-planner-clearance" class="live-planner-clearance" data-state="waiting"></g>
                   <polyline id="live-nav-planner-track" class="live-planner-track" points="" visibility="hidden"></polyline>
                   <polyline id="live-nav-planner-route" class="live-planner-route" points=""></polyline>
                   <polyline id="live-nav-planner-return-route" class="live-planner-return-route" points=""></polyline>
@@ -730,7 +731,7 @@
                   <g class="live-planner-scale" aria-hidden="true"><line x1="8" y1="92" x2="33" y2="92"></line><line x1="8" y1="89.5" x2="8" y2="94.5"></line><line x1="33" y1="89.5" x2="33" y2="94.5"></line><text id="live-nav-planner-scale-label" x="8" y="87">20 M</text></g>
                   <text x="50" y="5" text-anchor="middle">N</text><text x="96" y="53">E</text>
                 </svg>
-                <div class="live-planner-map-legend" aria-label="Route map legend"><span><i class="is-plan"></i>PLANNED ROUTE</span><span id="live-nav-planner-track-legend" data-state="waiting"><i class="is-track"></i><b>GPS TRACK / WAITING</b></span><span><i class="is-return"></i>CLOSING LEG</span></div>
+                <div class="live-planner-map-legend" aria-label="Route map legend"><span><i class="is-plan"></i>PLANNED ROUTE</span><span id="live-nav-planner-track-legend" data-state="waiting"><i class="is-track"></i><b>GPS TRACK / WAITING</b></span><span id="live-nav-planner-clearance-legend" data-state="waiting"><i class="is-clearance"></i><b>LIDAR / WAITING</b></span><span><i class="is-return"></i>CLOSING LEG</span></div>
                 <p class="live-planner-help">Click to add a waypoint. Drag a marker to reposition it. Plans stay local until a GPS/home reference is available.</p>
                 <details class="live-plan-library">
                   <summary><span>SAVED ROUTES</span><strong id="live-nav-plan-library-count">0 SAVED</strong></summary>

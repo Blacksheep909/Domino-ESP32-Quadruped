@@ -156,6 +156,21 @@ import {
   observeLiveDiagnosticPacket,
 } from "./live-diagnostics-state.js";
 import {
+  addNavigationWaypoint,
+  createLiveNavigationState,
+  liveNavigationSnapshot,
+  moveNavigationWaypoint,
+  navigationFixLabel,
+  navigationMissionJson,
+  parseNavigationMissionJson,
+  removeNavigationWaypoint,
+} from "./live-navigation-state.js";
+import {
+  ARDUPILOT_ROVER_MODES,
+  createLiveNavigationCommand,
+  validLiveNavigationAcknowledgement,
+} from "./live-navigation-protocol.js";
+import {
   archiveLiveSession,
   clearLiveSession,
   compareLiveSessions,
@@ -218,11 +233,24 @@ import {
   presentationPreferencesJson,
   PRESENTATION_PREFERENCES_STORAGE_KEY,
 } from "./presentation-preferences.js";
+import {
+  createDominoProjectBundle,
+  parseProjectBundleJson,
+  projectBundleFileName,
+  projectBundleSummary,
+  sanitizeProjectName,
+} from "./project-bundle.js";
 import "./styles.css";
 
 initializeFirmwareWorkspace();
 
 const canvas = document.querySelector("#scene");
+const desktopProjectFiles = globalThis.dominoDesktop?.projectFiles;
+const hasNativeProjectFiles = Boolean(
+  desktopProjectFiles &&
+  typeof desktopProjectFiles.openProjectFile === "function" &&
+  typeof desktopProjectFiles.saveProjectFile === "function",
+);
 let presentationPreferences = parsePresentationPreferencesJson("");
 try {
   presentationPreferences = parsePresentationPreferencesJson(
@@ -238,6 +266,7 @@ const liveSafetyState = createLiveSafetyState();
 const liveManualState = createLiveManualControlState();
 const liveControllerState = createLiveControllerState();
 const liveDiagnosticsState = createLiveDiagnosticsState();
+const liveNavigationState = createLiveNavigationState();
 const liveBatteryAlertState = createLiveBatteryAlertState();
 let liveBatteryControlLocked = false;
 const liveSensorCalibrationState = createLiveSensorCalibrationState();
@@ -293,6 +322,13 @@ try {
 const liveCalibrationState = createLiveCalibrationState(
   storedCalibrationProfile || createLiveCalibrationProfile(),
 );
+const PROJECT_NAME_STORAGE_KEY = "domino-project-name-v1";
+let projectName = "Domino V2";
+try {
+  projectName = sanitizeProjectName(localStorage.getItem(PROJECT_NAME_STORAGE_KEY), projectName);
+} catch {
+  // Project naming is optional; the robot configuration remains available.
+}
 let calibrationPendingRequestId = "";
 let calibrationPendingAction = "";
 let calibrationRequestTimeout = null;
@@ -308,11 +344,287 @@ let liveConnectionRequestTimeout = null;
 let liveSafetyRequestTimeout = null;
 let liveManualRequestTimeout = null;
 let liveDiagnosticFilter = "all";
+let liveNavigationPendingTimeout = null;
 const realWorkspace = document.querySelector("#real-workspace");
 const workspaceButtons = {
   [WORKSPACE_SIMULATION]: document.querySelector("#workspace-simulation"),
   [WORKSPACE_REAL_ROBOT]: document.querySelector("#workspace-real-robot"),
 };
+const AUTONOMY_HUD_COLLAPSED_STORAGE_KEY = "domino-autonomy-hud-collapsed-v1";
+const LIVE_VIEW_SHORTCUTS = [
+  LIVE_VIEW_COMPARE,
+  LIVE_VIEW_DATA,
+  LIVE_VIEW_SENSORS,
+  LIVE_VIEW_CALIBRATION,
+  LIVE_VIEW_GAITS,
+  LIVE_VIEW_DIAGNOSTICS,
+  LIVE_VIEW_SESSIONS,
+];
+const LIVE_VIEW_LABELS = {
+  [LIVE_VIEW_COMPARE]: "COMPARE",
+  [LIVE_VIEW_DATA]: "DATA",
+  [LIVE_VIEW_SENSORS]: "GPS / LIDAR",
+  [LIVE_VIEW_CALIBRATION]: "CALIBRATION",
+  [LIVE_VIEW_GAITS]: "GAITS",
+  [LIVE_VIEW_DIAGNOSTICS]: "DIAGNOSTICS",
+  [LIVE_VIEW_SESSIONS]: "SESSIONS",
+};
+let autonomyHudCollapsed = false;
+let autonomyHudFps = 0;
+let autonomyHudFrameCount = 0;
+let autonomyHudFpsStartedAt = performance.now();
+const LIVE_CAMERA_URL_STORAGE_KEY = "domino-live-camera-url-v1";
+const liveCameraState = {
+  connected: false,
+  error: false,
+  yawDeg: 0,
+  pitchDeg: -8,
+  fovDeg: 90,
+  fps: null,
+  updatedAt: null,
+};
+try {
+  autonomyHudCollapsed = localStorage.getItem(AUTONOMY_HUD_COLLAPSED_STORAGE_KEY) === "true";
+} catch {
+  autonomyHudCollapsed = false;
+}
+
+function showAppToast(message, tone = "info", durationMs = 2800) {
+  const region = document.querySelector("#toast-region");
+  if (!region || !message) return;
+  // Keep transient status messages from turning into a panel of their own when
+  // users move quickly between LIVE workspaces.
+  region.replaceChildren();
+  const toast = document.createElement("div");
+  toast.className = "app-toast";
+  toast.dataset.tone = tone;
+  toast.textContent = message;
+  region.append(toast);
+  requestAnimationFrame(() => toast.classList.add("is-visible"));
+  window.setTimeout(() => {
+    toast.classList.remove("is-visible");
+    window.setTimeout(() => toast.remove(), 180);
+  }, durationMs);
+}
+
+function setAutonomyHudCollapsed(collapsed, persist = true) {
+  autonomyHudCollapsed = Boolean(collapsed);
+  const hud = document.querySelector("#app-hud");
+  const toggle = document.querySelector("#hud-toggle");
+  hud?.classList.toggle("collapsed", autonomyHudCollapsed);
+  if (toggle) {
+    toggle.setAttribute("aria-expanded", String(!autonomyHudCollapsed));
+    toggle.textContent = autonomyHudCollapsed ? "+" : "−";
+    toggle.title = autonomyHudCollapsed ? "Expand autonomous HUD" : "Collapse autonomous HUD";
+  }
+  if (persist) {
+    try {
+      localStorage.setItem(AUTONOMY_HUD_COLLAPSED_STORAGE_KEY, String(autonomyHudCollapsed));
+    } catch {
+      // The autonomous HUD remains usable when browser storage is unavailable.
+    }
+  }
+}
+
+function formatHudSpeed(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? `${numeric.toFixed(1)} m/s` : "--.- m/s";
+}
+
+function renderAutonomyHud() {
+  const hud = document.querySelector("#app-hud");
+  if (
+    !hud ||
+    applicationState.workspace !== WORKSPACE_REAL_ROBOT ||
+    liveViewState.selected !== LIVE_VIEW_SENSORS
+  ) return;
+  const context = document.querySelector("#hud-context");
+  const modeOutput = document.querySelector("#hud-mode");
+  const stateOutput = document.querySelector("#hud-state");
+  const linkOutput = document.querySelector("#hud-link");
+  const heightOutput = document.querySelector("#hud-height");
+  const rollOutput = document.querySelector("#hud-roll");
+  const pitchOutput = document.querySelector("#hud-pitch");
+  const yawOutput = document.querySelector("#hud-yaw");
+  const secondaryLabel = document.querySelector("#hud-secondary-label");
+  const secondaryValue = document.querySelector("#hud-secondary-value");
+  const tertiaryLabel = document.querySelector("#hud-tertiary-label");
+  const tertiaryValue = document.querySelector("#hud-tertiary-value");
+  const ageOutput = document.querySelector("#hud-age");
+  const fpsOutput = document.querySelector("#hud-fps");
+  if (!context || !modeOutput || !stateOutput || !linkOutput || !heightOutput || !rollOutput || !pitchOutput || !yawOutput || !secondaryLabel || !secondaryValue || !tertiaryLabel || !tertiaryValue || !ageOutput || !fpsOutput) return;
+
+  setAutonomyHudCollapsed(autonomyHudCollapsed, false);
+  const comparison = liveComparisonSnapshot(liveTelemetryState);
+  const navigation = liveNavigationSnapshot(comparison.navigation, liveNavigationState);
+  const autopilot = navigation.autopilot;
+  const gps = navigation.gps;
+  const sessionConnected = liveConnectionIsReady(liveConnectionState);
+  const state = autopilot?.failsafe || navigation.geofence?.breached
+    ? "FAULT"
+    : autopilot?.armed
+      ? "ARMED"
+      : navigation.autonomyReady
+        ? "READY"
+        : sessionConnected
+          ? "CHECKS"
+          : "OFFLINE";
+  const stateTone = state === "FAULT" || state === "ARMED"
+    ? state === "ARMED" ? "armed" : "fault"
+    : state === "READY" ? "ready" : state === "OFFLINE" ? "offline" : "warning";
+  const mission = navigation.mission;
+  const missionText = mission?.count > 0
+    ? `${Number.isFinite(mission.current) ? Math.min(mission.current + 1, mission.count) : 0} / ${mission.count}`
+    : `DRAFT / ${liveNavigationState.missionDraft.length}`;
+
+  context.textContent = "AUTONOMY / NAV";
+  modeOutput.textContent = String(navigation.mode?.label || autopilot?.mode || "WAITING").toUpperCase();
+  stateOutput.textContent = state;
+  stateOutput.dataset.state = stateTone;
+  linkOutput.textContent = sessionConnected && navigation.autopilotFresh ? "MAVLINK LINK" : sessionConnected ? "LINK STALE" : "NO LINK";
+  heightOutput.textContent = navigation.gpsFresh ? navigationFixLabel(gps?.fixType) : "WAITING";
+  rollOutput.textContent = Number.isFinite(gps?.hdop) ? gps.hdop.toFixed(1) : "--";
+  pitchOutput.textContent = Number.isFinite(gps?.satellites) ? String(gps.satellites) : "--";
+  yawOutput.textContent = formatHudSpeed(gps?.groundSpeedMps);
+  secondaryLabel.textContent = "MISSION";
+  secondaryValue.textContent = missionText;
+  tertiaryLabel.textContent = "FRONT";
+  tertiaryValue.textContent = navigation.lidarFresh
+    ? formatNavigationDistance(navigation.frontM, "--.- m")
+    : "WAITING";
+  ageOutput.textContent = navigation.lastNavigationAgeMs === null
+    ? "NAV AGE --"
+    : `NAV AGE ${formatNavigationAge(navigation.lastNavigationAgeMs)}`;
+  fpsOutput.textContent = autonomyHudFps > 0 ? `${autonomyHudFps} FPS` : "-- FPS";
+}
+
+function renderLiveCameraPanel() {
+  const state = document.querySelector("#live-camera-state");
+  const rate = document.querySelector("#live-camera-rate");
+  const yaw = document.querySelector("#live-camera-yaw");
+  const pitch = document.querySelector("#live-camera-pitch");
+  const fov = document.querySelector("#live-camera-fov");
+  const connect = document.querySelector("#live-camera-connect");
+  const snapshot = document.querySelector("#live-camera-snapshot");
+  const fullscreen = document.querySelector("#live-camera-fullscreen");
+  const image = document.querySelector("#live-camera-image");
+  const placeholder = document.querySelector("#live-camera-placeholder");
+  if (!state || !rate || !yaw || !pitch || !fov || !connect || !snapshot || !fullscreen || !image || !placeholder) return;
+  state.textContent = liveCameraState.error ? "STREAM ERROR" : liveCameraState.connected ? "LIVE" : "OFFLINE";
+  state.dataset.state = liveCameraState.error ? "error" : liveCameraState.connected ? "online" : "offline";
+  rate.textContent = Number.isFinite(liveCameraState.fps) ? `${Math.round(liveCameraState.fps)} FPS` : liveCameraState.connected ? "STREAMING" : "-- FPS";
+  yaw.textContent = `${liveCameraState.yawDeg >= 0 ? "+" : ""}${liveCameraState.yawDeg.toFixed(1)}°`;
+  pitch.textContent = `${liveCameraState.pitchDeg >= 0 ? "+" : ""}${liveCameraState.pitchDeg.toFixed(1)}°`;
+  fov.textContent = `${Math.round(liveCameraState.fovDeg)}°`;
+  connect.textContent = liveCameraState.connected ? "DISCONNECT" : "CONNECT";
+  snapshot.disabled = !liveCameraState.connected;
+  fullscreen.disabled = !liveCameraState.connected;
+  image.hidden = !liveCameraState.connected;
+  placeholder.hidden = liveCameraState.connected;
+}
+
+function disconnectLiveCamera() {
+  const image = document.querySelector("#live-camera-image");
+  if (image) image.removeAttribute("src");
+  liveCameraState.connected = false;
+  liveCameraState.error = false;
+  liveCameraState.fps = null;
+  liveCameraState.updatedAt = null;
+  renderLiveCameraPanel();
+}
+
+function connectLiveCamera() {
+  if (liveCameraState.connected) {
+    disconnectLiveCamera();
+    return;
+  }
+  const input = document.querySelector("#live-camera-url");
+  const image = document.querySelector("#live-camera-image");
+  const url = input?.value.trim();
+  if (!input || !image || !url) {
+    showAppToast("Enter the robot camera HTTP or MJPEG stream URL.", "warning");
+    input?.focus();
+    return;
+  }
+  try {
+    const parsed = new URL(url, window.location.href);
+    if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error("Unsupported camera protocol");
+    localStorage.setItem(LIVE_CAMERA_URL_STORAGE_KEY, parsed.href);
+    liveCameraState.error = false;
+    image.onload = () => {
+      liveCameraState.connected = true;
+      liveCameraState.error = false;
+      liveCameraState.updatedAt = Date.now();
+      renderLiveCameraPanel();
+    };
+    image.onerror = () => {
+      liveCameraState.connected = false;
+      liveCameraState.error = true;
+      renderLiveCameraPanel();
+      showAppToast("Camera stream could not be opened. Check the URL and robot network.", "error");
+    };
+    image.src = parsed.href;
+    image.hidden = false;
+    document.querySelector("#live-camera-placeholder")?.setAttribute("hidden", "");
+    document.querySelector("#live-camera-state").textContent = "CONNECTING";
+  } catch {
+    showAppToast("Use an HTTP or HTTPS camera stream URL.", "warning");
+    input.focus();
+  }
+}
+
+function captureLiveCameraSnapshot() {
+  const image = document.querySelector("#live-camera-image");
+  if (!image || !liveCameraState.connected || !image.naturalWidth) return;
+  try {
+    const capture = document.createElement("canvas");
+    capture.width = image.naturalWidth;
+    capture.height = image.naturalHeight;
+    capture.getContext("2d").drawImage(image, 0, 0);
+    const link = document.createElement("a");
+    link.download = `domino-camera-${new Date().toISOString().replace(/[:.]/g, "-")}.png`;
+    link.href = capture.toDataURL("image/png");
+    link.click();
+    showAppToast("Camera snapshot saved.", "success");
+  } catch {
+    showAppToast("Snapshot blocked by the camera server. Enable CORS on the stream endpoint.", "warning");
+  }
+}
+
+function ingestLiveCameraTelemetry(detail = {}) {
+  if (Number.isFinite(Number(detail.yawDeg))) liveCameraState.yawDeg = Number(detail.yawDeg);
+  if (Number.isFinite(Number(detail.pitchDeg))) liveCameraState.pitchDeg = Number(detail.pitchDeg);
+  if (Number.isFinite(Number(detail.fovDeg))) liveCameraState.fovDeg = Number(detail.fovDeg);
+  if (Number.isFinite(Number(detail.fps))) liveCameraState.fps = Number(detail.fps);
+  liveCameraState.updatedAt = Date.now();
+  renderLiveCameraPanel();
+}
+
+function updateFullscreenButton() {
+  const button = document.querySelector("#fullscreen-toggle");
+  if (!button) return;
+  const active = Boolean(document.fullscreenElement);
+  button.setAttribute("aria-pressed", String(active));
+  button.title = active ? "Exit fullscreen (F)" : "Enter fullscreen (F)";
+  button.textContent = active ? "×" : "⛶";
+}
+
+async function toggleFullscreen() {
+  if (document.fullscreenElement) {
+    if (typeof document.exitFullscreen !== "function") return;
+    await document.exitFullscreen();
+    return;
+  }
+  if (typeof document.documentElement.requestFullscreen !== "function") {
+    showAppToast("Fullscreen is unavailable in this window.", "warning");
+    return;
+  }
+  try {
+    await document.documentElement.requestFullscreen();
+  } catch {
+    showAppToast("Fullscreen was not granted by the host window.", "warning");
+  }
+}
 
 function persistPresentationPreferences() {
   try {
@@ -362,10 +674,12 @@ function applyWorkspace(workspace) {
     if (measuredRobotWorld) measuredRobotWorld.visible = false;
     updateJointOverlay();
   }
+  renderAutonomyHud();
   requestAnimationFrame(resize);
 }
 
 function applyLiveView(view) {
+  const previousView = liveViewState.selected;
   const leavingCalibration = liveViewState.selected === LIVE_VIEW_CALIBRATION && view !== LIVE_VIEW_CALIBRATION;
   const enteringCalibration = liveViewState.selected !== LIVE_VIEW_CALIBRATION && view === LIVE_VIEW_CALIBRATION;
   const leavingGaits = liveViewState.selected === LIVE_VIEW_GAITS && view !== LIVE_VIEW_GAITS;
@@ -428,6 +742,7 @@ function applyLiveView(view) {
       resetCameraForActiveView();
     }
   });
+  renderAutonomyHud();
   return true;
 }
 
@@ -453,6 +768,102 @@ function applyExperience(experience, persist = true) {
 
 applyExperience(applicationState.experience, false);
 
+const shortcutsDialog = document.querySelector("#shortcuts-dialog");
+const shortcutsDone = document.querySelector("#shortcuts-done");
+let shortcutsOpener = null;
+
+function openShortcuts(opener = null) {
+  if (!shortcutsDialog) return;
+  shortcutsOpener = opener || document.activeElement;
+  shortcutsDialog.hidden = false;
+  shortcutsDone?.focus();
+}
+
+function closeShortcuts() {
+  if (!shortcutsDialog) return;
+  shortcutsDialog.hidden = true;
+  if (shortcutsOpener && typeof shortcutsOpener.focus === "function") shortcutsOpener.focus();
+  shortcutsOpener = null;
+}
+
+document.querySelector("#shortcuts-open")?.addEventListener("click", (event) => openShortcuts(event.currentTarget));
+document.querySelector("#shortcuts-close")?.addEventListener("click", closeShortcuts);
+shortcutsDone?.addEventListener("click", closeShortcuts);
+shortcutsDialog?.addEventListener("click", (event) => {
+  if (event.target === shortcutsDialog) closeShortcuts();
+});
+document.querySelector("#hud-toggle")?.addEventListener("click", () => setAutonomyHudCollapsed(!autonomyHudCollapsed));
+document.querySelector("#live-camera-connect")?.addEventListener("click", connectLiveCamera);
+document.querySelector("#live-camera-snapshot")?.addEventListener("click", captureLiveCameraSnapshot);
+document.querySelector("#live-camera-fullscreen")?.addEventListener("click", () => {
+  document.querySelector("#live-camera-feed")?.requestFullscreen?.();
+});
+window.addEventListener("domino-camera-telemetry", (event) => {
+  if (event instanceof CustomEvent) ingestLiveCameraTelemetry(event.detail);
+});
+try {
+  const savedCameraUrl = localStorage.getItem(LIVE_CAMERA_URL_STORAGE_KEY);
+  if (savedCameraUrl) document.querySelector("#live-camera-url").value = savedCameraUrl;
+} catch {
+  // Camera configuration remains available without persistent browser storage.
+}
+renderLiveCameraPanel();
+document.querySelector("#fullscreen-toggle")?.addEventListener("click", toggleFullscreen);
+document.addEventListener("fullscreenchange", updateFullscreenButton);
+setAutonomyHudCollapsed(autonomyHudCollapsed, false);
+updateFullscreenButton();
+
+function isShortcutEditingTarget(target) {
+  return target instanceof HTMLElement && (
+    target.isContentEditable ||
+    ["INPUT", "SELECT", "TEXTAREA", "OPTION"].includes(target.tagName)
+  );
+}
+
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && shortcutsDialog && !shortcutsDialog.hidden) {
+    event.preventDefault();
+    closeShortcuts();
+    return;
+  }
+  const projectDialog = document.querySelector("#project-dialog");
+  if (event.key === "Escape" && projectDialog && !projectDialog.hidden) {
+    event.preventDefault();
+    closeProjectDialog();
+    return;
+  }
+  if ((shortcutsDialog && !shortcutsDialog.hidden) || (projectDialog && !projectDialog.hidden)) return;
+  if (event.repeat || isShortcutEditingTarget(event.target) || document.querySelector("dialog[open]")) return;
+  if (event.key === "?") {
+    event.preventDefault();
+    openShortcuts();
+    return;
+  }
+  const key = event.key.toLowerCase();
+  if (key === "h") {
+    if (applicationState.workspace !== WORKSPACE_REAL_ROBOT || liveViewState.selected !== LIVE_VIEW_SENSORS) return;
+    event.preventDefault();
+    setAutonomyHudCollapsed(!autonomyHudCollapsed);
+    return;
+  }
+  if (key === "f") {
+    event.preventDefault();
+    toggleFullscreen();
+    return;
+  }
+  if (event.code === "Digit0") {
+    event.preventDefault();
+    applyWorkspace(WORKSPACE_SIMULATION);
+    return;
+  }
+  const liveViewIndex = Number(event.code.replace("Digit", "")) - 1;
+  if (Number.isInteger(liveViewIndex) && liveViewIndex >= 0 && liveViewIndex < LIVE_VIEW_SHORTCUTS.length) {
+    event.preventDefault();
+    if (applicationState.workspace !== WORKSPACE_REAL_ROBOT) applyWorkspace(WORKSPACE_REAL_ROBOT);
+    applyLiveView(LIVE_VIEW_SHORTCUTS[liveViewIndex]);
+  }
+});
+
 document.querySelectorAll("[data-live-view]").forEach((button) => {
   button.addEventListener("click", () => applyLiveView(button.dataset.liveView));
 });
@@ -473,8 +884,24 @@ document.querySelectorAll("[data-live-transport]").forEach((button) => {
     renderLiveConnectionUi();
   });
 });
-document.querySelector("#live-connection-discover").addEventListener("click", () => {
+document.querySelector("#live-connection-discover").addEventListener("click", async () => {
+  const transport = liveConnectionState.transportFilter;
+  try {
+    await fetch("/api/companion/discover", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ transport }),
+    });
+  } catch {
+    // Discovery also covers separately managed Wi-Fi/Bluetooth companions, so
+    // a local service failure must not suppress the normal relay search.
+  }
   sendLiveConnectionRequest("discover");
+  setTimeout(() => {
+    if (liveConnectionState.phase === "discovering" && !liveConnectionState.pendingRequestId) {
+      sendLiveConnectionRequest("discover");
+    }
+  }, 900);
 });
 document.querySelector("#live-adapter-list").addEventListener("click", (event) => {
   const button = event.target.closest("[data-adapter-id]");
@@ -2423,6 +2850,11 @@ function connectControlBridge() {
     liveGaitState.persistentApplySupported = false;
     clearTimeout(liveGaitPendingTimeout);
     liveGaitPendingTimeout = null;
+    liveNavigationState.pendingRequestId = "";
+    liveNavigationState.pendingAction = "";
+    liveNavigationState.lastCommandStatus = "The PC link disconnected. Navigation commands remain blocked.";
+    clearTimeout(liveNavigationPendingTimeout);
+    liveNavigationPendingTimeout = null;
     document.querySelector("#firmware-status").dataset.state = "offline";
     renderLiveConnectionUi();
     setTimeout(connectControlBridge, 800);
@@ -2450,6 +2882,11 @@ function connectControlBridge() {
         liveCalibrationState.benchModeAcknowledged = false;
         liveGaitState.persistentApplySupported = false;
         revokeLiveManualControl(liveManualState, "The robot adapter disappeared. Browser authority was revoked.");
+        liveNavigationState.pendingRequestId = "";
+        liveNavigationState.pendingAction = "";
+        liveNavigationState.lastCommandStatus = "The navigation adapter disappeared. Autonomous commands remain blocked.";
+        clearTimeout(liveNavigationPendingTimeout);
+        liveNavigationPendingTimeout = null;
         renderLiveConnectionUi();
       }
       if (message.type === "live-connection-ack") {
@@ -2475,6 +2912,9 @@ function connectControlBridge() {
       }
       if (message.type === "live-gait-ack") {
         acceptLiveGaitAcknowledgement(message);
+      }
+      if (message.type === "live-navigation-ack") {
+        acceptLiveNavigationAcknowledgement(message);
       }
     } catch {
       // Ignore malformed local bridge packets.
@@ -2847,6 +3287,7 @@ function renderLiveConnectionUi() {
       : "Find and pair this PC with Domino";
   openButton.dataset.state = connected ? "connected" : connectionFault ? "fault" : "ready";
   renderLiveManualUi();
+  if (liveViewState.selected === LIVE_VIEW_GAITS) renderLiveGaitUi();
 }
 
 function sendLiveConnectionRequest(action) {
@@ -3000,6 +3441,7 @@ function updateLiveSensorCornerTrails(online, now = performance.now()) {
 function renderLiveSensorsUi(comparison, diagnostics) {
   const rawSnapshot = liveSensorSnapshot(comparison, diagnostics?.telemetry, liveSensorCalibrationState);
   const snapshot = filterLiveSensorAttitude(liveSensorAttitudeFilterState, rawSnapshot);
+  const navigation = liveNavigationSnapshot(comparison.navigation, liveNavigationState);
   const safeConfirmed = document.querySelector("#live-sensor-safe-check").checked;
   const axesConfirmed = document.querySelector("#live-sensor-axis-check").checked;
   const step = !safeConfirmed ? 0 : !axesConfirmed ? 1 : !snapshot.levelCaptured ? 2 : 3;
@@ -3037,7 +3479,407 @@ function renderLiveSensorsUi(comparison, diagnostics) {
         ? "The safety checks are complete; waiting for fresh IMU telemetry."
         : !snapshot.levelCaptured
           ? "Place the body on a measured level surface, let the readings settle, then capture level."
-          : `Browser reference captured ${new Date(snapshot.capturedAt).toLocaleTimeString()}. Verify nose-up and left-up motion before future robot persistence.`;
+           : `Browser reference captured ${new Date(snapshot.capturedAt).toLocaleTimeString()}. Verify nose-up and left-up motion before future robot persistence.`;
+  renderLiveNavigationUi(navigation);
+}
+
+function formatNavigationDistance(value, fallback = "--.- m") {
+  return Number.isFinite(value) ? `${value.toFixed(2)} m` : fallback;
+}
+
+function formatNavigationAge(value, fallback = "--") {
+  if (!Number.isFinite(value)) return fallback;
+  return value < 1_000 ? `${Math.round(value)} ms` : `${(value / 1_000).toFixed(1)} s`;
+}
+
+function formatCoordinate(value, fallback = "--.------") {
+  return Number.isFinite(value) ? value.toFixed(6) : fallback;
+}
+
+function formatNavigationSpeed(value, fallback = "--.- m/s") {
+  return Number.isFinite(value) ? `${value.toFixed(2)} m/s` : fallback;
+}
+
+function gpsDistanceM(first, second) {
+  if (!first || !second || !Number.isFinite(first.lat) || !Number.isFinite(first.lon) || !Number.isFinite(second.lat) || !Number.isFinite(second.lon)) return null;
+  const earthRadiusM = 6_371_000;
+  const toRad = (value) => value * Math.PI / 180;
+  const dLat = toRad(second.lat - first.lat);
+  const dLon = toRad(second.lon - first.lon);
+  const lat1 = toRad(first.lat);
+  const lat2 = toRad(second.lat);
+  const haversine = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  return 2 * earthRadiusM * Math.asin(Math.sqrt(Math.max(0, Math.min(1, haversine))));
+}
+
+function recordLiveGpsTrack(navigation) {
+  const position = navigation.gps?.position;
+  if (!navigation.gpsFresh || !navigation.hasFix || !position) return;
+  const point = { lat: position.lat, lon: position.lon, at: navigation.gps.receivedAt || Date.now() };
+  const previous = liveNavigationState.gpsTrack.at(-1);
+  if (previous && point.at - previous.at < 1_000 && (gpsDistanceM(previous, point) || 0) < 2) return;
+  liveNavigationState.gpsTrack.push(point);
+  if (liveNavigationState.gpsTrack.length > 600) liveNavigationState.gpsTrack.splice(0, liveNavigationState.gpsTrack.length - 600);
+}
+
+function renderLiveGpsTrack(navigation) {
+  const polyline = document.querySelector("#live-gps-track-line");
+  const current = document.querySelector("#live-gps-track-current");
+  const home = document.querySelector("#live-gps-track-home");
+  const status = document.querySelector("#live-gps-track-status");
+  if (!polyline || !current || !home || !status) return;
+  const track = liveNavigationState.gpsTrack;
+  if (!track.length) {
+    polyline.setAttribute("points", "");
+    current.setAttribute("visibility", "hidden");
+    home.setAttribute("visibility", "hidden");
+    status.textContent = "NO 3D GPS TRACK";
+    return;
+  }
+  const points = [...track, navigation.home].filter((point) => Number.isFinite(point?.lat) && Number.isFinite(point?.lon));
+  const latitudes = points.map((point) => point.lat);
+  const longitudes = points.map((point) => point.lon);
+  const minLat = Math.min(...latitudes);
+  const maxLat = Math.max(...latitudes);
+  const minLon = Math.min(...longitudes);
+  const maxLon = Math.max(...longitudes);
+  const latSpan = Math.max(0.00001, maxLat - minLat);
+  const lonSpan = Math.max(0.00001, maxLon - minLon);
+  const padLat = latSpan * 0.15;
+  const padLon = lonSpan * 0.15;
+  const project = (point) => `${(12 + ((point.lon - (minLon - padLon)) / (lonSpan + padLon * 2)) * 176).toFixed(1)},${(188 - ((point.lat - (minLat - padLat)) / (latSpan + padLat * 2)) * 176).toFixed(1)}`;
+  polyline.setAttribute("points", track.map(project).join(" "));
+  current.setAttribute("cx", project(track.at(-1)).split(",")[0]);
+  current.setAttribute("cy", project(track.at(-1)).split(",")[1]);
+  current.setAttribute("visibility", "visible");
+  if (navigation.home && Number.isFinite(navigation.home.lat) && Number.isFinite(navigation.home.lon)) {
+    const homePoint = project(navigation.home).split(",");
+    home.setAttribute("cx", homePoint[0]);
+    home.setAttribute("cy", homePoint[1]);
+    home.setAttribute("visibility", "visible");
+  } else {
+    home.setAttribute("visibility", "hidden");
+  }
+  const homeDistance = gpsDistanceM(navigation.home, track.at(-1));
+  status.textContent = `${track.length} POINT${track.length === 1 ? "" : "S"}${homeDistance === null ? "" : ` / ${formatNavigationDistance(homeDistance, "--.- m")} HOME`}`;
+}
+
+function navigationAdapter() {
+  return liveConnectionState.adapters[liveConnectionState.selectedAdapterId] || null;
+}
+
+function navigationCapabilityAvailable() {
+  const adapter = navigationAdapter();
+  return Boolean(
+    liveConnectionIsReady(liveConnectionState) &&
+    (adapter?.capabilities?.navigation === true || adapter?.capabilities?.ardupilot === true || adapter?.capabilities?.autonomy === true),
+  );
+}
+
+function navigationTelemetryAvailable() {
+  const adapter = navigationAdapter();
+  return Boolean(
+    liveConnectionIsReady(liveConnectionState) &&
+    (adapter?.capabilities?.navigation === true || adapter?.capabilities?.gps === true || adapter?.capabilities?.lidar === true),
+  );
+}
+
+function navigationStateSignature() {
+  return JSON.stringify({
+    name: liveNavigationState.missionName,
+    mission: liveNavigationState.missionDraft,
+  });
+}
+
+function escapeNavigationHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function renderLiveLidarRadar(snapshot) {
+  const group = document.querySelector("#live-lidar-rays");
+  if (!group) return;
+  group.replaceChildren();
+  const lidar = snapshot.lidar;
+  if (!snapshot.lidarFresh || !lidar?.rangesM?.length) return;
+  const maxRange = Math.max(0.1, lidar.maxRangeM || 30);
+  lidar.rangesM.forEach((range, index) => {
+    if (!Number.isFinite(range)) return;
+    const angle = THREE.MathUtils.degToRad((lidar.offsetDeg || 0) + index * (lidar.incrementDeg || 5));
+    const radius = 92 * Math.max(0, Math.min(1, range / maxRange));
+    const x = 120 + Math.sin(angle) * radius;
+    const y = 120 - Math.cos(angle) * radius;
+    const ray = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    ray.setAttribute("x1", "120");
+    ray.setAttribute("y1", "120");
+    ray.setAttribute("x2", x.toFixed(1));
+    ray.setAttribute("y2", y.toFixed(1));
+    ray.setAttribute("class", range <= liveNavigationState.obstacleBehavior.stopDistanceM ? "stop" : range <= liveNavigationState.obstacleBehavior.slowDistanceM ? "slow" : "clear");
+    group.append(ray);
+  });
+}
+
+function renderLiveWaypointList(navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState)) {
+  const list = document.querySelector("#live-nav-waypoint-list");
+  if (!list) return;
+  const signature = navigationStateSignature();
+  if (list.dataset.signature === signature) return;
+  list.dataset.signature = signature;
+  list.replaceChildren();
+  if (!liveNavigationState.missionDraft.length) {
+    const empty = document.createElement("p");
+    empty.className = "live-empty-state";
+    empty.textContent = "Add a current GPS position or create a waypoint to build a mission.";
+    list.append(empty);
+    return;
+  }
+  const guidedReady = navigationCapabilityAvailable() &&
+    liveConnectionIsReady(liveConnectionState) &&
+    navigation.positionReady &&
+    navigation.autopilot?.armed === true;
+  liveNavigationState.missionDraft.forEach((waypoint, index) => {
+    const row = document.createElement("article");
+    row.className = "live-waypoint-row";
+    row.dataset.index = String(index);
+    row.innerHTML = `
+      <div class="live-waypoint-heading"><strong>WP ${String(index + 1).padStart(2, "0")}</strong><span>${escapeNavigationHtml(waypoint.label || "Waypoint")}</span><div><button type="button" data-waypoint-action="goto" ${guidedReady ? "" : "disabled"} title="Send this waypoint as a Guided target">GO</button><button type="button" data-waypoint-action="up" title="Move waypoint up">↑</button><button type="button" data-waypoint-action="down" title="Move waypoint down">↓</button><button type="button" data-waypoint-action="remove" title="Remove waypoint">×</button></div></div>
+      <label><span>LAT</span><input data-waypoint-field="lat" type="number" step="0.000001" min="-90" max="90" value="${Number(waypoint.lat).toFixed(6)}"></label>
+      <label><span>LON</span><input data-waypoint-field="lon" type="number" step="0.000001" min="-180" max="180" value="${Number(waypoint.lon).toFixed(6)}"></label>
+      <label><span>RADIUS M</span><input data-waypoint-field="radiusM" type="number" step="0.1" min="0.1" max="100" value="${Number(waypoint.radiusM || 1.5).toFixed(1)}"></label>
+      <label><span>SPEED M/S</span><input data-waypoint-field="speedMps" type="number" step="0.1" min="0" max="30" value="${Number(waypoint.speedMps || 0).toFixed(1)}"></label>
+      <label><span>HOLD S</span><input data-waypoint-field="holdS" type="number" step="1" min="0" max="360" value="${Number(waypoint.holdS || 0).toFixed(0)}"></label>
+    `;
+    list.append(row);
+  });
+}
+
+function updateNavigationMissionHeader(navigation) {
+  const draftCount = liveNavigationState.missionDraft.length;
+  const mission = navigation.mission;
+  const missionState = mission?.count > 0 && Number.isFinite(mission.current)
+    ? `${Math.min(mission.current + 1, mission.count)} / ${mission.count} ${String(mission.state || "ACTIVE").toUpperCase()}`
+    : `DRAFT / ${draftCount} WAYPOINT${draftCount === 1 ? "" : "S"}`;
+  document.querySelector("#live-nav-mission-state").textContent = missionState;
+  document.querySelector("#live-nav-mission-progress").textContent = mission?.count > 0
+    ? `${Number.isFinite(mission.current) ? Math.min(mission.current + 1, mission.count) : 0} / ${mission.count}`
+    : "NO MISSION";
+}
+
+function setNavigationCheck(key, state, label = null) {
+  const item = document.querySelector(`#live-nav-prearm-checklist [data-check="${key}"]`);
+  if (!item) return;
+  item.dataset.state = state;
+  item.querySelector("b").textContent = label || state.toUpperCase();
+}
+
+function renderLiveNavigationUi(navigation) {
+  const gps = navigation.gps;
+  const lidar = navigation.lidar;
+  const autopilot = navigation.autopilot;
+  const capability = navigationCapabilityAvailable();
+  const telemetryCapability = navigationTelemetryAvailable();
+  const commandReady = capability && liveConnectionIsReady(liveConnectionState);
+  const gpsFix = navigationFixLabel(gps?.fixType);
+  const gpsHealthy = navigation.hasFix;
+  const autopilotHealthy = navigation.autopilotFresh && autopilot?.heartbeat !== false;
+  const modeDefinition = navigation.mode;
+  recordLiveGpsTrack(navigation);
+  const selectedMode = document.querySelector("#live-nav-mode-select");
+  if (selectedMode && selectedMode.options.length !== ARDUPILOT_ROVER_MODES.length) {
+    selectedMode.replaceChildren(...ARDUPILOT_ROVER_MODES.map((mode) => {
+      const option = document.createElement("option");
+      option.value = mode.id;
+      option.textContent = `${mode.label.toUpperCase()}${mode.autonomous ? " / AUTO" : ""}`;
+      option.dataset.requiresPosition = String(mode.requiresPosition);
+      return option;
+    }));
+  }
+  if (selectedMode && document.activeElement !== selectedMode) selectedMode.value = autopilot?.mode || liveNavigationState.selectedMode;
+
+  const obstacleEnabledInput = document.querySelector("#live-nav-obstacle-enabled");
+  const stopDistanceInput = document.querySelector("#live-nav-stop-distance");
+  const slowDistanceInput = document.querySelector("#live-nav-slow-distance");
+  obstacleEnabledInput.checked = liveNavigationState.obstacleBehavior.enabled;
+  stopDistanceInput.value = String(liveNavigationState.obstacleBehavior.stopDistanceM);
+  slowDistanceInput.value = String(liveNavigationState.obstacleBehavior.slowDistanceM);
+  document.querySelector("#live-nav-stop-distance-value").textContent = `${Number(stopDistanceInput.value).toFixed(2)} m`;
+  document.querySelector("#live-nav-slow-distance-value").textContent = `${Number(slowDistanceInput.value).toFixed(2)} m`;
+  const geofenceEnabledInput = document.querySelector("#live-nav-geofence-enabled");
+  const geofenceRadiusInput = document.querySelector("#live-nav-geofence-radius");
+  geofenceEnabledInput.checked = liveNavigationState.geofence.enabled;
+  geofenceRadiusInput.value = String(liveNavigationState.geofence.maxRadiusM || 50);
+
+  const gpsModule = document.querySelector('[data-sensor-module="gps"]');
+  const lidarModule = document.querySelector('[data-sensor-module="lidar"]');
+  gpsModule.dataset.state = navigation.gpsFresh ? (gpsHealthy ? "online" : "warning") : "waiting";
+  lidarModule.dataset.state = navigation.lidarFresh ? "online" : "waiting";
+  document.querySelector("#live-gps-module-badge").textContent = navigation.gpsFresh ? gpsFix : "WAITING";
+  document.querySelector("#live-gps-module-detail").textContent = navigation.gpsFresh
+    ? `${gps?.source || "GNSS"} / ${gps?.satellites ?? "--"} SAT / ${gps?.hdop?.toFixed?.(1) ?? "--"} HDOP`
+    : "WAITING FOR FRESH GNSS TELEMETRY";
+  document.querySelector("#live-lidar-module-badge").textContent = navigation.lidarFresh ? "ONLINE" : "WAITING";
+  document.querySelector("#live-lidar-module-detail").textContent = navigation.lidarFresh
+    ? `${lidar.sensorId} / ${lidar.validCount} RETURNS / ${lidar.frame}`
+    : "WAITING FOR FRESH RANGE TELEMETRY";
+  document.querySelector("#live-navigation-capability-copy").textContent = !telemetryCapability
+    ? "GPS and LiDAR data remain unavailable until a capable adapter reports them. The interface will not fabricate a position or range cloud."
+    : !navigation.gpsFresh && !navigation.lidarFresh
+      ? "The adapter reports navigation capability, but both sensor streams are stale. Commands remain locked."
+      : "Sensor streams are live. Autonomous actions remain individually gated by the ArduPilot heartbeat, GPS fix, EKF and safety checks.";
+
+  const gpsBadge = document.querySelector("#live-gps-fix-badge");
+  gpsBadge.textContent = gpsFix;
+  gpsBadge.dataset.state = navigation.gpsFresh ? (gpsHealthy ? "online" : "warning") : "offline";
+  document.querySelector("#live-gps-lat").textContent = formatCoordinate(gps?.position?.lat);
+  document.querySelector("#live-gps-lon").textContent = formatCoordinate(gps?.position?.lon);
+  document.querySelector("#live-gps-satellites").textContent = Number.isFinite(gps?.satellites) ? String(gps.satellites) : "--";
+  document.querySelector("#live-gps-hdop").textContent = Number.isFinite(gps?.hdop) ? gps.hdop.toFixed(1) : "--";
+  document.querySelector("#live-gps-speed").textContent = formatNavigationSpeed(gps?.groundSpeedMps);
+  document.querySelector("#live-gps-course").textContent = Number.isFinite(gps?.courseDeg) ? `${gps.courseDeg.toFixed(1)}°` : "---.-°";
+  document.querySelector("#live-gps-altitude").textContent = Number.isFinite(gps?.altitudeM) ? `${gps.altitudeM.toFixed(1)} m` : "--.- m";
+  document.querySelector("#live-gps-age").textContent = formatNavigationAge(gps?.receivedAt > 0 ? Date.now() - gps.receivedAt : null);
+  renderLiveGpsTrack(navigation);
+
+  const lidarBadge = document.querySelector("#live-lidar-scan-state");
+  lidarBadge.textContent = !navigation.lidarFresh ? "WAITING" : navigation.frontState === "stop" ? "STOP ZONE" : navigation.frontState === "slow" ? "SLOW ZONE" : "CLEAR";
+  lidarBadge.dataset.state = !navigation.lidarFresh ? "offline" : navigation.frontState === "clear" ? "online" : "warning";
+  document.querySelector("#live-lidar-front").textContent = formatNavigationDistance(navigation.frontM);
+  document.querySelector("#live-lidar-left").textContent = formatNavigationDistance(navigation.leftM);
+  document.querySelector("#live-lidar-right").textContent = formatNavigationDistance(navigation.rightM);
+  document.querySelector("#live-lidar-rear").textContent = formatNavigationDistance(navigation.rearM);
+  document.querySelector("#live-lidar-obstacles").textContent = navigation.lidarFresh ? String(navigation.obstacleCount) : "--";
+  document.querySelector("#live-lidar-rate").textContent = Number.isFinite(lidar?.scanRateHz) ? `${lidar.scanRateHz.toFixed(1)} Hz` : "--.- Hz";
+  renderLiveLidarRadar(navigation);
+
+  const autopilotBadge = document.querySelector("#live-autopilot-state");
+  autopilotBadge.textContent = !capability ? "NOT DETECTED" : !autopilotHealthy ? "HEARTBEAT LOST" : autopilot.failsafe ? "FAILSAFE" : "CONNECTED";
+  autopilotBadge.dataset.state = !autopilotHealthy ? "offline" : autopilot.failsafe ? "warning" : "online";
+  document.querySelector("#live-nav-current-mode").textContent = modeDefinition?.label?.toUpperCase() || autopilot?.mode?.toUpperCase() || "--";
+  document.querySelector("#live-nav-arm-state").textContent = autopilot?.armed ? "ARMED" : "DISARMED";
+  document.querySelector("#live-nav-ekf-state").textContent = autopilot?.ekfHealthy === true ? "HEALTHY" : autopilot?.ekfHealthy === false ? "FAULT" : "--";
+  document.querySelector("#live-nav-prearm-state").textContent = autopilot?.prearmReady === true ? "READY" : autopilot?.prearmReady === false ? "BLOCKED" : "--";
+  document.querySelector("#live-nav-heartbeat-age").textContent = formatNavigationAge(autopilot?.receivedAt > 0 ? Date.now() - autopilot.receivedAt : null);
+  document.querySelector("#live-nav-autopilot-status").textContent = liveNavigationState.pendingRequestId
+    ? `Waiting for ArduPilot acknowledgement: ${liveNavigationState.pendingAction.toUpperCase()}.`
+    : liveNavigationState.lastCommandStatus || (autopilot?.statusText || "ArduPilot navigation is waiting for a command." );
+
+  const modeRequiresPosition = selectedMode?.selectedOptions?.[0]?.dataset.requiresPosition === "true";
+  const positionModeReady = !modeRequiresPosition || navigation.positionReady;
+  document.querySelector("#live-nav-set-mode").disabled = !commandReady || !autopilotHealthy || !positionModeReady || Boolean(liveNavigationState.pendingRequestId);
+  document.querySelector("#live-nav-arm").disabled = !commandReady || !autopilotHealthy || autopilot?.armed || autopilot?.prearmReady === false || Boolean(liveNavigationState.pendingRequestId);
+  document.querySelector("#live-nav-disarm").disabled = !commandReady || !autopilotHealthy || !autopilot?.armed || Boolean(liveNavigationState.pendingRequestId);
+  document.querySelector("#live-nav-rtl").disabled = !commandReady || !autopilotHealthy || !navigation.positionReady || Boolean(liveNavigationState.pendingRequestId);
+  document.querySelector("#live-nav-hold").disabled = !commandReady || !autopilotHealthy || Boolean(liveNavigationState.pendingRequestId);
+  document.querySelector("#live-nav-set-parameter").disabled = !commandReady || !autopilotHealthy || Boolean(liveNavigationState.pendingRequestId);
+  document.querySelector("#live-nav-request-state").disabled = !commandReady || Boolean(liveNavigationState.pendingRequestId);
+  document.querySelector("#live-nav-add-current").disabled = !navigation.hasFix;
+  document.querySelector("#live-nav-set-home-current").disabled = !commandReady || !navigation.hasFix || Boolean(liveNavigationState.pendingRequestId);
+
+  updateNavigationMissionHeader(navigation);
+  renderLiveWaypointList(navigation);
+  const missionReady = liveNavigationState.missionDraft.length > 0;
+  document.querySelector("#live-nav-upload-mission").disabled = !commandReady || !autopilotHealthy || autopilot?.armed || !missionReady || Boolean(liveNavigationState.pendingRequestId);
+  document.querySelector("#live-nav-start-mission").disabled = !commandReady || !autopilot?.armed || !navigation.autonomyReady || !missionReady || Boolean(liveNavigationState.pendingRequestId);
+  document.querySelector("#live-nav-pause-mission").disabled = !commandReady || !autopilot?.armed || Boolean(liveNavigationState.pendingRequestId);
+  document.querySelector("#live-nav-resume-mission").disabled = !commandReady || !autopilot?.armed || !navigation.positionReady || Boolean(liveNavigationState.pendingRequestId);
+  document.querySelector("#live-nav-clear-mission").disabled = !commandReady || !autopilotHealthy || autopilot?.armed || Boolean(liveNavigationState.pendingRequestId);
+  document.querySelector("#live-nav-send-obstacle-policy").disabled = !commandReady || Boolean(liveNavigationState.pendingRequestId);
+  document.querySelector("#live-nav-apply-geofence").disabled = !commandReady || !navigation.hasFix || Boolean(liveNavigationState.pendingRequestId);
+
+  const fenceEnabled = document.querySelector("#live-nav-geofence-enabled").checked;
+  const fenceRadius = Number(document.querySelector("#live-nav-geofence-radius").value);
+  const obstacleEnabled = liveNavigationState.obstacleBehavior.enabled;
+  const obstacleHealthy = !obstacleEnabled || navigation.lidarFresh;
+  document.querySelector("#live-nav-safety-state").textContent = !commandReady ? "LOCKED" : navigation.autonomyReady && obstacleHealthy ? "READY" : "CHECKS REQUIRED";
+  document.querySelector("#live-nav-safety-state").dataset.state = !commandReady ? "offline" : navigation.autonomyReady && obstacleHealthy ? "online" : "warning";
+  setNavigationCheck("link", autopilotHealthy ? "ok" : "waiting", autopilotHealthy ? "READY" : "WAITING");
+  setNavigationCheck("gps", navigation.hasFix ? "ok" : navigation.gpsFresh ? "warning" : "waiting", navigation.hasFix ? "READY" : navigation.gpsFresh ? "NO 3D FIX" : "WAITING");
+  setNavigationCheck("ekf", autopilot?.ekfHealthy === true ? "ok" : autopilot?.ekfHealthy === false ? "fault" : "waiting", autopilot?.ekfHealthy === true ? "HEALTHY" : autopilot?.ekfHealthy === false ? "FAULT" : "WAITING");
+  setNavigationCheck("obstacle", obstacleHealthy ? "ok" : "warning", obstacleEnabled ? (navigation.lidarFresh ? "READY" : "WAITING") : "BYPASSED");
+  setNavigationCheck("fence", !fenceEnabled || (navigation.home && fenceRadius >= 5) ? "ok" : "warning", !fenceEnabled ? "OFF" : navigation.home && fenceRadius >= 5 ? "READY" : "SET HOME");
+  document.querySelector("#live-nav-safety-copy").textContent = !commandReady
+    ? "Pair an ArduPilot-capable adapter to unlock navigation actions."
+    : navigation.autonomyReady && obstacleHealthy
+      ? "Autonomous actions are available. Keep a physical mode switch or E-stop within reach."
+      : autopilot?.failsafe
+        ? `ArduPilot reports FAILSAFE${autopilot.failsafeReason ? `: ${autopilot.failsafeReason}` : "."}`
+        : "Position modes remain blocked until the link, GPS, EKF and obstacle policy are healthy.";
+}
+
+function sendLiveNavigationCommand(action, payload = {}) {
+  if (
+    socket?.readyState !== WebSocket.OPEN ||
+    !navigationCapabilityAvailable() ||
+    liveNavigationState.pendingRequestId
+  ) return false;
+  const connection = liveConnectionEnvelope(liveConnectionState);
+  if (!connection) return false;
+  const requestId = crypto.randomUUID();
+  const command = createLiveNavigationCommand(action, payload, requestId);
+  if (!command) return false;
+  Object.assign(command, connection);
+  liveNavigationState.pendingRequestId = requestId;
+  liveNavigationState.pendingAction = action;
+  liveNavigationState.lastCommandAt = Date.now();
+  liveNavigationState.lastCommandStatus = `Waiting for ArduPilot to acknowledge ${action.replaceAll("-", " ")}...`;
+  socket.send(JSON.stringify(command));
+  clearTimeout(liveNavigationPendingTimeout);
+  liveNavigationPendingTimeout = setTimeout(() => {
+    if (liveNavigationState.pendingRequestId !== requestId) return;
+    liveNavigationState.pendingRequestId = "";
+    liveNavigationState.pendingAction = "";
+    liveNavigationState.lastCommandStatus = `No acknowledgement arrived for ${action.replaceAll("-", " ")}. No state change was assumed.`;
+    updateLiveComparisonUi();
+  }, 5_000);
+  updateLiveComparisonUi();
+  return true;
+}
+
+function acceptLiveNavigationAcknowledgement(message) {
+  const connection = liveConnectionEnvelope(liveConnectionState);
+  if (
+    !validLiveNavigationAcknowledgement(message) ||
+    !connection ||
+    message.adapterId !== connection.adapterId ||
+    message.sessionId !== connection.sessionId ||
+    message.requestId !== liveNavigationState.pendingRequestId ||
+    message.action !== liveNavigationState.pendingAction
+  ) return false;
+  clearTimeout(liveNavigationPendingTimeout);
+  liveNavigationPendingTimeout = null;
+  const action = liveNavigationState.pendingAction;
+  liveNavigationState.pendingRequestId = "";
+  liveNavigationState.pendingAction = "";
+  liveNavigationState.lastAck = message;
+  liveNavigationState.lastCommandStatus = message.accepted
+    ? `${action.replaceAll("-", " ")} accepted by ArduPilot.`
+    : `ArduPilot rejected ${action.replaceAll("-", " ")}${message.reason ? `: ${message.reason}` : "."}`;
+  if (message.mode) liveNavigationState.selectedMode = String(message.mode).toLowerCase();
+  if (message.state?.obstacleBehavior) {
+    liveNavigationState.obstacleBehavior = {
+      ...liveNavigationState.obstacleBehavior,
+      ...message.state.obstacleBehavior,
+    };
+  }
+  if (message.state?.geofence) {
+    liveNavigationState.geofence = {
+      ...liveNavigationState.geofence,
+      ...message.state.geofence,
+    };
+  }
+  if (message.navigation) {
+    acceptLiveTelemetryPacket(liveTelemetryState, {
+      type: "live-telemetry",
+      sequence: liveTelemetryState.sequence + 1,
+      navigation: message.navigation,
+    });
+  }
+  updateLiveComparisonUi();
+  return true;
 }
 
 const liveChartCanvas = document.querySelector("#live-comparison-chart");
@@ -4194,10 +5036,12 @@ function renderLiveGaitUi() {
 
 function sendLiveGaitCommand(action, profileOverride = null) {
   const connection = liveConnectionEnvelope(liveConnectionState);
+  const adapter = liveConnectionState.adapters[liveConnectionState.selectedAdapterId];
   if (
     socket?.readyState !== WebSocket.OPEN ||
     !connection ||
     !liveConnectionIsReady(liveConnectionState) ||
+    adapter?.capabilities.gaitProfiles !== true ||
     liveGaitState.pendingRequestId ||
     (liveBatteryControlLocked && ["apply-profile", "revert-profile"].includes(action))
   ) return false;
@@ -4511,6 +5355,7 @@ function updateLiveComparisonUi() {
       ? "LINKED / BENCH LOCKED"
       : "ROBOT NOT READY";
   calibrationLinkOutput.dataset.state = liveCalibrationState.benchModeAcknowledged ? "online" : "offline";
+  if (liveViewState.selected === LIVE_VIEW_GAITS) renderLiveGaitUi();
   document.querySelector("#live-calibration-apply-robot").disabled =
     !engineeringConnected || !calibrationSupported || !liveCalibrationState.benchModeAcknowledged || Boolean(calibrationPendingRequestId);
   const benchRequest = document.querySelector("#live-calibration-request-bench");
@@ -4731,6 +5576,7 @@ function updateLiveComparisonUi() {
     renderLiveSensorsUi(snapshot, diagnosticSnapshot);
   }
   updateLiveSessionUi(snapshot);
+  renderAutonomyHud();
 }
 
 function toggleLiveRecording() {
@@ -4768,6 +5614,166 @@ document.querySelector("#live-sensor-capture-level").addEventListener("click", (
 document.querySelector("#live-sensor-reset-level").addEventListener("click", () => {
   resetLiveSensorLevel(liveSensorCalibrationState);
   updateLiveComparisonUi();
+});
+
+document.querySelector("#live-nav-obstacle-enabled").addEventListener("change", (event) => {
+  liveNavigationState.obstacleBehavior.enabled = event.target.checked;
+  updateLiveComparisonUi();
+});
+document.querySelector("#live-nav-stop-distance").addEventListener("input", (event) => {
+  liveNavigationState.obstacleBehavior.stopDistanceM = Number(event.target.value);
+  document.querySelector("#live-nav-stop-distance-value").textContent = `${Number(event.target.value).toFixed(2)} m`;
+  updateLiveComparisonUi();
+});
+document.querySelector("#live-nav-slow-distance").addEventListener("input", (event) => {
+  liveNavigationState.obstacleBehavior.slowDistanceM = Number(event.target.value);
+  document.querySelector("#live-nav-slow-distance-value").textContent = `${Number(event.target.value).toFixed(2)} m`;
+  updateLiveComparisonUi();
+});
+document.querySelector("#live-nav-mission-name").addEventListener("input", (event) => {
+  liveNavigationState.missionName = event.target.value.slice(0, 64) || "Domino patrol";
+  document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
+  updateLiveComparisonUi();
+});
+document.querySelector("#live-nav-mode-select").addEventListener("change", (event) => {
+  liveNavigationState.selectedMode = event.target.value;
+  updateLiveComparisonUi();
+});
+document.querySelector("#live-nav-geofence-enabled").addEventListener("change", (event) => {
+  liveNavigationState.geofence.enabled = event.target.checked;
+  updateLiveComparisonUi();
+});
+document.querySelector("#live-nav-geofence-radius").addEventListener("input", (event) => {
+  liveNavigationState.geofence.maxRadiusM = Number(event.target.value) || 50;
+  updateLiveComparisonUi();
+});
+
+document.querySelector("#live-nav-waypoint-list").addEventListener("input", (event) => {
+  const input = event.target.closest("[data-waypoint-field]");
+  const row = input?.closest("[data-index]");
+  if (!input || !row) return;
+  const index = Number(row.dataset.index);
+  const field = input.dataset.waypointField;
+  if (!liveNavigationState.missionDraft[index]) return;
+  liveNavigationState.missionDraft[index][field] = field === "label" ? input.value : Number(input.value);
+  document.querySelector("#live-nav-waypoint-list").dataset.signature = navigationStateSignature();
+  updateNavigationMissionHeader(liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState));
+  updateLiveComparisonUi();
+});
+document.querySelector("#live-nav-waypoint-list").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-waypoint-action]");
+  const row = button?.closest("[data-index]");
+  if (!button || !row) return;
+  const index = Number(row.dataset.index);
+  const action = button.dataset.waypointAction;
+  if (action === "goto") {
+    const waypoint = liveNavigationState.missionDraft[index];
+    if (waypoint) sendLiveNavigationCommand("goto", {
+      target: { lat: waypoint.lat, lon: waypoint.lon, altM: waypoint.altM },
+      acceptRadiusM: waypoint.radiusM,
+      speedMps: waypoint.speedMps,
+    });
+    return;
+  }
+  if (action === "remove") removeNavigationWaypoint(liveNavigationState, index);
+  if (action === "up") moveNavigationWaypoint(liveNavigationState, index, "up");
+  if (action === "down") moveNavigationWaypoint(liveNavigationState, index, "down");
+  document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
+  updateLiveComparisonUi();
+});
+
+document.querySelector("#live-nav-add-waypoint").addEventListener("click", () => {
+  const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
+  if (!navigation.gps?.position) return;
+  addNavigationWaypoint(liveNavigationState, {
+    lat: navigation.gps.position.lat,
+    lon: navigation.gps.position.lon,
+    altM: navigation.gps.altitudeM || 0,
+    label: `WP ${liveNavigationState.missionDraft.length + 1}`,
+  });
+  document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
+  updateLiveComparisonUi();
+});
+document.querySelector("#live-nav-add-current").addEventListener("click", () => {
+  const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
+  if (!navigation.gps?.position) return;
+  addNavigationWaypoint(liveNavigationState, {
+    lat: navigation.gps.position.lat,
+    lon: navigation.gps.position.lon,
+    altM: navigation.gps.altitudeM || 0,
+    label: `GPS ${liveNavigationState.missionDraft.length + 1}`,
+  });
+  document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
+  updateLiveComparisonUi();
+});
+document.querySelector("#live-nav-set-home-current").addEventListener("click", () => {
+  const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
+  if (navigation.gps?.position) sendLiveNavigationCommand("set-home", { home: navigation.gps.position, useCurrent: false });
+});
+document.querySelector("#live-nav-set-mode").addEventListener("click", () => {
+  const mode = document.querySelector("#live-nav-mode-select").value;
+  const definition = ARDUPILOT_ROVER_MODES.find((candidate) => candidate.id === mode);
+  sendLiveNavigationCommand("set-mode", { mode, modeCode: definition?.code });
+});
+document.querySelector("#live-nav-arm").addEventListener("click", () => sendLiveNavigationCommand("arm"));
+document.querySelector("#live-nav-disarm").addEventListener("click", () => sendLiveNavigationCommand("disarm"));
+document.querySelector("#live-nav-rtl").addEventListener("click", () => sendLiveNavigationCommand("set-mode", { mode: "rtl", modeCode: 11 }));
+document.querySelector("#live-nav-hold").addEventListener("click", () => sendLiveNavigationCommand("set-mode", { mode: "hold", modeCode: 4 }));
+document.querySelector("#live-nav-request-state").addEventListener("click", () => sendLiveNavigationCommand("request-navigation-state"));
+document.querySelector("#live-nav-set-parameter").addEventListener("click", () => {
+  const name = document.querySelector("#live-nav-parameter-name").value.trim();
+  const value = Number(document.querySelector("#live-nav-parameter-value").value);
+  if (name && Number.isFinite(value)) sendLiveNavigationCommand("set-parameter", { name, value });
+});
+document.querySelector("#live-nav-send-obstacle-policy").addEventListener("click", () => sendLiveNavigationCommand("set-obstacle-behavior", { ...liveNavigationState.obstacleBehavior }));
+document.querySelector("#live-nav-apply-geofence").addEventListener("click", () => {
+  const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
+  const enabled = document.querySelector("#live-nav-geofence-enabled").checked;
+  liveNavigationState.geofence.enabled = enabled;
+  liveNavigationState.geofence.maxRadiusM = Number(document.querySelector("#live-nav-geofence-radius").value) || 50;
+  sendLiveNavigationCommand("set-geofence", {
+    enabled,
+    maxRadiusM: liveNavigationState.geofence.maxRadiusM,
+    home: navigation.home,
+    polygon: liveNavigationState.geofence.polygon,
+  });
+});
+document.querySelector("#live-nav-upload-mission").addEventListener("click", () => sendLiveNavigationCommand("upload-mission", { name: liveNavigationState.missionName, mission: liveNavigationState.missionDraft }));
+document.querySelector("#live-nav-start-mission").addEventListener("click", () => sendLiveNavigationCommand("start-mission"));
+document.querySelector("#live-nav-pause-mission").addEventListener("click", () => sendLiveNavigationCommand("pause-mission"));
+document.querySelector("#live-nav-resume-mission").addEventListener("click", () => sendLiveNavigationCommand("resume-mission"));
+document.querySelector("#live-nav-clear-mission").addEventListener("click", () => sendLiveNavigationCommand("clear-mission"));
+document.querySelector("#live-nav-export-mission").addEventListener("click", () => {
+  const blob = new Blob([navigationMissionJson(liveNavigationState)], { type: "application/json" });
+  const anchor = document.createElement("a");
+  anchor.href = URL.createObjectURL(blob);
+  anchor.download = `${(liveNavigationState.missionName || "domino-patrol").replace(/[^a-z0-9_-]+/gi, "-").toLowerCase()}.mission.json`;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(anchor.href), 0);
+});
+document.querySelector("#live-nav-import-mission").addEventListener("click", () => document.querySelector("#live-nav-import-file").click());
+document.querySelector("#live-nav-import-file").addEventListener("change", async (event) => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  try {
+    const imported = parseNavigationMissionJson(await file.text());
+    liveNavigationState.missionName = imported.name;
+    liveNavigationState.missionDraft = imported.mission;
+    if (imported.geofence) liveNavigationState.geofence = { ...liveNavigationState.geofence, ...imported.geofence };
+    if (imported.obstacleBehavior) liveNavigationState.obstacleBehavior = { ...liveNavigationState.obstacleBehavior, ...imported.obstacleBehavior };
+    document.querySelector("#live-nav-mission-name").value = liveNavigationState.missionName;
+    document.querySelector("#live-nav-obstacle-enabled").checked = liveNavigationState.obstacleBehavior.enabled;
+    document.querySelector("#live-nav-stop-distance").value = liveNavigationState.obstacleBehavior.stopDistanceM;
+    document.querySelector("#live-nav-slow-distance").value = liveNavigationState.obstacleBehavior.slowDistanceM;
+    document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
+    liveNavigationState.lastCommandStatus = `Imported ${liveNavigationState.missionDraft.length} waypoints from ${file.name}.`;
+    updateLiveComparisonUi();
+  } catch (error) {
+    liveNavigationState.lastCommandStatus = `Mission import failed: ${error.message}`;
+    updateLiveComparisonUi();
+  } finally {
+    event.target.value = "";
+  }
 });
 
 if (liveSessionRepository.available) {
@@ -5246,7 +6252,9 @@ window.addEventListener("domino-live-telemetry", (event) => {
 });
 
 setInterval(updateLiveComparisonUi, 100);
+setInterval(renderAutonomyHud, 100);
 updateLiveComparisonUi();
+renderAutonomyHud();
 
 function sendChannels() {
   if (socket?.readyState === WebSocket.OPEN) {
@@ -5339,6 +6347,7 @@ function resetRobot() {
     visualBaseQuaternion.copy(floatAnchorQuaternion);
     centerCameraOnRobot(floatAnchorPosition);
   }
+  showAppToast("Simulation reset.", "info", 1600);
 }
 
 function centerCameraOnRobot(position) {
@@ -5661,6 +6670,211 @@ document.querySelector("#gait-lab-reset").addEventListener("click", () => {
 });
 syncGaitLabUi();
 syncGaitProfileUi();
+
+function setProjectStatus(message, state = "") {
+  const output = document.querySelector("#project-status");
+  output.textContent = message;
+  output.dataset.state = state;
+}
+
+function currentProjectBundle() {
+  return createDominoProjectBundle({
+    name: projectName,
+    gaitLabSettings,
+    gaitProfiles,
+    gamepadMappings,
+    calibrationProfile: liveCalibrationState.profile,
+    liveGaitLibrary,
+    liveGaitDraft: liveGaitState.draft,
+  });
+}
+
+function renderProjectSummary() {
+  const bundle = currentProjectBundle();
+  const summary = projectBundleSummary(bundle);
+  document.querySelector("#project-name").value = projectName;
+  document.querySelector("#project-name-label").textContent = projectName.toUpperCase();
+  document.querySelector("#project-gait-count").textContent = String(summary.gaitProfileCount);
+  document.querySelector("#project-live-gait-count").textContent = String(summary.liveGaitProfileCount);
+  document.querySelector("#project-controller-count").textContent = String(summary.gamepadMappingCount);
+  document.querySelector("#project-calibration-count").textContent = `${summary.calibratedJointCount} JOINTS`;
+  document.querySelector("#project-storage-mode").textContent = hasNativeProjectFiles
+    ? "DESKTOP FILES / NATIVE OPEN + SAVE"
+    : "PORTABLE FILE / IMPORT + EXPORT";
+  document.querySelector("#project-import").textContent = hasNativeProjectFiles
+    ? "OPEN FROM DISK"
+    : "IMPORT PROJECT";
+  document.querySelector("#project-export").textContent = hasNativeProjectFiles
+    ? "SAVE TO DISK"
+    : "EXPORT .QSTUDIO";
+}
+
+function openProjectDialog() {
+  renderProjectSummary();
+  const dialog = document.querySelector("#project-dialog");
+  dialog.hidden = false;
+  document.querySelector("#project-name").focus();
+}
+
+function closeProjectDialog() {
+  document.querySelector("#project-dialog").hidden = true;
+}
+
+function persistProjectName() {
+  try {
+    localStorage.setItem(PROJECT_NAME_STORAGE_KEY, projectName);
+  } catch {
+    // The bundle can still be exported when browser storage is unavailable.
+  }
+}
+
+async function saveProjectBundle() {
+  projectName = sanitizeProjectName(document.querySelector("#project-name").value, projectName);
+  persistProjectName();
+  const contents = JSON.stringify(currentProjectBundle(), null, 2) + "\n";
+  if (hasNativeProjectFiles) {
+    try {
+      const saved = await desktopProjectFiles.saveProjectFile({
+        contents,
+        suggestedFileName: projectBundleFileName(projectName),
+      });
+      if (saved?.canceled) {
+        setProjectStatus("Save cancelled.");
+        return;
+      }
+      renderProjectSummary();
+      setProjectStatus(
+        `Saved ${saved?.fileName || projectBundleFileName(projectName)}. Robot links and safety state were not included.`,
+      );
+    } catch (error) {
+      setProjectStatus(error instanceof Error ? error.message : "Project save failed.", "error");
+    }
+    return;
+  }
+
+  const blob = new Blob([contents], { type: "application/json;charset=utf-8" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = projectBundleFileName(projectName);
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 0);
+  renderProjectSummary();
+  setProjectStatus(`Exported ${projectName}. Robot links and safety state were not included.`);
+}
+
+async function openProjectBundle() {
+  if (!hasNativeProjectFiles) {
+    document.querySelector("#project-import-file").click();
+    return;
+  }
+  try {
+    const opened = await desktopProjectFiles.openProjectFile();
+    if (opened?.canceled) {
+      setProjectStatus("Open cancelled.");
+      return;
+    }
+    applyImportedProject(
+      parseProjectBundleJson(opened?.contents || ""),
+      opened?.fileName || "project.qstudio.json",
+    );
+  } catch (error) {
+    setProjectStatus(error instanceof Error ? error.message : "Project open failed.", "error");
+  }
+}
+
+function replaceLocalProjectStorage(bundle) {
+  try {
+    localStorage.setItem(GAIT_LAB_STORAGE_KEY, JSON.stringify(bundle.simulation.gaitLabSettings));
+    localStorage.setItem(GAIT_PROFILE_STORAGE_KEY, JSON.stringify(bundle.simulation.gaitProfiles));
+    localStorage.setItem(GAMEPAD_MAPPING_STORAGE_KEY, JSON.stringify(bundle.controller.gamepadMappings));
+    localStorage.setItem(LIVE_GAIT_LIBRARY_KEY, JSON.stringify(bundle.live.gaitLibrary));
+    localStorage.setItem(LIVE_CALIBRATION_STORAGE_KEY, calibrationProfileJson(bundle.live.calibration));
+    localStorage.setItem(PROJECT_NAME_STORAGE_KEY, bundle.project.name);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function applyImportedProject(bundle, fileName) {
+  if (liveCalibrationState.benchModeAcknowledged) {
+    throw new Error("Exit robot bench mode before importing a project.");
+  }
+  if (liveManualState.authorityToken) {
+    releaseLiveManualControl("Project import released browser-control authority.");
+  }
+
+  projectName = bundle.project.name;
+  gaitLabSettings = sanitizeGaitLabSettings(bundle.simulation.gaitLabSettings);
+  gaitLab.setSettings(gaitLabSettings);
+  gaitProfiles = Object.fromEntries(Object.entries(bundle.simulation.gaitProfiles).map(([name, settings]) => [
+    name,
+    sanitizeGaitLabSettings(settings),
+  ]));
+  gamepadMappings = readGamepadMappings(bundle.controller.gamepadMappings);
+  liveGaitLibrary = readLiveGaitLibrary(bundle.live.gaitLibrary);
+  replaceLiveGaitDraft(liveGaitState, bundle.live.gaitDraft, "import");
+  liveGaitState.selectedLibraryName = "";
+  liveGaitState.status = `Imported ${fileName}. Preview the draft before any robot apply action.`;
+  liveGaitPreviewLab.setSettings(liveGaitState.draft.settings);
+  liveGaitPreviewLab.reset();
+
+  liveCalibrationState.profile = createLiveCalibrationProfile(bundle.live.calibration);
+  liveCalibrationState.step = LIVE_CALIBRATION_STEPS.length - 1;
+  liveCalibrationState.jogOffsetDeg = 0;
+  liveCalibrationState.safetyConfirmed = false;
+  liveCalibrationState.benchModeAcknowledged = false;
+  liveCalibrationState.dirty = true;
+  calibrationBenchDesired = false;
+  calibrationPendingRequestId = "";
+  calibrationPendingAction = "";
+  calibrationBenchFeedback = "Project calibration loaded locally. Robot storage was not changed.";
+
+  const persisted = replaceLocalProjectStorage({
+    ...bundle,
+    simulation: { ...bundle.simulation, gaitProfiles },
+    controller: { gamepadMappings },
+    live: { ...bundle.live, gaitLibrary: liveGaitLibrary },
+  });
+  syncGaitLabUi();
+  syncGaitProfileUi();
+  syncLiveGaitLibrary();
+  renderLiveGaitUi();
+  renderLiveCalibrationUi();
+  renderProjectSummary();
+  setProjectStatus(
+    persisted
+      ? `Imported ${fileName}. Calibration is a local draft; review it before saving to the robot.`
+      : `Imported ${fileName} in memory, but browser storage could not be updated.`,
+    persisted ? "" : "error",
+  );
+}
+
+document.querySelector("#project-open").addEventListener("click", openProjectDialog);
+document.querySelector("#project-dialog-close").addEventListener("click", closeProjectDialog);
+document.querySelector("#project-dialog-done").addEventListener("click", closeProjectDialog);
+document.querySelector("#project-dialog").addEventListener("click", (event) => {
+  if (event.target.id === "project-dialog") closeProjectDialog();
+});
+document.querySelector("#project-name").addEventListener("change", (event) => {
+  projectName = sanitizeProjectName(event.target.value, projectName);
+  persistProjectName();
+  renderProjectSummary();
+});
+document.querySelector("#project-export").addEventListener("click", () => { void saveProjectBundle(); });
+document.querySelector("#project-import").addEventListener("click", () => { void openProjectBundle(); });
+document.querySelector("#project-import-file").addEventListener("change", async (event) => {
+  const [file] = event.target.files || [];
+  if (!file) return;
+  try {
+    applyImportedProject(parseProjectBundleJson(await file.text()), file.name);
+  } catch (error) {
+    setProjectStatus(error instanceof Error ? error.message : "Project import failed.", "error");
+  }
+  event.target.value = "";
+});
+
+renderProjectSummary();
 document.querySelector("#reset-button").addEventListener("click", resetRobot);
 document.querySelector("#reset-view-button").addEventListener("click", resetCameraForActiveView);
 document.querySelector("#camera-home-button").addEventListener("click", resetCameraForActiveView);
@@ -6389,6 +7603,11 @@ function updatePinClosureHealth() {
 
 function updateFootSymmetryHealth() {
   if (!telemetryDatasetDue || !linkageRuntimesReady()) return;
+  const firmwareElapsedMs = Number(firmwareState?.elapsed_ms ?? effectiveFirmwareState?.elapsed_ms);
+  // The SIL publishes its first state while the CAD hierarchy is still
+  // settling into the firmware pose. Do not report a one-frame symmetry fault
+  // during that startup window.
+  if (!Number.isFinite(firmwareElapsedMs) || firmwareElapsedMs < 500) return;
 
   const cadFeet = Object.fromEntries(linkageRuntimes.map((runtime) => {
     const position = new THREE.Vector3();
@@ -6538,7 +7757,7 @@ function updatePhysics(delta) {
   const formatSignedAngle = (value) => `${value >= 0 ? "+" : ""}${value.toFixed(2)}°`;
 
   document.querySelector("#physics-status").dataset.state = "online";
-  document.querySelector("#physics-engine").textContent = "RAPIER + CAD";
+  document.querySelector("#physics-engine").textContent = "RAPIER + CAD / ASSISTED";
   const massModel = physicsState.massModel || dominoMassModel;
   const massReadout = document.querySelector("#mass-model");
   massReadout.textContent = `${massModel.totalMassKg.toFixed(2)} kg / 2x 4S`;
@@ -6732,11 +7951,22 @@ function updateGaitLabState(delta) {
 function animate(now) {
   const delta = Math.min(0.05, (now - lastFrame) / 1000);
   lastFrame = now;
+  autonomyHudFrameCount += 1;
+  if (now - autonomyHudFpsStartedAt >= 1_000) {
+    autonomyHudFps = Math.round((autonomyHudFrameCount * 1_000) / (now - autonomyHudFpsStartedAt));
+    autonomyHudFrameCount = 0;
+    autonomyHudFpsStartedAt = now;
+  }
   telemetryDatasetElapsed += delta;
   telemetryDatasetDue = telemetryDatasetElapsed >= 0.1;
   if (telemetryDatasetDue) telemetryDatasetElapsed = 0;
   if (applicationState.workspace !== WORKSPACE_SIMULATION) {
     updateLiveTwinPose(delta);
+    // Keep the same glowing foot trails used by the Simulation gait-tune
+    // inspector available in LIVE Compare, GPS/LiDAR, and Gaits views.
+    // updateLiveTwinPose() runs first so the trail follows the current
+    // measured/expected live pose rather than the previous frame.
+    updateFootTrajectories(delta);
     const floatingLivePreview = floatModeEnabled ||
       (liveViewState.selected === LIVE_VIEW_CALIBRATION && calibrationFloatEnabled);
     ground.visible = !floatingLivePreview;

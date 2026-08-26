@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import process from "node:process";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
   collectFirmwarePackage,
+  FirmwareService,
   preparePlatformioEnvironment,
   resolveReviewFile,
 } from "./firmware-service.mjs";
@@ -55,6 +57,63 @@ test("firmware jobs keep writable PlatformIO state in the app runtime", () => {
     realpathSync(path.join(environment.PLATFORMIO_CORE_DIR, "packages")),
     realpathSync(path.join(installedCore, "packages")),
   );
+});
+
+test("intentional firmware cancellation is reported as cancelled and preserves the last good build", { timeout: 8_000 }, async () => {
+  const root = fixture();
+  const runtimeRoot = mkdtempSync(path.join(tmpdir(), "domino-firmware-runtime-"));
+  const service = new FirmwareService({ projectRoot: root, runtimeRoot });
+  service.platformio = process.execPath;
+  const packageHash = service.package().hash;
+  const previousBuild = { ok: true, packageHash, completedAt: "before", jobId: "previous" };
+  service.lastBuild = previousBuild;
+
+  service.startJob("build", ["-e", "setTimeout(() => {}, 5000)"]);
+  assert.equal(service.cancel(), true);
+  await new Promise((resolve, reject) => {
+    const deadline = Date.now() + 6_000;
+    const timer = setInterval(() => {
+      if (service.job?.status === "cancelled") {
+        clearInterval(timer);
+        resolve();
+      } else if (Date.now() > deadline) {
+        clearInterval(timer);
+        reject(new Error(`Firmware cancellation did not finish: ${service.job?.status}`));
+      }
+    }, 25);
+  });
+  assert.equal(service.job.stage, "Job cancelled");
+  assert.deepEqual(service.lastBuild, previousBuild);
+});
+
+test("successful firmware jobs notify the desktop updater hook", { timeout: 8_000 }, async () => {
+  const root = fixture();
+  const runtimeRoot = mkdtempSync(path.join(tmpdir(), "domino-firmware-runtime-"));
+  const completed = [];
+  const service = new FirmwareService({
+    projectRoot: root,
+    runtimeRoot,
+    onJobFinished: (job) => completed.push(job),
+  });
+  service.platformio = process.execPath;
+
+  service.startJob("build", ["-e", "process.exit(0)"]);
+  await new Promise((resolve, reject) => {
+    const deadline = Date.now() + 6_000;
+    const timer = setInterval(() => {
+      if (service.job?.status === "success") {
+        clearInterval(timer);
+        resolve();
+      } else if (Date.now() > deadline) {
+        clearInterval(timer);
+        reject(new Error(`Firmware build did not finish: ${service.job?.status}`));
+      }
+    }, 25);
+  });
+  assert.equal(completed.length, 1);
+  assert.equal(completed[0].status, "success");
+  assert.equal(completed[0].type, "build");
+  assert.equal(completed[0].packageHash, service.package().hash);
 });
 
 test("physical CRSF control does not require a LIVE browser arm", () => {

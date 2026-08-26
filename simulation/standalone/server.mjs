@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 
 import { CrsfTransmitterHidInput } from "./boxer-hid.mjs";
+import { CompanionService } from "./companion-service.mjs";
 import { FirmwareService } from "./firmware-service.mjs";
 import {
   clientControlIsFresh,
@@ -32,8 +33,13 @@ import {
   validLiveAdapterAnnouncement,
   validLiveConnectionAcknowledgement,
   validLiveConnectionCommand,
+  validLiveTelemetryPacket,
   validSessionEnvelope,
 } from "./web/src/live-connection-protocol.js";
+import {
+  validLiveNavigationAcknowledgement,
+  validLiveNavigationCommand,
+} from "./web/src/live-navigation-protocol.js";
 import {
   validLiveSafetyAcknowledgement,
   validLiveSafetyCommand,
@@ -47,16 +53,18 @@ import {
 } from "./web/src/live-manual-control-protocol.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(here, "../..");
-const distRoot = path.join(here, "dist");
-const runtimeRoot = path.join(here, "runtime");
-const cadRoot = path.join(
-  repoRoot,
-  "simulation",
-  "urdf",
-  "generated",
-  "Domino_URDF_Parts_Combined_Final_description",
-  "meshes",
+const repoRoot = path.resolve(process.env.DOMINO_PROJECT_ROOT || path.resolve(here, "../.."));
+const distRoot = path.resolve(process.env.DOMINO_DIST_ROOT || path.join(here, "dist"));
+const runtimeRoot = path.resolve(process.env.DOMINO_RUNTIME_ROOT || path.join(here, "runtime"));
+const cadRoot = path.resolve(
+  process.env.DOMINO_CAD_ROOT || path.join(
+    repoRoot,
+    "simulation",
+    "urdf",
+    "generated",
+    "Domino_URDF_Parts_Combined_Final_description",
+    "meshes",
+  ),
 );
 const statePath = path.join(runtimeRoot, "state.json");
 const stateSlotPaths = [`${statePath}.0`, `${statePath}.1`];
@@ -66,7 +74,23 @@ const debugStamp = debugStartedAt.toISOString().replaceAll(":", "-").replaceAll(
 const debugLogPath = path.join(runtimeRoot, `debug-session-${debugStamp}.jsonl`);
 const port = Number(process.env.DOMINO_STANDALONE_PORT || 8770);
 const maxDebugBytes = 64 * 1024 * 1024;
-const firmwareService = new FirmwareService({ projectRoot: repoRoot, runtimeRoot });
+let appUpdateCheck = null;
+const firmwareService = new FirmwareService({
+  projectRoot: repoRoot,
+  runtimeRoot,
+  onJobFinished: (job) => {
+    if (job.status === "success") appUpdateCheck?.(`firmware-${job.type}-complete`);
+  },
+});
+const companionService = new CompanionService({
+  firmwareService,
+  relayUrl: `ws://127.0.0.1:${port}/control`,
+  adapterEntry: path.resolve(process.env.DOMINO_COMPANION_ENTRY || path.join(here, "live-companion-adapter.mjs")),
+});
+
+export function setAppUpdateCheck(checker) {
+  appUpdateCheck = typeof checker === "function" ? checker : null;
+}
 
 mkdirSync(runtimeRoot, { recursive: true });
 writeFileSync(
@@ -172,22 +196,55 @@ function sendJson(response, status, payload) {
   response.end(JSON.stringify(payload));
 }
 
+class RequestBodyError extends Error {
+  constructor(message, statusCode = 400) {
+    super(message);
+    this.name = "RequestBodyError";
+    this.statusCode = statusCode;
+  }
+}
+
 function readJsonBody(request, limit = 32 * 1024) {
   return new Promise((resolve, reject) => {
     let body = "";
+    let receivedBytes = 0;
+    let settled = false;
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      // Drain the request after rejecting so the HTTP connection can be
+      // reused, but never append more data after the limit is exceeded.
+      request.resume();
+      reject(error);
+    };
+
+    const declaredLength = Number(request.headers["content-length"]);
+    if (Number.isFinite(declaredLength) && declaredLength > limit) {
+      fail(new RequestBodyError("Request body is too large.", 413));
+      return;
+    }
+
     request.setEncoding("utf8");
     request.on("data", (chunk) => {
+      if (settled) return;
+      receivedBytes += Buffer.byteLength(chunk, "utf8");
+      if (receivedBytes > limit) {
+        fail(new RequestBodyError("Request body is too large.", 413));
+        return;
+      }
       body += chunk;
-      if (body.length > limit) reject(new Error("Request body is too large."));
     });
     request.on("end", () => {
+      if (settled) return;
+      settled = true;
       try {
         resolve(body ? JSON.parse(body) : {});
       } catch {
-        reject(new Error("Request body must be valid JSON."));
+        reject(new RequestBodyError("Request body must be valid JSON."));
       }
     });
-    request.on("error", reject);
+    request.on("aborted", () => fail(new RequestBodyError("Request body was aborted.")));
+    request.on("error", (error) => fail(error));
   });
 }
 
@@ -220,7 +277,29 @@ async function handleFirmwareApi(request, response, url) {
     }
     sendJson(response, 404, { error: "Firmware endpoint not found." });
   } catch (error) {
-    sendJson(response, 409, { error: error.message || "Firmware operation failed." });
+    sendJson(response, error.statusCode || 409, { error: error.message || "Firmware operation failed." });
+  }
+}
+
+async function handleCompanionApi(request, response, url) {
+  try {
+    if (request.method === "GET" && url.pathname === "/api/companion/status") {
+      sendJson(response, 200, companionService.status());
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/companion/discover") {
+      const body = await readJsonBody(request);
+      sendJson(response, 200, await companionService.discover(String(body.transport || "auto")));
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/companion/stop") {
+      companionService.stop();
+      sendJson(response, 200, companionService.status());
+      return;
+    }
+    sendJson(response, 404, { error: "Companion endpoint not found." });
+  } catch (error) {
+    sendJson(response, error.statusCode || 409, { error: error.message || "Companion operation failed." });
   }
 }
 
@@ -228,6 +307,14 @@ const server = createServer(async (request, response) => {
   const url = new URL(request.url || "/", `http://${request.headers.host || "127.0.0.1"}`);
   if (url.pathname.startsWith("/api/firmware/")) {
     await handleFirmwareApi(request, response, url);
+    return;
+  }
+  if (url.pathname.startsWith("/api/companion/")) {
+    await handleCompanionApi(request, response, url);
+    return;
+  }
+  if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
+    sendJson(response, 404, { error: "API endpoint not found." });
     return;
   }
   if (url.pathname === "/runtime/state.json") {
@@ -312,10 +399,18 @@ function removeLiveAdapter(socket, reason = "offline") {
   if (!socket?.liveAdapterId) return;
   const record = liveAdapters.get(socket.liveAdapterId);
   if (record?.socket !== socket) return;
-  liveAdapters.delete(socket.liveAdapterId);
+  const adapterId = socket.liveAdapterId;
+  liveAdapters.delete(adapterId);
+  // Expiration is a security boundary. Clear every session-bound field before
+  // allowing this socket to announce again so stale commands cannot be
+  // accepted after a heartbeat timeout.
+  socket.liveAdapterId = "";
+  socket.liveSessionId = "";
+  socket.liveManualAuthority = null;
+  socket.livePendingRequests?.clear();
   broadcast({
     type: "live-adapter-removed",
-    adapterId: socket.liveAdapterId,
+    adapterId,
     reason,
     timestampMs: Date.now(),
   });
@@ -444,7 +539,12 @@ sockets.on("connection", (socket) => {
         }
         socket.liveAdapterId = message.adapterId;
         const announcement = { ...message, serverReceivedAt: Date.now() };
-        liveAdapters.set(message.adapterId, { socket, announcement, receivedAt: Date.now() });
+        liveAdapters.set(message.adapterId, {
+          socket,
+          announcement,
+          receivedAt: Date.now(),
+          lastTelemetrySequence: -1,
+        });
         broadcast(announcement);
         return;
       }
@@ -485,7 +585,11 @@ sockets.on("connection", (socket) => {
           (message.adapterId && message.adapterId !== socket.liveAdapterId) ||
           !consumeAdapterRequest(socket, message, "connection")
         ) return;
-        if (message.action === "connect" && message.accepted) socket.liveSessionId = message.sessionId;
+        if (message.action === "connect" && message.accepted) {
+          socket.liveSessionId = message.sessionId;
+          const record = liveAdapters.get(socket.liveAdapterId);
+          if (record?.socket === socket) record.lastTelemetrySequence = -1;
+        }
         if (
           message.action === "disconnect" &&
           message.accepted &&
@@ -499,7 +603,15 @@ sockets.on("connection", (socket) => {
         // Only a registered adapter may publish telemetry, and every packet is
         // bound to the engineering session negotiated by the browser.
         const record = liveAdapterForSession(message);
-        if (record?.socket === socket && Buffer.byteLength(payload) <= 64 * 1024) broadcast(message);
+        if (
+          record?.socket === socket &&
+          Buffer.byteLength(payload) <= 64 * 1024 &&
+          validLiveTelemetryPacket(message) &&
+          Number(message.sequence) > record.lastTelemetrySequence
+        ) {
+          record.lastTelemetrySequence = Number(message.sequence);
+          broadcast(message);
+        }
         return;
       }
       if (message.type === "live-calibration-command") {
@@ -551,6 +663,24 @@ sockets.on("connection", (socket) => {
         ) {
           broadcast(message);
         }
+        return;
+      }
+      if (message.type === "live-navigation-command") {
+        const record = liveAdapterForSession(message);
+        if (Buffer.byteLength(payload) <= 64 * 1024 && validLiveNavigationCommand(message) && record) {
+          rememberAdapterRequest(record.socket, message, "navigation");
+          sendSocket(record.socket, message);
+        }
+        return;
+      }
+      if (message.type === "live-navigation-ack") {
+        const record = liveAdapterForSession(message);
+        if (
+          Buffer.byteLength(payload) <= 64 * 1024 &&
+          validLiveNavigationAcknowledgement(message) &&
+          record?.socket === socket &&
+          consumeAdapterRequest(socket, message, "navigation")
+        ) broadcast(message);
         return;
       }
       if (message.type === "live-safety-command") {
@@ -686,17 +816,25 @@ sockets.on("connection", (socket) => {
   });
 });
 
-server.listen(port, "127.0.0.1", () => {
-  console.log(`Domino Virtual Lab: http://127.0.0.1:${port}`);
-  console.log(`CAD source: ${cadRoot}`);
-  console.log(`Control file: ${controlPath}`);
-  console.log("Debug log: /runtime/debug/latest.jsonl");
+export const serverReady = new Promise((resolve, reject) => {
+  server.once("error", reject);
+  server.listen(port, "127.0.0.1", () => {
+    server.off("error", reject);
+    console.log(`Domino Virtual Lab: http://127.0.0.1:${port}`);
+    console.log(`CAD source: ${cadRoot}`);
+    console.log(`Control file: ${controlPath}`);
+    console.log("Debug log: /runtime/debug/latest.jsonl");
+    resolve({ host: "127.0.0.1", port });
+  });
 });
 
-function shutdown() {
+export function shutdown() {
+  companionService.stop();
   radio.stop();
   server.close();
 }
 
-process.once("SIGINT", shutdown);
-process.once("SIGTERM", shutdown);
+if (process.env.DOMINO_EMBEDDED_DESKTOP !== "1") {
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
+}

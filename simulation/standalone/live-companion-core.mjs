@@ -3,6 +3,10 @@ import { randomUUID } from "node:crypto";
 import { validCalibrationCommand } from "./web/src/live-calibration-protocol.js";
 import { validLiveConnectionCommand } from "./web/src/live-connection-protocol.js";
 import { validLiveGaitCommand } from "./web/src/live-gait-protocol.js";
+import {
+  LIVE_NAVIGATION_CAPABILITIES,
+  validLiveNavigationCommand,
+} from "./web/src/live-navigation-protocol.js";
 import { sanitizeLiveControllerTelemetry } from "./web/src/live-controller-state.js";
 import { acceptLiveTelemetryPacket, createLiveTelemetryState } from "./web/src/live-telemetry-state.js";
 import {
@@ -60,6 +64,14 @@ function validRobotTelemetry(message, receivedAt) {
     expected: message.expected,
     measured: message.measured,
     power: message.power,
+    navigation: message.navigation || {
+      gps: message.gps,
+      lidar: message.lidar,
+      autopilot: message.autopilot,
+      home: message.home,
+      geofence: message.geofence,
+      obstacleBehavior: message.obstacleBehavior,
+    },
   }, receivedAt);
 }
 
@@ -81,6 +93,20 @@ function normalizeRobotTelemetryClock(message, receivedAt) {
     controller: message.controller && typeof message.controller === "object"
       ? { ...message.controller, frameTimestampMs: toHostTime(message.controller.frameTimestampMs) }
       : message.controller,
+    navigation: message.navigation && typeof message.navigation === "object"
+      ? {
+          ...message.navigation,
+          gps: message.navigation.gps && typeof message.navigation.gps === "object"
+            ? { ...message.navigation.gps, timestampMs: toHostTime(message.navigation.gps.timestampMs) }
+            : message.navigation.gps,
+          lidar: message.navigation.lidar && typeof message.navigation.lidar === "object"
+            ? { ...message.navigation.lidar, timestampMs: toHostTime(message.navigation.lidar.timestampMs) }
+            : message.navigation.lidar,
+          autopilot: message.navigation.autopilot && typeof message.navigation.autopilot === "object"
+            ? { ...message.navigation.autopilot, timestampMs: toHostTime(message.navigation.autopilot.timestampMs) }
+            : message.navigation.autopilot,
+        }
+      : message.navigation,
   };
 }
 
@@ -138,12 +164,18 @@ export class LiveCompanionCore {
       gaitProfiles: false,
       persistentProfiles: false,
       manualControl: false,
+      navigation: false,
+      gps: false,
+      lidar: false,
+      ardupilot: false,
+      autonomy: false,
     };
     this.robotConnected = false;
     this.lastRobotMessageAt = 0;
     this.lastTelemetryAt = 0;
     this.robotState = "unknown";
     this.controller = null;
+    this.navigation = null;
     this.gaitProfile = null;
     this.sessionId = "";
     this.telemetrySequence = 0;
@@ -194,6 +226,7 @@ export class LiveCompanionCore {
     this.lastRobotMessageAt = 0;
     this.lastTelemetryAt = 0;
     this.controller = null;
+    this.navigation = null;
     this.robotState = "unknown";
     this.sessionId = "";
     this.pending.clear();
@@ -335,6 +368,81 @@ export class LiveCompanionCore {
         this.remember(message, "gait", now);
         robot.push(this.robotCommand("gait", message, now));
       }
+      return { relay, robot };
+    }
+
+    if (message.type === "live-navigation-command" && validLiveNavigationCommand(message)) {
+      const supportsNavigation = LIVE_NAVIGATION_CAPABILITIES.some(
+        (capability) => this.capabilities[capability] === true,
+      );
+      if (!supportsNavigation) {
+        relay.push(this.navigationAck(message, false, "The connected adapter does not report GPS, LiDAR, or ArduPilot navigation capability."));
+        return { relay, robot };
+      }
+      const payload = message.payload || message;
+      const autopilot = this.navigation?.autopilot;
+      const navigationFresh = this.telemetryFresh(now);
+      const ardupilotActions = new Set([
+        "set-mode",
+        "arm",
+        "disarm",
+        "start-mission",
+        "pause-mission",
+        "resume-mission",
+        "clear-mission",
+        "upload-mission",
+        "set-home",
+        "goto",
+        "set-geofence",
+        "set-parameter",
+      ]);
+      let reason = "";
+      if (ardupilotActions.has(message.action) && this.capabilities.ardupilot !== true) {
+        reason = "The connected adapter must explicitly report ArduPilot capability before sending autopilot commands.";
+      }
+      if (!reason && ardupilotActions.has(message.action) && !navigationFresh) {
+        reason = "Fresh ArduPilot navigation telemetry is required before changing autonomous state.";
+      }
+      if (!reason && ardupilotActions.has(message.action) && (!autopilot || autopilot.heartbeat === false)) {
+        reason = "A fresh ArduPilot heartbeat is required before sending autopilot commands.";
+      }
+      if (!reason && message.action === "arm" && (this.robotState !== "disarmed" || autopilot?.armed === true)) {
+        reason = "The autopilot must report disarmed before an autonomous arm request.";
+      }
+      if (!reason && message.action === "arm" && (autopilot?.failsafe === true || autopilot?.prearmReady === false)) {
+        reason = autopilot?.failsafe
+          ? "ArduPilot reports FAILSAFE; autonomous arming is blocked."
+          : "ArduPilot pre-arm checks are not ready.";
+      }
+      if (!reason && message.action === "disarm" && this.robotState !== "armed" && autopilot?.armed !== true) {
+        reason = "The autopilot is not armed.";
+      }
+      if (!reason && message.action === "set-mode") {
+        const mode = String(payload.mode || "").toLowerCase();
+        const requiresPosition = ["auto", "guided", "rtl", "smart-rtl", "follow", "dock", "circle", "loiter"].includes(mode);
+        const gpsReady = this.navigation?.gps?.fixType >= 3 && this.navigation?.gps?.position;
+        if (requiresPosition && !gpsReady) reason = "A 3D GPS fix is required for this ArduPilot mode.";
+        else if (requiresPosition && autopilot?.ekfHealthy === false) reason = "ArduPilot reports an unhealthy EKF; position modes remain blocked.";
+        else if (autopilot?.failsafe === true && requiresPosition) reason = "ArduPilot reports FAILSAFE; position modes remain blocked.";
+      }
+      if (!reason && ["upload-mission", "clear-mission"].includes(message.action) && this.robotState !== "disarmed") {
+        reason = "Mission storage changes require the autopilot to be disarmed.";
+      }
+      if (!reason && message.action === "start-mission") {
+        if (!autopilot?.armed) reason = "Arm the autopilot before starting a mission.";
+        else if (!autopilot?.mission || Number(autopilot.mission.count) < 1) reason = "Upload at least one mission waypoint before starting AUTO.";
+        else if (autopilot?.failsafe === true || autopilot?.ekfHealthy === false) reason = "ArduPilot safety state is not ready to start AUTO.";
+      }
+      if (!reason && message.action === "goto" && !autopilot?.armed) {
+        reason = "Arm the autopilot before sending a Guided target.";
+      }
+      if (reason) {
+        relay.push(this.navigationAck(message, false, reason));
+      } else {
+        this.remember(message, "navigation", now);
+        robot.push(this.robotCommand("navigation", message, now));
+      }
+      return { relay, robot };
     }
     return { relay, robot };
   }
@@ -376,12 +484,22 @@ export class LiveCompanionCore {
       if (normalizedTelemetry.gaitProfile && typeof normalizedTelemetry.gaitProfile === "object") {
         this.gaitProfile = normalizedTelemetry.gaitProfile;
       }
+      if (normalizedTelemetry.navigation && typeof normalizedTelemetry.navigation === "object") {
+        const navigationState = createLiveTelemetryState();
+        acceptLiveTelemetryPacket(navigationState, {
+          type: "live-telemetry",
+          sequence: 0,
+          navigation: normalizedTelemetry.navigation,
+        }, now);
+        if (navigationState.navigation) this.navigation = navigationState.navigation;
+      }
       this.lastTelemetryAt = now;
       if (this.sessionId) {
         relay.push({
           type: "live-telemetry", adapterId: this.adapterId, sessionId: this.sessionId,
           sequence: this.telemetrySequence++, expected: normalizedTelemetry.expected, measured: normalizedTelemetry.measured,
           power: normalizedTelemetry.power, controller: this.controller, diagnostics: normalizedTelemetry.diagnostics,
+          navigation: normalizedTelemetry.navigation || this.navigation,
           gaitProfile: normalizedTelemetry.gaitProfile || this.gaitProfile,
           capabilities: normalizedTelemetry.capabilities || { ...this.capabilities },
         });
@@ -434,6 +552,8 @@ export class LiveCompanionCore {
         relay.push(this.calibrationAck(pending.message, accepted, reason, message.profile, message));
       } else if (message.kind === "gait") {
         relay.push(this.gaitAck(pending.message, accepted, reason, message.profile));
+      } else if (message.kind === "navigation") {
+        relay.push(this.navigationAck(pending.message, accepted, reason, message));
       }
       return { relay, robot };
     }
@@ -478,6 +598,7 @@ export class LiveCompanionCore {
       if (pending.kind === "manual-authority") relay.push(this.manualAuthorityAck(pending.message, false, "Physical robot acknowledgement timed out."));
       if (pending.kind === "calibration") relay.push(this.calibrationAck(pending.message, false, "Physical robot acknowledgement timed out."));
       if (pending.kind === "gait") relay.push(this.gaitAck(pending.message, false, "Physical robot acknowledgement timed out."));
+      if (pending.kind === "navigation") relay.push(this.navigationAck(pending.message, false, "Physical robot acknowledgement timed out."));
     }
     return { relay, robot };
   }
@@ -519,5 +640,21 @@ export class LiveCompanionCore {
 
   gaitAck(message, accepted, reason = "", profile = undefined) {
     return { type: "live-gait-ack", action: message.action, requestId: message.requestId, accepted, adapterId: this.adapterId, sessionId: this.sessionId, ...(reason ? { reason } : {}), ...(profile ? { profile } : {}) };
+  }
+
+  navigationAck(message, accepted, reason = "", physical = undefined) {
+    return {
+      type: "live-navigation-ack",
+      action: message.action,
+      requestId: message.requestId,
+      accepted,
+      adapterId: this.adapterId,
+      sessionId: this.sessionId,
+      ...(reason ? { reason } : {}),
+      ...(physical?.navigation && typeof physical.navigation === "object" ? { navigation: physical.navigation } : {}),
+      ...(physical?.state && typeof physical.state === "object" ? { state: physical.state } : {}),
+      ...(physical?.mode ? { mode: physical.mode } : {}),
+      ...(physical?.mission && typeof physical.mission === "object" ? { mission: physical.mission } : {}),
+    };
   }
 }

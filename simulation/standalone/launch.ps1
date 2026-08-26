@@ -19,7 +19,7 @@ try {
     & $node `
         (Join-Path $PSScriptRoot "node_modules\vite\bin\vite.js") `
         build `
-        --config (Join-Path $PSScriptRoot "vite.config.js")
+        --configLoader runner
     if ($LASTEXITCODE -ne 0) {
         throw "Standalone renderer build failed with exit code $LASTEXITCODE"
     }

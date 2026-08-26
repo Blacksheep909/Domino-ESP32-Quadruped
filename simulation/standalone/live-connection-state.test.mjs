@@ -25,6 +25,7 @@ import {
   validLiveAdapterAnnouncement,
   validLiveConnectionAcknowledgement,
   validLiveConnectionCommand,
+  validLiveTelemetryPacket,
 } from "./web/src/live-connection-protocol.js";
 
 const announcement = (timestampMs = 1_000) => ({
@@ -86,6 +87,25 @@ test("telemetry must match the selected adapter and negotiated session", () => {
   assert.equal(telemetryBelongsToLiveConnection(state, { adapterId: "domino-adapter-a", sessionId: "session-a" }, 1_040), true);
   assert.equal(telemetryBelongsToLiveConnection(state, { adapterId: "domino-adapter-a", sessionId: "other" }, 1_040), false);
   assert.equal(telemetryBelongsToLiveConnection(state, { adapterId: "other", sessionId: "session-a" }, 1_040), false);
+});
+
+test("the relay telemetry contract rejects malformed packets before broadcast", () => {
+  const pose = {
+    timestampMs: 1_000,
+    servoAngleDeg: Array(16).fill(135),
+    body: { rollDeg: 0, pitchDeg: 0, yawDeg: 0, heightMm: 280 },
+  };
+  const valid = {
+    type: "live-telemetry",
+    adapterId: "domino-adapter-a",
+    sessionId: "session-a",
+    sequence: 0,
+    expected: pose,
+  };
+  assert.equal(validLiveTelemetryPacket(valid), true);
+  assert.equal(validLiveTelemetryPacket({ ...valid, expected: { body: {} } }), false);
+  assert.equal(validLiveTelemetryPacket({ ...valid, sequence: -1 }), false);
+  assert.equal(validLiveTelemetryPacket({ ...valid, controller: "not telemetry" }), false);
 });
 
 test("a stale adapter tears down the engineering session", () => {

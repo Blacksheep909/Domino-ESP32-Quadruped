@@ -31,7 +31,7 @@ test("round-trips only safe presentation preferences", () => {
 test("malformed and unsupported preferences fail back to safe presentation defaults", () => {
   const expected = {
     schemaVersion: PRESENTATION_PREFERENCES_SCHEMA_VERSION,
-    experience: "simple",
+    experience: "expert",
     liveView: "compare",
     calibrationFloat: true,
   };

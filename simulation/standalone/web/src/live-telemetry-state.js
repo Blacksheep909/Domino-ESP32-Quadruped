@@ -1,3 +1,5 @@
+import { mergeLiveNavigation, sanitizeLiveNavigation } from "./live-navigation-state.js";
+
 export const LIVE_SERVO_CHANNELS = Object.freeze([0, 1, 2, 3, 4, 7, 8, 9, 10, 11, 14, 15]);
 export const LIVE_STREAM_FRESH_MS = 1_000;
 
@@ -83,6 +85,7 @@ export function createLiveTelemetryState() {
     expected: null,
     measured: null,
     power: null,
+    navigation: null,
     lastRobotPacketAt: 0,
   };
 }
@@ -94,7 +97,18 @@ export function acceptLiveTelemetryPacket(state, packet, receivedAt = Date.now()
   const expected = sanitizePose(packet.expected, receivedAt);
   const measured = sanitizePose(packet.measured, receivedAt, true);
   const power = sanitizePower(packet.power, receivedAt);
-  if (!expected && !measured && !power) return false;
+  const navigation = sanitizeLiveNavigation(
+    packet.navigation || {
+      gps: packet.gps,
+      lidar: packet.lidar,
+      autopilot: packet.autopilot,
+      home: packet.home,
+      geofence: packet.geofence,
+      obstacleBehavior: packet.obstacleBehavior,
+    },
+    receivedAt,
+  );
+  if (!expected && !measured && !power && !navigation) return false;
 
   state.sequence = sequence;
   state.lastRobotPacketAt = receivedAt;
@@ -111,6 +125,7 @@ export function acceptLiveTelemetryPacket(state, packet, receivedAt = Date.now()
   }
   if (measured) state.measured = measured;
   if (power) state.power = power;
+  if (navigation) state.navigation = mergeLiveNavigation(state.navigation, navigation);
   return true;
 }
 
@@ -166,6 +181,7 @@ export function liveComparisonSnapshot(state, now = Date.now()) {
     expected: expectedFresh ? state.expected : null,
     measured: measuredFresh ? state.measured : null,
     power: powerFresh ? state.power : null,
+    navigation: state.navigation || null,
     alignmentMs: paired ? state.measured.timestampMs - state.expected.timestampMs : null,
     jointErrorsDeg,
     worstJointErrorDeg: finiteJointErrors.length

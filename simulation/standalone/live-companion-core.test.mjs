@@ -57,6 +57,73 @@ test("announces only a fresh physical robot and negotiates a read-only session",
   assert.equal(connected.announcement(1_050).state, "connected");
 });
 
+test("ArduPilot navigation commands require fresh position state and return physical acknowledgements", () => {
+  const navigationCapabilities = {
+    telemetry: true,
+    navigation: true,
+    gps: true,
+    lidar: true,
+    ardupilot: true,
+    autonomy: true,
+  };
+  const core = new LiveCompanionCore({ adapterId, transport: "wifi" });
+  core.handleRobot({
+    ...hello(),
+    capabilities: navigationCapabilities,
+  }, 1_000);
+  core.handleRobot({
+    ...telemetry(1_000),
+    capabilities: navigationCapabilities,
+    navigation: {
+      gps: {
+        timestampMs: 1_000,
+        fixType: 3,
+        position: { lat: -36.85, lon: 174.76, altM: 20 },
+      },
+      autopilot: {
+        timestampMs: 1_000,
+        heartbeat: true,
+        mode: "hold",
+        modeCode: 4,
+        armed: false,
+        prearmReady: true,
+        ekfHealthy: true,
+        mission: { count: 1, current: 0, state: "uploaded" },
+      },
+    },
+  }, 1_000);
+  const connected = core.handleRelay({
+    type: "live-connection-command", action: "connect", requestId: "connect-nav",
+    timestampMs: 1_000, adapterId, transport: "wifi",
+    safety: { readOnlyHandshake: true, commandsBlockedUntilStateKnown: true },
+  }, 1_000);
+  assert.equal(connected.relay[0].accepted, true);
+  const forwarded = core.handleRelay({
+    type: "live-navigation-command", action: "set-mode", requestId: "mode-auto",
+    timestampMs: 1_050, adapterId, sessionId: core.sessionId,
+    payload: { mode: "auto", modeCode: 10 },
+  }, 1_050);
+  assert.equal(forwarded.robot[0].kind, "navigation");
+  const ack = core.handleRobot({
+    protocol: DOMINO_ROBOT_LINK_PROTOCOL,
+    type: "robot-ack",
+    kind: "navigation",
+    action: "set-mode",
+    requestId: "mode-auto",
+    accepted: true,
+    robotState: "disarmed",
+    navigation: { autopilot: { mode: "auto", modeCode: 10, heartbeat: true } },
+  }, 1_060);
+  assert.equal(ack.relay[0].type, "live-navigation-ack");
+  assert.equal(ack.relay[0].accepted, true);
+  const rejectedStart = core.handleRelay({
+    type: "live-navigation-command", action: "start-mission", requestId: "mission-start",
+    timestampMs: 1_070, adapterId, sessionId: core.sessionId,
+  }, 1_070);
+  assert.equal(rejectedStart.relay[0].accepted, false);
+  assert.match(rejectedStart.relay[0].reason, /arm/i);
+});
+
 test("telemetry is published only after session negotiation", () => {
   const core = new LiveCompanionCore({ adapterId });
   assert.equal(core.handleRobot(telemetry(1_000), 1_000).relay.length, 0);

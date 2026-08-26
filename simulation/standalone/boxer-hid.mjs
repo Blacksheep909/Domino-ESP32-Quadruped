@@ -1,4 +1,15 @@
-import { HID, devices } from "node-hid";
+let hidBackend = null;
+if (process.env.DOMINO_DISABLE_RAW_HID !== "1") {
+  try {
+    hidBackend = await import("node-hid");
+  } catch {
+    // The desktop build can run entirely through Chromium's Gamepad API when a
+    // matching native node-hid binary is unavailable. Raw HID is an enhancement,
+    // never a reason for the simulator or LIVE workspace to fail to start.
+  }
+}
+
+export const rawHidAvailable = Boolean(hidBackend?.HID && hidBackend?.devices);
 
 export const BOXER_VENDOR_ID = 0x1209;
 export const BOXER_PRODUCT_ID = 0x4f54;
@@ -93,10 +104,11 @@ export class CrsfTransmitterHidInput {
 
   connect() {
     if (this.device) return;
+    if (!rawHidAvailable) return;
 
     let info;
     try {
-      info = devices().find(isCrsfTransmitterDevice);
+      info = hidBackend.devices().find(isCrsfTransmitterDevice);
     } catch (error) {
       this.logger.warn(`CRSF transmitter HID scan failed: ${error.message}`);
       return;
@@ -110,7 +122,7 @@ export class CrsfTransmitterHidInput {
     }
 
     try {
-      this.device = new HID(info.path);
+      this.device = new hidBackend.HID(info.path);
     } catch (error) {
       this.logger.warn(`CRSF transmitter HID open failed: ${error.message}`);
       this.device = null;

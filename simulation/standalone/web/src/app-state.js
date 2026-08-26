@@ -1,7 +1,6 @@
 export const WORKSPACE_SIMULATION = "simulation";
 export const WORKSPACE_REAL_ROBOT = "real-robot";
 
-export const EXPERIENCE_SIMPLE = "simple";
 export const EXPERIENCE_EXPERT = "expert";
 
 const VALID_WORKSPACES = new Set([
@@ -10,7 +9,6 @@ const VALID_WORKSPACES = new Set([
 ]);
 
 const VALID_EXPERIENCES = new Set([
-  EXPERIENCE_SIMPLE,
   EXPERIENCE_EXPERT,
 ]);
 
@@ -21,7 +19,7 @@ export function createApplicationState(overrides = {}) {
       : WORKSPACE_SIMULATION,
     experience: VALID_EXPERIENCES.has(overrides.experience)
       ? overrides.experience
-      : EXPERIENCE_SIMPLE,
+      : EXPERIENCE_EXPERT,
   };
 }
 
@@ -38,7 +36,7 @@ export function simulationCanOwnControl(state, visibilityState = "visible") {
 }
 
 export function selectExperience(state, experience) {
-  if (!VALID_EXPERIENCES.has(experience)) {
+  if (experience !== EXPERIENCE_EXPERT) {
     throw new RangeError(`Unknown Domino experience level: ${experience}`);
   }
   state.experience = experience;

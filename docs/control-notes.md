@@ -20,6 +20,20 @@ Leg frame passed into `IK()`:
 
 The body model converts body pose into hip-to-foot vectors in this leg frame before calling inverse kinematics.
 
+### Fixed-world-foot body poses
+
+Tilt mode treats the four neutral foot positions as fixed in the world frame.
+For each body pose, firmware rotates each hip into world space, subtracts it
+from that fixed foot position, and transforms the resulting vector back through
+the inverse body rotation before solving the leg. Roll therefore requires
+coordinated hip abduction/adduction as well as unequal leg extension; pitch
+requires fore/aft compensation as well as unequal extension.
+
+The large-looking lateral or fore/aft values are rotating body-frame vectors,
+not requests to slide the planted feet. Do not replace them with Z-only side or
+front/rear offsets: that changes the physical center of rotation from the body
+origin to an effective pivot near the support plane.
+
 ## Kinematics
 
 Each leg is treated as a 3-DoF mechanism:

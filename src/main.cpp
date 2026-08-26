@@ -679,28 +679,17 @@ void moveLegsFromBodyPose(Adafruit_PWMServoDriver &driver,
                          bodyX,
                          bodyY,
                          bodyZ,
-                         0.0f,
-                         0.0f,
+                         rollDeg,
+                         pitchDeg,
                          yawDeg,
                          &xLeg,
                          &yLeg,
                          &zLeg);
-    // Domino's hips have a deliberately narrow lateral envelope. A full rigid
-    // inverse for roll rotates the long hip-to-foot vector into body Y; at 20
-    // degrees that demanded roughly 100 mm of lateral travel and could pull a
-    // foot across the body centreline. Preserve the normal stance width and
-    // produce roll by extending one side while retracting the other instead.
-    const bool leftLeg = i == LEG_FL || i == LEG_BL;
-    const float side = leftLeg ? 1.0f : -1.0f;
-    zLeg += side * sinf(rollDeg * kDegToRad) * FOOT_OUT_OFFSET_Y;
-    // Pitch had the same long-leg coupling in body X: rotating the full
-    // hip-to-foot vector asked all four feet to sweep fore/aft together and
-    // translated the chassis instead of presenting a clean body plane. Keep
-    // the calibrated foot X beneath each hip and create pitch with opposing
-    // front/rear leg extension.
-    const bool frontLeg = i == LEG_FL || i == LEG_FR;
-    const float foreAft = frontLeg ? -1.0f : 1.0f;
-    zLeg += foreAft * sinf(pitchDeg * kDegToRad) * BODY_HALF_LENGTH_X;
+    // The lateral/fore-aft components above are intentional. They are the
+    // body-frame coordinates required to keep each foot fixed in world space
+    // while the body rotates around its centre. Replacing them with only a
+    // left/right or front/rear Z difference makes the physical chassis swing
+    // around an effective pivot near the support plane instead.
     commandLeg(driver, i, xLeg, yLeg, zLeg);
   }
 }

@@ -206,7 +206,22 @@ function solveSagittalLeg(xMillimeters, yMillimeters, zMillimeters) {
 }
 
 export async function createDominoPhysics(options = {}) {
-  await RAPIER.init();
+  // The compatibility build currently initializes its embedded WASM through
+  // an older internal signature and emits a deprecation warning in Chromium.
+  // Keep that upstream warning out of the user-facing console until the
+  // dependency exposes the newer initializer without changing physics
+  // behavior or masking unrelated warnings.
+  const originalWarn = console.warn;
+  console.warn = (...args) => {
+    if (!String(args[0]).includes("deprecated parameters for the initialization function")) {
+      originalWarn(...args);
+    }
+  };
+  try {
+    await RAPIER.init();
+  } finally {
+    console.warn = originalWarn;
+  }
 
   const initialBasePosition = Array.isArray(options.initialBasePosition)
     ? new THREE.Vector3(...options.initialBasePosition)
@@ -1031,6 +1046,15 @@ export async function createDominoPhysics(options = {}) {
     return {
       engine: "Rapier 3D",
       proxy: "12-joint Domino URDF geometry",
+      // This browser scene is an assisted visualization, not hardware proof.
+      // The closed-chain CAD endpoint regression is the hardware-parity gate.
+      externalAssists: [
+        "body-height",
+        "body-planar-hold",
+        "foot-position-hold",
+        "body-attitude",
+      ],
+      renderedTiltSource: "commanded-body-pose",
       massModel: dominoMassModel,
       basePosition: [translation.x, translation.y, translation.z],
       baseQuaternion: [rotation.x, rotation.y, rotation.z, rotation.w],

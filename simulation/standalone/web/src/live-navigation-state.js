@@ -234,6 +234,7 @@ export function createLiveNavigationState() {
   return {
     missionDraft: [],
     missionName: "Domino patrol",
+    loopCount: 1,
     plannerOrigin: null,
     plannerRangeM: 40,
     gpsTrack: [],
@@ -391,6 +392,7 @@ export function navigationMissionJson(state) {
     schemaVersion: 1,
     name: state?.missionName || "Domino patrol",
     mission: state?.missionDraft || [],
+    loopCount: Math.max(1, Math.min(5, Math.round(Number(state?.loopCount) || 1))),
     plannerOrigin: state?.plannerOrigin || null,
     plannerRangeM: state?.plannerRangeM || 40,
     geofence: state?.geofence || null,
@@ -411,6 +413,7 @@ export function parseNavigationMissionJson(text) {
   return {
     name: boundedText(parsed.name, "Domino patrol"),
     mission,
+    loopCount: Math.max(1, Math.min(5, Math.round(Number(parsed.loopCount) || 1))),
     plannerOrigin: coordinate(parsed.plannerOrigin),
     plannerRangeM,
     geofence: parsed.geofence && typeof parsed.geofence === "object" ? parsed.geofence : null,
@@ -502,7 +505,7 @@ function coordinateDistanceM(first, second) {
  * north/east frame when an origin is available and fall back to haversine
  * distance when it is not.
  */
-export function navigationMissionMetrics(mission = [], origin = null) {
+export function navigationMissionMetrics(mission = [], origin = null, loopCount = 1) {
   const waypoints = Array.isArray(mission) ? mission : [];
   const positions = waypoints.map((waypoint) => missionWaypointLocalPosition(waypoint, origin));
   const unresolvedCount = positions.filter((position) => !position).length;
@@ -522,7 +525,16 @@ export function navigationMissionMetrics(mission = [], origin = null) {
     }
   }
   const distanceKnown = localRouteKnown || coordinateRouteKnown;
-  const estimatedSeconds = distanceKnown
+  const loops = Math.max(1, Math.min(5, Math.round(Number(loopCount) || 1)));
+  const firstPosition = positions[0];
+  const lastPosition = positions.at(-1);
+  const closingDistanceM = distanceKnown && positions.length > 1
+    ? localRouteKnown
+      ? Math.hypot(lastPosition.northM - firstPosition.northM, lastPosition.eastM - firstPosition.eastM)
+      : coordinateDistanceM(waypoints.at(-1), waypoints[0]) || 0
+    : 0;
+  const firstSpeedMps = Number(waypoints[0]?.speedMps) > 0 ? Number(waypoints[0].speedMps) : 0.5;
+  const oneLoopSeconds = distanceKnown
     ? waypoints.reduce((seconds, waypoint, index) => {
         const speedMps = Number(waypoint?.speedMps) > 0 ? Number(waypoint.speedMps) : 0.5;
         const segmentDistanceM = index > 0 && localRouteKnown
@@ -533,18 +545,23 @@ export function navigationMissionMetrics(mission = [], origin = null) {
         return seconds + segmentDistanceM / speedMps + (Number(waypoint?.holdS) || 0);
       }, 0)
     : null;
+  const estimatedSeconds = oneLoopSeconds === null
+    ? null
+    : oneLoopSeconds * loops + (closingDistanceM / firstSpeedMps) * Math.max(0, loops - 1);
   return {
     waypointCount: waypoints.length,
-    totalDistanceM: distanceKnown ? totalDistanceM : null,
+    totalDistanceM: distanceKnown ? totalDistanceM * loops + closingDistanceM * Math.max(0, loops - 1) : null,
     estimatedSeconds: distanceKnown ? estimatedSeconds : null,
+    loopCount: loops,
     unresolvedCount,
     coordinateReady: waypoints.length > 0 && waypoints.every(missionWaypointHasCoordinate),
   };
 }
 
-export function navigationMissionPreview(mission = [], origin = null, elapsedSeconds = 0) {
+export function navigationMissionPreview(mission = [], origin = null, elapsedSeconds = 0, loopCount = 1) {
   const waypoints = Array.isArray(mission) ? mission : [];
   const positions = waypoints.map((waypoint) => missionWaypointLocalPosition(waypoint, origin));
+  const loops = Math.max(1, Math.min(5, Math.round(Number(loopCount) || 1)));
   if (!waypoints.length || positions.some((position) => !position)) {
     return {
       ready: false,
@@ -553,26 +570,38 @@ export function navigationMissionPreview(mission = [], origin = null, elapsedSec
       progress: 0,
       elapsedSeconds: 0,
       totalSeconds: null,
+      loopCount: loops,
       complete: false,
     };
   }
 
   const timeline = [];
   let totalSeconds = 0;
+  let activeLoopIndex = 0;
   const append = (type, index, start, end, duration) => {
     const boundedDuration = Math.max(0, Number(duration) || 0);
     if (boundedDuration <= 0) return;
-    timeline.push({ type, index, start, end, from: start, to: end, duration: boundedDuration, beginsAt: totalSeconds });
+    timeline.push({ type, index, loopIndex: activeLoopIndex, start, end, from: start, to: end, duration: boundedDuration, beginsAt: totalSeconds });
     totalSeconds += boundedDuration;
   };
-  append("hold", 0, positions[0], positions[0], waypoints[0]?.holdS);
-  for (let index = 1; index < positions.length; index += 1) {
-    const previous = positions[index - 1];
-    const current = positions[index];
-    const distanceM = Math.hypot(current.northM - previous.northM, current.eastM - previous.eastM);
-    const speedMps = Number(waypoints[index]?.speedMps) > 0 ? Number(waypoints[index].speedMps) : 0.5;
-    append("segment", index, previous, current, distanceM / speedMps);
-    append("hold", index, current, current, waypoints[index]?.holdS);
+  for (let loopIndex = 0; loopIndex < loops; loopIndex += 1) {
+    activeLoopIndex = loopIndex;
+    if (loopIndex > 0) {
+      const previous = positions.at(-1);
+      const current = positions[0];
+      const distanceM = Math.hypot(current.northM - previous.northM, current.eastM - previous.eastM);
+      const speedMps = Number(waypoints[0]?.speedMps) > 0 ? Number(waypoints[0].speedMps) : 0.5;
+      append("return", 0, previous, current, distanceM / speedMps);
+    }
+    append("hold", 0, positions[0], positions[0], waypoints[0]?.holdS);
+    for (let index = 1; index < positions.length; index += 1) {
+      const previous = positions[index - 1];
+      const current = positions[index];
+      const distanceM = Math.hypot(current.northM - previous.northM, current.eastM - previous.eastM);
+      const speedMps = Number(waypoints[index]?.speedMps) > 0 ? Number(waypoints[index].speedMps) : 0.5;
+      append("segment", index, previous, current, distanceM / speedMps);
+      append("hold", index, current, current, waypoints[index]?.holdS);
+    }
   }
 
   const requestedSeconds = Math.max(0, Number(elapsedSeconds) || 0);
@@ -584,6 +613,8 @@ export function navigationMissionPreview(mission = [], origin = null, elapsedSec
       progress: 1,
       elapsedSeconds: requestedSeconds,
       totalSeconds: 0,
+      loopCount: loops,
+      loopIndex: 0,
       complete: requestedSeconds > 0,
     };
   }
@@ -595,6 +626,8 @@ export function navigationMissionPreview(mission = [], origin = null, elapsedSec
       progress: 1,
       elapsedSeconds: totalSeconds,
       totalSeconds,
+      loopCount: loops,
+      loopIndex: loops - 1,
       complete: true,
     };
   }
@@ -610,6 +643,8 @@ export function navigationMissionPreview(mission = [], origin = null, elapsedSec
     progress,
     elapsedSeconds: requestedSeconds,
     totalSeconds,
+    loopCount: loops,
+    loopIndex: active.loopIndex,
     complete: false,
   };
 }

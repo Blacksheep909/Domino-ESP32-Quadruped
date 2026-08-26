@@ -157,8 +157,11 @@ import {
 } from "./live-diagnostics-state.js";
 import {
   addNavigationWaypoint,
+  coordinateToLocalOffset,
   createLiveNavigationState,
   liveNavigationSnapshot,
+  localOffsetToCoordinate,
+  missionWaypointHasCoordinate,
   moveNavigationWaypoint,
   navigationFixLabel,
   navigationMissionJson,
@@ -3600,6 +3603,117 @@ function escapeNavigationHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
+function navigationPlannerOrigin(navigation) {
+  if (liveNavigationState.plannerOrigin) return liveNavigationState.plannerOrigin;
+  const candidate = navigation.home || navigation.gps?.position || null;
+  if (candidate) liveNavigationState.plannerOrigin = { ...candidate };
+  return liveNavigationState.plannerOrigin;
+}
+
+function plannerPointFromWaypoint(waypoint, origin) {
+  if (waypoint?.local) return waypoint.local;
+  return origin && missionWaypointHasCoordinate(waypoint)
+    ? coordinateToLocalOffset(waypoint, origin)
+    : null;
+}
+
+function plannerSvgElement(name, attributes = {}) {
+  const element = document.createElementNS("http://www.w3.org/2000/svg", name);
+  Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, String(value)));
+  return element;
+}
+
+function renderLiveNavigationPlanner(navigation) {
+  const map = document.querySelector("#live-nav-planner-map");
+  const route = document.querySelector("#live-nav-planner-route");
+  const markers = document.querySelector("#live-nav-planner-markers");
+  const vehicle = document.querySelector("#live-nav-planner-vehicle");
+  const status = document.querySelector("#live-nav-planner-status");
+  const hudMode = document.querySelector("#live-nav-hud-mode");
+  const hudState = document.querySelector("#live-nav-hud-state");
+  const hudRoute = document.querySelector("#live-nav-hud-route");
+  const hudNext = document.querySelector("#live-nav-hud-next");
+  const hudPosition = document.querySelector("#live-nav-hud-position");
+  const hudObstacle = document.querySelector("#live-nav-hud-obstacle");
+  if (!map || !route || !markers || !vehicle || !status || !hudMode || !hudState || !hudRoute || !hudNext || !hudPosition || !hudObstacle) return;
+
+  const origin = navigationPlannerOrigin(navigation);
+  const range = Math.max(10, Number(liveNavigationState.plannerRangeM) || 40);
+  const toMapPoint = (point) => point ? {
+    x: 50 + (Number(point.eastM) / range) * 100,
+    y: 50 - (Number(point.northM) / range) * 100,
+  } : null;
+  const waypointPoints = liveNavigationState.missionDraft.map((waypoint) => toMapPoint(plannerPointFromWaypoint(waypoint, origin)));
+  route.setAttribute("points", waypointPoints.filter(Boolean).map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" "));
+  markers.replaceChildren();
+  const currentMissionIndex = Number.isFinite(navigation.mission?.current) ? navigation.mission.current : -1;
+  waypointPoints.forEach((point, index) => {
+    if (!point) return;
+    const group = plannerSvgElement("g", { class: index === currentMissionIndex ? "live-planner-marker is-active" : "live-planner-marker", transform: `translate(${point.x.toFixed(2)} ${point.y.toFixed(2)})` });
+    group.append(
+      plannerSvgElement("circle", { r: 3.4 }),
+      plannerSvgElement("text", { x: 0, y: 0.9, "text-anchor": "middle" }),
+    );
+    group.querySelector("text").textContent = String(index + 1);
+    markers.append(group);
+  });
+
+  const currentPoint = navigation.gps?.position && origin
+    ? toMapPoint(coordinateToLocalOffset(navigation.gps.position, origin))
+    : null;
+  vehicle.setAttribute("transform", currentPoint ? `translate(${currentPoint.x.toFixed(2)} ${currentPoint.y.toFixed(2)})` : "translate(50 50)");
+  vehicle.classList.toggle("is-live", Boolean(currentPoint));
+
+  const hasOrigin = Boolean(origin);
+  status.textContent = hasOrigin ? "HOME REFERENCE ACTIVE" : "LOCAL PLANNING FRAME";
+  status.dataset.state = hasOrigin ? "online" : "warning";
+  const routeCount = liveNavigationState.missionDraft.length;
+  hudRoute.textContent = routeCount ? `DRAFT / ${routeCount}` : "DRAFT / 0";
+  hudPosition.textContent = navigation.hasFix ? navigationFixLabel(navigation.gps?.fixType) : hasOrigin ? "HOME SET" : "NO FIX";
+  hudObstacle.textContent = navigation.lidarFresh ? formatNavigationDistance(navigation.frontM, "--.- m") : "WAITING";
+  hudMode.textContent = navigation.mode?.label?.toUpperCase() || (routeCount ? "PLANNING" : "READY TO PLAN");
+  const state = navigation.autopilot?.failsafe || navigation.geofence?.breached
+    ? "FAULT"
+    : navigation.autopilot?.armed
+      ? "ARMED"
+      : navigation.autonomyReady
+        ? "READY"
+        : navigation.gpsFresh || navigation.lidarFresh
+          ? "CHECKS"
+          : "OFFLINE";
+  hudState.textContent = state;
+  hudState.dataset.state = state === "READY" ? "online" : state === "FAULT" || state === "ARMED" ? "error" : state === "OFFLINE" ? "offline" : "warning";
+  const nextIndex = currentMissionIndex >= 0 && currentMissionIndex < routeCount ? currentMissionIndex : routeCount ? 0 : -1;
+  const nextPoint = nextIndex >= 0 ? waypointPoints[nextIndex] : null;
+  const nextLocal = nextIndex >= 0 ? plannerPointFromWaypoint(liveNavigationState.missionDraft[nextIndex], origin) : null;
+  const vehicleLocal = navigation.gps?.position && origin ? coordinateToLocalOffset(navigation.gps.position, origin) : null;
+  const nextDistance = nextLocal && vehicleLocal
+    ? Math.hypot(nextLocal.eastM - vehicleLocal.eastM, nextLocal.northM - vehicleLocal.northM)
+    : null;
+  hudNext.textContent = nextDistance === null ? (nextPoint ? `WP ${String(nextIndex + 1).padStart(2, "0")}` : "--") : `${nextDistance.toFixed(1)} m`;
+}
+
+function addPlannerWaypointFromEvent(event) {
+  const map = event.currentTarget;
+  const rect = map.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  const x = ((event.clientX - rect.left) / rect.width) * 100;
+  const y = ((event.clientY - rect.top) / rect.height) * 100;
+  const range = Math.max(10, Number(liveNavigationState.plannerRangeM) || 40);
+  const local = { eastM: (x - 50) * range / 100, northM: (50 - y) * range / 100 };
+  const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
+  const origin = navigationPlannerOrigin(navigation);
+  const coordinate = origin ? localOffsetToCoordinate(local, origin) : null;
+  addNavigationWaypoint(liveNavigationState, {
+    ...(coordinate || {}),
+    local,
+    altM: coordinate?.altM || navigation.gps?.altitudeM || 0,
+    label: `WP ${liveNavigationState.missionDraft.length + 1}`,
+  });
+  document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
+  updateLiveComparisonUi();
+}
+
 function renderLiveLidarRadar(snapshot) {
   const group = document.querySelector("#live-lidar-rays");
   if (!group) return;
@@ -3633,7 +3747,7 @@ function renderLiveWaypointList(navigation = liveNavigationSnapshot(liveTelemetr
   if (!liveNavigationState.missionDraft.length) {
     const empty = document.createElement("p");
     empty.className = "live-empty-state";
-    empty.textContent = "Add a current GPS position or create a waypoint to build a mission.";
+    empty.textContent = "Click the route planner to place a local waypoint, or add the current GPS position.";
     list.append(empty);
     return;
   }
@@ -3645,10 +3759,12 @@ function renderLiveWaypointList(navigation = liveNavigationSnapshot(liveTelemetr
     const row = document.createElement("article");
     row.className = "live-waypoint-row";
     row.dataset.index = String(index);
+    const hasCoordinate = missionWaypointHasCoordinate(waypoint);
+    const localSummary = waypoint.local ? `LOCAL N ${waypoint.local.northM.toFixed(1)} / E ${waypoint.local.eastM.toFixed(1)} M` : "GPS REFERENCE";
     row.innerHTML = `
-      <div class="live-waypoint-heading"><strong>WP ${String(index + 1).padStart(2, "0")}</strong><span>${escapeNavigationHtml(waypoint.label || "Waypoint")}</span><div><button type="button" data-waypoint-action="goto" ${guidedReady ? "" : "disabled"} title="Send this waypoint as a Guided target">GO</button><button type="button" data-waypoint-action="up" title="Move waypoint up">↑</button><button type="button" data-waypoint-action="down" title="Move waypoint down">↓</button><button type="button" data-waypoint-action="remove" title="Remove waypoint">×</button></div></div>
-      <label><span>LAT</span><input data-waypoint-field="lat" type="number" step="0.000001" min="-90" max="90" value="${Number(waypoint.lat).toFixed(6)}"></label>
-      <label><span>LON</span><input data-waypoint-field="lon" type="number" step="0.000001" min="-180" max="180" value="${Number(waypoint.lon).toFixed(6)}"></label>
+      <div class="live-waypoint-heading"><strong>WP ${String(index + 1).padStart(2, "0")}</strong><span>${escapeNavigationHtml(waypoint.label || "Waypoint")} / ${localSummary}</span><div><button type="button" data-waypoint-action="goto" ${guidedReady && hasCoordinate ? "" : "disabled"} title="Send this waypoint as a guided target">GO</button><button type="button" data-waypoint-action="up" title="Move waypoint up">↑</button><button type="button" data-waypoint-action="down" title="Move waypoint down">↓</button><button type="button" data-waypoint-action="remove" title="Remove waypoint">×</button></div></div>
+      <label><span>LAT</span><input data-waypoint-field="lat" type="number" step="0.000001" min="-90" max="90" value="${hasCoordinate ? Number(waypoint.lat).toFixed(6) : ""}" ${hasCoordinate ? "" : "disabled"}></label>
+      <label><span>LON</span><input data-waypoint-field="lon" type="number" step="0.000001" min="-180" max="180" value="${hasCoordinate ? Number(waypoint.lon).toFixed(6) : ""}" ${hasCoordinate ? "" : "disabled"}></label>
       <label><span>RADIUS M</span><input data-waypoint-field="radiusM" type="number" step="0.1" min="0.1" max="100" value="${Number(waypoint.radiusM || 1.5).toFixed(1)}"></label>
       <label><span>SPEED M/S</span><input data-waypoint-field="speedMps" type="number" step="0.1" min="0" max="30" value="${Number(waypoint.speedMps || 0).toFixed(1)}"></label>
       <label><span>HOLD S</span><input data-waypoint-field="holdS" type="number" step="1" min="0" max="360" value="${Number(waypoint.holdS || 0).toFixed(0)}"></label>
@@ -3729,7 +3845,7 @@ function renderLiveNavigationUi(navigation) {
     ? "GPS and LiDAR data remain unavailable until a capable adapter reports them. The interface will not fabricate a position or range cloud."
     : !navigation.gpsFresh && !navigation.lidarFresh
       ? "The adapter reports navigation capability, but both sensor streams are stale. Commands remain locked."
-      : "Sensor streams are live. Autonomous actions remain individually gated by the ArduPilot heartbeat, GPS fix, EKF and safety checks.";
+    : "Sensor streams are live. Vehicle actions remain gated by the heartbeat, GPS fix, EKF and safety checks.";
 
   const gpsBadge = document.querySelector("#live-gps-fix-badge");
   gpsBadge.textContent = gpsFix;
@@ -3764,8 +3880,8 @@ function renderLiveNavigationUi(navigation) {
   document.querySelector("#live-nav-prearm-state").textContent = autopilot?.prearmReady === true ? "READY" : autopilot?.prearmReady === false ? "BLOCKED" : "--";
   document.querySelector("#live-nav-heartbeat-age").textContent = formatNavigationAge(autopilot?.receivedAt > 0 ? Date.now() - autopilot.receivedAt : null);
   document.querySelector("#live-nav-autopilot-status").textContent = liveNavigationState.pendingRequestId
-    ? `Waiting for ArduPilot acknowledgement: ${liveNavigationState.pendingAction.toUpperCase()}.`
-    : liveNavigationState.lastCommandStatus || (autopilot?.statusText || "ArduPilot navigation is waiting for a command." );
+    ? `Waiting for the vehicle adapter to acknowledge: ${liveNavigationState.pendingAction.toUpperCase()}.`
+    : liveNavigationState.lastCommandStatus || (autopilot?.statusText || "Vehicle autonomy is waiting for a command." );
 
   const modeRequiresPosition = selectedMode?.selectedOptions?.[0]?.dataset.requiresPosition === "true";
   const positionModeReady = !modeRequiresPosition || navigation.positionReady;
@@ -3781,9 +3897,11 @@ function renderLiveNavigationUi(navigation) {
 
   updateNavigationMissionHeader(navigation);
   renderLiveWaypointList(navigation);
+  renderLiveNavigationPlanner(navigation);
   const missionReady = liveNavigationState.missionDraft.length > 0;
-  document.querySelector("#live-nav-upload-mission").disabled = !commandReady || !autopilotHealthy || autopilot?.armed || !missionReady || Boolean(liveNavigationState.pendingRequestId);
-  document.querySelector("#live-nav-start-mission").disabled = !commandReady || !autopilot?.armed || !navigation.autonomyReady || !missionReady || Boolean(liveNavigationState.pendingRequestId);
+  const missionCoordinatesReady = missionReady && liveNavigationState.missionDraft.every(missionWaypointHasCoordinate);
+  document.querySelector("#live-nav-upload-mission").disabled = !commandReady || !autopilotHealthy || autopilot?.armed || !missionCoordinatesReady || Boolean(liveNavigationState.pendingRequestId);
+  document.querySelector("#live-nav-start-mission").disabled = !commandReady || !autopilot?.armed || !navigation.autonomyReady || !missionCoordinatesReady || Boolean(liveNavigationState.pendingRequestId);
   document.querySelector("#live-nav-pause-mission").disabled = !commandReady || !autopilot?.armed || Boolean(liveNavigationState.pendingRequestId);
   document.querySelector("#live-nav-resume-mission").disabled = !commandReady || !autopilot?.armed || !navigation.positionReady || Boolean(liveNavigationState.pendingRequestId);
   document.querySelector("#live-nav-clear-mission").disabled = !commandReady || !autopilotHealthy || autopilot?.armed || Boolean(liveNavigationState.pendingRequestId);
@@ -3802,7 +3920,7 @@ function renderLiveNavigationUi(navigation) {
   setNavigationCheck("obstacle", obstacleHealthy ? "ok" : "warning", obstacleEnabled ? (navigation.lidarFresh ? "READY" : "WAITING") : "BYPASSED");
   setNavigationCheck("fence", !fenceEnabled || (navigation.home && fenceRadius >= 5) ? "ok" : "warning", !fenceEnabled ? "OFF" : navigation.home && fenceRadius >= 5 ? "READY" : "SET HOME");
   document.querySelector("#live-nav-safety-copy").textContent = !commandReady
-    ? "Pair an ArduPilot-capable adapter to unlock navigation actions."
+    ? "Pair a navigation-capable vehicle adapter to unlock physical actions."
     : navigation.autonomyReady && obstacleHealthy
       ? "Autonomous actions are available. Keep a physical mode switch or E-stop within reach."
       : autopilot?.failsafe
@@ -5635,6 +5753,20 @@ document.querySelector("#live-nav-mission-name").addEventListener("input", (even
   document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
   updateLiveComparisonUi();
 });
+document.querySelector("#live-nav-planner-map").addEventListener("click", addPlannerWaypointFromEvent);
+document.querySelector("#live-nav-planner-range").addEventListener("change", (event) => {
+  liveNavigationState.plannerRangeM = Number(event.target.value) || 40;
+  updateLiveComparisonUi();
+});
+document.querySelector("#live-nav-manual-override").addEventListener("click", () => {
+  document.querySelector("#live-manual-open")?.click();
+});
+document.querySelector("#live-nav-clear-draft").addEventListener("click", () => {
+  liveNavigationState.missionDraft = [];
+  document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
+  liveNavigationState.lastCommandStatus = "Local route plan cleared. No vehicle command was sent.";
+  updateLiveComparisonUi();
+});
 document.querySelector("#live-nav-mode-select").addEventListener("change", (event) => {
   liveNavigationState.selectedMode = event.target.value;
   updateLiveComparisonUi();
@@ -5684,11 +5816,15 @@ document.querySelector("#live-nav-waypoint-list").addEventListener("click", (eve
 
 document.querySelector("#live-nav-add-waypoint").addEventListener("click", () => {
   const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
-  if (!navigation.gps?.position) return;
+  const origin = navigationPlannerOrigin(navigation);
+  const local = navigation.gps?.position && origin
+    ? coordinateToLocalOffset(navigation.gps.position, origin)
+    : { northM: 0, eastM: 0 };
+  const coordinate = origin ? localOffsetToCoordinate(local, origin) : null;
   addNavigationWaypoint(liveNavigationState, {
-    lat: navigation.gps.position.lat,
-    lon: navigation.gps.position.lon,
-    altM: navigation.gps.altitudeM || 0,
+    ...(coordinate || {}),
+    altM: coordinate?.altM || navigation.gps?.altitudeM || 0,
+    local,
     label: `WP ${liveNavigationState.missionDraft.length + 1}`,
   });
   document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
@@ -5759,6 +5895,7 @@ document.querySelector("#live-nav-import-file").addEventListener("change", async
     const imported = parseNavigationMissionJson(await file.text());
     liveNavigationState.missionName = imported.name;
     liveNavigationState.missionDraft = imported.mission;
+    liveNavigationState.plannerOrigin = imported.plannerOrigin || null;
     if (imported.geofence) liveNavigationState.geofence = { ...liveNavigationState.geofence, ...imported.geofence };
     if (imported.obstacleBehavior) liveNavigationState.obstacleBehavior = { ...liveNavigationState.obstacleBehavior, ...imported.obstacleBehavior };
     document.querySelector("#live-nav-mission-name").value = liveNavigationState.missionName;

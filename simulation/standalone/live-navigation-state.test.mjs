@@ -3,8 +3,10 @@ import test from "node:test";
 
 import {
   addNavigationWaypoint,
+  coordinateToLocalOffset,
   createLiveNavigationState,
   liveNavigationSnapshot,
+  localOffsetToCoordinate,
   moveNavigationWaypoint,
   navigationMissionJson,
   parseNavigationMissionJson,
@@ -60,4 +62,23 @@ test("mission editing supports reorder, removal, export, and import", () => {
   assert.equal(parsed.mission[0].label, "B");
   assert.equal(removeNavigationWaypoint(state, 0), true);
   assert.equal(state.missionDraft.length, 1);
+});
+
+test("route planner preserves local waypoints and converts them around a GPS origin", () => {
+  const origin = { lat: -36.85, lon: 174.76, altM: 18 };
+  const offset = coordinateToLocalOffset({ lat: -36.8491, lon: 174.7612 }, origin);
+  assert.ok(offset.northM > 0);
+  assert.ok(offset.eastM > 0);
+  const coordinate = localOffsetToCoordinate(offset, origin);
+  assert.ok(Math.abs(coordinate.lat - (-36.8491)) < 0.000001);
+  assert.ok(Math.abs(coordinate.lon - 174.7612) < 0.000001);
+
+  const state = createLiveNavigationState();
+  state.plannerOrigin = origin;
+  assert.equal(addNavigationWaypoint(state, { local: { northM: 4, eastM: -2 }, label: "North gate" }), true);
+  const parsed = parseNavigationMissionJson(navigationMissionJson(state));
+  assert.equal(parsed.plannerOrigin.lat, origin.lat);
+  assert.equal(parsed.plannerOrigin.lon, origin.lon);
+  assert.deepEqual(parsed.mission[0].local, { northM: 4, eastM: -2 });
+  assert.equal(parsed.mission[0].lat, null);
 });

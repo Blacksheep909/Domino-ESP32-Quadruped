@@ -22,6 +22,22 @@ its guidance focused on measured orientation, Inspect/Float behavior, and the
 available leg selection. The browser and packaged app are built from the same
 frontend so these UI changes do not diverge between them.
 
+### Native route planning
+
+The LIVE Sensors view now includes a Domino-owned top-down route planner. Click
+the map to place waypoints, adjust the planning range, reorder or remove points,
+and export the plan as JSON. Plans created before a GPS fix use a local north/east
+metre frame and retain that frame through import/export; once a GPS or home
+reference is available, new points also carry georeferenced coordinates.
+
+The compact Domino Autonomy HUD stays beside the map and shows route progress,
+position quality, the next-point distance when it can be calculated, and the
+front obstacle distance. **OPEN MANUAL OVERRIDE** opens the existing guarded
+manual-control handoff at any time. Sending a plan to a vehicle remains a
+separate, explicit action: local planning works offline, while physical route
+execution remains closed until the selected vehicle adapter, position, EKF,
+obstacle policy, and safety checks all report ready.
+
 ## Workspaces
 
 ### Simulation

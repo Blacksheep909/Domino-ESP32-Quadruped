@@ -553,7 +553,7 @@
 
       <section id="live-view-sensors" class="live-view-page" aria-labelledby="live-sensors-title" hidden>
         <header class="live-page-heading">
-          <div><span>LIVE / GPS + LIDAR</span><h1 id="live-sensors-title">Navigation sensors</h1><p>Inspect real GNSS and LiDAR streams, configure obstacle protection, and operate ArduPilot autonomous modes.</p></div>
+          <div><span>LIVE / GPS + LIDAR</span><h1 id="live-sensors-title">Navigation sensors</h1><p>Plan and supervise Domino routes with live GNSS, LiDAR, and safety data.</p></div>
           <div class="live-page-status"><span id="live-sensors-link-state" data-state="offline">PC LINK OFFLINE</span><strong id="live-sensors-imu-state">IMU WAITING</strong></div>
         </header>
         <div class="live-sensor-grid">
@@ -665,7 +665,7 @@
           </section>
 
           <section class="live-data-card live-autopilot-card">
-            <header><span>ARDUPILOT / ROVER</span><strong id="live-autopilot-state" data-state="offline">NOT DETECTED</strong></header>
+            <header><span>VEHICLE ADAPTER / ROVER</span><strong id="live-autopilot-state" data-state="offline">NOT DETECTED</strong></header>
             <div class="live-autopilot-summary">
               <div><span>MODE</span><strong id="live-nav-current-mode">--</strong></div>
               <div><span>ARM STATE</span><strong id="live-nav-arm-state">DISARMED</strong></div>
@@ -691,17 +691,39 @@
           </section>
 
           <section class="live-data-card live-mission-card">
-            <header><span>AUTONOMOUS MISSION</span><div><strong id="live-nav-mission-state">DRAFT / 0 WAYPOINTS</strong><button id="live-nav-add-waypoint" type="button">+ WAYPOINT</button></div></header>
+            <header><span>DOMINO AUTONOMY</span><div><strong id="live-nav-mission-state">DRAFT / 0 WAYPOINTS</strong><button id="live-nav-add-waypoint" type="button">+ WAYPOINT</button></div></header>
             <div class="live-mission-toolbar">
               <label><span>MISSION NAME</span><input id="live-nav-mission-name" type="text" maxlength="64" value="Domino patrol"></label>
-              <button id="live-nav-upload-mission" type="button" disabled>UPLOAD TO ARDUPILOT</button>
-              <button id="live-nav-start-mission" type="button" disabled>START AUTO</button>
+              <button id="live-nav-upload-mission" type="button" disabled>SEND TO VEHICLE</button>
+              <button id="live-nav-start-mission" type="button" disabled>START ROUTE</button>
               <button id="live-nav-pause-mission" type="button" disabled>PAUSE / HOLD</button>
-              <button id="live-nav-resume-mission" type="button" disabled>RESUME AUTO</button>
-              <button id="live-nav-clear-mission" type="button" disabled>CLEAR ROBOT MISSION</button>
+              <button id="live-nav-resume-mission" type="button" disabled>RESUME ROUTE</button>
+              <button id="live-nav-clear-mission" type="button" disabled>CLEAR VEHICLE ROUTE</button>
+              <button id="live-nav-clear-draft" type="button">CLEAR PLAN</button>
               <button id="live-nav-export-mission" type="button">EXPORT JSON</button>
               <button id="live-nav-import-mission" type="button">IMPORT JSON</button>
               <input id="live-nav-import-file" type="file" accept="application/json,.json" hidden>
+            </div>
+            <div class="live-route-planner" aria-label="Domino route planner">
+              <div class="live-planner-map-shell">
+                <div class="live-planner-map-heading"><div><span>TOP-DOWN ROUTE PLANNER</span><strong id="live-nav-planner-status">LOCAL PLANNING FRAME</strong></div><label><span>RANGE</span><select id="live-nav-planner-range" aria-label="Planning map range"><option value="40">40 M</option><option value="80">80 M</option><option value="160">160 M</option></select></label></div>
+                <svg id="live-nav-planner-map" class="live-planner-map" viewBox="0 0 100 100" role="img" aria-label="Click to add local route waypoints">
+                  <rect class="live-planner-map-surface" x="0" y="0" width="100" height="100" rx="3"></rect>
+                  <path class="live-planner-grid-major" d="M10 0v100M20 0v100M30 0v100M40 0v100M50 0v100M60 0v100M70 0v100M80 0v100M90 0v100M0 10h100M0 20h100M0 30h100M0 40h100M0 50h100M0 60h100M0 70h100M0 80h100M0 90h100"></path>
+                  <path class="live-planner-axis" d="M50 0v100M0 50h100"></path>
+                  <polyline id="live-nav-planner-route" class="live-planner-route" points=""></polyline>
+                  <g id="live-nav-planner-markers"></g>
+                  <g id="live-nav-planner-vehicle" class="live-planner-vehicle"><circle cx="50" cy="50" r="2.4"></circle><path d="M50 44l-2.2 4h4.4z"></path></g>
+                  <text x="50" y="5" text-anchor="middle">N</text><text x="96" y="53">E</text>
+                </svg>
+                <p class="live-planner-help">Click the field to place a waypoint. The planner stores local metres until a GPS/home reference is available.</p>
+              </div>
+              <aside class="live-autonomy-hud" aria-label="Domino autonomy status">
+                <div class="live-autonomy-hud-heading"><div><span>DOMINO AUTONOMY</span><strong id="live-nav-hud-mode">PLANNING</strong></div><span id="live-nav-hud-state" data-state="offline">OFFLINE</span></div>
+                <div class="live-autonomy-hud-readouts"><div><span>ROUTE</span><strong id="live-nav-hud-route">DRAFT / 0</strong></div><div><span>NEXT</span><strong id="live-nav-hud-next">--</strong></div><div><span>POSITION</span><strong id="live-nav-hud-position">NO FIX</strong></div><div><span>OBSTACLE</span><strong id="live-nav-hud-obstacle">--</strong></div></div>
+                <button id="live-nav-manual-override" type="button">OPEN MANUAL OVERRIDE</button>
+                <p>Manual control remains available as the operator handoff. Vehicle actions stay gated by the active safety checks.</p>
+              </aside>
             </div>
             <div id="live-nav-waypoint-list" class="live-waypoint-list"><p class="live-empty-state">Add a current GPS position or create a waypoint to build a mission.</p></div>
           </section>

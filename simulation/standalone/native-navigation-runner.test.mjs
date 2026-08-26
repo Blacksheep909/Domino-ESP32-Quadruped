@@ -6,7 +6,9 @@ import {
   blockNativeNavigationRunner,
   createNativeNavigationRunnerState,
   nativeNavigationRunnerIsActive,
+  pauseNativeNavigationRunner,
   resetNativeNavigationRunner,
+  resumeNativeNavigationRunner,
   startNativeNavigationRunner,
   stopNativeNavigationRunner,
 } from "./web/src/native-navigation-runner.js";
@@ -30,6 +32,18 @@ test("native route runner advances and completes at the final waypoint", () => {
   assert.equal(acceptNativeNavigationCommand(state, { state: "complete", forward: 0, turn: 0 }), true);
   assert.equal(state.phase, "complete");
   assert.equal(nativeNavigationRunnerIsActive(state), false);
+});
+
+test("native route runner pauses and resumes without losing waypoint progress", () => {
+  const state = createNativeNavigationRunnerState();
+  startNativeNavigationRunner(state, 3);
+  state.currentIndex = 1;
+  assert.equal(pauseNativeNavigationRunner(state), true);
+  assert.equal(state.phase, "paused");
+  assert.equal(state.currentIndex, 1);
+  assert.equal(resumeNativeNavigationRunner(state), true);
+  assert.equal(state.phase, "running");
+  assert.equal(state.currentIndex, 1);
 });
 
 test("native route runner blocks on sensor and obstacle safety states", () => {

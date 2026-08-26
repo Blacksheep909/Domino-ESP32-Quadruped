@@ -11,10 +11,10 @@ import {
   WORKSPACE_SIMULATION,
 } from "./web/src/app-state.js";
 
-test("the application opens in a simple simulation workspace", () => {
+test("the application opens in the full expert simulation workspace", () => {
   const state = createApplicationState();
   assert.equal(state.workspace, WORKSPACE_SIMULATION);
-  assert.equal(state.experience, "simple");
+  assert.equal(state.experience, "expert");
   assert.equal(simulationCanOwnControl(state), true);
 });
 
@@ -29,7 +29,7 @@ test("a hidden simulation workspace cannot own controls", () => {
   assert.equal(simulationCanOwnControl(state, "hidden"), false);
 });
 
-test("simple and expert presentation state is independent of workspace", () => {
+test("expert presentation state is independent of workspace", () => {
   const state = createApplicationState({ workspace: WORKSPACE_REAL_ROBOT });
   selectExperience(state, EXPERIENCE_EXPERT);
   assert.equal(state.workspace, WORKSPACE_REAL_ROBOT);

@@ -1,0 +1,64 @@
+name: Publish Domino desktop release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out release
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: simulation/standalone/pnpm-lock.yaml
+
+      - name: Install PlatformIO
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade platformio
+          pio pkg install --global --tool platformio/toolchain-gccmingw32
+
+      - name: Build firmware SIL
+        shell: pwsh
+        run: .\simulation\sil\build.ps1
+
+      - name: Install desktop dependencies
+        working-directory: simulation/standalone
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify release version
+        working-directory: simulation/standalone
+        shell: pwsh
+        run: |
+          $packageVersion = (Get-Content -Raw package.json | ConvertFrom-Json).version
+          $tagVersion = "${{ github.ref_name }}".TrimStart("v")
+          if ($packageVersion -ne $tagVersion) {
+            throw "package.json version $packageVersion does not match tag v$tagVersion"
+          }
+
+      - name: Build and publish installer
+        working-directory: simulation/standalone
+        run: pnpm run desktop:publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

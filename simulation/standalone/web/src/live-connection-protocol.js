@@ -2,6 +2,8 @@ export const LIVE_CONNECTION_TRANSPORTS = Object.freeze(["wifi", "bluetooth", "u
 export const LIVE_CONNECTION_ACTIONS = Object.freeze(["discover", "connect", "disconnect", "restart"]);
 export const LIVE_ADAPTER_STATES = Object.freeze(["available", "connecting", "connected", "error"]);
 
+import { acceptLiveTelemetryPacket, createLiveTelemetryState } from "./live-telemetry-state.js";
+
 const boundedString = (value, maximum = 64) =>
   typeof value === "string" && value.length > 0 && value.length <= maximum;
 
@@ -74,4 +76,19 @@ export function validSessionEnvelope(message) {
     boundedString(message.adapterId) &&
     boundedString(message.sessionId, 96)
   );
+}
+
+export function validLiveTelemetryPacket(message) {
+  if (
+    !message ||
+    message.type !== "live-telemetry" ||
+    !validSessionEnvelope(message) ||
+    !Number.isSafeInteger(Number(message.sequence)) ||
+    Number(message.sequence) < 0
+  ) return false;
+  if (message.controller !== undefined && message.controller !== null && typeof message.controller !== "object") {
+    return false;
+  }
+  const state = createLiveTelemetryState();
+  return acceptLiveTelemetryPacket(state, message);
 }

@@ -101,3 +101,26 @@ Check:
 - Sticks are centered when testing neutral pose.
 
 Balance mode is experimental and should be treated as a tuning area, not a finished stabilizer.
+
+### Body rolls around a point near the floor
+
+If the chassis swings sideways in an arc instead of rotating around the center
+of the hip rectangle, inspect LIVE expected foot targets during an isolated
+roll. A correct fixed-foot command changes every leg's lateral target and moves
+all four hip servos. A command that changes only left/right leg height creates
+the floor-pivot behavior even though a simulator can hide it with body-pose and
+foot-hold assistance.
+
+After flashing a fixed-foot build, test on a support harness at a small roll
+angle first. Confirm the four hip channels move in opposing left/right pairs,
+no stored calibration limit clips them, and the feet do not scrub before
+increasing the angle.
+
+If sit/stand and ride height remain correct but tilt alone fails, inspect the
+active LIVE calibration profile before changing the IK. Height changes mostly
+exercise the two planar linkage drives, whereas fixed-foot roll also depends on
+all four hip drives. A reversed hip direction, stale channel route, or hip
+travel limit can therefore leave height looking excellent while destroying the
+roll geometry. The browser Rapier scene is explicitly labelled **ASSISTED**;
+its body torque and foot-position holds are useful for visualization but are
+not evidence that the physical calibration is correct.

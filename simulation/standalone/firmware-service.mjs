@@ -111,14 +111,16 @@ function progressFor(type, text, current) {
 }
 
 export class FirmwareService {
-  constructor({ projectRoot, runtimeRoot }) {
+  constructor({ projectRoot, runtimeRoot, onJobFinished = null }) {
     this.projectRoot = projectRoot;
     this.runtimeRoot = path.join(runtimeRoot, "firmware-jobs");
     this.platformioEnvironment = preparePlatformioEnvironment(runtimeRoot);
     this.platformio = findPlatformio();
     this.job = null;
     this.child = null;
+    this.cancelRequested = false;
     this.lastBuild = null;
+    this.onJobFinished = typeof onJobFinished === "function" ? onJobFinished : null;
     mkdirSync(this.runtimeRoot, { recursive: true });
   }
 
@@ -187,7 +189,9 @@ export class FirmwareService {
 
   cancel() {
     if (!this.child || !this.job || this.job.status !== "running") return false;
+    this.cancelRequested = true;
     this.job.status = "cancelling";
+    this.job.stage = "Cancelling job";
     this.child.kill("SIGTERM");
     return true;
   }
@@ -197,9 +201,10 @@ export class FirmwareService {
     if (this.job?.status === "running" || this.job?.status === "cancelling") {
       throw new Error("Another firmware job is already running.");
     }
+    this.cancelRequested = false;
     const id = `${Date.now()}-${type}`;
     const logPath = path.join(this.runtimeRoot, `${id}.jsonl`);
-    this.job = {
+    const job = {
       id,
       type,
       status: "running",
@@ -211,19 +216,20 @@ export class FirmwareService {
       exitCode: null,
       logs: [],
     };
+    this.job = job;
     const record = (stream, text) => {
       const clean = String(text).replace(/\x1b\[[0-9;]*m/g, "");
       if (!clean) return;
       const entry = { at: new Date().toISOString(), stream, text: clean };
-      this.job.logs.push(entry);
-      if (this.job.logs.length > 1000) this.job.logs.shift();
-      this.job.progress = Math.min(99, progressFor(type, clean, this.job.progress));
-      if (/Compiling|Building/i.test(clean)) this.job.stage = "Compiling firmware";
-      if (/Linking/i.test(clean)) this.job.stage = "Linking application";
-      if (/Checking size|RAM:|Flash:/i.test(clean)) this.job.stage = "Checking flash and memory";
-      if (/Connecting/i.test(clean)) this.job.stage = "Connecting to ESP32";
-      if (/Writing at/i.test(clean)) this.job.stage = "Writing flash";
-      if (/Hash of data verified/i.test(clean)) this.job.stage = "Verifying flash";
+      job.logs.push(entry);
+      if (job.logs.length > 1000) job.logs.shift();
+      job.progress = Math.min(99, progressFor(type, clean, job.progress));
+      if (/Compiling|Building/i.test(clean)) job.stage = "Compiling firmware";
+      if (/Linking/i.test(clean)) job.stage = "Linking application";
+      if (/Checking size|RAM:|Flash:/i.test(clean)) job.stage = "Checking flash and memory";
+      if (/Connecting/i.test(clean)) job.stage = "Connecting to ESP32";
+      if (/Writing at/i.test(clean)) job.stage = "Writing flash";
+      if (/Hash of data verified/i.test(clean)) job.stage = "Verifying flash";
       appendFileSync(logPath, `${JSON.stringify(entry)}\n`, "utf8");
     };
     this.child = spawn(this.platformio, args, {
@@ -235,13 +241,18 @@ export class FirmwareService {
     this.child.stderr.on("data", (chunk) => record("stderr", chunk));
     this.child.on("error", (error) => record("stderr", error.message));
     this.child.on("close", (code) => {
-      const ok = code === 0;
-      this.job.status = ok ? "success" : "failed";
-      this.job.stage = ok ? (type === "build" ? "Package ready" : "Upload complete") : "Job failed";
-      this.job.progress = ok ? 100 : this.job.progress;
-      this.job.exitCode = code;
-      this.job.finishedAt = new Date().toISOString();
-      if (type === "build") {
+      const cancelled = this.cancelRequested || job.status === "cancelling";
+      const ok = !cancelled && code === 0;
+      job.status = cancelled ? "cancelled" : ok ? "success" : "failed";
+      job.stage = cancelled
+        ? "Job cancelled"
+        : ok
+          ? (type === "build" ? "Package ready" : "Upload complete")
+          : "Job failed";
+      job.progress = ok ? 100 : job.progress;
+      job.exitCode = code;
+      job.finishedAt = new Date().toISOString();
+      if (type === "build" && !cancelled) {
         this.lastBuild = {
           ok,
           packageHash: firmwarePackage.hash,
@@ -249,7 +260,18 @@ export class FirmwareService {
           jobId: id,
         };
       }
-      this.child = null;
+      if (this.job === job) {
+        this.child = null;
+        this.cancelRequested = false;
+      }
+      if (this.onJobFinished) {
+        try {
+          const result = this.onJobFinished({ ...job, logs: job.logs.slice(-500) });
+          result?.catch?.((error) => console.error("Firmware completion hook failed:", error));
+        } catch (error) {
+          console.error("Firmware completion hook failed:", error);
+        }
+      }
     });
     return this.publicJob();
   }

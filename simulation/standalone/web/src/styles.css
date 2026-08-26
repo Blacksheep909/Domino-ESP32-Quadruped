@@ -3473,6 +3473,18 @@ body[data-workspace="real-robot"]:is(
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.025);
 }
 
+/* The shared desktop polish above reserves the right telemetry lane for the
+   simulation inspector. On compact windows Simulation owns the full width;
+   restore its intentional two-gutter layout after that desktop rule so the
+   first toolbar row cannot be squeezed off-screen. */
+@media (max-width: 780px) {
+  nav {
+    left: 10px;
+    right: 10px;
+    width: auto;
+  }
+}
+
 :root[data-theme="dark"] #real-workspace .live-view-page :is(i, pre) {
   font-size: 10px !important;
   line-height: 1.35;

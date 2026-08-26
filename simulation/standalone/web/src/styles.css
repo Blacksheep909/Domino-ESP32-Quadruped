@@ -6792,6 +6792,8 @@ body[data-workspace="real-robot"] .toast-region {
 .live-planner-actions button { flex: 0 0 auto; min-height: 28px; padding: 0 9px; color: #286442; background: #e3f1e8; border: 1px solid #9bc8aa; border-radius: 4px; cursor: pointer; font: 800 8px/1 "Cascadia Mono", Consolas, monospace; }
 .live-planner-actions button:disabled { color: #8c9089; background: #e7e8e3; border-color: #d2d4ce; cursor: not-allowed; }
 .live-planner-actions span { min-width: 0; overflow: hidden; color: #737871; font-size: 8px; line-height: 1.35; text-overflow: ellipsis; }
+.live-planner-actions #live-nav-plan-storage-status { flex: 0 0 auto; color: #3c8456; font: 800 8px/1 "Cascadia Mono", Consolas, monospace; white-space: nowrap; }
+.live-planner-actions #live-nav-plan-storage-status[data-state="warning"] { color: #ad7621; }
 .live-planner-map-surface { fill: #edf1ec; }
 .live-planner-grid-major { fill: none; stroke: #d6ddd6; stroke-width: .45; }
 .live-planner-axis { fill: none; stroke: #9bb8a1; stroke-width: .7; stroke-dasharray: 2 2; }
@@ -6846,6 +6848,8 @@ body[data-workspace="real-robot"] .toast-region {
 :root[data-theme="dark"] .live-planner-actions button { color: #b9efc6; background: rgba(66, 142, 88, .18); border-color: rgba(113, 201, 145, .52); }
 :root[data-theme="dark"] .live-planner-actions button:disabled { color: #777b80; background: #292a2d; border-color: #3a3d40; }
 :root[data-theme="dark"] .live-planner-actions span { color: #96999e; }
+:root[data-theme="dark"] .live-planner-actions #live-nav-plan-storage-status { color: #78c894; }
+:root[data-theme="dark"] .live-planner-actions #live-nav-plan-storage-status[data-state="warning"] { color: #e7b45c; }
 :root[data-theme="dark"] .live-waypoint-row.is-selected { border-color: #69c28b; box-shadow: 0 0 0 1px rgba(105, 194, 139, .24), inset 3px 0 0 #69c28b; }
 :root[data-theme="dark"] .live-autonomy-hud > button { color: #ffc0b4; background: rgba(174, 70, 56, .16); border-color: rgba(214, 119, 101, .55); }
 :root[data-theme="dark"] .live-mission-toolbar #live-nav-clear-draft { color: #ffc0b4; background: rgba(174, 70, 56, .16); border-color: rgba(214, 119, 101, .55); }

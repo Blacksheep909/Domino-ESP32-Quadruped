@@ -117,7 +117,7 @@ source, so LIVE layout, typography, and behavior are kept in sync:
 
 The always-available **PROJECT** control now exports and imports a validated
 Dog V2 `.qstudio.json` bundle. This is the first project-driven desktop step:
-robot-specific gait, calibration, and controller configuration can move with
+robot-specific gait, calibration, controller, and saved route configuration can move with
 the project while connection, E-stop, arm, bench, telemetry, and session state
 remain local and fail-closed.
 

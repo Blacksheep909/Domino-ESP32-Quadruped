@@ -39,6 +39,16 @@ function fixture() {
       geofence: { enabled: true, maxRadiusM: 35 },
       obstacleBehavior: { enabled: true, stopDistanceM: 0.5, slowDistanceM: 1.6, maxSpeedMps: 0.7 },
     },
+    navigationPlanLibrary: [
+      {
+        name: "Saved patrol",
+        savedAt: 9876,
+        plan: {
+          missionName: "Saved patrol",
+          missionDraft: [{ local: { northM: 2, eastM: 3 }, label: "Dock" }],
+        },
+      },
+    ],
     calibrationProfile: {
       joints: Array.from({ length: 12 }, (_, channel) => ({
         logicalChannel: channel,
@@ -66,6 +76,8 @@ test("project bundles contain the robot contract and portable configuration", ()
   assert.equal(bundle.live.navigation.missionDraft[0].holdS, 3);
   assert.equal(bundle.live.navigation.plannerRangeM, 80);
   assert.equal(bundle.live.navigation.geofence.maxRadiusM, 35);
+  assert.equal(bundle.live.navigationPlanLibrary.length, 1);
+  assert.equal(bundle.live.navigationPlanLibrary[0].name, "Saved patrol");
   assert.equal("safety" in bundle, false);
   assert.equal("connection" in bundle, false);
   assert.equal("benchModeAcknowledged" in bundle.live, false);
@@ -82,15 +94,18 @@ test("project JSON round-trips with bounded summaries", () => {
     gamepadMappingCount: 1,
     calibratedJointCount: 12,
     routeWaypointCount: 2,
+    routeLibraryCount: 1,
   });
 });
 
 test("project bundle keeps older files compatible with an empty local route plan", () => {
   const bundle = fixture();
   delete bundle.live.navigation;
+  delete bundle.live.navigationPlanLibrary;
   const restored = parseProjectBundleJson(projectBundleJson(bundle));
   assert.deepEqual(restored.live.navigation.missionDraft, []);
   assert.equal(restored.live.navigation.geofence.enabled, false);
+  assert.deepEqual(restored.live.navigationPlanLibrary, []);
 });
 
 test("project parser rejects wrong files and unsafe physical mappings", () => {

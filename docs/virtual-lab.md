@@ -98,6 +98,11 @@ advertises the corresponding robot-side contract.
 keeps the current local draft readable with margin. It is a display convenience
 only and does not change waypoint coordinates or vehicle state.
 
+**REVERSE ROUTE** reverses the waypoint order for a return pass while retaining
+each point's speed, radius, hold, label, and coordinate data. It is an in-app
+edit, so it is undoable and still requires the normal route review and safety
+gates before any vehicle command.
+
 Route edits can be reversed with the **UNDO** and **REDO** controls beside the
 planner, or with **Ctrl+Z**, **Ctrl+Shift+Z**, and **Ctrl+Y** when focus is not in
 an editable text field. The history covers waypoint placement, dragging,

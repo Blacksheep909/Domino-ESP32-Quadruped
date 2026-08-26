@@ -16,6 +16,7 @@ import {
   navigationMissionPreview,
   navigationMissionRecommendedRange,
   removeNavigationWaypoint,
+  reverseNavigationWaypoints,
   gpsTrackToMission,
   sanitizeLiveNavigation,
   missionWaypointHasCoordinate,
@@ -195,4 +196,16 @@ test("route planner drags a waypoint within the active local frame", () => {
   assert.ok(Number.isFinite(state.missionDraft[0].lat));
   assert.ok(Number.isFinite(state.missionDraft[0].lon));
   assert.equal(moveNavigationWaypointToLocal(state, 0, { northM: 20_001, eastM: 0 }, origin), false);
+});
+
+test("route planner can reverse a route while preserving waypoint data", () => {
+  const state = createLiveNavigationState();
+  addNavigationWaypoint(state, { local: { northM: 0, eastM: 0 }, label: "Start", speedMps: 0.4 });
+  addNavigationWaypoint(state, { local: { northM: 4, eastM: 2 }, label: "Gate", holdS: 3 });
+  assert.equal(reverseNavigationWaypoints(state), true);
+  assert.equal(state.missionDraft[0].label, "Gate");
+  assert.equal(state.missionDraft[0].holdS, 3);
+  assert.equal(state.missionDraft[1].label, "Start");
+  assert.equal(state.missionDraft[1].speedMps, 0.4);
+  assert.equal(reverseNavigationWaypoints(createLiveNavigationState()), false);
 });

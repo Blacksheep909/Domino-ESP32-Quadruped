@@ -4897,6 +4897,7 @@ function renderLiveWaypointList(navigation = liveNavigationSnapshot(liveTelemetr
     const localSummary = waypoint.local ? `LOCAL N ${waypoint.local.northM.toFixed(1)} / E ${waypoint.local.eastM.toFixed(1)} M` : "GPS REFERENCE";
     row.innerHTML = `
       <div class="live-waypoint-heading"><strong>WP ${String(index + 1).padStart(2, "0")}</strong><span>${escapeNavigationHtml(waypoint.label || "Waypoint")} / ${localSummary}</span><div><button type="button" data-waypoint-action="direct" ${dominoDirectReady ? "" : "disabled"} title="Drive only to this waypoint with Domino's guarded controller">DRIVE</button><button type="button" data-waypoint-action="goto" ${guidedReady && hasCoordinate ? "" : "disabled"} title="Send this waypoint as an ArduPilot Guided target">GUIDE</button><button type="button" data-waypoint-action="up" title="Move waypoint up">↑</button><button type="button" data-waypoint-action="down" title="Move waypoint down">↓</button><button type="button" data-waypoint-action="duplicate" title="Duplicate waypoint">⧉</button><button type="button" data-waypoint-action="remove" title="Remove waypoint">×</button></div></div>
+      <label class="live-waypoint-label-field"><span>LABEL</span><input data-waypoint-field="label" type="text" maxlength="64" autocomplete="off" value="${escapeNavigationHtml(waypoint.label || `WP ${index + 1}`)}" placeholder="Waypoint name"></label>
       <label><span>LAT</span><input data-waypoint-field="lat" type="number" step="0.000001" min="-90" max="90" value="${hasCoordinate ? Number(waypoint.lat).toFixed(6) : ""}" ${hasCoordinate ? "" : "disabled"}></label>
       <label><span>LON</span><input data-waypoint-field="lon" type="number" step="0.000001" min="-180" max="180" value="${hasCoordinate ? Number(waypoint.lon).toFixed(6) : ""}" ${hasCoordinate ? "" : "disabled"}></label>
       <label><span>RADIUS M</span><input data-waypoint-field="radiusM" type="number" step="0.1" min="0.1" max="100" value="${Number(waypoint.radiusM || 1.5).toFixed(1)}"></label>
@@ -7061,7 +7062,9 @@ document.querySelector("#live-nav-waypoint-list").addEventListener("input", (eve
   const index = Number(row.dataset.index);
   const field = input.dataset.waypointField;
   if (!liveNavigationState.missionDraft[index]) return;
-  liveNavigationState.missionDraft[index][field] = field === "label" ? input.value : Number(input.value);
+  liveNavigationState.missionDraft[index][field] = field === "label"
+    ? input.value.trim().slice(0, 64) || `WP ${index + 1}`
+    : Number(input.value);
   persistLiveNavigationPlan();
   document.querySelector("#live-nav-waypoint-list").dataset.signature = navigationStateSignature();
   updateNavigationMissionHeader(liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState));

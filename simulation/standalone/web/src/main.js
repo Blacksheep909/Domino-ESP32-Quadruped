@@ -4329,6 +4329,7 @@ function plannerSvgElement(name, attributes = {}) {
 function renderLiveNavigationPlanner(navigation) {
   const map = document.querySelector("#live-nav-planner-map");
   const route = document.querySelector("#live-nav-planner-route");
+  const returnRoute = document.querySelector("#live-nav-planner-return-route");
   const markers = document.querySelector("#live-nav-planner-markers");
   const vehicle = document.querySelector("#live-nav-planner-vehicle");
   const geofence = document.querySelector("#live-nav-planner-geofence");
@@ -4353,7 +4354,7 @@ function renderLiveNavigationPlanner(navigation) {
   const reverseButton = document.querySelector("#live-nav-reverse-route");
   const undoButton = document.querySelector("#live-nav-undo");
   const redoButton = document.querySelector("#live-nav-redo");
-  if (!map || !route || !markers || !vehicle || !geofence || !status || !hudMode || !hudState || !hudRoute || !hudNext || !hudTotal || !hudEta || !hudPosition || !hudObstacle || !hudControl || !helpStatus || !storageStatus || !referencePlan) return;
+  if (!map || !route || !returnRoute || !markers || !vehicle || !geofence || !status || !hudMode || !hudState || !hudRoute || !hudNext || !hudTotal || !hudEta || !hudPosition || !hudObstacle || !hudControl || !helpStatus || !storageStatus || !referencePlan) return;
   renderLiveNavigationPlanLibrary();
 
   const origin = navigationPlannerOrigin(navigation);
@@ -4395,6 +4396,11 @@ function renderLiveNavigationPlanner(navigation) {
   geofence.classList.toggle("has-warning", fenceStatus.outsideCount > 0);
   const waypointPoints = liveNavigationState.missionDraft.map((waypoint) => toMapPoint(plannerPointFromWaypoint(waypoint, origin)));
   route.setAttribute("points", waypointPoints.filter(Boolean).map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" "));
+  const firstPoint = waypointPoints[0];
+  const lastPoint = waypointPoints.at(-1);
+  returnRoute.setAttribute("points", liveNavigationState.loopCount > 1 && firstPoint && lastPoint
+    ? `${lastPoint.x.toFixed(2)},${lastPoint.y.toFixed(2)} ${firstPoint.x.toFixed(2)},${firstPoint.y.toFixed(2)}`
+    : "");
   markers.replaceChildren();
   const currentMissionIndex = nativeNavigationRunnerIsActive(liveNativeNavigationState)
     ? liveNativeNavigationState.currentIndex
@@ -4464,7 +4470,10 @@ function renderLiveNavigationPlanner(navigation) {
       : "LOCAL AUTOSAVE ON";
   storageStatus.dataset.state = liveNavigationPlanStorageState === "unavailable" ? "warning" : "saved";
   referencePlan.disabled = !hasOrigin || !localOnlyCount;
-  hudRoute.textContent = previewSession && preview?.ready
+  const nativeRunnerActive = nativeNavigationRunnerIsActive(liveNativeNavigationState);
+  hudRoute.textContent = nativeRunnerActive
+    ? `ROUTE ${liveNativeNavigationState.completedLoops + 1}/${liveNativeNavigationState.loopCount} · WP ${liveNativeNavigationState.currentIndex + 1}/${routeCount}`
+    : previewSession && preview?.ready
     ? `PREVIEW ${preview.currentIndex + 1}/${routeCount} · ${preview.loopIndex + 1}/${preview.loopCount}`
     : routeCount ? `DRAFT / ${routeCount} · ${liveNavigationState.loopCount}X` : "DRAFT / 0";
   hudTotal.textContent = formatNavigationDistance(metrics.totalDistanceM, "--");
@@ -4475,7 +4484,6 @@ function renderLiveNavigationPlanner(navigation) {
     ? "LOCAL PREVIEW"
     : navigation.hasFix ? navigationFixLabel(navigation.gps?.fixType) : hasOrigin ? "HOME SET" : "NO FIX";
   hudObstacle.textContent = navigation.lidarFresh ? formatNavigationDistance(navigation.frontM, "--.- m") : "WAITING";
-  const nativeRunnerActive = nativeNavigationRunnerIsActive(liveNativeNavigationState);
   const nativeMode = nativeRunnerActive ? liveNativeNavigationState.mode : "route";
   hudMode.textContent = nativeRunnerActive
     ? nativeMode === "return-home" ? "DOMINO RETURN HOME" : "DOMINO ROUTE"

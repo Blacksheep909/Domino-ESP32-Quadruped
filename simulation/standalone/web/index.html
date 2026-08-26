@@ -398,7 +398,11 @@
         <button id="live-manual-open" class="live-manual-open" type="button">MANUAL CONTROL</button>
       </nav>
 
-      <section id="live-view-compare" class="live-view-content" aria-label="Live robot comparison">
+      <section id="live-view-compare" class="live-view-content" aria-labelledby="live-compare-title">
+      <header class="live-page-heading live-compare-page-heading">
+        <div><span>LIVE / COMPARE</span><h1 id="live-compare-title">Digital twin</h1><p>Compare commanded motion with measured robot feedback, power, and timing.</p></div>
+        <div class="live-page-status"><span>VIEW</span><strong>EXPECTED + MEASURED</strong></div>
+      </header>
       <section class="live-safety-dock" aria-label="Live robot safety state">
         <div class="live-state-heading">
           <span>ROBOT STATE</span>

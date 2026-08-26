@@ -3308,6 +3308,71 @@ body[data-workspace="real-robot"]:is(
   top: calc(var(--live-preview-top) + 12px);
 }
 
+/* Compare uses fixed telemetry panels, so give it the same reserved title
+   lane as the page-style LIVE views before placing those panels. */
+@media (min-width: 901px) {
+  #live-view-compare .live-compare-page-heading {
+    position: fixed;
+    top: calc(var(--live-content-top) + 12px);
+    right: var(--app-gutter);
+    left: var(--app-gutter);
+    width: auto;
+    max-width: none;
+    min-height: 76px;
+    margin: 0;
+    padding: 14px 18px;
+    align-items: center;
+    color: #20211f;
+    background: rgba(250, 250, 248, 0.94);
+    border: 1px solid #d2d2cd;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(35, 35, 31, 0.08);
+    backdrop-filter: blur(14px);
+    z-index: 10;
+  }
+
+  body[data-workspace="real-robot"][data-live-view="compare"] #live-view-compare .live-safety-dock,
+  body[data-workspace="real-robot"][data-live-view="compare"] #real-workspace .live-comparison-panel {
+    top: calc(var(--live-content-top) + 142px);
+  }
+
+  #live-view-compare .live-error-scope {
+    height: 234px;
+  }
+
+  #live-view-compare .live-scope-heading {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  #live-view-compare .live-scope-actions {
+    min-width: 0;
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) 76px minmax(86px, 1fr) minmax(86px, 1fr) minmax(86px, 1fr);
+    gap: 6px;
+  }
+
+  #live-view-compare .live-scope-actions > span {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+
+  #live-view-compare .live-scope-actions :is(select, button) {
+    min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
+  }
+}
+
+:root[data-theme="dark"] #live-view-compare .live-compare-page-heading {
+  color: var(--live-text);
+  background: rgba(18, 23, 27, 0.96);
+  border-color: var(--live-border);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
 :root[data-theme="dark"] #real-workspace .live-view-page :is(i, pre) {
   font-size: 10px !important;
   line-height: 1.35;

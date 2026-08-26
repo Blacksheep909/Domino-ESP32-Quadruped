@@ -4485,11 +4485,17 @@ function renderLiveNavigationPlanner(navigation) {
   storageStatus.dataset.state = liveNavigationPlanStorageState === "unavailable" ? "warning" : "saved";
   referencePlan.disabled = !hasOrigin || !localOnlyCount;
   const nativeRunnerActive = nativeNavigationRunnerIsActive(liveNativeNavigationState);
-  hudRoute.textContent = nativeRunnerActive
-    ? `ROUTE ${liveNativeNavigationState.completedLoops + 1}/${liveNativeNavigationState.loopCount} · WP ${liveNativeNavigationState.currentIndex + 1}/${routeCount}`
+  const routeHudSummary = nativeRunnerActive
+    ? `PASS ${liveNativeNavigationState.completedLoops + 1}/${liveNativeNavigationState.loopCount} · WP ${liveNativeNavigationState.currentIndex + 1}/${routeCount}`
     : previewSession && preview?.ready
-    ? `PREVIEW ${preview.currentIndex + 1}/${routeCount} · ${preview.loopIndex + 1}/${preview.loopCount}`
-    : routeCount ? `DRAFT / ${routeCount} · ${liveNavigationState.loopCount}X` : "DRAFT / 0";
+    ? `WP ${preview.currentIndex + 1}/${routeCount} · PASS ${preview.loopIndex + 1}/${preview.loopCount}`
+    : routeCount ? `${routeCount} WP / ${liveNavigationState.loopCount}X` : "0 WP / 1X";
+  hudRoute.textContent = routeHudSummary;
+  hudRoute.title = nativeRunnerActive
+    ? `Domino route pass ${liveNativeNavigationState.completedLoops + 1} of ${liveNativeNavigationState.loopCount}, waypoint ${liveNativeNavigationState.currentIndex + 1} of ${routeCount}`
+    : previewSession && preview?.ready
+    ? `Offline preview waypoint ${preview.currentIndex + 1} of ${routeCount}, pass ${preview.loopIndex + 1} of ${preview.loopCount}`
+    : `${routeCount} planned waypoint${routeCount === 1 ? "" : "s"}; ${liveNavigationState.loopCount} patrol loop${liveNavigationState.loopCount === 1 ? "" : "s"}`;
   hudTotal.textContent = formatNavigationDistance(metrics.totalDistanceM, "--");
   hudEta.textContent = previewSession && preview?.ready
     ? formatNavigationDuration(Math.max(0, (preview.totalSeconds || 0) - preview.elapsedSeconds))

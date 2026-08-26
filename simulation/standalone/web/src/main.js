@@ -316,6 +316,9 @@ function pushLiveNavigationHistorySnapshot(snapshot) {
 }
 
 function captureLiveNavigationHistory() {
+  if (nativeNavigationRunnerIsActive(liveNativeNavigationState)) {
+    haltLiveNativeNavigation("Route plan editing requested. Domino route was neutralized.");
+  }
   pushLiveNavigationHistorySnapshot(navigationMissionJson(liveNavigationState));
 }
 
@@ -6545,7 +6548,11 @@ document.querySelector("#live-nav-waypoint-list").addEventListener("input", (eve
   updateLiveComparisonUi();
 });
 document.querySelector("#live-nav-waypoint-list").addEventListener("focusin", (event) => {
-  if (event.target.closest("[data-waypoint-field]")) liveNavigationFieldHistorySnapshot = navigationMissionJson(liveNavigationState);
+  if (!event.target.closest("[data-waypoint-field]")) return;
+  if (nativeNavigationRunnerIsActive(liveNativeNavigationState)) {
+    haltLiveNativeNavigation("Route plan editing requested. Domino route was neutralized.");
+  }
+  liveNavigationFieldHistorySnapshot = navigationMissionJson(liveNavigationState);
 });
 document.querySelector("#live-nav-waypoint-list").addEventListener("focusout", (event) => {
   if (!event.target.closest("[data-waypoint-field]")) return;

@@ -79,6 +79,11 @@ When the obstacle guard is enabled and the LiDAR stream is fresh, four muted
 clearance sectors appear around the vehicle marker and change color at the
 stop and slow thresholds; stale or bypassed LiDAR is shown explicitly in the
 legend.
+**CENTER DOG** recenters the map on the current GPS position, or on the active
+offline preview position. **FOLLOW DOG** keeps that display center attached to
+the moving position while previewing; it is a view-only convenience and never
+rewrites route coordinates or sends a vehicle command. Both controls stay
+disabled until a usable position is available.
 
 The compact Domino Autonomy HUD stays beside the map and shows a complete,
 compact route/pass summary, position quality, next-point distance, total route
@@ -157,8 +162,8 @@ gates before any vehicle command.
 Route edits can be reversed with the **UNDO** and **REDO** controls beside the
 planner, or with **Ctrl+Z**, **Ctrl+Shift+Z**, and **Ctrl+Y** when focus is not in
 an editable text field. The history covers waypoint placement, dragging,
-reordering, removal, range fitting, local-plan referencing, imports, and draft
-clears; editing a route also stops an active offline preview so it cannot keep
+reordering, removal, keyboard nudges, range fitting, local-plan referencing,
+imports, and draft clears; editing a route also stops an active offline preview so it cannot keep
 following stale geometry. The history is an in-memory editing aid and is not
 persisted as vehicle state.
 

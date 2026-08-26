@@ -42,7 +42,7 @@ function zeroCommand(state, reason, currentIndex = -1) {
 export function nativeNavigationCommand({
   waypoints = [],
   position = { northM: 0, eastM: 0 },
-  headingDeg = 0,
+  headingDeg,
   currentIndex = 0,
   obstacle = {},
   geofence = {},
@@ -85,8 +85,16 @@ export function nativeNavigationCommand({
     }
   }
 
+  const heading = finite(headingDeg);
+  if (heading === null) {
+    return {
+      ...zeroCommand("sensor-wait", "Waiting for a fresh vehicle heading.", index),
+      target,
+      distanceM,
+    };
+  }
   const bearingDeg = (Math.atan2(target.eastM - current.eastM, target.northM - current.northM) * 180) / Math.PI;
-  const normalizedHeading = ((finite(headingDeg) ?? 0) % 360 + 360) % 360;
+  const normalizedHeading = ((heading % 360) + 360) % 360;
   const errorDeg = headingErrorDeg(bearingDeg, normalizedHeading);
   const alignment = Math.max(0, Math.cos((errorDeg * Math.PI) / 180));
   const requestedSpeedMps = Math.max(0.05, finite(waypoints[index]?.speedMps) ?? 0.5);

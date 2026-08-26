@@ -37,7 +37,7 @@ const announcement = (timestampMs = 1_000) => ({
   timestampMs,
   signalPercent: 82,
   robot: { id: "domino-01", name: "Domino", firmwareVersion: "0.4.0" },
-  capabilities: { telemetry: true, calibration: true, gaitProfiles: true, persistentProfiles: true, manualControl: true },
+  capabilities: { telemetry: true, calibration: true, gaitProfiles: true, persistentProfiles: true, manualControl: true, nativeNavigation: true },
 });
 
 test("adapter announcements are bounded, retained and transport-filtered", () => {
@@ -46,6 +46,7 @@ test("adapter announcements are bounded, retained and transport-filtered", () =>
   assert.equal(acceptLiveAdapterAnnouncement(state, announcement(), 1_010), true);
   assert.equal(state.selectedAdapterId, "domino-adapter-a");
   assert.equal(state.adapters["domino-adapter-a"].capabilities.manualControl, true);
+  assert.equal(state.adapters["domino-adapter-a"].capabilities.nativeNavigation, true);
   assert.equal(visibleLiveAdapters(state, 1_020).length, 1);
   state.transportFilter = "bluetooth";
   assert.equal(visibleLiveAdapters(state, 1_020).length, 0);

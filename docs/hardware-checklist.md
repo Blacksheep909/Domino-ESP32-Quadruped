@@ -8,6 +8,7 @@
 - PCA9685 16-channel PWM servo driver or Domino PCB V1.1B.
 - CRSF / ExpressLRS receiver.
 - MPU6050 IMU.
+- PCB 0-25 V divider module on GPIO36 for measured battery voltage.
 - High-current servo regulator or BEC.
 - Battery suitable for the selected servos and regulator.
 - Common-ground wiring between servo power, ESP32, receiver, and PCA9685.

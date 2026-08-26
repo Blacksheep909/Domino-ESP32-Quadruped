@@ -92,6 +92,7 @@ parser.add_argument("--alive-reward-scale", type=float, default=None, help="Per-
 parser.add_argument("--vertical-velocity-reward-scale", type=float, default=None)
 parser.add_argument("--angular-velocity-reward-scale", type=float, default=None)
 parser.add_argument("--flat-orientation-reward-scale", type=float, default=None)
+parser.add_argument("--pitch-orientation-reward-scale", type=float, default=None)
 parser.add_argument("--action-reward-scale", type=float, default=None, help="Reward scale for squared action magnitude.")
 parser.add_argument("--action-rate-reward-scale", type=float, default=None, help="Reward scale for squared action changes.")
 parser.add_argument(
@@ -121,7 +122,14 @@ parser.add_argument(
     help="Reward scale for qualified liftoff-to-touchdown foot cycles.",
 )
 parser.add_argument("--front-rear-support-reward-scale", type=float, default=None)
+parser.add_argument("--axle-support-imbalance-penalty-scale", type=float, default=None)
+parser.add_argument("--same-axle-airborne-penalty-scale", type=float, default=None)
 parser.add_argument("--excess-airborne-penalty-scale", type=float, default=None)
+parser.add_argument("--front-foot-backward-reach-penalty-scale", type=float, default=None)
+parser.add_argument("--front-pair-backward-reach-penalty-scale", type=float, default=None)
+parser.add_argument("--front-foot-min-body-x-m", type=float, default=None)
+parser.add_argument("--front-foot-reach-normalization-m", type=float, default=None)
+parser.add_argument("--front-foot-backward-termination-body-x-m", type=float, default=None)
 parser.add_argument("--foot-cycle-min-air-time-s", type=float, default=None)
 parser.add_argument("--foot-cycle-target-air-time-s", type=float, default=None)
 parser.add_argument("--foot-cycle-min-clearance-m", type=float, default=None)
@@ -1209,6 +1217,7 @@ def initialize_reference_action_identity_actor(policy) -> dict[str, object]:
 def behavior_clone_reference_actions(
     runner: OnPolicyRunner,
     wrapped_env: RslRlVecEnvWrapper,
+    env: DominoCadLinkageEnv,
     steps: int,
     learning_rate: float,
     output_penalty: float,
@@ -1224,11 +1233,33 @@ def behavior_clone_reference_actions(
     obs = wrapped_env.get_observations().to(runner.device)
     replay_observations = []
     replay_targets = []
+
+    def reference_targets(actor_obs: torch.Tensor) -> torch.Tensor:
+        if bool(env.cfg.include_reference_actions_in_observation):
+            if actor_obs.shape[-1] < EXPECTED_ACTION_COUNT:
+                raise RuntimeError(
+                    "Reference-action BC requires appended reference actions."
+                )
+            return torch.clamp(
+                actor_obs[:, -EXPECTED_ACTION_COUNT:].detach(),
+                -1.0,
+                1.0,
+            )
+        target_actions = torch.as_tensor(
+            env._reference_actions_np(),
+            dtype=actor_obs.dtype,
+            device=actor_obs.device,
+        )
+        if target_actions.shape != (actor_obs.shape[0], EXPECTED_ACTION_COUNT):
+            raise RuntimeError(
+                "Open-policy reference targets do not match the actor batch: "
+                f"targets={tuple(target_actions.shape)}, actor={tuple(actor_obs.shape)}."
+            )
+        return torch.clamp(target_actions, -1.0, 1.0)
+
     for _ in range(max(int(replay_steps), 0)):
         actor_obs = policy.get_actor_obs(obs).detach()
-        if actor_obs.shape[-1] < EXPECTED_ACTION_COUNT:
-            raise RuntimeError("Reference-action replay requires observations with appended reference actions.")
-        target_actions = torch.clamp(actor_obs[:, -EXPECTED_ACTION_COUNT:], -1.0, 1.0)
+        target_actions = reference_targets(actor_obs)
         replay_observations.append(actor_obs.clone())
         replay_targets.append(target_actions.clone())
         with torch.inference_mode():
@@ -1241,14 +1272,15 @@ def behavior_clone_reference_actions(
         replay_actor_obs = torch.cat(replay_observations, dim=0)
         replay_target_actions = torch.cat(replay_targets, dim=0)
 
-    def diagnostics() -> dict[str, float]:
-        if replay_actor_obs is None or replay_target_actions is None:
-            return reference_action_diagnostics(policy, obs)
+    def action_diagnostics(
+        actor_obs: torch.Tensor,
+        target_actions: torch.Tensor,
+    ) -> dict[str, float]:
         with torch.inference_mode():
-            predicted = policy.actor(policy.actor_obs_normalizer(replay_actor_obs))
-            raw_error = predicted - replay_target_actions
+            predicted = policy.actor(policy.actor_obs_normalizer(actor_obs))
+            raw_error = predicted - target_actions
             clipped = torch.clamp(predicted, -1.0, 1.0)
-            clipped_error = clipped - replay_target_actions
+            clipped_error = clipped - target_actions
             per_channel_mse = torch.mean(torch.square(clipped_error), dim=0)
             return {
                 "raw_mse": float(torch.mean(torch.square(raw_error)).detach().cpu()),
@@ -1258,6 +1290,12 @@ def behavior_clone_reference_actions(
                 "clipped_mean_abs": float(torch.mean(torch.abs(clipped)).detach().cpu()),
                 "max_channel_clipped_mse": float(torch.max(per_channel_mse).detach().cpu()),
             }
+
+    def diagnostics() -> dict[str, float]:
+        if replay_actor_obs is not None and replay_target_actions is not None:
+            return action_diagnostics(replay_actor_obs, replay_target_actions)
+        actor_obs = policy.get_actor_obs(obs).detach()
+        return action_diagnostics(actor_obs, reference_targets(actor_obs))
 
     initial_diag = diagnostics()
     losses = []
@@ -1271,9 +1309,7 @@ def behavior_clone_reference_actions(
             target_actions = replay_target_actions[indexes]
         else:
             actor_obs = policy.get_actor_obs(obs)
-            if actor_obs.shape[-1] < EXPECTED_ACTION_COUNT:
-                raise RuntimeError("Reference-action BC requires observations with appended reference actions.")
-            target_actions = torch.clamp(actor_obs[:, -EXPECTED_ACTION_COUNT:].detach(), -1.0, 1.0)
+            target_actions = reference_targets(actor_obs)
         predicted_actions = policy.actor(policy.actor_obs_normalizer(actor_obs))
         raw_mse = weighted_action_mse(predicted_actions - target_actions, action_weights)
         clipped_mse = weighted_action_mse(torch.clamp(predicted_actions, -1.0, 1.0) - target_actions, action_weights)
@@ -1443,6 +1479,10 @@ def main() -> None:
         env_cfg.angular_velocity_reward_scale = float(args_cli.angular_velocity_reward_scale)
     if args_cli.flat_orientation_reward_scale is not None:
         env_cfg.flat_orientation_reward_scale = float(args_cli.flat_orientation_reward_scale)
+    if args_cli.pitch_orientation_reward_scale is not None:
+        env_cfg.pitch_orientation_reward_scale = float(
+            args_cli.pitch_orientation_reward_scale
+        )
     if args_cli.action_reward_scale is not None:
         env_cfg.action_reward_scale = float(args_cli.action_reward_scale)
     if args_cli.action_rate_reward_scale is not None:
@@ -1479,9 +1519,38 @@ def main() -> None:
         env_cfg.front_rear_support_reward_scale = float(
             args_cli.front_rear_support_reward_scale
         )
+    if args_cli.axle_support_imbalance_penalty_scale is not None:
+        env_cfg.axle_support_imbalance_penalty_scale = float(
+            args_cli.axle_support_imbalance_penalty_scale
+        )
+    if args_cli.same_axle_airborne_penalty_scale is not None:
+        env_cfg.same_axle_airborne_penalty_scale = float(
+            args_cli.same_axle_airborne_penalty_scale
+        )
     if args_cli.excess_airborne_penalty_scale is not None:
         env_cfg.excess_airborne_penalty_scale = float(
             args_cli.excess_airborne_penalty_scale
+        )
+    if args_cli.front_foot_backward_reach_penalty_scale is not None:
+        env_cfg.front_foot_backward_reach_penalty_scale = float(
+            args_cli.front_foot_backward_reach_penalty_scale
+        )
+    if args_cli.front_pair_backward_reach_penalty_scale is not None:
+        env_cfg.front_pair_backward_reach_penalty_scale = float(
+            args_cli.front_pair_backward_reach_penalty_scale
+        )
+    if args_cli.front_foot_min_body_x_m is not None:
+        env_cfg.front_foot_min_body_x_m = float(
+            args_cli.front_foot_min_body_x_m
+        )
+    if args_cli.front_foot_reach_normalization_m is not None:
+        env_cfg.front_foot_reach_normalization_m = max(
+            float(args_cli.front_foot_reach_normalization_m),
+            1.0e-6,
+        )
+    if args_cli.front_foot_backward_termination_body_x_m is not None:
+        env_cfg.front_foot_backward_termination_body_x_m = float(
+            args_cli.front_foot_backward_termination_body_x_m
         )
     if args_cli.foot_cycle_min_air_time_s is not None:
         env_cfg.foot_cycle_min_air_time_s = max(
@@ -1632,6 +1701,7 @@ def main() -> None:
     bc_summary = behavior_clone_reference_actions(
         runner,
         wrapped_env,
+        env,
         int(args_cli.reference_action_bc_steps),
         float(args_cli.reference_action_bc_lr),
         float(args_cli.reference_action_bc_output_penalty),
@@ -1824,6 +1894,9 @@ def main() -> None:
             "vertical_velocity_reward_scale": float(env_cfg.vertical_velocity_reward_scale),
             "angular_velocity_reward_scale": float(env_cfg.angular_velocity_reward_scale),
             "flat_orientation_reward_scale": float(env_cfg.flat_orientation_reward_scale),
+            "pitch_orientation_reward_scale": float(
+                env_cfg.pitch_orientation_reward_scale
+            ),
             "command_progress_reward_scale": float(env_cfg.command_progress_reward_scale),
             "command_velocity_reward_scale": float(env_cfg.command_velocity_reward_scale),
             "command_velocity_tracking_reward_scale": float(env_cfg.command_velocity_tracking_reward_scale),
@@ -1849,8 +1922,32 @@ def main() -> None:
             "front_rear_support_reward_scale": float(
                 env_cfg.front_rear_support_reward_scale
             ),
+            "axle_support_imbalance_penalty_scale": float(
+                env_cfg.axle_support_imbalance_penalty_scale
+            ),
+            "same_axle_airborne_penalty_scale": float(
+                env_cfg.same_axle_airborne_penalty_scale
+            ),
             "excess_airborne_penalty_scale": float(
                 env_cfg.excess_airborne_penalty_scale
+            ),
+            "front_foot_backward_reach_penalty_scale": float(
+                env_cfg.front_foot_backward_reach_penalty_scale
+            ),
+            "front_pair_backward_reach_penalty_scale": float(
+                env_cfg.front_pair_backward_reach_penalty_scale
+            ),
+            "front_foot_min_body_x_m": float(
+                env_cfg.front_foot_min_body_x_m
+            ),
+            "front_foot_reach_normalization_m": float(
+                env_cfg.front_foot_reach_normalization_m
+            ),
+            "terminate_on_front_foot_backward_reach": bool(
+                env_cfg.terminate_on_front_foot_backward_reach
+            ),
+            "front_foot_backward_termination_body_x_m": float(
+                env_cfg.front_foot_backward_termination_body_x_m
             ),
             "foot_cycle_min_air_time_s": float(
                 env_cfg.foot_cycle_min_air_time_s

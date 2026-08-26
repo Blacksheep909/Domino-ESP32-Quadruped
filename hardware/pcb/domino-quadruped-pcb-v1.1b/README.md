@@ -20,6 +20,8 @@ Domino V1.1B moves that idea toward a cleaner robot-specific board:
 
 - Extra headers for expansion, bring-up, and receiver wiring.
 - Continued ESP32/PCA9685 control architecture.
+- SpotMicro-style 0-25 V battery divider routed to ESP32 GPIO36 (`SENSOR_VP`).
+- Separate analog current-sensor footprint routed to GPIO39 (`SENSOR_VN`).
 - Cleaner connector placement and silkscreen presentation.
 - Better fit for the Domino electronics cage.
 - Fixes for practical issues found while testing with the older board.
@@ -36,6 +38,7 @@ Before installing the PCB in the robot:
 2. Confirm board outline and mounting holes against the electronics cage.
 3. Confirm receiver power, ground, and CRSF signal routing.
 4. Power logic and servo rails carefully.
-5. Test one servo channel before connecting all twelve servos.
+5. Compare the GPIO36 voltage reading against a trusted multimeter.
+6. Test one servo channel before connecting all twelve servos.
 
 See [../../../docs/electronics.md](../../../docs/electronics.md) for broader electronics notes.

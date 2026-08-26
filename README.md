@@ -14,6 +14,18 @@ enabling physical calibration, motion, wireless control, or power telemetry.
 
 ![Domino quadruped robot build](docs/images/domino-master.jpg)
 
+## Virtual Environment At A Glance
+
+| Simulation sandbox | LIVE robot workspace |
+| --- | --- |
+| ![Domino simulation environment with the CAD quadruped and terrain](docs/images/virtual-lab-simulation-workspace.png) | ![Domino LIVE digital twin and physical-robot controls](docs/images/virtual-lab-real-robot-workspace.png) |
+
+The complete offline Virtual Lab implementation is in
+[`simulation/standalone`](simulation/standalone). Open the
+[Virtual Lab guide](docs/virtual-lab.md) for the feature tour, setup, controls,
+connection architecture, calibration workflow, data tools, screenshots, and
+current limitations.
+
 ## Why This Project Matters
 
 Domino is the successor to my earlier SpotMicro ESP32 Nitro work. The earlier project gave me a working base for servo-driven quadruped control, PCB packaging, and RC-controlled robot bring-up. Domino moves beyond that reference design into a more custom platform:
@@ -72,8 +84,10 @@ Simulation and LIVE are deliberately separate top-level workspaces:
 - **LIVE** is the physical-robot workspace. `PAIR ROBOT` opens a read-only
   Wi-Fi, Bluetooth, or USB pairing flow; `UPLOAD FW` opens the reviewed firmware
   build/flash workflow. DRIVE LINK and PC LINK remain independent status
-  signals, and every motion-capable operation fails closed until the robot
-  acknowledges the required safety state.
+  signals. Rejected or timed-out handshakes and adapter-reported errors enter a
+  reasoned connection `FAULT` instead of looking like an ordinary disconnect,
+  and every motion-capable operation remains closed until a new handshake and
+  the independent robot safety checks succeed.
 
 The LIVE digital twin can overlay robot-reported measured joint and IMU state
 against the expected command. Its six pages divide normal operation from the
@@ -83,6 +97,7 @@ deeper engineering tools:
 | --- | --- |
 | **Compare** | Expected-versus-measured CAD, body/joint error, power, safety state, recording, and guarded manual control. |
 | **Data** | Larger synchronized graphs, recorder controls, CSV export, and an Expert sample table. |
+| **Sensors** | Stabilized 3D IMU attitude platform with four illuminated body corners and fading motion trails, raw acceleration and gravity checks, a guarded level-reference guide, and honest GPS/LiDAR capability placeholders. |
 | **Calibration** | Five-step servo setup, remappable PCA9685 channels, neutral offsets, direction, limits, guarded default restoration, safe jog contracts, and JSON backup. |
 | **Gaits** | Cross-compatible Simulation profiles, local animated preview, risk checks, robot comparison, persistent apply, and rollback. |
 | **Diagnostics** | Command-pipeline tracing, CRSF/ELRS health, packet counters, event history, and Expert raw packet inspection. |

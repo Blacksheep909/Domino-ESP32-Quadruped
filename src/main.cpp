@@ -679,12 +679,28 @@ void moveLegsFromBodyPose(Adafruit_PWMServoDriver &driver,
                          bodyX,
                          bodyY,
                          bodyZ,
-                         rollDeg,
-                         pitchDeg,
+                         0.0f,
+                         0.0f,
                          yawDeg,
                          &xLeg,
                          &yLeg,
                          &zLeg);
+    // Domino's hips have a deliberately narrow lateral envelope. A full rigid
+    // inverse for roll rotates the long hip-to-foot vector into body Y; at 20
+    // degrees that demanded roughly 100 mm of lateral travel and could pull a
+    // foot across the body centreline. Preserve the normal stance width and
+    // produce roll by extending one side while retracting the other instead.
+    const bool leftLeg = i == LEG_FL || i == LEG_BL;
+    const float side = leftLeg ? 1.0f : -1.0f;
+    zLeg += side * sinf(rollDeg * kDegToRad) * FOOT_OUT_OFFSET_Y;
+    // Pitch had the same long-leg coupling in body X: rotating the full
+    // hip-to-foot vector asked all four feet to sweep fore/aft together and
+    // translated the chassis instead of presenting a clean body plane. Keep
+    // the calibrated foot X beneath each hip and create pitch with opposing
+    // front/rear leg extension.
+    const bool frontLeg = i == LEG_FL || i == LEG_FR;
+    const float foreAft = frontLeg ? -1.0f : 1.0f;
+    zLeg += foreAft * sinf(pitchDeg * kDegToRad) * BODY_HALF_LENGTH_X;
     commandLeg(driver, i, xLeg, yLeg, zLeg);
   }
 }
@@ -1022,7 +1038,15 @@ float currentTargetZ = kCloserPoseZ;
 MenuState menuState{BODY_STOW, kRideHeightMaxMm, false, true};
 
 void setup() {
-  Serial.begin(115200);
+  // LIVE telemetry contains full controller, pose and servo snapshots. Use
+  // large rings in both directions: profile-write commands are roughly 1.6 KB
+  // and can otherwise overrun the ESP32's small default USB-UART RX buffer
+  // before the control loop drains it.
+#ifndef DOMINO_SIL
+  Serial.setTxBufferSize(4096);
+  Serial.setRxBufferSize(4096);
+#endif
+  Serial.begin(460800);
   Wire.begin();
 
   imuInit();
@@ -1257,9 +1281,13 @@ void loop() {
     }
 
 #ifndef DOMINO_SIL
-    // Bench mode owns the one selected servo. Do not let the normal body loop
-    // overwrite its bounded calibration jog while outputs are temporarily on.
-    if (servoOutputsEnabled() && !liveRobotEndpointAllowsLocomotion()) return;
+    // The physical CRSF receiver remains a complete standalone control path.
+    // Pause it only when LIVE calibration owns one servo or an explicit LIVE
+    // safety action has inhibited radio output. Read-only USB must never be a
+    // prerequisite for ordinary SA/SC/SD control.
+    if (liveRobotEndpointCalibrationOwnsOutputs() ||
+        !liveRobotEndpointAllowsRadioControl()) return;
+    if (!servoOutputsEnabled()) setServoOutputsEnabled(pca, true);
 #endif
 
     if (menuState.mode == BODY_TILT) {

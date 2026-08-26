@@ -1,7 +1,9 @@
 export const LIVE_DIAGNOSTIC_MAX_EVENTS = 250;
 export const LIVE_DIAGNOSTIC_RATE_WINDOW_MS = 5_000;
 
-const finite = (value) => Number.isFinite(Number(value)) ? Number(value) : null;
+const finite = (value) => value !== null && value !== undefined && Number.isFinite(Number(value))
+  ? Number(value)
+  : null;
 const bool = (value) => typeof value === "boolean" ? value : null;
 
 function addEvent(state, severity, message, timestampMs = Date.now(), source = "live") {
@@ -45,6 +47,10 @@ function sanitizeDiagnostics(diagnostics) {
     ikValid: bool(diagnostics.ikValid),
     jointLimitClips: finite(diagnostics.jointLimitClips),
     servoOutputChannels: finite(diagnostics.servoOutputChannels),
+    imuOnline: bool(diagnostics.imuOnline),
+    imuAxG: finite(diagnostics.imuAxG),
+    imuAyG: finite(diagnostics.imuAyG),
+    imuAzG: finite(diagnostics.imuAzG),
   };
 }
 
@@ -94,6 +100,7 @@ export function observeLiveDiagnosticPacket(state, packet, accepted, receivedAt 
     type: packet.type,
     sequence,
     receivedAt,
+    payloadBytes: JSON.stringify(packet).length,
     expectedTimestampMs: finite(packet.expected?.timestampMs),
     measuredTimestampMs: finite(packet.measured?.timestampMs),
     voltageV: finite(packet.power?.voltageV),

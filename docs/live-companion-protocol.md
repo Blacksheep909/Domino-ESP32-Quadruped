@@ -5,6 +5,14 @@ relay and the physical robot. The browser never talks directly to a servo
 controller. The companion binds every operation to one negotiated engineering
 session and waits for a physical acknowledgement before reporting success.
 
+The companion is optional. Domino must retain its complete physical
+CRSF/ExpressLRS control path when the app is closed, the companion is not
+running, or no telemetry cable/network is connected. Establishing a read-only
+session does not arm, disarm, or take ownership of that radio path. The
+fail-closed companion watchdog applies only after LIVE has explicitly acquired
+armed motion authority; it is not a permanent heartbeat requirement for
+standalone Boxer operation.
+
 ```text
 Browser LIVE UI <-> ws://127.0.0.1:8770/control
                          |
@@ -34,8 +42,9 @@ $env:DOMINO_ROBOT_LINK_KEY = "your-separate-long-random-key"
 .\start-live-companion.ps1 -Transport bluetooth -Device COM7
 ```
 
-USB and Bluetooth default to 115200 baud, 8 data bits, no parity and one stop
-bit. The launcher configures that serial mode before opening the device. Wi-Fi
+USB and Bluetooth default to 460800 baud, 8 data bits, no parity and one stop
+bit. The higher USB rate keeps verbose telemetry from delaying the independent
+CRSF control loop. The launcher configures that serial mode before opening the device. Wi-Fi
 defaults to TCP port 8766. Keep the companion terminal open; Ctrl+C commands
 neutral, closes the robot link and removes the adapter from LIVE.
 
@@ -83,7 +92,7 @@ The robot sends this after boot and whenever a link is established:
   "type": "robot-hello",
   "robotId": "domino-1",
   "robotName": "Domino",
-  "firmwareVersion": "0.8.0",
+  "firmwareVersion": "0.8.2",
   "robotState": "disarmed",
   "capabilities": {
     "telemetry": true,
@@ -105,7 +114,7 @@ Valid states are `unknown`, `disarmed`, `arming`, `armed`, `disarming`,
 
 ### Telemetry
 
-The robot publishes telemetry at 20 Hz. `expected` is the pose accepted by the
+The robot publishes telemetry at 10 Hz. `expected` is the pose accepted by the
 robot controller; `measured` comes only from physical feedback. The current
 hardware has IMU attitude but no servo encoders, so firmware sends a partial
 measured body pose and deliberately omits measured servo angles. LIVE can graph
@@ -281,12 +290,14 @@ Stand, normalized pose axes are bounded again on the ESP32 to ±8° pitch/yaw,
 ±15 mm fore/aft and ±12 mm lateral translation. LIVE diagnostics report lease
 time, frame age, override state, and deadman state without exposing the token.
 
-Power telemetry is present only when the optional INA226 monitor has a fresh
-verified sample. The physical endpoint then adds `power.timestampMs`,
-`voltageV`, `currentA`, and `powerW`; otherwise the object is omitted. This is
-intentional—an absent sensor must remain unavailable rather than look like a
-zero-current robot. `diagnostics.powerMonitorOnline` and
-`diagnostics.powerSampleValid` distinguish configuration/link failure from a
-valid measurement.
+Power fields are published independently when their physical source has a fresh
+verified sample. Domino PCB V1.1B supplies `power.timestampMs` and `voltageV`
+from its GPIO36 divider by default. `currentA` and `powerW` remain absent unless
+the optional current monitor is configured and valid; an absent sensor must not
+look like a zero-current robot. The browser derives average 4S cell voltage and
+estimated charge percentage from `voltageV`; those derived values are not sent
+by the robot and are not individual balance-tap measurements.
+`diagnostics.powerMonitorOnline` and `diagnostics.powerSampleValid` distinguish
+configuration/link failure from a valid measurement.
 Wi-Fi TCP and Bluetooth SPP are implemented but compile disabled until the
 local secrets header explicitly enables them.

@@ -9,6 +9,15 @@ constexpr uint8_t kMpu6050Addr = 0x68;
 constexpr float kMpuAccelScaleInv = 1.0f / 16384.0f;   // LSB/g at +/-2g.
 constexpr float kMpuGyroScaleInv = 1.0f / 131.0f;      // LSB/(deg/s) at +/-250 dps.
 constexpr float kImuFilterAlpha = 0.1f;                // Low-pass filter coefficient.
+constexpr float kYawStationaryThresholdDps = 0.5f;
+constexpr float kYawDeadbandDps = 0.08f;
+constexpr float kYawBiasAdaptation = 0.002f;
+
+float wrapDegrees(float degrees) {
+  while (degrees >= 180.0f) degrees -= 360.0f;
+  while (degrees < -180.0f) degrees += 360.0f;
+  return degrees;
+}
 }  // namespace
 
 ImuState gImuState{};
@@ -21,6 +30,8 @@ void imuInit() {
   uint8_t status = Wire.endTransmission();
   gImuState.online = (status == 0);
   gImuState.has_sample = false;
+  gImuState.yaw_initialized = false;
+  gImuState.yaw_deg = 0.0f;
   if (gImuState.online) {
     Serial.println("MPU6050 detected and initialized.");
   } else {
@@ -85,6 +96,30 @@ bool imuReadSample() {
     gImuState.gx_dps_filt += a * (gImuState.gx_dps - gImuState.gx_dps_filt);
     gImuState.gy_dps_filt += a * (gImuState.gy_dps - gImuState.gy_dps_filt);
     gImuState.gz_dps_filt += a * (gImuState.gz_dps - gImuState.gz_dps_filt);
+  }
+
+  // Domino's mounted body yaw axis (+Z up) maps to negative sensor X.
+  // Gravity cannot provide heading, so this remains a relative gyro heading.
+  const uint32_t nowMs = millis();
+  const float mountedYawRateDps = -gImuState.gx_dps_filt;
+  if (!gImuState.yaw_initialized) {
+    gImuState.yaw_initialized = true;
+    gImuState.yaw_sample_ms = nowMs;
+    gImuState.yaw_bias_dps = mountedYawRateDps;
+    gImuState.yaw_rate_dps = 0.0f;
+    gImuState.yaw_deg = 0.0f;
+  } else {
+    const uint32_t elapsedMs = nowMs - gImuState.yaw_sample_ms;
+    gImuState.yaw_sample_ms = nowMs;
+    const float dt = fminf(static_cast<float>(elapsedMs), 100.0f) * 0.001f;
+    float correctedRateDps = mountedYawRateDps - gImuState.yaw_bias_dps;
+    if (fabsf(correctedRateDps) < kYawStationaryThresholdDps) {
+      gImuState.yaw_bias_dps += kYawBiasAdaptation * correctedRateDps;
+      correctedRateDps = mountedYawRateDps - gImuState.yaw_bias_dps;
+    }
+    if (fabsf(correctedRateDps) < kYawDeadbandDps) correctedRateDps = 0.0f;
+    gImuState.yaw_rate_dps = correctedRateDps;
+    gImuState.yaw_deg = wrapDegrees(gImuState.yaw_deg + correctedRateDps * dt);
   }
 
   return true;

@@ -7,6 +7,7 @@ import {
   readFileSync,
   readdirSync,
   statSync,
+  symlinkSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -74,6 +75,29 @@ function findPlatformio() {
   return candidates.find((candidate) => candidate === executable || existsSync(candidate)) || null;
 }
 
+export function preparePlatformioEnvironment(runtimeRoot, installedCore = path.join(homedir(), ".platformio")) {
+  const coreDir = path.join(runtimeRoot, "platformio-core");
+  mkdirSync(coreDir, { recursive: true });
+
+  // PlatformIO places its package-manager lock files beside `platforms` and
+  // `packages`. The desktop companion can read the user's installed toolchain,
+  // but its restricted process may not write to ~/.platformio. Keep locks and
+  // mutable state in the app runtime while reusing the large installed folders.
+  for (const directory of ["platforms", "packages"]) {
+    const source = path.join(installedCore, directory);
+    const destination = path.join(coreDir, directory);
+    if (existsSync(source) && !existsSync(destination)) {
+      symlinkSync(source, destination, process.platform === "win32" ? "junction" : "dir");
+    }
+  }
+
+  return {
+    ...process.env,
+    PLATFORMIO_CORE_DIR: coreDir,
+    PLATFORMIO_SETTING_ENABLE_TELEMETRY: "No",
+  };
+}
+
 function progressFor(type, text, current) {
   const percent = text.match(/(?:Writing at|Progress:).*?\(?([0-9]{1,3})\s*%/i);
   if (percent) return Math.max(current, type === "upload" ? 35 + Number(percent[1]) * 0.62 : Number(percent[1]));
@@ -90,6 +114,7 @@ export class FirmwareService {
   constructor({ projectRoot, runtimeRoot }) {
     this.projectRoot = projectRoot;
     this.runtimeRoot = path.join(runtimeRoot, "firmware-jobs");
+    this.platformioEnvironment = preparePlatformioEnvironment(runtimeRoot);
     this.platformio = findPlatformio();
     this.job = null;
     this.child = null;
@@ -116,6 +141,7 @@ export class FirmwareService {
       const child = spawn(this.platformio, ["device", "list", "--json-output"], {
         cwd: this.projectRoot,
         windowsHide: true,
+        env: this.platformioEnvironment,
       });
       let output = "";
       child.stdout.on("data", (chunk) => { output += chunk; });
@@ -203,7 +229,7 @@ export class FirmwareService {
     this.child = spawn(this.platformio, args, {
       cwd: this.projectRoot,
       windowsHide: true,
-      env: { ...process.env, PLATFORMIO_CORE_DIR: path.join(homedir(), ".platformio") },
+      env: this.platformioEnvironment,
     });
     this.child.stdout.on("data", (chunk) => record("stdout", chunk));
     this.child.stderr.on("data", (chunk) => record("stderr", chunk));

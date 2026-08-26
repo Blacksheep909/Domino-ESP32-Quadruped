@@ -3,6 +3,7 @@
 #include <ArduinoJson.h>
 #include <Preferences.h>
 #include <math.h>
+#include <string.h>
 
 #if __has_include("live_robot_secrets.h")
 #include "live_robot_secrets.h"
@@ -58,8 +59,8 @@
 
 namespace {
 constexpr char kProtocol[] = "domino-robot-link-v1";
-constexpr uint32_t kTelemetryIntervalMs = 50;
-constexpr uint32_t kHelloIntervalMs = 1000;
+constexpr uint32_t kTelemetryIntervalMs = 100;
+constexpr uint32_t kHelloIntervalMs = 2000;
 constexpr uint32_t kWatchdogMs = 400;
 constexpr uint32_t kLinkStatsFreshMs = 1000;
 constexpr float kCalibrationMaxSpeedDegPerSec = 5.0f;
@@ -101,10 +102,15 @@ static_assert(sizeof(DOMINO_LIVE_LINK_KEY) >= 17,
 enum class LiveTransport : uint8_t { None, Usb, Wifi, Bluetooth };
 
 LiveRobotState state = LiveRobotState::Disarmed;
+// Standalone CRSF control is available after boot. A LIVE disarm, E-stop,
+// watchdog, fault, or calibration session can latch it off; an accepted LIVE
+// arm or a physical reboot restores it.
+bool radioControlEnabled = true;
 LiveRobotPoseSnapshot expectedPose{};
 float expectedFootTargetsMm[4][3] = {};
 uint32_t lastTelemetryMs = 0;
 uint32_t lastHelloMs = 0;
+uint32_t lastDetailedTelemetryMs = 0;
 uint32_t lastHeartbeatMs = 0;
 uint32_t lastHeartbeatSequence = 0;
 bool haveHeartbeatSequence = false;
@@ -218,16 +224,23 @@ bool loadCalibrationProfile() {
 bool persistCalibrationProfile(const ServoCalibrationProfile &profile) {
   if (!validateServoCalibrationProfile(profile)) return false;
   const StoredCalibrationProfile candidate = storedProfileFor(profile);
-  Preferences preferences;
-  if (!preferences.begin(kCalibrationNamespace, false)) return false;
-  bool success = preferences.putBytes("candidate", &candidate, sizeof(candidate)) == sizeof(candidate);
+  // NVS blob replacement is atomic at the key level. One committed write plus
+  // a read-only verification avoids the former candidate/active/remove chain,
+  // which could stall the USB command path through several flash commits.
+  Preferences writer;
+  if (!writer.begin(kCalibrationNamespace, false)) return false;
+  const bool written = writer.putBytes("active", &candidate, sizeof(candidate)) == sizeof(candidate);
+  writer.end();
+  if (!written) return false;
+
+  Preferences verifier;
+  if (!verifier.begin(kCalibrationNamespace, true)) return false;
   StoredCalibrationProfile verified{};
-  success = success && preferences.getBytes("candidate", &verified, sizeof(verified)) == sizeof(verified) &&
-            storedProfileValid(verified);
-  success = success && preferences.putBytes("active", &verified, sizeof(verified)) == sizeof(verified);
-  if (success) preferences.remove("candidate");
-  preferences.end();
-  return success && setServoCalibrationProfile(profile);
+  const bool verifiedRead = verifier.getBytes("active", &verified, sizeof(verified)) == sizeof(verified);
+  verifier.end();
+  const bool exactMatch = verifiedRead && storedProfileValid(verified) &&
+      memcmp(&verified, &candidate, sizeof(candidate)) == 0;
+  return exactMatch && setServoCalibrationProfile(profile);
 }
 
 StoredGaitProfile storedGaitFor(const GaitProfile &profile) {
@@ -477,18 +490,24 @@ uint16_t txPowerMw(uint8_t code) {
 }
 
 void writeDocument(JsonDocument &document) {
-  serializeJson(document, Serial);
-  Serial.println();
+  // ArduinoJson's Stream writer calls write() for each byte. On ESP32 that
+  // turns a ~1.3 KB telemetry document into hundreds of UART queue operations
+  // and can stall the physical control loop. Serialize once, then send one
+  // bounded block to every active transport.
+  static constexpr size_t kDocumentBufferBytes = 8192;
+  static char output[kDocumentBufferBytes];
+  const size_t length = serializeJson(document, output, kDocumentBufferBytes - 1);
+  if (length == 0 || length >= kDocumentBufferBytes - 1) return;
+  output[length] = '\n';
+  Serial.write(reinterpret_cast<const uint8_t *>(output), length + 1);
 #if DOMINO_LIVE_WIFI_ENABLED
   if (wifiClient && wifiClient.connected()) {
-    serializeJson(document, wifiClient);
-    wifiClient.println();
+    wifiClient.write(reinterpret_cast<const uint8_t *>(output), length + 1);
   }
 #endif
 #if DOMINO_LIVE_BLUETOOTH_ENABLED
   if (bluetoothSerial.hasClient()) {
-    serializeJson(document, bluetoothSerial);
-    bluetoothSerial.println();
+    bluetoothSerial.write(reinterpret_cast<const uint8_t *>(output), length + 1);
   }
 #endif
 }
@@ -541,7 +560,7 @@ void sendHello() {
   document["type"] = "robot-hello";
   document["robotId"] = "domino-esp32-quadruped";
   document["robotName"] = "Domino";
-  document["firmwareVersion"] = "0.8.0";
+  document["firmwareVersion"] = "0.8.4";
   document["robotState"] = stateName();
   if (state == LiveRobotState::Fault && faultReason[0]) document["faultReason"] = faultReason;
   document["wirelessAuth"] = "psk-v1";
@@ -563,15 +582,16 @@ void sendTelemetry(uint32_t now) {
   document["type"] = "robot-telemetry";
   document["robotState"] = stateName();
   document["robotTimeMs"] = now;
-  addCapabilities(document["capabilities"].to<JsonObject>());
-  addGaitProfile(document["gaitProfile"].to<JsonObject>(), gaitProfile());
+  // Capabilities and the active gait profile are stable session metadata and
+  // travel in robot-hello. Repeating them in every sample saturated 115200
+  // baud and starved the physical control loop.
   const PowerMonitorSample power = powerMonitorSample(now);
   if (power.valid) {
     JsonObject powerJson = document["power"].to<JsonObject>();
     powerJson["timestampMs"] = power.timestampMs;
-    powerJson["voltageV"] = power.voltageV;
-    powerJson["currentA"] = power.currentA;
-    powerJson["powerW"] = power.powerW;
+    if (power.voltageValid) powerJson["voltageV"] = power.voltageV;
+    if (power.currentValid) powerJson["currentA"] = power.currentA;
+    if (power.powerValid) powerJson["powerW"] = power.powerW;
   }
 
   JsonObject expected = document["expected"].to<JsonObject>();
@@ -579,19 +599,28 @@ void sendTelemetry(uint32_t now) {
   JsonArray servoAngles = expected["servoAngleDeg"].to<JsonArray>();
   const float *angles = commandedServoAnglesDeg();
   for (uint8_t channel = 0; channel < 16; ++channel) servoAngles.add(angles[channel]);
-  JsonArray servoPulseUs = expected["servoPulseUs"].to<JsonArray>();
-  JsonArray servoPhysicalChannel = expected["servoPhysicalChannel"].to<JsonArray>();
-  const uint16_t *pulses = commandedServoPulseUs();
-  const ServoCalibrationProfile &calibration = servoCalibrationProfile();
-  for (uint8_t logicalChannel = 0; logicalChannel < 16; ++logicalChannel) {
-    servoPulseUs.add(pulses[logicalChannel]);
-    servoPhysicalChannel.add(
-        servoCalibrationPhysicalChannel(calibration, logicalChannel));
-  }
-  JsonArray footTargets = expected["footTargetMm"].to<JsonArray>();
-  for (uint8_t leg = 0; leg < 4; ++leg) {
-    JsonArray target = footTargets.add<JsonArray>();
-    for (uint8_t axis = 0; axis < 3; ++axis) target.add(expectedFootTargetsMm[leg][axis]);
+  // Angles and body pose drive the 10 Hz digital twin. Pulse routing and foot
+  // targets change much less often, so publish them once per second and let
+  // the companion retain the last detailed snapshot. This keeps the control
+  // loop responsive even on USB-UART bridges with small hardware FIFOs.
+  const bool includeDetails = lastDetailedTelemetryMs == 0 ||
+      now - lastDetailedTelemetryMs >= 1000;
+  if (includeDetails) {
+    lastDetailedTelemetryMs = now;
+    JsonArray servoPulseUs = expected["servoPulseUs"].to<JsonArray>();
+    JsonArray servoPhysicalChannel = expected["servoPhysicalChannel"].to<JsonArray>();
+    const uint16_t *pulses = commandedServoPulseUs();
+    const ServoCalibrationProfile &calibration = servoCalibrationProfile();
+    for (uint8_t logicalChannel = 0; logicalChannel < 16; ++logicalChannel) {
+      servoPulseUs.add(pulses[logicalChannel]);
+      servoPhysicalChannel.add(
+          servoCalibrationPhysicalChannel(calibration, logicalChannel));
+    }
+    JsonArray footTargets = expected["footTargetMm"].to<JsonArray>();
+    for (uint8_t leg = 0; leg < 4; ++leg) {
+      JsonArray target = footTargets.add<JsonArray>();
+      for (uint8_t axis = 0; axis < 3; ++axis) target.add(expectedFootTargetsMm[leg][axis]);
+    }
   }
   addBody(expected["body"].to<JsonObject>(), expectedPose);
 
@@ -604,6 +633,7 @@ void sendTelemetry(uint32_t now) {
     JsonObject body = measured["body"].to<JsonObject>();
     body["rollDeg"] = atan2f(gy, gz) * 180.0f / PI;
     body["pitchDeg"] = atan2f(-gx, sqrtf(gy * gy + gz * gz)) * 180.0f / PI;
+    body["yawDeg"] = gImuState.yaw_deg;
   }
 
   // The IMU measures body attitude, not servo positions. Until joint encoders
@@ -616,6 +646,7 @@ void sendTelemetry(uint32_t now) {
   diagnostics["imuAxG"] = gImuState.ax_g_filt;
   diagnostics["imuAyG"] = gImuState.ay_g_filt;
   diagnostics["imuAzG"] = gImuState.az_g_filt;
+  diagnostics["imuYawRateDps"] = gImuState.yaw_rate_dps;
   diagnostics["servoLimitClipCount"] = servoSafetyClipCount();
   diagnostics["jointFeedbackAvailable"] = false;
   const LiveManualControlSnapshot &manual = manualGuard.snapshot();
@@ -706,6 +737,7 @@ void acknowledgeGait(const char *action, const char *requestId, bool accepted,
 }
 
 void disableOutputs(Adafruit_PWMServoDriver &driver, LiveRobotState nextState) {
+  radioControlEnabled = false;
   benchMode = false;
   calibrationJogActive = false;
   calibrationChannelActive = false;
@@ -717,7 +749,7 @@ void disableOutputs(Adafruit_PWMServoDriver &driver, LiveRobotState nextState) {
 void updatePowerFault(Adafruit_PWMServoDriver &driver, uint32_t now) {
   const PowerMonitorSample power = powerMonitorSample(now);
   if (!powerFaultGuard.observe(now, state == LiveRobotState::Armed,
-                               power.valid, power.voltageV)) return;
+                               power.voltageValid, power.voltageV)) return;
   snprintf(faultReason, sizeof(faultReason),
            "Battery %.2f V remained below %.2f V for at least %lu ms.",
            powerFaultGuard.tripVoltageV(), kPowerCriticalVoltageV,
@@ -744,6 +776,7 @@ void handleSafety(JsonObjectConst command, JsonObjectConst payload,
       acknowledge("safety", action, requestId, false, "Fresh safe Boxer/ELRS link and SA-low are required.");
     } else {
       state = LiveRobotState::Armed;
+      radioControlEnabled = true;
       lastHeartbeatMs = now;
       haveHeartbeatSequence = false;
       setServoOutputsEnabled(driver, true);
@@ -769,7 +802,7 @@ void handleSafety(JsonObjectConst command, JsonObjectConst payload,
       acknowledge("safety", action, requestId, false, "Robot is not in the fault state.");
     } else if (powerFaultGuard.latched()) {
       const PowerMonitorSample power = powerMonitorSample(now);
-      if (!powerFaultGuard.canAcknowledge(power.valid, power.voltageV)) {
+      if (!powerFaultGuard.canAcknowledge(power.voltageValid, power.voltageV)) {
         if (!power.valid) {
           acknowledge("safety", action, requestId, false,
                       "Fresh power telemetry is required before clearing the low-voltage fault.");
@@ -781,7 +814,7 @@ void handleSafety(JsonObjectConst command, JsonObjectConst payload,
           acknowledge("safety", action, requestId, false, reason);
         }
       } else {
-        powerFaultGuard.acknowledge(power.valid, power.voltageV);
+        powerFaultGuard.acknowledge(power.voltageValid, power.voltageV);
         faultReason[0] = '\0';
         disableOutputs(driver, LiveRobotState::Disarmed);
         acknowledge("safety", action, requestId, true);
@@ -820,6 +853,7 @@ void handleCalibration(JsonObjectConst command, JsonObjectConst payload,
     return;
   }
   if (!strcmp(action, "enter")) {
+    radioControlEnabled = false;
     benchMode = true;
     setServoOutputsEnabled(driver, true);
     acknowledgeCalibration(action, requestId, true);
@@ -872,7 +906,10 @@ void handleCalibration(JsonObjectConst command, JsonObjectConst payload,
       if (!persistCalibrationProfile(profile)) {
         acknowledgeCalibration(action, requestId, false, "NVS verification failed; previous calibration remains active.");
       } else {
-        acknowledgeCalibration(action, requestId, true, nullptr, true, true);
+        // Keep the persistence acknowledgement compact and deterministic on
+        // USB-UART links. The checksum-verified write above is the evidence;
+        // echoing the whole profile here previously delayed or lost the ACK.
+        acknowledgeCalibration(action, requestId, true, nullptr, true, false);
       }
     }
   } else {
@@ -1140,6 +1177,7 @@ void updateCalibrationJog(Adafruit_PWMServoDriver &driver, uint32_t now) {
 }  // namespace
 
 void liveRobotEndpointBegin(Adafruit_PWMServoDriver &driver) {
+  radioControlEnabled = true;
   setServoOutputsEnabled(driver, false);
   if (!loadCalibrationProfile()) setServoCalibrationProfile(defaultServoCalibrationProfile());
   if (!loadGaitProfile()) setGaitProfile(defaultGaitProfile());
@@ -1147,7 +1185,10 @@ void liveRobotEndpointBegin(Adafruit_PWMServoDriver &driver) {
   loopRateWindowStartedMs = millis();
   loopRateIterations = 0;
   measuredLoopRateHz = 0.0f;
-  usbInputLine.reserve(1024);
+  // Match the hardware UART RX ring. Calibration and gait profile commands
+  // are intentionally bounded below 4 KB but exceed the String's old 1 KB
+  // reservation, which made long commands vulnerable to truncation.
+  usbInputLine.reserve(4096);
 #if DOMINO_LIVE_WIFI_ENABLED
   wifiInputLine.reserve(1024);
   WiFi.mode(WIFI_STA);
@@ -1206,4 +1247,10 @@ void liveRobotEndpointSetExpectedFootTarget(uint8_t legIndex, float xMm, float y
 }
 LiveRobotState liveRobotEndpointState() { return state; }
 bool liveRobotEndpointAllowsLocomotion() { return state == LiveRobotState::Armed; }
+bool liveRobotEndpointAllowsRadioControl() {
+  return radioControlEnabled && !benchMode &&
+      state != LiveRobotState::Estopped && state != LiveRobotState::Fault &&
+      state != LiveRobotState::Watchdog;
+}
+bool liveRobotEndpointCalibrationOwnsOutputs() { return benchMode; }
 LiveManualControlSnapshot liveRobotEndpointManualControl() { return manualGuard.snapshot(); }

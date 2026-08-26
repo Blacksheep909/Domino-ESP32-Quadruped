@@ -23,9 +23,9 @@ function Get-CheckpointIteration([string]$Path) {
 
 while ((Get-CheckpointIteration $checkpoint) -lt $TargetIteration) {
     $startIteration = Get-CheckpointIteration $checkpoint
-    $remaining = $TargetIteration - $startIteration
-    $iterations = [Math]::Min($ChunkIterations, $remaining)
-    $expectedIteration = $startIteration + $iterations
+    $remainingIterations = $TargetIteration - $startIteration
+    $iterations = [Math]::Min($ChunkIterations, $remainingIterations + 1)
+    $expectedIteration = $startIteration + $iterations - 1
     $runName = "actual_cad_open_walk_v3_anti_hop_chunk_{0:D3}" -f $expectedIteration
     $logPath = Join-Path $repoRoot "simulation\isaac\out\$runName.log"
 
@@ -63,6 +63,7 @@ while ((Get-CheckpointIteration $checkpoint) -lt $TargetIteration) {
 
     $runRoot = Join-Path $repoRoot "simulation\isaac\out\cad_identity\next_policy\$runName"
     $nextCheckpoint = Get-ChildItem -LiteralPath $runRoot -Recurse -Filter "model_*.pt" -ErrorAction SilentlyContinue |
+        Where-Object { $_.BaseName -match '^model_\d+$' } |
         Sort-Object { Get-CheckpointIteration $_.FullName } -Descending |
         Select-Object -First 1
     if (-not $nextCheckpoint) {

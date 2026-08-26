@@ -5,14 +5,18 @@ import {
   acceptLiveAdapterAnnouncement,
   acceptLiveConnectionAcknowledgement,
   cancelLiveReconnect,
+  clearLiveConnectionFault,
   createLiveConnectionCommand,
   createLiveConnectionState,
+  expireLiveLinkRestart,
+  failLiveConnectionRequest,
   liveConnectionEnvelope,
   liveConnectionIsReady,
   liveConnectionStatus,
   liveReconnectDue,
   markLiveConnectionPending,
   pruneLiveAdapters,
+  selectLiveAdapter,
   setLiveConnectionBridge,
   telemetryBelongsToLiveConnection,
   visibleLiveAdapters,
@@ -149,6 +153,78 @@ test("rejected connection acknowledgements leave commands locked", () => {
     type: "live-connection-ack", action: "connect", requestId: "request-1", accepted: false,
     adapterId: "domino-adapter-a", reason: "Robot identity mismatch",
   }, 1_020), true);
+  assert.equal(state.phase, "fault");
+  assert.equal(state.sessionId, "");
+  assert.match(liveConnectionStatus(state), /Robot identity mismatch/);
+  assert.equal(clearLiveConnectionFault(state), true);
   assert.equal(state.phase, "disconnected");
   assert.equal(state.sessionId, "");
+});
+
+test("connection timeouts enter a reasoned fault that can retry safely", () => {
+  const state = createLiveConnectionState();
+  setLiveConnectionBridge(state, true);
+  acceptLiveAdapterAnnouncement(state, announcement(), 1_000);
+  let command = createLiveConnectionCommand(state, "connect", "request-1", 1_010);
+  markLiveConnectionPending(state, command);
+  assert.equal(failLiveConnectionRequest(state, "request-1", "Handshake timed out."), true);
+  assert.equal(state.phase, "fault");
+  assert.equal(liveConnectionIsReady(state), false);
+  command = createLiveConnectionCommand(state, "connect", "request-2", 1_020);
+  assert.equal(command.action, "connect");
+  assert.equal(state.phase, "connecting");
+});
+
+test("an adapter error cannot start a handshake and a healthy selection recovers", () => {
+  const state = createLiveConnectionState();
+  setLiveConnectionBridge(state, true);
+  acceptLiveAdapterAnnouncement(state, { ...announcement(), state: "error" }, 1_000);
+  assert.equal(state.phase, "fault");
+  assert.equal(createLiveConnectionCommand(state, "connect", "request-1", 1_010), null);
+  acceptLiveAdapterAnnouncement(state, { ...announcement(), adapterId: "healthy", name: "Healthy USB", transport: "usb" }, 1_020);
+  assert.equal(selectLiveAdapter(state, "healthy"), true);
+  assert.equal(state.phase, "disconnected");
+  assert.equal(createLiveConnectionCommand(state, "connect", "request-2", 1_030)?.action, "connect");
+});
+
+test("a faulted adapter can restart its physical link without enabling robot commands", () => {
+  const state = createLiveConnectionState();
+  setLiveConnectionBridge(state, true);
+  acceptLiveAdapterAnnouncement(state, { ...announcement(), transport: "usb", state: "error", endpoint: "COM4" }, 1_000);
+
+  const command = createLiveConnectionCommand(state, "restart", "restart-1", 1_010);
+  assert.equal(validLiveConnectionCommand(command), true);
+  assert.equal(command.safety.commandsBlocked, true);
+  assert.equal(state.phase, "restarting");
+  markLiveConnectionPending(state, command);
+  assert.equal(acceptLiveConnectionAcknowledgement(state, {
+    type: "live-connection-ack", action: "restart", requestId: "restart-1",
+    accepted: true, adapterId: "domino-adapter-a",
+  }, 1_020), true);
+  assert.equal(state.phase, "restarting");
+
+  acceptLiveAdapterAnnouncement(state, { ...announcement(), transport: "usb", state: "error", endpoint: "COM4" }, 1_100);
+  assert.equal(state.phase, "restarting");
+  acceptLiveAdapterAnnouncement(state, { ...announcement(), transport: "usb", state: "available", endpoint: "COM4" }, 1_200);
+  assert.equal(state.phase, "disconnected");
+  assert.match(state.status, /reopened COM4/);
+  assert.equal(state.sessionId, "");
+});
+
+test("a physical-link restart returns to a fault if the adapter never recovers", () => {
+  const state = createLiveConnectionState();
+  setLiveConnectionBridge(state, true);
+  acceptLiveAdapterAnnouncement(state, { ...announcement(), transport: "usb", state: "error" }, 1_000);
+  const command = createLiveConnectionCommand(state, "restart", "restart-1", 1_010);
+  markLiveConnectionPending(state, command);
+  acceptLiveConnectionAcknowledgement(state, {
+    type: "live-connection-ack", action: "restart", requestId: "restart-1",
+    accepted: true, adapterId: "domino-adapter-a",
+  }, 1_020);
+  assert.equal(expireLiveLinkRestart(state, 9_019), false);
+  assert.equal(expireLiveLinkRestart(state, 9_020), true);
+  assert.equal(state.phase, "fault");
+  assert.match(state.status, /could not reopen/);
+  acceptLiveAdapterAnnouncement(state, { ...announcement(), transport: "usb", state: "error" }, 9_030);
+  assert.match(state.status, /could not reopen/);
 });

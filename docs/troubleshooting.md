@@ -32,7 +32,8 @@ Try unplugging and reconnecting the ESP32 before uploading again.
 
 Check:
 
-- Monitor speed is 115200.
+- Monitor speed is 460800 for current application logs. ESP32 ROM boot text
+  uses its fixed startup baud and may look garbled before Domino starts.
 - ESP32 is running the uploaded firmware.
 - USB cable supports data.
 

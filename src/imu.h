@@ -25,6 +25,12 @@ struct ImuState {
   float gx_dps_filt;
   float gy_dps_filt;
   float gz_dps_filt;
+  // Relative gyro heading. The MPU6050 has no magnetometer, so yaw can drift.
+  bool yaw_initialized;
+  uint32_t yaw_sample_ms;
+  float yaw_deg;
+  float yaw_rate_dps;
+  float yaw_bias_dps;
 };
 
 extern ImuState gImuState;

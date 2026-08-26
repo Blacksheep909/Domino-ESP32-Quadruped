@@ -180,6 +180,15 @@ import {
 } from "./live-navigation-protocol.js";
 import { nativeNavigationCommand } from "./native-navigation-controller.js";
 import {
+  acceptNativeNavigationCommand,
+  blockNativeNavigationRunner,
+  createNativeNavigationRunnerState,
+  nativeNavigationRunnerIsActive,
+  resetNativeNavigationRunner,
+  startNativeNavigationRunner,
+  stopNativeNavigationRunner,
+} from "./native-navigation-runner.js";
+import {
   abortNativeNavigationExecution,
   createNativeNavigationExecutionState,
   pauseNativeNavigationExecution,
@@ -291,6 +300,8 @@ const liveNavigationState = createLiveNavigationState();
 let liveNavigationPlanStorageState = "new";
 const liveNavigationPreviewState = createNativeNavigationExecutionState();
 let liveNavigationPreviewFrame = null;
+const liveNativeNavigationState = createNativeNavigationRunnerState();
+let liveNativeNavigationStartRequested = false;
 const liveNavigationHistory = { past: [], future: [] };
 const LIVE_NAVIGATION_HISTORY_LIMIT = 50;
 let liveNavigationFieldHistorySnapshot = null;
@@ -1104,6 +1115,9 @@ liveBatteryAlertDialog.addEventListener("cancel", (event) => {
 
 const liveManualDialog = document.querySelector("#live-manual-dialog");
 document.querySelector("#live-manual-open").addEventListener("click", () => {
+  if (nativeNavigationRunnerIsActive(liveNativeNavigationState)) {
+    haltLiveNativeNavigation("Manual control requested. Domino route was neutralized.");
+  }
   renderLiveManualUi();
   if (!liveManualDialog.open) liveManualDialog.showModal();
 });
@@ -2990,6 +3004,8 @@ function connectControlBridge() {
     liveGaitPendingTimeout = null;
     liveNavigationState.pendingRequestId = "";
     liveNavigationState.pendingAction = "";
+    resetNativeNavigationRunner(liveNativeNavigationState);
+    liveNativeNavigationStartRequested = false;
     liveNavigationState.lastCommandStatus = "The PC link disconnected. Navigation commands remain blocked.";
     clearTimeout(liveNavigationPendingTimeout);
     liveNavigationPendingTimeout = null;
@@ -3020,6 +3036,8 @@ function connectControlBridge() {
         liveCalibrationState.benchModeAcknowledged = false;
         liveGaitState.persistentApplySupported = false;
         revokeLiveManualControl(liveManualState, "The robot adapter disappeared. Browser authority was revoked.");
+        resetNativeNavigationRunner(liveNativeNavigationState);
+        liveNativeNavigationStartRequested = false;
         liveNavigationState.pendingRequestId = "";
         liveNavigationState.pendingAction = "";
         liveNavigationState.lastCommandStatus = "The navigation adapter disappeared. Autonomous commands remain blocked.";
@@ -3208,6 +3226,12 @@ function acceptLiveManualAuthorityAck(message) {
   clearTimeout(liveManualRequestTimeout);
   liveManualRequestTimeout = null;
   renderLiveManualUi();
+  if (message.action === "request-authority" && message.accepted && liveNativeNavigationStartRequested) {
+    liveNativeNavigationStartRequested = false;
+    startLiveNativeNavigation();
+  } else if (message.action === "request-authority" && !message.accepted) {
+    liveNativeNavigationStartRequested = false;
+  }
   return true;
 }
 
@@ -3237,6 +3261,7 @@ function releaseLiveManualControl(reason = "Manual-control authority released. R
 }
 
 function serviceLiveManualControl() {
+  serviceLiveNativeNavigation();
   if (liveManualState.authorityToken) {
     const context = liveManualContext();
     const invalid = Date.now() >= liveManualState.authorityExpiresAt ||
@@ -3466,6 +3491,8 @@ function acceptLiveConnectionAck(message) {
   if (!liveConnectionIsReady(liveConnectionState)) {
     lockLiveSafetyState(liveSafetyState, "No PC link is active. Robot-side outputs must fail safe.");
     revokeLiveManualControl(liveManualState, "No PC link is active. Browser authority was revoked.");
+    resetNativeNavigationRunner(liveNativeNavigationState);
+    liveNativeNavigationStartRequested = false;
     resetLiveCommandPermissions("No PC link is active. Robot profile changes remain blocked.");
   } else {
     setLiveSafetyRobotState(liveSafetyState, liveConnectionState.robotState);
@@ -3723,12 +3750,156 @@ function navigationCapabilityAvailable() {
   );
 }
 
+function nativeNavigationCapabilityAvailable() {
+  const adapter = navigationAdapter();
+  return Boolean(
+    liveConnectionIsReady(liveConnectionState) &&
+    adapter?.capabilities?.nativeNavigation === true &&
+    adapter?.capabilities?.manualControl === true,
+  );
+}
+
+function nativeNavigationReadiness(navigation, routeReady) {
+  const context = liveManualContext();
+  const obstacleEnabled = liveNavigationState.obstacleBehavior.enabled;
+  const checks = [
+    [nativeNavigationCapabilityAvailable(), "The selected adapter does not advertise Domino route control."],
+    [routeReady, "Add referenced GPS waypoints inside the active fence before starting."],
+    [context.connectionReady, "The PC link is not ready."],
+    [context.robotState === "armed", "Arm the robot before starting a Domino route."],
+    [context.telemetryFresh, "Expected and measured telemetry must both be fresh."],
+    [context.controllerLinkReady, "The controller link is not ready."],
+    [context.workspaceActive, "The LIVE workspace must remain visible."],
+    [navigation.hasFix, "Waiting for a valid GPS fix."],
+    [Number.isFinite(navigation.gps?.courseDeg), "Waiting for a fresh vehicle heading."],
+    [!obstacleEnabled || navigation.lidarFresh, "Waiting for fresh LiDAR obstacle data."],
+    [navigation.geofence?.breached !== true, "The vehicle is outside the active geofence."],
+  ];
+  return { ready: checks.every(([valid]) => valid), reason: checks.find(([valid]) => !valid)?.[1] || "Domino route checks are ready." };
+}
+
 function navigationTelemetryAvailable() {
   const adapter = navigationAdapter();
   return Boolean(
     liveConnectionIsReady(liveConnectionState) &&
     (adapter?.capabilities?.navigation === true || adapter?.capabilities?.gps === true || adapter?.capabilities?.lidar === true),
   );
+}
+
+function liveNativeRouteGate(navigation) {
+  const missionReady = liveNavigationState.missionDraft.length > 0;
+  const missionCoordinatesReady = missionReady && liveNavigationState.missionDraft.every(missionWaypointHasCoordinate);
+  const origin = navigationPlannerOrigin(navigation);
+  const fenceEnabled = document.querySelector("#live-nav-geofence-enabled")?.checked === true;
+  const fenceRadius = Number(document.querySelector("#live-nav-geofence-radius")?.value) || 50;
+  const fenceStatus = navigationMissionGeofenceStatus(liveNavigationState.missionDraft, origin, fenceRadius, fenceEnabled);
+  return {
+    routeReady: missionCoordinatesReady && (!fenceEnabled || Boolean(navigation.home) && fenceStatus.checked && fenceStatus.outsideCount === 0),
+    origin,
+    fenceEnabled,
+    fenceRadius,
+    fenceStatus,
+  };
+}
+
+function nativeNavigationCommandFor(navigation) {
+  const gate = liveNativeRouteGate(navigation);
+  const vehicleLocal = navigation.gps?.position && gate.origin
+    ? coordinateToLocalOffset(navigation.gps.position, gate.origin)
+    : null;
+  return nativeNavigationCommand({
+    waypoints: liveNavigationState.missionDraft.map((waypoint) => plannerPointFromWaypoint(waypoint, gate.origin)),
+    position: vehicleLocal,
+    headingDeg: navigation.gps?.courseDeg,
+    currentIndex: liveNativeNavigationState.currentIndex,
+    obstacle: {
+      enabled: liveNavigationState.obstacleBehavior.enabled,
+      frontM: navigation.lidarFresh ? navigation.frontM : null,
+      leftM: navigation.lidarFresh ? navigation.leftM : null,
+      rightM: navigation.lidarFresh ? navigation.rightM : null,
+      stopDistanceM: liveNavigationState.obstacleBehavior.stopDistanceM,
+      slowDistanceM: liveNavigationState.obstacleBehavior.slowDistanceM,
+    },
+    geofence: { enabled: gate.fenceEnabled && gate.fenceStatus.checked, maxRadiusM: gate.fenceRadius },
+  });
+}
+
+function finishLiveNativeNavigation(message = "Domino route complete.") {
+  sendLiveManualFrame(true);
+  if (liveManualState.deadmanActive) endLiveManualDeadman(liveManualState, message);
+  if (liveManualState.authorityToken) releaseLiveManualControl(message);
+  liveNavigationState.lastCommandStatus = message;
+  updateLiveComparisonUi();
+}
+
+function haltLiveNativeNavigation(reason, blocked = false) {
+  sendLiveManualFrame(true);
+  if (liveManualState.deadmanActive) endLiveManualDeadman(liveManualState, reason);
+  if (liveManualState.authorityToken) releaseLiveManualControl(reason);
+  if (blocked) blockNativeNavigationRunner(liveNativeNavigationState, reason);
+  else stopNativeNavigationRunner(liveNativeNavigationState, reason);
+  liveNativeNavigationStartRequested = false;
+  liveNavigationState.lastCommandStatus = reason;
+  updateLiveComparisonUi();
+}
+
+function startLiveNativeNavigation() {
+  if (nativeNavigationRunnerIsActive(liveNativeNavigationState)) {
+    haltLiveNativeNavigation("Domino route stopped by operator.");
+    return;
+  }
+  const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
+  const gate = liveNativeRouteGate(navigation);
+  const readiness = nativeNavigationReadiness(navigation, gate.routeReady);
+  if (!readiness.ready) {
+    liveNavigationState.lastCommandStatus = readiness.reason;
+    updateLiveComparisonUi();
+    showAppToast(readiness.reason, "warning");
+    return;
+  }
+  if (!liveManualState.authorityToken) {
+    liveNativeNavigationStartRequested = true;
+    if (!liveManualState.safetyConfirmed) {
+      document.querySelector("#live-manual-open")?.click();
+      showAppToast("Confirm the physical E-stop check, then request the control lease.", "warning");
+      return;
+    }
+    if (!sendLiveManualAuthority("request-authority")) {
+      liveNativeNavigationStartRequested = false;
+      showAppToast("The guarded control lease could not be requested.", "warning");
+    }
+    return;
+  }
+  if (!beginLiveManualDeadman(liveManualState, liveManualContext())) {
+    showAppToast("The guarded control lease is no longer ready.", "warning");
+    return;
+  }
+  if (!startNativeNavigationRunner(liveNativeNavigationState, liveNavigationState.missionDraft.length)) return;
+  liveNavigationState.lastCommandStatus = "Domino route active. Manual override remains available.";
+  updateLiveComparisonUi();
+}
+
+function serviceLiveNativeNavigation() {
+  if (liveNativeNavigationState.phase !== "running") return;
+  const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
+  const gate = liveNativeRouteGate(navigation);
+  const readiness = nativeNavigationReadiness(navigation, gate.routeReady);
+  if (!readiness.ready) {
+    haltLiveNativeNavigation(readiness.reason, true);
+    return;
+  }
+  const command = nativeNavigationCommandFor(navigation);
+  acceptNativeNavigationCommand(liveNativeNavigationState, command);
+  if (liveNativeNavigationState.phase === "complete") {
+    finishLiveNativeNavigation("Domino route complete. Vehicle is held neutral.");
+    return;
+  }
+  if (liveNativeNavigationState.phase === "blocked") {
+    haltLiveNativeNavigation(command.reason, true);
+    return;
+  }
+  updateLiveManualAxes(liveManualState, { mode: "careful", forward: command.forward, turn: command.turn, roll: 0, pitch: 0, yaw: 0, bodyX: 0, bodyY: 0, height: 0 });
+  liveNavigationState.lastCommandStatus = `Domino route / WP ${String(liveNativeNavigationState.currentIndex + 1).padStart(2, "0")}: ${command.reason}`;
 }
 
 function navigationStateSignature() {
@@ -3952,9 +4123,11 @@ function renderLiveNavigationPlanner(navigation) {
   const waypointPoints = liveNavigationState.missionDraft.map((waypoint) => toMapPoint(plannerPointFromWaypoint(waypoint, origin)));
   route.setAttribute("points", waypointPoints.filter(Boolean).map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" "));
   markers.replaceChildren();
-  const currentMissionIndex = previewSession && preview?.ready
-    ? preview.currentIndex
-    : Number.isFinite(navigation.mission?.current) ? navigation.mission.current : -1;
+  const currentMissionIndex = nativeNavigationRunnerIsActive(liveNativeNavigationState)
+    ? liveNativeNavigationState.currentIndex
+    : previewSession && preview?.ready
+      ? preview.currentIndex
+      : Number.isFinite(navigation.mission?.current) ? navigation.mission.current : -1;
   waypointPoints.forEach((point, index) => {
     if (!point) return;
     const waypointLocal = plannerPointFromWaypoint(liveNavigationState.missionDraft[index], origin);
@@ -4029,8 +4202,12 @@ function renderLiveNavigationPlanner(navigation) {
     ? "LOCAL PREVIEW"
     : navigation.hasFix ? navigationFixLabel(navigation.gps?.fixType) : hasOrigin ? "HOME SET" : "NO FIX";
   hudObstacle.textContent = navigation.lidarFresh ? formatNavigationDistance(navigation.frontM, "--.- m") : "WAITING";
-  hudMode.textContent = previewSession ? "PREVIEW" : navigation.mode?.label?.toUpperCase() || (routeCount ? "PLANNING" : "READY TO PLAN");
-  const state = previewSession
+  hudMode.textContent = nativeNavigationRunnerIsActive(liveNativeNavigationState)
+    ? "DOMINO ROUTE"
+    : previewSession ? "PREVIEW" : navigation.mode?.label?.toUpperCase() || (routeCount ? "PLANNING" : "READY TO PLAN");
+  const state = nativeNavigationRunnerIsActive(liveNativeNavigationState)
+    ? "ARMED"
+    : previewSession
     ? liveNavigationPreviewState.phase === "aborted" ? "STOPPED" : "PREVIEW"
     : navigation.autopilot?.failsafe || navigation.geofence?.breached
     ? "FAULT"
@@ -4052,7 +4229,7 @@ function renderLiveNavigationPlanner(navigation) {
   const nativeControl = nativeNavigationCommand({
     waypoints: liveNavigationState.missionDraft.map((waypoint) => plannerPointFromWaypoint(waypoint, origin)),
     position: vehicleLocal,
-    headingDeg: navigation.gps?.courseDeg ?? 0,
+    headingDeg: navigation.gps?.courseDeg,
     currentIndex: currentMissionIndex >= 0 ? currentMissionIndex : 0,
     obstacle: {
       enabled: !previewSession && liveNavigationState.obstacleBehavior.enabled,
@@ -4356,6 +4533,26 @@ function renderLiveNavigationUi(navigation) {
   updateNavigationMissionHeader(navigation);
   renderLiveWaypointList(navigation);
   renderLiveNavigationPlanner(navigation);
+  const nativeRouteReadiness = nativeNavigationReadiness(navigation, routeReady);
+  const nativeRouteButton = document.querySelector("#live-nav-start-native-route");
+  const nativeRouteState = document.querySelector("#live-nav-native-route-state");
+  const nativeRouteActive = nativeNavigationRunnerIsActive(liveNativeNavigationState);
+  if (nativeRouteButton) {
+    nativeRouteButton.disabled = !nativeRouteReadiness.ready && !nativeRouteActive;
+    nativeRouteButton.textContent = nativeRouteActive ? "STOP DOMINO ROUTE" : "START DOMINO ROUTE";
+    nativeRouteButton.setAttribute("aria-pressed", String(nativeRouteActive));
+    nativeRouteButton.title = nativeRouteReadiness.ready ? "Run the route through Domino's guarded control lease." : nativeRouteReadiness.reason;
+  }
+  if (nativeRouteState) {
+    const phase = liveNativeNavigationState.phase;
+    nativeRouteState.dataset.state = phase === "running" ? "online" : phase === "blocked" ? "error" : phase === "complete" ? "saved" : "offline";
+    nativeRouteState.textContent = phase === "running"
+      ? `DOMINO ACTIVE / WP ${String(liveNativeNavigationState.currentIndex + 1).padStart(2, "0")}`
+      : phase === "blocked" ? "DOMINO BLOCKED"
+        : phase === "complete" ? "DOMINO COMPLETE"
+          : nativeNavigationCapabilityAvailable() ? "DOMINO READY" : "DOMINO ADAPTER WAITING";
+    nativeRouteState.title = nativeRouteReadiness.reason;
+  }
   document.querySelector("#live-nav-upload-mission").disabled = !commandReady || !autopilotHealthy || autopilot?.armed || !routeReady || Boolean(liveNavigationState.pendingRequestId);
   document.querySelector("#live-nav-start-mission").disabled = !commandReady || !autopilot?.armed || !navigation.autonomyReady || !routeReady || Boolean(liveNavigationState.pendingRequestId);
   document.querySelector("#live-nav-pause-mission").disabled = !commandReady || !autopilot?.armed || Boolean(liveNavigationState.pendingRequestId);
@@ -6266,8 +6463,12 @@ document.querySelector("#live-nav-reference-plan").addEventListener("click", () 
   updateLiveComparisonUi();
 });
 document.querySelector("#live-nav-manual-override").addEventListener("click", () => {
+  if (nativeNavigationRunnerIsActive(liveNativeNavigationState)) {
+    haltLiveNativeNavigation("Manual override requested. Domino route was neutralized.");
+  }
   document.querySelector("#live-manual-open")?.click();
 });
+document.querySelector("#live-nav-start-native-route").addEventListener("click", startLiveNativeNavigation);
 document.querySelector("#live-nav-clear-draft").addEventListener("click", () => {
   if (liveNavigationPreviewState.active) stopLiveNavigationPreview();
   if (!liveNavigationState.missionDraft.length) return;
@@ -8721,6 +8922,9 @@ function resize() {
 window.addEventListener("resize", resize);
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
+    if (nativeNavigationRunnerIsActive(liveNativeNavigationState)) {
+      haltLiveNativeNavigation("Browser control was released because this tab is no longer visible.", true);
+    }
     releaseLiveManualControl("Browser control was released because this tab is no longer visible.");
     return;
   }

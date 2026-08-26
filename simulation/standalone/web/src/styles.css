@@ -6975,7 +6975,15 @@ body[data-workspace="real-robot"] .toast-region {
 .live-planner-vehicle path { fill: #2d6792; stroke: #e7f3fb; stroke-width: .8; vector-effect: non-scaling-stroke; }
 .live-planner-vehicle.is-live circle { filter: drop-shadow(0 0 3px rgba(45, 103, 146, .8)); }
 .live-planner-vehicle.is-preview circle { filter: drop-shadow(0 0 4px rgba(51, 132, 87, .9)); }
+.live-planner-scale { pointer-events: none; }
+.live-planner-scale line { stroke: #6f7e76; stroke-width: .7; vector-effect: non-scaling-stroke; }
 .live-planner-map text { fill: #6c7770; font: 800 4px/1 "Cascadia Mono", Consolas, monospace; letter-spacing: .08em; }
+.live-planner-scale text { fill: #68756d; font: 800 3.2px/1 "Cascadia Mono", Consolas, monospace; letter-spacing: .05em; }
+.live-planner-map-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-top: 7px; color: #6c756e; font: 800 7px/1.2 "Cascadia Mono", Consolas, monospace; letter-spacing: .04em; }
+.live-planner-map-legend span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.live-planner-map-legend i { display: inline-block; width: 16px; height: 0; border-top: 2px solid #3d9662; }
+.live-planner-map-legend i.is-track { border-top: 1px dashed #4b83a1; }
+.live-planner-map-legend i.is-return { border-top: 1px dashed #6b9c7a; }
 .live-planner-help { margin: 8px 0 0; color: #737871; font-size: 9px; line-height: 1.45; }
 .live-plan-library { margin-top: 10px; border: 1px solid #d1d5cf; border-radius: 5px; background: rgba(255, 255, 255, .34); }
 .live-plan-library > summary { min-height: 30px; padding: 0 9px; display: flex; align-items: center; justify-content: space-between; gap: 10px; color: #626860; cursor: pointer; list-style: none; font: 800 8px/1 "Cascadia Mono", Consolas, monospace; letter-spacing: .08em; }
@@ -7030,6 +7038,12 @@ body[data-workspace="real-robot"] .toast-region {
 :root[data-theme="dark"] .live-planner-track { stroke: #69b7d4; }
 :root[data-theme="dark"] .live-planner-route { stroke: #69c28b; }
 :root[data-theme="dark"] .live-planner-return-route { stroke: #9bd8ad; }
+:root[data-theme="dark"] .live-planner-scale line { stroke: #76917e; }
+:root[data-theme="dark"] .live-planner-scale text,
+:root[data-theme="dark"] .live-planner-map-legend { color: #91a899; fill: #91a899; }
+:root[data-theme="dark"] .live-planner-map-legend i { border-color: #69c28b; }
+:root[data-theme="dark"] .live-planner-map-legend i.is-track { border-color: #69b7d4; }
+:root[data-theme="dark"] .live-planner-map-legend i.is-return { border-color: #9bd8ad; }
 :root[data-theme="dark"] .live-planner-marker circle { fill: #1e2922; stroke: #71c991; }
 :root[data-theme="dark"] .live-planner-marker text { fill: #a5e3b6; }
 :root[data-theme="dark"] .live-planner-marker.is-active circle { fill: #31543b; stroke: #b0f0bf; }

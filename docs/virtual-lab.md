@@ -117,7 +117,9 @@ Route edits can be reversed with the **UNDO** and **REDO** controls beside the
 planner, or with **Ctrl+Z**, **Ctrl+Shift+Z**, and **Ctrl+Y** when focus is not in
 an editable text field. The history covers waypoint placement, dragging,
 reordering, removal, range fitting, local-plan referencing, imports, and draft
-clears; it is an in-memory editing aid and is not persisted as vehicle state.
+clears; editing a route also stops an active offline preview so it cannot keep
+following stale geometry. The history is an in-memory editing aid and is not
+persisted as vehicle state.
 
 ## Workspaces
 

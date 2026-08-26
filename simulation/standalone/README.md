@@ -98,7 +98,8 @@ The planner HUD also exposes Domino's bounded native forward/turn intent and
 stops it for missing obstacle data, close obstacles, or an active geofence, and
 uses side-range pressure to bias away from nearby left/right obstacles.
 Preview playback can be paused, resumed, stepped one second at a time, or
-slowed/speeded between 0.5x and 4x without affecting the saved route.
+slowed/speeded between 0.5x and 4x without affecting the saved route. Editing
+the plan stops an active preview before the new geometry is applied.
 
 **START DOMINO ROUTE** is the app-owned route runner. A compatible adapter must
 explicitly advertise `nativeNavigation` plus guarded `manualControl`; the

@@ -331,6 +331,9 @@ function captureLiveNavigationHistory() {
   if (nativeNavigationRunnerIsActive(liveNativeNavigationState)) {
     haltLiveNativeNavigation("Route plan editing requested. Domino route was neutralized.");
   }
+  if (liveNavigationPreviewState.active) {
+    stopLiveNavigationPreview("Route plan changed. Offline preview stopped.");
+  }
   pushLiveNavigationHistorySnapshot(navigationMissionJson(liveNavigationState));
 }
 

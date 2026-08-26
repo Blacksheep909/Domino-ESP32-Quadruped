@@ -3911,6 +3911,10 @@ function startLiveNativeNavigation() {
 
 function serviceLiveNativeNavigation() {
   if (liveNativeNavigationState.phase !== "running") return;
+  if (!liveManualState.authorityToken || !liveManualState.deadmanActive) {
+    haltLiveNativeNavigation("The native route control lease or deadman expired.", true);
+    return;
+  }
   const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
   const gate = liveNativeRouteGate(navigation);
   const readiness = nativeNavigationReadiness(navigation, gate.routeReady);

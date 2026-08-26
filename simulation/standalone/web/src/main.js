@@ -184,7 +184,9 @@ import {
   blockNativeNavigationRunner,
   createNativeNavigationRunnerState,
   nativeNavigationRunnerIsActive,
+  pauseNativeNavigationRunner,
   resetNativeNavigationRunner,
+  resumeNativeNavigationRunner,
   startNativeNavigationRunner,
   stopNativeNavigationRunner,
 } from "./native-navigation-runner.js";
@@ -3825,6 +3827,7 @@ function nativeNavigationCommandFor(navigation) {
 }
 
 function finishLiveNativeNavigation(message = "Domino route complete.") {
+  liveNativeNavigationStartRequested = false;
   sendLiveManualFrame(true);
   if (liveManualState.deadmanActive) endLiveManualDeadman(liveManualState, message);
   if (liveManualState.authorityToken) releaseLiveManualControl(message);
@@ -3840,6 +3843,30 @@ function haltLiveNativeNavigation(reason, blocked = false) {
   else stopNativeNavigationRunner(liveNativeNavigationState, reason);
   liveNativeNavigationStartRequested = false;
   liveNavigationState.lastCommandStatus = reason;
+  updateLiveComparisonUi();
+}
+
+function toggleLiveNativeNavigationPause() {
+  if (liveNativeNavigationState.phase === "running") {
+    sendLiveManualFrame(true);
+    endLiveManualDeadman(liveManualState, "Domino route paused. Vehicle is held neutral.");
+    pauseNativeNavigationRunner(liveNativeNavigationState);
+    liveNavigationState.lastCommandStatus = "Domino route paused. Resume only after checking the vehicle area.";
+    updateLiveComparisonUi();
+    return;
+  }
+  if (liveNativeNavigationState.phase !== "paused") return;
+  const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
+  const gate = liveNativeRouteGate(navigation);
+  const readiness = nativeNavigationReadiness(navigation, gate.routeReady);
+  if (!readiness.ready || !beginLiveManualDeadman(liveManualState, liveManualContext())) {
+    liveNavigationState.lastCommandStatus = readiness.reason || "The guarded control lease is not ready to resume.";
+    updateLiveComparisonUi();
+    showAppToast(liveNavigationState.lastCommandStatus, "warning");
+    return;
+  }
+  resumeNativeNavigationRunner(liveNativeNavigationState);
+  liveNavigationState.lastCommandStatus = "Domino route resumed. Manual override remains available.";
   updateLiveComparisonUi();
 }
 
@@ -4535,6 +4562,7 @@ function renderLiveNavigationUi(navigation) {
   renderLiveNavigationPlanner(navigation);
   const nativeRouteReadiness = nativeNavigationReadiness(navigation, routeReady);
   const nativeRouteButton = document.querySelector("#live-nav-start-native-route");
+  const nativeRoutePauseButton = document.querySelector("#live-nav-pause-native-route");
   const nativeRouteState = document.querySelector("#live-nav-native-route-state");
   const nativeRouteActive = nativeNavigationRunnerIsActive(liveNativeNavigationState);
   if (nativeRouteButton) {
@@ -4542,6 +4570,14 @@ function renderLiveNavigationUi(navigation) {
     nativeRouteButton.textContent = nativeRouteActive ? "STOP DOMINO ROUTE" : "START DOMINO ROUTE";
     nativeRouteButton.setAttribute("aria-pressed", String(nativeRouteActive));
     nativeRouteButton.title = nativeRouteReadiness.ready ? "Run the route through Domino's guarded control lease." : nativeRouteReadiness.reason;
+  }
+  if (nativeRoutePauseButton) {
+    nativeRoutePauseButton.disabled = !nativeRouteActive;
+    nativeRoutePauseButton.textContent = liveNativeNavigationState.phase === "paused" ? "RESUME DOMINO ROUTE" : "PAUSE DOMINO ROUTE";
+    nativeRoutePauseButton.setAttribute("aria-pressed", String(liveNativeNavigationState.phase === "paused"));
+    nativeRoutePauseButton.title = liveNativeNavigationState.phase === "paused"
+      ? "Resume the held route after rechecking the safety state."
+      : "Hold the vehicle neutral while retaining the route and guarded lease.";
   }
   if (nativeRouteState) {
     const phase = liveNativeNavigationState.phase;
@@ -6469,6 +6505,7 @@ document.querySelector("#live-nav-manual-override").addEventListener("click", ()
   document.querySelector("#live-manual-open")?.click();
 });
 document.querySelector("#live-nav-start-native-route").addEventListener("click", startLiveNativeNavigation);
+document.querySelector("#live-nav-pause-native-route").addEventListener("click", toggleLiveNativeNavigationPause);
 document.querySelector("#live-nav-clear-draft").addEventListener("click", () => {
   if (liveNavigationPreviewState.active) stopLiveNavigationPreview();
   if (!liveNavigationState.missionDraft.length) return;

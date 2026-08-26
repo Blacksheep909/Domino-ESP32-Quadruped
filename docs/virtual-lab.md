@@ -52,6 +52,10 @@ line beneath the planned route so the operator can compare the dog's actual
 path with the plan.
 The map also includes a compact legend with an honest GPS-track state and a
 scale reference that updates with the selected planning range.
+When the obstacle guard is enabled and the LiDAR stream is fresh, four muted
+clearance sectors appear around the vehicle marker and change color at the
+stop and slow thresholds; stale or bypassed LiDAR is shown explicitly in the
+legend.
 
 The compact Domino Autonomy HUD stays beside the map and shows a complete,
 compact route/pass summary, position quality, next-point distance, total route

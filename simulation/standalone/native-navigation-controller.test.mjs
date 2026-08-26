@@ -72,3 +72,15 @@ test("native navigation refuses to invent control without a fresh obstacle range
   assert.equal(command.forward, 0);
   assert.equal(headingErrorDeg(5, 355), 10);
 });
+
+test("native navigation biases away from a close side obstacle", () => {
+  const command = nativeNavigationCommand({
+    waypoints: route,
+    position: { northM: 0, eastM: 2 },
+    headingDeg: 90,
+    currentIndex: 1,
+    obstacle: { enabled: true, frontM: 5, leftM: 0.2, rightM: 4, stopDistanceM: 0.45, slowDistanceM: 1.2 },
+  });
+  assert.equal(command.state, "navigating");
+  assert.ok(command.turn > 0);
+});

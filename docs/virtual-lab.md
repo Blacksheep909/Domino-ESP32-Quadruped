@@ -59,6 +59,12 @@ check before choosing the separate vehicle upload/start actions.
 keeps the current local draft readable with margin. It is a display convenience
 only and does not change waypoint coordinates or vehicle state.
 
+Route edits can be reversed with the **UNDO** and **REDO** controls beside the
+planner, or with **Ctrl+Z**, **Ctrl+Shift+Z**, and **Ctrl+Y** when focus is not in
+an editable text field. The history covers waypoint placement, dragging,
+reordering, removal, range fitting, local-plan referencing, imports, and draft
+clears; it is an in-memory editing aid and is not persisted as vehicle state.
+
 ## Workspaces
 
 ### Simulation

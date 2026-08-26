@@ -55,6 +55,10 @@ the local vehicle marker through each segment using waypoint speeds and holds,
 and never sends a vehicle command. This gives operators a quick route sanity
 check before choosing the separate vehicle upload/start actions.
 
+**FIT ROUTE** selects the smallest available 40/80/160 m planning range that
+keeps the current local draft readable with margin. It is a display convenience
+only and does not change waypoint coordinates or vehicle state.
+
 ## Workspaces
 
 ### Simulation

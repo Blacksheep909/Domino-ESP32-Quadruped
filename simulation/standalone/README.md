@@ -86,8 +86,9 @@ position, and the physical ArduPilot response remains authoritative.
 
 The same Sensors view also provides a Domino-owned top-down route planner. It
 supports offline local waypoints, drag-to-edit markers, JSON import/export,
-autosaved drafts, home-radius geofence gating, and an offline route preview that
-animates the local vehicle marker without sending a command to the robot.
+autosaved drafts, fit-to-route framing, home-radius geofence gating, and an
+offline route preview that animates the local vehicle marker without sending a
+command to the robot.
 
 The safety dock adds a separate `live-safety-command` contract for arm, disarm,
 E-stop, and physical-latch reset. Arm requires a 1.5-second uninterrupted hold,

@@ -41,6 +41,12 @@ test("unimplemented or unknown views cannot replace the active page", () => {
   assert.equal(state.selected, LIVE_VIEW_DATA);
 });
 
+test("switching LIVE tools returns the selected page to its title", () => {
+  const main = readFileSync(new URL("./web/src/main.js", import.meta.url), "utf8");
+  assert.match(main, /const activeLivePage = document\.querySelector\(`#live-view-\$\{liveViewState\.selected\}`\);/);
+  assert.match(main, /activeLivePage\?\.scrollTo\?\.\(0, 0\);/);
+});
+
 test("LIVE keeps measured battery state and E-stop in the persistent header", () => {
   const html = readFileSync(new URL("./web/index.html", import.meta.url), "utf8");
   const main = readFileSync(new URL("./web/src/main.js", import.meta.url), "utf8");

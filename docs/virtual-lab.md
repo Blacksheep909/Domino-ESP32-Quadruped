@@ -20,7 +20,9 @@ responsive preview lane that keeps navigation status panels below the title
 area. The Sensors view labels the IMU panel as **Attitude reference** and keeps
 its guidance focused on measured orientation, Inspect/Float behavior, and the
 available leg selection. The browser and packaged app are built from the same
-frontend so these UI changes do not diverge between them.
+frontend so these UI changes do not diverge between them. Switching LIVE tools
+also returns the selected page to its title so each view opens with the same
+predictable layout.
 
 ### Native route planning
 

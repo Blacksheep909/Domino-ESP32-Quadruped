@@ -994,6 +994,8 @@ function applyLiveView(view) {
   document.querySelector("#live-view-gaits").hidden = liveViewState.selected !== LIVE_VIEW_GAITS;
   document.querySelector("#live-view-diagnostics").hidden = liveViewState.selected !== LIVE_VIEW_DIAGNOSTICS;
   document.querySelector("#live-view-sessions").hidden = liveViewState.selected !== LIVE_VIEW_SESSIONS;
+  const activeLivePage = document.querySelector(`#live-view-${liveViewState.selected}`);
+  activeLivePage?.scrollTo?.(0, 0);
   if (liveViewState.selected === LIVE_VIEW_DATA) requestAnimationFrame(renderLiveComparisonChart);
   if (liveViewState.selected === LIVE_VIEW_SENSORS) updateLiveComparisonUi();
   if (liveViewState.selected === LIVE_VIEW_CALIBRATION) renderLiveCalibrationUi();

@@ -170,6 +170,30 @@ output selected by the active calibration map. These are command-path evidence,
 not measured joint feedback; `diagnostics.outputsEnabled` states whether the
 servo rail is currently being driven.
 
+When a robot carries a network camera, its navigation object may also include
+validated camera telemetry. Angles are in degrees, field of view is in degrees,
+and frame rate is in frames per second. The stream itself remains a separately
+configured HTTP/MJPEG URL in the desktop app; telemetry only describes the
+camera attached to the robot.
+
+```json
+{
+  "navigation": {
+    "camera": {
+      "timestampMs": 48250,
+      "yawDeg": 0,
+      "pitchDeg": -8,
+      "fovDeg": 90,
+      "fps": 30,
+      "connected": true
+    }
+  }
+}
+```
+
+LIVE marks camera telemetry stale after 2.5 seconds and never treats a stale
+orientation report as proof that the video stream is still live.
+
 An ESP32 may use `millis()` for `robotTimeMs` and each nested timestamp. The
 companion translates those monotonic values into the host clock domain while
 preserving expected/measured alignment. Endpoints with a synchronized clock may

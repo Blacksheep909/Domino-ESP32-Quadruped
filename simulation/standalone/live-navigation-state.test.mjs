@@ -60,6 +60,31 @@ test("navigation state sanitizes GPS, LiDAR, and ArduPilot telemetry", () => {
   assert.equal(snapshot.mission.current, 1);
 });
 
+test("navigation state keeps bounded robot camera telemetry for the LIVE panel", () => {
+  const navigation = sanitizeLiveNavigation({
+    camera: {
+      timestampMs: 10_000,
+      yawDeg: 245,
+      pitch: -120,
+      fov: 210,
+      frameRate: 30,
+      connected: true,
+    },
+  }, 10_000);
+  const snapshot = liveNavigationSnapshot(navigation, createLiveNavigationState(), 10_500);
+  assert.deepEqual(snapshot.camera, {
+    receivedAt: 10_000,
+    timestampMs: 10_000,
+    yawDeg: 180,
+    pitchDeg: -90,
+    fovDeg: 179,
+    fps: 30,
+    connected: true,
+    error: null,
+    source: "camera",
+  });
+});
+
 test("mission editing supports reorder, removal, export, and import", () => {
   const state = createLiveNavigationState();
   state.plannerRangeM = 160;

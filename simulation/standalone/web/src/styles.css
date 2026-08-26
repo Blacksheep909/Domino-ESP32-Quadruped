@@ -6954,6 +6954,20 @@ body[data-workspace="real-robot"] .toast-region {
 .live-planner-vehicle.is-preview circle { filter: drop-shadow(0 0 4px rgba(51, 132, 87, .9)); }
 .live-planner-map text { fill: #6c7770; font: 800 4px/1 "Cascadia Mono", Consolas, monospace; letter-spacing: .08em; }
 .live-planner-help { margin: 8px 0 0; color: #737871; font-size: 9px; line-height: 1.45; }
+.live-plan-library { margin-top: 10px; border: 1px solid #d1d5cf; border-radius: 5px; background: rgba(255, 255, 255, .34); }
+.live-plan-library > summary { min-height: 30px; padding: 0 9px; display: flex; align-items: center; justify-content: space-between; gap: 10px; color: #626860; cursor: pointer; list-style: none; font: 800 8px/1 "Cascadia Mono", Consolas, monospace; letter-spacing: .08em; }
+.live-plan-library > summary::-webkit-details-marker { display: none; }
+.live-plan-library > summary::after { content: "+"; color: #3f8257; font-size: 13px; line-height: 1; }
+.live-plan-library[open] > summary::after { content: "−"; }
+.live-plan-library > summary strong { margin-left: auto; color: #3f8257; font: inherit; letter-spacing: .04em; }
+.live-plan-library-controls { margin: 0 9px 9px; padding-top: 9px; display: grid; grid-template-columns: minmax(150px, 1fr) minmax(170px, 1.15fr) repeat(3, max-content); align-items: end; gap: 7px; border-top: 1px solid #d9ddd7; }
+.live-plan-library-controls label { min-width: 0; display: grid; gap: 5px; }
+.live-plan-library-controls label > span { color: #777d75; font: 800 7px/1 "Cascadia Mono", Consolas, monospace; letter-spacing: .07em; }
+.live-plan-library-controls input,
+.live-plan-library-controls select { min-width: 0; height: 28px; padding: 0 7px; color: #353833; background: #fff; border: 1px solid #cfd4cd; border-radius: 4px; font: 750 8px/1 "Cascadia Mono", Consolas, monospace; }
+.live-plan-library-controls button { min-height: 28px; padding: 0 8px; color: #286442; background: #e3f1e8; border: 1px solid #9bc8aa; border-radius: 4px; cursor: pointer; font: 800 7px/1 "Cascadia Mono", Consolas, monospace; }
+.live-plan-library-controls button:hover,
+.live-plan-library-controls button:focus-visible { border-color: #4d9e6a; outline: none; }
 .live-mission-toolbar #live-nav-clear-draft { color: #a24a3a; background: #fff0ec; border-color: #d8a095; }
 .live-autonomy-hud-heading > span { color: #777a74; white-space: nowrap; }
 .live-autonomy-hud-heading > span[data-state="online"] { color: #318051; }
@@ -7011,6 +7025,15 @@ body[data-workspace="real-robot"] .toast-region {
 :root[data-theme="dark"] .live-planner-speed select { color: #e1e1e4; background: #292a2d; border-color: #4a4d50; }
 :root[data-theme="dark"] .live-planner-actions #live-nav-plan-storage-status { color: #78c894; }
 :root[data-theme="dark"] .live-planner-actions #live-nav-plan-storage-status[data-state="warning"] { color: #e7b45c; }
+:root[data-theme="dark"] .live-plan-library { border-color: #3a3d40; background: rgba(255, 255, 255, .025); }
+:root[data-theme="dark"] .live-plan-library > summary { color: #96999e; }
+:root[data-theme="dark"] .live-plan-library > summary strong,
+:root[data-theme="dark"] .live-plan-library > summary::after { color: #78c894; }
+:root[data-theme="dark"] .live-plan-library-controls { border-color: #3a3d40; }
+:root[data-theme="dark"] .live-plan-library-controls label > span { color: #96999e; }
+:root[data-theme="dark"] .live-plan-library-controls input,
+:root[data-theme="dark"] .live-plan-library-controls select { color: #e1e1e4; background: #292a2d; border-color: #4a4d50; }
+:root[data-theme="dark"] .live-plan-library-controls button { color: #b9efc6; background: rgba(66, 142, 88, .18); border-color: rgba(113, 201, 145, .52); }
 :root[data-theme="dark"] .live-waypoint-row.is-selected { border-color: #69c28b; box-shadow: 0 0 0 1px rgba(105, 194, 139, .24), inset 3px 0 0 #69c28b; }
 :root[data-theme="dark"] .live-autonomy-hud > button { color: #ffc0b4; background: rgba(174, 70, 56, .16); border-color: rgba(214, 119, 101, .55); }
 :root[data-theme="dark"] .live-mission-toolbar #live-nav-clear-draft { color: #ffc0b4; background: rgba(174, 70, 56, .16); border-color: rgba(214, 119, 101, .55); }
@@ -7032,6 +7055,11 @@ body[data-workspace="real-robot"][data-live-view="sensors"] .app-hud { display: 
   .live-autonomy-hud { grid-column: 1; grid-row: auto; }
   .live-planner-map-shell { order: 1; }
   .live-autonomy-hud { order: 2; }
+}
+
+@media (max-width: 1050px) {
+  .live-plan-library-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .live-plan-library-controls button { width: 100%; }
 }
 
 :root[data-theme="dark"] nav,

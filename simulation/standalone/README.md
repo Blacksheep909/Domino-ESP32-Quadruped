@@ -105,6 +105,9 @@ MANUAL OVERRIDE** hands control back to the operator. The current ESP32
 firmware remains locked out of this path until its physical GPS/LiDAR adapter
 is integrated and validated.
 
+The runner also supports an explicit neutral **PAUSE DOMINO ROUTE** hold and a
+guarded **RESUME DOMINO ROUTE** action that preserves waypoint progress.
+
 The safety dock adds a separate `live-safety-command` contract for arm, disarm,
 E-stop, and physical-latch reset. Arm requires a 1.5-second uninterrupted hold,
 fresh expected/measured telemetry, a robot-reported CRSF/ELRS drive link, and a

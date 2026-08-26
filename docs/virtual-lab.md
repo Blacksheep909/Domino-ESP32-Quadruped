@@ -68,6 +68,9 @@ neutralizes and releases the route lease. The current ESP32 firmware does not
 advertise `nativeNavigation` yet because its physical GPS/LiDAR adapter still
 needs to be integrated and validated.
 
+**PAUSE DOMINO ROUTE** sends a neutral hold while retaining the route index and
+lease; **RESUME DOMINO ROUTE** rechecks every gate before motion continues.
+
 The preview controls also support **PAUSE**, **RESUME**, and one-second
 **STEP** inspection, with selectable 0.5x, 1x, 2x, and 4x playback rates.
 Stopping a preview marks it as stopped and requires an explicit restart; a

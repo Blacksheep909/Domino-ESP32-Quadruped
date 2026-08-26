@@ -6800,6 +6800,9 @@ body[data-workspace="real-robot"] .toast-region {
 .live-planner-geofence { fill: rgba(54, 133, 82, .08); stroke: #4d9e6a; stroke-width: 1; stroke-dasharray: 2.5 2; vector-effect: non-scaling-stroke; pointer-events: none; }
 .live-planner-geofence.has-warning { fill: rgba(174, 70, 56, .1); stroke: #c35d4e; }
 .live-planner-route { fill: none; stroke: #3d9662; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.live-planner-marker { cursor: grab; }
+.live-planner-marker.is-dragging { cursor: grabbing; }
+.live-planner-marker.is-dragging circle { filter: drop-shadow(0 0 3px rgba(51, 132, 87, .75)); }
 .live-planner-marker circle { fill: #f4f4f0; stroke: #338457; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 .live-planner-marker text { fill: #277348; font: 800 4px/1 "Cascadia Mono", Consolas, monospace; pointer-events: none; }
 .live-planner-marker.is-active circle { fill: #d8f1df; stroke: #22663f; stroke-width: 2; }

@@ -485,3 +485,20 @@ export function navigationMissionMetrics(mission = [], origin = null) {
     coordinateReady: waypoints.length > 0 && waypoints.every(missionWaypointHasCoordinate),
   };
 }
+
+export function navigationMissionGeofenceStatus(mission = [], origin = null, radiusM = 0, enabled = false) {
+  const waypoints = Array.isArray(mission) ? mission : [];
+  const radius = Number(radiusM);
+  if (!enabled || !Number.isFinite(radius) || radius <= 0) {
+    return { enabled: false, checked: false, outsideCount: 0, unresolvedCount: 0 };
+  }
+  const positions = waypoints.map((waypoint) => missionWaypointLocalPosition(waypoint, origin));
+  const unresolvedCount = positions.filter((position) => !position).length;
+  const outsideCount = positions.filter((position) => position && Math.hypot(position.northM, position.eastM) > radius).length;
+  return {
+    enabled: true,
+    checked: Boolean(origin) && unresolvedCount === 0,
+    outsideCount,
+    unresolvedCount,
+  };
+}

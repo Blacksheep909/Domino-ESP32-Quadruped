@@ -9,6 +9,7 @@ import {
   localOffsetToCoordinate,
   moveNavigationWaypoint,
   navigationMissionMetrics,
+  navigationMissionGeofenceStatus,
   navigationMissionJson,
   parseNavigationMissionJson,
   removeNavigationWaypoint,
@@ -104,4 +105,22 @@ test("route planner reports measurable distance and an honest unresolved state",
   assert.equal(unresolved.totalDistanceM, null);
   assert.equal(unresolved.estimatedSeconds, null);
   assert.equal(unresolved.unresolvedCount, 1);
+});
+
+test("route planner reports waypoints outside the active home radius", () => {
+  const origin = { lat: -36.85, lon: 174.76 };
+  const status = navigationMissionGeofenceStatus([
+    { local: { northM: 3, eastM: 4 } },
+    { local: { northM: 12, eastM: 5 } },
+  ], origin, 5, true);
+  assert.equal(status.checked, true);
+  assert.equal(status.outsideCount, 1);
+  assert.equal(status.unresolvedCount, 0);
+
+  const unreferenced = navigationMissionGeofenceStatus([
+    { local: { northM: 3, eastM: 4 } },
+  ], null, 5, true);
+  assert.equal(unreferenced.checked, false);
+  assert.equal(unreferenced.outsideCount, 0);
+  assert.equal(unreferenced.unresolvedCount, 0);
 });

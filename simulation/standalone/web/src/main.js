@@ -164,6 +164,7 @@ import {
   missionWaypointHasCoordinate,
   moveNavigationWaypoint,
   navigationFixLabel,
+  navigationMissionGeofenceStatus,
   navigationMissionMetrics,
   navigationMissionJson,
   parseNavigationMissionJson,
@@ -3638,6 +3639,7 @@ function renderLiveNavigationPlanner(navigation) {
   const route = document.querySelector("#live-nav-planner-route");
   const markers = document.querySelector("#live-nav-planner-markers");
   const vehicle = document.querySelector("#live-nav-planner-vehicle");
+  const geofence = document.querySelector("#live-nav-planner-geofence");
   const status = document.querySelector("#live-nav-planner-status");
   const hudMode = document.querySelector("#live-nav-hud-mode");
   const hudState = document.querySelector("#live-nav-hud-state");
@@ -3649,7 +3651,7 @@ function renderLiveNavigationPlanner(navigation) {
   const hudObstacle = document.querySelector("#live-nav-hud-obstacle");
   const helpStatus = document.querySelector("#live-nav-planner-help-status");
   const referencePlan = document.querySelector("#live-nav-reference-plan");
-  if (!map || !route || !markers || !vehicle || !status || !hudMode || !hudState || !hudRoute || !hudNext || !hudTotal || !hudEta || !hudPosition || !hudObstacle || !helpStatus || !referencePlan) return;
+  if (!map || !route || !markers || !vehicle || !geofence || !status || !hudMode || !hudState || !hudRoute || !hudNext || !hudTotal || !hudEta || !hudPosition || !hudObstacle || !helpStatus || !referencePlan) return;
 
   const origin = navigationPlannerOrigin(navigation);
   const range = Math.max(10, Number(liveNavigationState.plannerRangeM) || 40);
@@ -3657,13 +3659,26 @@ function renderLiveNavigationPlanner(navigation) {
     x: 50 + (Number(point.eastM) / range) * 100,
     y: 50 - (Number(point.northM) / range) * 100,
   } : null;
+  const hasOrigin = Boolean(origin);
+  const fence = navigation.geofence || liveNavigationState.geofence;
+  const fenceStatus = navigationMissionGeofenceStatus(liveNavigationState.missionDraft, origin, fence?.maxRadiusM, fence?.enabled === true);
+  const fenceRadius = Number(fence?.maxRadiusM);
+  const fenceMapRadius = hasOrigin && Number.isFinite(fenceRadius) && fenceRadius > 0
+    ? Math.min(49, (fenceRadius / range) * 100)
+    : 0;
+  geofence.setAttribute("r", fenceMapRadius.toFixed(2));
+  geofence.setAttribute("visibility", fenceMapRadius > 0 ? "visible" : "hidden");
+  geofence.classList.toggle("has-warning", fenceStatus.outsideCount > 0);
   const waypointPoints = liveNavigationState.missionDraft.map((waypoint) => toMapPoint(plannerPointFromWaypoint(waypoint, origin)));
   route.setAttribute("points", waypointPoints.filter(Boolean).map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" "));
   markers.replaceChildren();
   const currentMissionIndex = Number.isFinite(navigation.mission?.current) ? navigation.mission.current : -1;
   waypointPoints.forEach((point, index) => {
     if (!point) return;
-    const group = plannerSvgElement("g", { class: index === currentMissionIndex ? "live-planner-marker is-active" : "live-planner-marker", transform: `translate(${point.x.toFixed(2)} ${point.y.toFixed(2)})`, "data-waypoint-index": index, role: "button", tabindex: 0, "aria-label": `Select waypoint ${index + 1}` });
+    const waypointLocal = plannerPointFromWaypoint(liveNavigationState.missionDraft[index], origin);
+    const outsideFence = fenceStatus.enabled && fenceStatus.checked && waypointLocal && Math.hypot(waypointLocal.northM, waypointLocal.eastM) > fenceRadius;
+    const markerClass = `${index === currentMissionIndex ? "live-planner-marker is-active" : "live-planner-marker"}${outsideFence ? " is-outside" : ""}`;
+    const group = plannerSvgElement("g", { class: markerClass, transform: `translate(${point.x.toFixed(2)} ${point.y.toFixed(2)})`, "data-waypoint-index": index, role: "button", tabindex: 0, "aria-label": `Select waypoint ${index + 1}` });
     group.append(
       plannerSvgElement("circle", { r: 3.4 }),
       plannerSvgElement("text", { x: 0, y: 0.9, "text-anchor": "middle" }),
@@ -3678,7 +3693,6 @@ function renderLiveNavigationPlanner(navigation) {
   vehicle.setAttribute("transform", currentPoint ? `translate(${currentPoint.x.toFixed(2)} ${currentPoint.y.toFixed(2)})` : "translate(50 50)");
   vehicle.classList.toggle("is-live", Boolean(currentPoint));
 
-  const hasOrigin = Boolean(origin);
   const routeCount = liveNavigationState.missionDraft.length;
   const metrics = navigationMissionMetrics(liveNavigationState.missionDraft, origin);
   const localOnlyCount = liveNavigationState.missionDraft.filter((waypoint) => !missionWaypointHasCoordinate(waypoint)).length;
@@ -3688,11 +3702,15 @@ function renderLiveNavigationPlanner(navigation) {
       ? "LOCAL PLAN / HOME REQUIRED"
       : localOnlyCount
         ? "LOCAL PLAN / REFERENCE REQUIRED"
+        : fenceStatus.outsideCount > 0
+          ? `${fenceStatus.outsideCount} POINT${fenceStatus.outsideCount === 1 ? "" : "S"} OUTSIDE FENCE`
         : "GPS ROUTE READY";
-  status.dataset.state = hasOrigin ? "online" : "warning";
+  status.dataset.state = fenceStatus.outsideCount > 0 ? "error" : hasOrigin ? "online" : "warning";
   helpStatus.textContent = localOnlyCount
     ? hasOrigin ? "Home is available. Reference local points before sending the route." : "No home reference yet; this draft stays local and cannot be sent."
-    : "All waypoints have GPS coordinates and can pass the vehicle route gate.";
+    : fenceStatus.outsideCount > 0
+      ? `${fenceStatus.outsideCount} waypoint${fenceStatus.outsideCount === 1 ? " is" : "s are"} outside the active ${fenceRadius.toFixed(0)} m radius.`
+      : fenceStatus.enabled ? `All waypoints are inside the active ${fenceRadius.toFixed(0)} m radius.` : "All waypoints have GPS coordinates and can pass the vehicle route gate.";
   referencePlan.disabled = !hasOrigin || !localOnlyCount;
   hudRoute.textContent = routeCount ? `DRAFT / ${routeCount}` : "DRAFT / 0";
   hudTotal.textContent = formatNavigationDistance(metrics.totalDistanceM, "--");
@@ -3936,19 +3954,22 @@ function renderLiveNavigationUi(navigation) {
 
   const missionReady = liveNavigationState.missionDraft.length > 0;
   const missionCoordinatesReady = missionReady && liveNavigationState.missionDraft.every(missionWaypointHasCoordinate);
+  const plannerOrigin = navigationPlannerOrigin(navigation);
+  const fenceEnabled = document.querySelector("#live-nav-geofence-enabled").checked;
+  const fenceRadius = Number(document.querySelector("#live-nav-geofence-radius").value);
+  const fenceStatus = navigationMissionGeofenceStatus(liveNavigationState.missionDraft, plannerOrigin, fenceRadius, fenceEnabled);
+  const routeReady = missionCoordinatesReady && (!fenceEnabled || Boolean(navigation.home) && fenceStatus.checked && fenceStatus.outsideCount === 0);
   updateNavigationMissionHeader(navigation);
   renderLiveWaypointList(navigation);
   renderLiveNavigationPlanner(navigation);
-  document.querySelector("#live-nav-upload-mission").disabled = !commandReady || !autopilotHealthy || autopilot?.armed || !missionCoordinatesReady || Boolean(liveNavigationState.pendingRequestId);
-  document.querySelector("#live-nav-start-mission").disabled = !commandReady || !autopilot?.armed || !navigation.autonomyReady || !missionCoordinatesReady || Boolean(liveNavigationState.pendingRequestId);
+  document.querySelector("#live-nav-upload-mission").disabled = !commandReady || !autopilotHealthy || autopilot?.armed || !routeReady || Boolean(liveNavigationState.pendingRequestId);
+  document.querySelector("#live-nav-start-mission").disabled = !commandReady || !autopilot?.armed || !navigation.autonomyReady || !routeReady || Boolean(liveNavigationState.pendingRequestId);
   document.querySelector("#live-nav-pause-mission").disabled = !commandReady || !autopilot?.armed || Boolean(liveNavigationState.pendingRequestId);
   document.querySelector("#live-nav-resume-mission").disabled = !commandReady || !autopilot?.armed || !navigation.positionReady || Boolean(liveNavigationState.pendingRequestId);
   document.querySelector("#live-nav-clear-mission").disabled = !commandReady || !autopilotHealthy || autopilot?.armed || Boolean(liveNavigationState.pendingRequestId);
   document.querySelector("#live-nav-send-obstacle-policy").disabled = !commandReady || Boolean(liveNavigationState.pendingRequestId);
   document.querySelector("#live-nav-apply-geofence").disabled = !commandReady || !navigation.hasFix || Boolean(liveNavigationState.pendingRequestId);
 
-  const fenceEnabled = document.querySelector("#live-nav-geofence-enabled").checked;
-  const fenceRadius = Number(document.querySelector("#live-nav-geofence-radius").value);
   const obstacleEnabled = liveNavigationState.obstacleBehavior.enabled;
   const obstacleHealthy = !obstacleEnabled || navigation.lidarFresh;
   document.querySelector("#live-nav-safety-state").textContent = !commandReady ? "LOCKED" : navigation.autonomyReady && obstacleHealthy ? "READY" : "CHECKS REQUIRED";
@@ -3958,11 +3979,22 @@ function renderLiveNavigationUi(navigation) {
   setNavigationCheck("ekf", autopilot?.ekfHealthy === true ? "ok" : autopilot?.ekfHealthy === false ? "fault" : "waiting", autopilot?.ekfHealthy === true ? "HEALTHY" : autopilot?.ekfHealthy === false ? "FAULT" : "WAITING");
   setNavigationCheck("obstacle", obstacleHealthy ? "ok" : "warning", obstacleEnabled ? (navigation.lidarFresh ? "READY" : "WAITING") : "BYPASSED");
   setNavigationCheck("fence", !fenceEnabled || (navigation.home && fenceRadius >= 5) ? "ok" : "warning", !fenceEnabled ? "OFF" : navigation.home && fenceRadius >= 5 ? "READY" : "SET HOME");
-  setNavigationCheck("route", missionCoordinatesReady ? "ok" : missionReady ? "warning" : "waiting", missionCoordinatesReady ? "READY" : missionReady ? "REFERENCE GPS" : "EMPTY");
+  const routeCheckLabel = !missionReady
+    ? "EMPTY"
+    : !missionCoordinatesReady
+      ? "REFERENCE GPS"
+      : fenceEnabled && !navigation.home
+        ? "SET HOME"
+        : fenceStatus.outsideCount > 0
+          ? "OUTSIDE FENCE"
+          : "READY";
+  setNavigationCheck("route", routeReady ? "ok" : missionReady ? "warning" : "waiting", routeCheckLabel);
   document.querySelector("#live-nav-safety-copy").textContent = !commandReady
     ? "Pair a navigation-capable vehicle adapter to unlock physical actions."
     : navigation.autonomyReady && obstacleHealthy
       ? "Autonomous actions are available. Keep a physical mode switch or E-stop within reach."
+      : fenceStatus.outsideCount > 0
+        ? "Route is outside the active geofence. Move the affected waypoint or increase the radius before upload."
       : autopilot?.failsafe
         ? `ArduPilot reports FAILSAFE${autopilot.failsafeReason ? `: ${autopilot.failsafeReason}` : "."}`
         : "Position modes remain blocked until the link, GPS, EKF and obstacle policy are healthy.";

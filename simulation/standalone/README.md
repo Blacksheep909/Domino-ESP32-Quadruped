@@ -89,6 +89,8 @@ supports offline local waypoints, drag-to-edit markers, JSON import/export,
 autosaved drafts, undo/redo editing with Ctrl+Z/Ctrl+Shift+Z/Ctrl+Y shortcuts,
 fit-to-route framing, home-radius geofence gating, and an offline route preview
 that animates the local vehicle marker without sending a command to the robot.
+The planner HUD also exposes Domino's bounded native forward/turn intent and
+stops it for missing obstacle data, close obstacles, or an active geofence.
 
 The safety dock adds a separate `live-safety-command` contract for arm, disarm,
 E-stop, and physical-latch reset. Arm requires a 1.5-second uninterrupted hold,

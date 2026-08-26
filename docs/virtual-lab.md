@@ -55,6 +55,14 @@ the local vehicle marker through each segment using waypoint speeds and holds,
 and never sends a vehicle command. This gives operators a quick route sanity
 check before choosing the separate vehicle upload/start actions.
 
+During planning and preview, the HUD also shows the output of Domino's native
+navigation controller. It turns the active local target, vehicle heading,
+front LiDAR range, and home-radius fence into a bounded forward/turn intent,
+and reports `SENSOR WAIT`, `OBSTACLE STOP`, or `GEOFENCE STOP` when a safe
+intent cannot be produced. This is deliberately an app-owned decision layer;
+physical execution remains disabled until a native adapter implements and
+advertises the corresponding robot-side contract.
+
 **FIT ROUTE** selects the smallest available 40/80/160 m planning range that
 keeps the current local draft readable with margin. It is a display convenience
 only and does not change waypoint coordinates or vehicle state.

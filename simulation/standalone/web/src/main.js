@@ -171,6 +171,7 @@ import {
   navigationMissionPreview,
   navigationMissionRecommendedRange,
   gpsTrackToMission,
+  reverseNavigationWaypoints,
   parseNavigationMissionJson,
   removeNavigationWaypoint,
 } from "./live-navigation-state.js";
@@ -4341,6 +4342,7 @@ function renderLiveNavigationPlanner(navigation) {
   const previewStepButton = document.querySelector("#live-nav-preview-step");
   const previewSpeed = document.querySelector("#live-nav-preview-speed");
   const fitButton = document.querySelector("#live-nav-fit-route");
+  const reverseButton = document.querySelector("#live-nav-reverse-route");
   const undoButton = document.querySelector("#live-nav-undo");
   const redoButton = document.querySelector("#live-nav-redo");
   if (!map || !route || !markers || !vehicle || !geofence || !status || !hudMode || !hudState || !hudRoute || !hudNext || !hudTotal || !hudEta || !hudPosition || !hudObstacle || !hudControl || !helpStatus || !storageStatus || !referencePlan) return;
@@ -4371,6 +4373,7 @@ function renderLiveNavigationPlanner(navigation) {
   if (previewStepButton) previewStepButton.disabled = liveNavigationPreviewState.phase !== "paused";
   if (previewSpeed) previewSpeed.value = String(liveNavigationPreviewState.speedMultiplier);
   if (fitButton) fitButton.disabled = !liveNavigationState.missionDraft.length;
+  if (reverseButton) reverseButton.disabled = liveNavigationState.missionDraft.length < 2;
   if (undoButton) undoButton.disabled = liveNavigationHistory.past.length === 0;
   if (redoButton) redoButton.disabled = liveNavigationHistory.future.length === 0;
   const fence = navigation.geofence || liveNavigationState.geofence;
@@ -4570,6 +4573,18 @@ function fitLiveNavigationPlanner() {
   liveNavigationState.plannerRangeM = recommendedRange;
   persistLiveNavigationPlan();
   updateLiveComparisonUi();
+}
+
+function reverseLiveNavigationRoute() {
+  if (liveNavigationState.missionDraft.length < 2) return;
+  captureLiveNavigationHistory();
+  if (liveNavigationPreviewState.active) stopLiveNavigationPreview();
+  reverseNavigationWaypoints(liveNavigationState);
+  persistLiveNavigationPlan();
+  document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
+  liveNavigationState.lastCommandStatus = "Route order reversed for a return pass. No vehicle command was sent.";
+  updateLiveComparisonUi();
+  showAppToast("Route order reversed. Review the return pass before sending.", "success");
 }
 
 function handlePlannerPointerDown(event) {
@@ -6737,6 +6752,7 @@ document.querySelector("#live-nav-preview-pause").addEventListener("click", togg
 document.querySelector("#live-nav-preview-step").addEventListener("click", stepLiveNavigationPreview);
 document.querySelector("#live-nav-preview-speed").addEventListener("change", updateLiveNavigationPreviewSpeed);
 document.querySelector("#live-nav-fit-route").addEventListener("click", fitLiveNavigationPlanner);
+document.querySelector("#live-nav-reverse-route").addEventListener("click", reverseLiveNavigationRoute);
 document.querySelector("#live-nav-undo").addEventListener("click", undoLiveNavigationEdit);
 document.querySelector("#live-nav-redo").addEventListener("click", redoLiveNavigationEdit);
 document.querySelector("#live-nav-library-save").addEventListener("click", saveLiveNavigationPlanToLibrary);

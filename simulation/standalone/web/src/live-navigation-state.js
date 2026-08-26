@@ -380,6 +380,12 @@ export function moveNavigationWaypoint(state, index, direction) {
   return true;
 }
 
+export function reverseNavigationWaypoints(state) {
+  if (!state || !Array.isArray(state.missionDraft) || state.missionDraft.length < 2) return false;
+  state.missionDraft.reverse();
+  return true;
+}
+
 export function navigationMissionJson(state) {
   return JSON.stringify({
     schemaVersion: 1,

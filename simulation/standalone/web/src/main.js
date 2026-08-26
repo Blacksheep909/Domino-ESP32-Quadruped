@@ -4413,8 +4413,27 @@ function selectPlannerWaypoint(index) {
 
 function handlePlannerMarkerKeydown(event) {
   const marker = event.target?.closest?.(".live-planner-marker");
-  if (!marker || !["Enter", " "].includes(event.key)) return;
-  selectPlannerWaypoint(Number(marker.dataset.waypointIndex));
+  if (!marker) return;
+  const index = Number(marker.dataset.waypointIndex);
+  if (["Delete", "Backspace"].includes(event.key)) {
+    if (!liveNavigationState.missionDraft[index]) return;
+    if (nativeNavigationRunnerIsActive(liveNativeNavigationState)) {
+      haltLiveNativeNavigation("Route plan editing requested. Domino route was neutralized.");
+    }
+    captureLiveNavigationHistory();
+    const removed = removeNavigationWaypoint(liveNavigationState, index);
+    if (!removed) return;
+    persistLiveNavigationPlan();
+    document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
+    liveNavigationState.lastCommandStatus = `Removed waypoint ${String(index + 1).padStart(2, "0")} from the local route plan.`;
+    updateLiveComparisonUi();
+    showAppToast("Route waypoint removed. Use Undo to restore it.", "info");
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
+  if (!["Enter", " "].includes(event.key)) return;
+  selectPlannerWaypoint(index);
   event.preventDefault();
   event.stopPropagation();
 }

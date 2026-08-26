@@ -83,7 +83,9 @@ geofence, or ready for GPS upload. When a home reference and radius are active,
 the planner draws that safety boundary and marks out-of-bounds waypoints before
 they can pass the route gate. Clicking or keyboard-selecting a waypoint marker
 selects its editable row, and dragging a marker repositions it in the active
-local planning frame while keeping the GPS conversion synchronized. **OPEN
+local planning frame while keeping the GPS conversion synchronized. A focused
+marker also supports the Delete key and records the same undoable edit as the
+row action. **OPEN
 MANUAL OVERRIDE** opens the existing guarded manual-control handoff
 at any time. Sending a plan to a vehicle remains a separate, explicit action:
 local planning works offline, while physical route execution remains closed

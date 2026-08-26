@@ -4332,6 +4332,7 @@ function plannerSvgElement(name, attributes = {}) {
 
 function renderLiveNavigationPlanner(navigation) {
   const map = document.querySelector("#live-nav-planner-map");
+  const track = document.querySelector("#live-nav-planner-track");
   const route = document.querySelector("#live-nav-planner-route");
   const returnRoute = document.querySelector("#live-nav-planner-return-route");
   const markers = document.querySelector("#live-nav-planner-markers");
@@ -4358,7 +4359,7 @@ function renderLiveNavigationPlanner(navigation) {
   const reverseButton = document.querySelector("#live-nav-reverse-route");
   const undoButton = document.querySelector("#live-nav-undo");
   const redoButton = document.querySelector("#live-nav-redo");
-  if (!map || !route || !returnRoute || !markers || !vehicle || !geofence || !status || !hudMode || !hudState || !hudRoute || !hudNext || !hudTotal || !hudEta || !hudPosition || !hudObstacle || !hudControl || !helpStatus || !storageStatus || !referencePlan) return;
+  if (!map || !track || !route || !returnRoute || !markers || !vehicle || !geofence || !status || !hudMode || !hudState || !hudRoute || !hudNext || !hudTotal || !hudEta || !hudPosition || !hudObstacle || !hudControl || !helpStatus || !storageStatus || !referencePlan) return;
   renderLiveNavigationPlanLibrary();
 
   const origin = navigationPlannerOrigin(navigation);
@@ -4399,6 +4400,13 @@ function renderLiveNavigationPlanner(navigation) {
   geofence.setAttribute("visibility", fenceMapRadius > 0 ? "visible" : "hidden");
   geofence.classList.toggle("has-warning", fenceStatus.outsideCount > 0);
   const waypointPoints = liveNavigationState.missionDraft.map((waypoint) => toMapPoint(plannerPointFromWaypoint(waypoint, origin)));
+  const recordedTrackPoints = hasOrigin
+    ? liveNavigationState.gpsTrack
+      .map((point) => toMapPoint(coordinateToLocalOffset(point, origin)))
+      .filter(Boolean)
+    : [];
+  track.setAttribute("points", recordedTrackPoints.map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" "));
+  track.setAttribute("visibility", recordedTrackPoints.length > 1 ? "visible" : "hidden");
   route.setAttribute("points", waypointPoints.filter(Boolean).map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" "));
   const firstPoint = waypointPoints[0];
   const lastPoint = waypointPoints.at(-1);

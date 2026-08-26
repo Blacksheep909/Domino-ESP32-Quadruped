@@ -106,6 +106,26 @@ test("accepts honest IMU-only measured attitude without fabricating joint feedba
   assert.equal(snapshot.measured.servoAngleDeg, null);
 });
 
+test("accepts camera telemetry in both the navigation envelope and legacy top-level slot", () => {
+  const state = createLiveTelemetryState();
+  assert.equal(acceptLiveTelemetryPacket(state, {
+    type: "live-telemetry",
+    sequence: 1,
+    camera: { timestampMs: 10_000, yawDeg: 12, pitchDeg: -6, fovDeg: 88, fps: 30 },
+  }, 20_000), true);
+  let snapshot = liveComparisonSnapshot(state, 20_100);
+  assert.equal(snapshot.navigation.camera.yawDeg, 12);
+  assert.equal(snapshot.navigation.camera.fps, 30);
+  assert.equal(acceptLiveTelemetryPacket(state, {
+    type: "live-telemetry",
+    sequence: 2,
+    navigation: { camera: { timestampMs: 10_100, yawDeg: 18 } },
+  }, 20_100), true);
+  snapshot = liveComparisonSnapshot(state, 20_150);
+  assert.equal(snapshot.navigation.camera.yawDeg, 18);
+  assert.equal(snapshot.navigation.camera.fps, 30);
+});
+
 test("rejects malformed and out-of-order robot packets", () => {
   const state = createLiveTelemetryState();
   assert.equal(acceptLiveTelemetryPacket(state, {

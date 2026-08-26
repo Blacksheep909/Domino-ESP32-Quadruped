@@ -98,6 +98,11 @@ guard is enabled, with explicit waiting and bypassed states when they are not
 available.
 Each waypoint can also be duplicated from its action row to preserve its local
 or GPS position and movement settings while shaping a route.
+The Sensors view also includes a single-front-camera panel for the desktop
+workflow: enter an HTTP/MJPEG stream URL, connect or disconnect it, save a
+snapshot, or open the feed fullscreen. Optional robot camera telemetry updates
+the yaw, pitch, field of view, and frame-rate readouts; the panel marks that
+telemetry stale after 2.5 seconds without claiming that video is healthy.
 Domino patrols can repeat a reviewed route 1x, 2x, 3x, or 5x; the selected
 loop count is persisted with the plan, included in distance/ETA, shown in the
 HUD, and enforced by the guarded native runner with a closing leg between

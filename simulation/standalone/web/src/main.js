@@ -640,13 +640,17 @@ let autonomyHudFpsStartedAt = performance.now();
 const LIVE_CAMERA_URL_STORAGE_KEY = "domino-live-camera-url-v1";
 const liveCameraState = {
   connected: false,
+  connecting: false,
   error: false,
   yawDeg: 0,
   pitchDeg: -8,
   fovDeg: 90,
   fps: null,
   updatedAt: null,
+  telemetryAt: null,
 };
+let liveCameraRequestId = 0;
+let liveCameraConnectTimeout = null;
 try {
   autonomyHudCollapsed = localStorage.getItem(AUTONOMY_HUD_COLLAPSED_STORAGE_KEY) === "true";
 } catch {
@@ -773,24 +777,40 @@ function renderLiveCameraPanel() {
   const fullscreen = document.querySelector("#live-camera-fullscreen");
   const image = document.querySelector("#live-camera-image");
   const placeholder = document.querySelector("#live-camera-placeholder");
+  const telemetryState = document.querySelector("#live-camera-telemetry-state");
+  const telemetryAge = document.querySelector("#live-camera-telemetry-age");
   if (!state || !rate || !yaw || !pitch || !fov || !connect || !snapshot || !fullscreen || !image || !placeholder) return;
-  state.textContent = liveCameraState.error ? "STREAM ERROR" : liveCameraState.connected ? "LIVE" : "OFFLINE";
-  state.dataset.state = liveCameraState.error ? "error" : liveCameraState.connected ? "online" : "offline";
+  state.textContent = liveCameraState.error ? "STREAM ERROR" : liveCameraState.connecting ? "CONNECTING" : liveCameraState.connected ? "LIVE" : "OFFLINE";
+  state.dataset.state = liveCameraState.error ? "error" : liveCameraState.connecting ? "connecting" : liveCameraState.connected ? "online" : "offline";
   rate.textContent = Number.isFinite(liveCameraState.fps) ? `${Math.round(liveCameraState.fps)} FPS` : liveCameraState.connected ? "STREAMING" : "-- FPS";
   yaw.textContent = `${liveCameraState.yawDeg >= 0 ? "+" : ""}${liveCameraState.yawDeg.toFixed(1)}°`;
   pitch.textContent = `${liveCameraState.pitchDeg >= 0 ? "+" : ""}${liveCameraState.pitchDeg.toFixed(1)}°`;
   fov.textContent = `${Math.round(liveCameraState.fovDeg)}°`;
-  connect.textContent = liveCameraState.connected ? "DISCONNECT" : "CONNECT";
+  connect.textContent = liveCameraState.connected || liveCameraState.connecting ? "DISCONNECT" : "CONNECT";
   snapshot.disabled = !liveCameraState.connected;
   fullscreen.disabled = !liveCameraState.connected;
   image.hidden = !liveCameraState.connected;
   placeholder.hidden = liveCameraState.connected;
+  const telemetryAgeMs = liveCameraState.telemetryAt === null ? null : Math.max(0, Date.now() - liveCameraState.telemetryAt);
+  const telemetryLive = telemetryAgeMs !== null && telemetryAgeMs <= 2_500;
+  if (telemetryState) {
+    telemetryState.textContent = telemetryAgeMs === null ? "TELEMETRY / WAITING" : telemetryLive ? "TELEMETRY / LIVE" : "TELEMETRY / STALE";
+    telemetryState.dataset.state = telemetryAgeMs === null ? "waiting" : telemetryLive ? "online" : "warning";
+    telemetryState.title = telemetryAgeMs === null
+      ? "No camera orientation telemetry has been reported by the robot."
+      : `Camera telemetry received ${telemetryAgeMs < 1_000 ? `${telemetryAgeMs} ms` : `${(telemetryAgeMs / 1_000).toFixed(1)} s`} ago.`;
+  }
+  if (telemetryAge) telemetryAge.textContent = telemetryAgeMs === null ? "AGE --" : `AGE ${telemetryAgeMs < 1_000 ? `${telemetryAgeMs} MS` : `${(telemetryAgeMs / 1_000).toFixed(1)} S`}`;
 }
 
 function disconnectLiveCamera() {
+  liveCameraRequestId += 1;
+  if (liveCameraConnectTimeout !== null) window.clearTimeout(liveCameraConnectTimeout);
+  liveCameraConnectTimeout = null;
   const image = document.querySelector("#live-camera-image");
   if (image) image.removeAttribute("src");
   liveCameraState.connected = false;
+  liveCameraState.connecting = false;
   liveCameraState.error = false;
   liveCameraState.fps = null;
   liveCameraState.updatedAt = null;
@@ -798,7 +818,7 @@ function disconnectLiveCamera() {
 }
 
 function connectLiveCamera() {
-  if (liveCameraState.connected) {
+  if (liveCameraState.connected || liveCameraState.connecting) {
     disconnectLiveCamera();
     return;
   }
@@ -814,15 +834,28 @@ function connectLiveCamera() {
     const parsed = new URL(url, window.location.href);
     if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error("Unsupported camera protocol");
     localStorage.setItem(LIVE_CAMERA_URL_STORAGE_KEY, parsed.href);
+    const requestId = ++liveCameraRequestId;
+    if (liveCameraConnectTimeout !== null) window.clearTimeout(liveCameraConnectTimeout);
+    liveCameraConnectTimeout = null;
+    liveCameraState.connected = false;
+    liveCameraState.connecting = true;
     liveCameraState.error = false;
     image.onload = () => {
+      if (requestId !== liveCameraRequestId) return;
+      if (liveCameraConnectTimeout !== null) window.clearTimeout(liveCameraConnectTimeout);
+      liveCameraConnectTimeout = null;
       liveCameraState.connected = true;
+      liveCameraState.connecting = false;
       liveCameraState.error = false;
       liveCameraState.updatedAt = Date.now();
       renderLiveCameraPanel();
     };
     image.onerror = () => {
+      if (requestId !== liveCameraRequestId) return;
+      if (liveCameraConnectTimeout !== null) window.clearTimeout(liveCameraConnectTimeout);
+      liveCameraConnectTimeout = null;
       liveCameraState.connected = false;
+      liveCameraState.connecting = false;
       liveCameraState.error = true;
       renderLiveCameraPanel();
       showAppToast("Camera stream could not be opened. Check the URL and robot network.", "error");
@@ -830,7 +863,17 @@ function connectLiveCamera() {
     image.src = parsed.href;
     image.hidden = false;
     document.querySelector("#live-camera-placeholder")?.setAttribute("hidden", "");
-    document.querySelector("#live-camera-state").textContent = "CONNECTING";
+    liveCameraConnectTimeout = window.setTimeout(() => {
+      if (requestId !== liveCameraRequestId || !liveCameraState.connecting) return;
+      liveCameraRequestId += 1;
+      image.removeAttribute("src");
+      liveCameraConnectTimeout = null;
+      liveCameraState.connecting = false;
+      liveCameraState.error = true;
+      renderLiveCameraPanel();
+      showAppToast("Camera stream timed out. Check the URL and robot network.", "error");
+    }, 10_000);
+    renderLiveCameraPanel();
   } catch {
     showAppToast("Use an HTTP or HTTPS camera stream URL.", "warning");
     input.focus();
@@ -860,8 +903,12 @@ function ingestLiveCameraTelemetry(detail = {}) {
   if (Number.isFinite(Number(detail.pitchDeg))) liveCameraState.pitchDeg = Number(detail.pitchDeg);
   if (Number.isFinite(Number(detail.fovDeg))) liveCameraState.fovDeg = Number(detail.fovDeg);
   if (Number.isFinite(Number(detail.fps))) liveCameraState.fps = Number(detail.fps);
-  liveCameraState.updatedAt = Date.now();
+  liveCameraState.telemetryAt = Date.now();
   renderLiveCameraPanel();
+}
+
+function syncLiveCameraTelemetry(camera) {
+  if (camera) ingestLiveCameraTelemetry(camera);
 }
 
 function updateFullscreenButton() {
@@ -1083,6 +1130,7 @@ try {
   // Camera configuration remains available without persistent browser storage.
 }
 renderLiveCameraPanel();
+setInterval(renderLiveCameraPanel, 500);
 document.querySelector("#fullscreen-toggle")?.addEventListener("click", toggleFullscreen);
 document.addEventListener("fullscreenchange", updateFullscreenButton);
 setAutonomyHudCollapsed(autonomyHudCollapsed, false);
@@ -3117,6 +3165,7 @@ function ingestLiveTelemetry(packet, receivedAt = Date.now()) {
       gaitStateChanged ||= packet.capabilities.persistentGaitProfiles !== liveGaitState.persistentApplySupported;
       liveGaitState.persistentApplySupported = packet.capabilities.persistentGaitProfiles;
     }
+    syncLiveCameraTelemetry(packet.navigation?.camera || packet.camera);
     if (gaitStateChanged && liveViewState.selected === LIVE_VIEW_GAITS) renderLiveGaitUi();
   }
   return accepted;
@@ -5082,6 +5131,7 @@ function acceptLiveNavigationAcknowledgement(message) {
       sequence: liveTelemetryState.sequence + 1,
       navigation: message.navigation,
     });
+    syncLiveCameraTelemetry(message.navigation?.camera || message.camera);
   }
   updateLiveComparisonUi();
   return true;

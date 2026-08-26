@@ -326,9 +326,9 @@ The installed NSIS build uses the stable app ID
 every six hours. Updates download in the background and install over the
 existing installation after a restart, so repeated releases do not create a
 new app directory or a second shortcut set. Use the NSIS `.exe` for automatic
-updates; the `.zip` is a manual portable build. The current `0.2.0` installer
-predates the updater; install the generated `0.2.1` installer once over it.
-Later NSIS releases update that same installation in place and can use the
+updates; the `.zip` is a manual portable build. The updater-enabled `0.2.1`
+installer is the current local build; install it once over an older `0.2.0`
+copy. Later NSIS releases update that same installation in place and can use the
 generated block map for differential downloads. A successful firmware build or
 upload also triggers an immediate app-update check, so firmware iterations do
 not wait for the six-hour timer.

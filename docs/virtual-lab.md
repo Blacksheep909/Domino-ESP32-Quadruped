@@ -50,6 +50,11 @@ local planning works offline, while physical route execution remains closed
 until the selected vehicle adapter, position, EKF, obstacle policy, geofence,
 and safety checks all report ready.
 
+**PREVIEW ROUTE** runs the draft entirely in the Domino planner: it animates
+the local vehicle marker through each segment using waypoint speeds and holds,
+and never sends a vehicle command. This gives operators a quick route sanity
+check before choosing the separate vehicle upload/start actions.
+
 ## Workspaces
 
 ### Simulation
@@ -449,7 +454,3 @@ meaningful interface milestones. Short GIFs should demonstrate one focused
 interaction - such as switching workspaces, opening the gait lab, inspecting a
 joint, or recording a session - and remain short enough to be practical in the
 repository.
-**PREVIEW ROUTE** runs the draft entirely in the Domino planner: it animates
-the local vehicle marker through each segment using waypoint speeds and holds,
-and never sends a vehicle command. This gives operators a quick route sanity
-check before choosing the separate vehicle upload/start actions.

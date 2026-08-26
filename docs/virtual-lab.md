@@ -26,6 +26,11 @@ predictable layout. At compact widths, the Sensors, Calibration, and Gaits
 previews occupy a reserved block below the title and collapse while scrolling
 so they never cover telemetry or navigation cards.
 
+The Simulation control strip follows the same layout rule: its pose, walk,
+height, reset, and inspection groups use shared tracks at desktop widths and
+wrap into intentional rows on compact windows. Controls remain fully visible
+and the gait-tuning panel starts below the strip instead of covering it.
+
 ### Native route planning
 
 The LIVE Sensors view now includes a Domino-owned top-down route planner. Click
@@ -84,8 +89,8 @@ the planner draws that safety boundary and marks out-of-bounds waypoints before
 they can pass the route gate. Clicking or keyboard-selecting a waypoint marker
 selects its editable row, and dragging a marker repositions it in the active
 local planning frame while keeping the GPS conversion synchronized. A focused
-marker also supports the Delete key and records the same undoable edit as the
-row action. **OPEN
+marker also supports the Delete key plus 0.5 m arrow-key nudges (Shift moves
+5 m); each edit records the same undoable change as the row action. **OPEN
 MANUAL OVERRIDE** opens the existing guarded manual-control handoff
 at any time. Sending a plan to a vehicle remains a separate, explicit action:
 local planning works offline, while physical route execution remains closed

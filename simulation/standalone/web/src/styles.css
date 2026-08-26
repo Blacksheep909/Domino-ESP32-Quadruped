@@ -6714,6 +6714,139 @@ body[data-workspace="real-robot"] .toast-region {
   }
 }
 
+/* Native Domino route planner -------------------------------------------
+   The planner owns its layout inside the mission card. It never floats over
+   the 3D preview or the global title/status bars. */
+.live-route-planner {
+  display: grid;
+  grid-template-columns: minmax(188px, 224px) minmax(0, 1fr);
+  gap: 12px;
+  margin-top: 14px;
+  min-width: 0;
+}
+.live-planner-map-shell,
+.live-autonomy-hud {
+  position: static;
+  inset: auto;
+  width: auto;
+  max-width: none;
+  max-height: none;
+  overflow: visible;
+  z-index: auto;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #d7d8d2;
+  border-radius: 6px;
+  background: #f4f4f0;
+}
+.live-planner-map-shell { grid-column: 2; grid-row: 1; }
+.live-autonomy-hud { grid-column: 1; grid-row: 1; align-self: start; }
+.live-planner-map-heading,
+.live-autonomy-hud-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.live-planner-map-heading > div,
+.live-autonomy-hud-heading > div { min-width: 0; display: grid; gap: 5px; }
+.live-planner-map-heading span,
+.live-autonomy-hud-heading span,
+.live-autonomy-hud-readouts span {
+  color: #757970;
+  font: 800 8px/1.15 "Cascadia Mono", Consolas, monospace;
+  letter-spacing: .08em;
+}
+.live-planner-map-heading strong,
+.live-autonomy-hud-heading strong {
+  overflow: hidden;
+  color: #32774f;
+  font: 800 10px/1.15 "Cascadia Mono", Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.live-planner-map-heading label { display: grid; gap: 5px; flex: 0 0 70px; }
+.live-planner-map-heading label > span { font-size: 7px; text-align: right; }
+.live-planner-map-heading select {
+  height: 25px;
+  color: #353833;
+  background: #fff;
+  border: 1px solid #cfd1ca;
+  border-radius: 4px;
+  font: 800 8px/1 "Cascadia Mono", Consolas, monospace;
+}
+.live-planner-map {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1.8 / 1;
+  margin-top: 10px;
+  overflow: hidden;
+  border: 1px solid #c6cdc6;
+  border-radius: 5px;
+  background: #edf1ec;
+  cursor: crosshair;
+  touch-action: manipulation;
+}
+.live-planner-map-surface { fill: #edf1ec; }
+.live-planner-grid-major { fill: none; stroke: #d6ddd6; stroke-width: .45; }
+.live-planner-axis { fill: none; stroke: #9bb8a1; stroke-width: .7; stroke-dasharray: 2 2; }
+.live-planner-route { fill: none; stroke: #3d9662; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.live-planner-marker circle { fill: #f4f4f0; stroke: #338457; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.live-planner-marker text { fill: #277348; font: 800 4px/1 "Cascadia Mono", Consolas, monospace; pointer-events: none; }
+.live-planner-marker.is-active circle { fill: #d8f1df; stroke: #22663f; stroke-width: 2; }
+.live-planner-vehicle circle { fill: #2d6792; stroke: #e7f3fb; stroke-width: 1.4; vector-effect: non-scaling-stroke; }
+.live-planner-vehicle path { fill: #2d6792; stroke: #e7f3fb; stroke-width: .8; vector-effect: non-scaling-stroke; }
+.live-planner-vehicle.is-live circle { filter: drop-shadow(0 0 3px rgba(45, 103, 146, .8)); }
+.live-planner-map text { fill: #6c7770; font: 800 4px/1 "Cascadia Mono", Consolas, monospace; letter-spacing: .08em; }
+.live-planner-help { margin: 8px 0 0; color: #737871; font-size: 9px; line-height: 1.45; }
+.live-mission-toolbar #live-nav-clear-draft { color: #a24a3a; background: #fff0ec; border-color: #d8a095; }
+.live-autonomy-hud-heading > span { color: #777a74; white-space: nowrap; }
+.live-autonomy-hud-heading > span[data-state="online"] { color: #318051; }
+.live-autonomy-hud-heading > span[data-state="warning"] { color: #ad7621; }
+.live-autonomy-hud-heading > span[data-state="error"] { color: #ae4638; }
+.live-autonomy-hud-readouts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin-top: 14px; }
+.live-autonomy-hud-readouts > div { min-width: 0; padding: 8px; display: grid; gap: 5px; background: #e9ebe6; border: 1px solid #d9ddd7; border-radius: 4px; }
+.live-autonomy-hud-readouts strong { overflow: hidden; color: #30352f; font: 800 11px/1.1 "Cascadia Mono", Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.live-autonomy-hud > button { width: 100%; min-height: 34px; margin-top: 12px; padding: 0 8px; color: #8e382d; background: #fff0ec; border: 1px solid #d69a8f; border-radius: 5px; cursor: pointer; font: 800 8px/1 "Cascadia Mono", Consolas, monospace; }
+.live-autonomy-hud > button:hover, .live-autonomy-hud > button:focus-visible { border-color: #b95a4b; outline: none; }
+.live-autonomy-hud > p { margin: 10px 0 0; color: #757970; font-size: 9px; line-height: 1.45; }
+
+:root[data-theme="dark"] .live-planner-map-shell,
+:root[data-theme="dark"] .live-autonomy-hud { color: #e1e1e4; background: #1f2022; border-color: #3b3d40; }
+:root[data-theme="dark"] .live-planner-map-heading span,
+:root[data-theme="dark"] .live-autonomy-hud-heading span,
+:root[data-theme="dark"] .live-autonomy-hud-readouts span,
+:root[data-theme="dark"] .live-planner-help,
+:root[data-theme="dark"] .live-autonomy-hud > p { color: #96999e; }
+:root[data-theme="dark"] .live-planner-map-heading strong,
+:root[data-theme="dark"] .live-autonomy-hud-heading strong { color: #78c894; }
+:root[data-theme="dark"] .live-planner-map-heading select { color: #dddde1; background: #292a2d; border-color: #4a4c50; }
+:root[data-theme="dark"] .live-planner-map { background: #17201b; border-color: #3c5544; }
+:root[data-theme="dark"] .live-planner-map-surface { fill: #17201b; }
+:root[data-theme="dark"] .live-planner-grid-major { stroke: #2a4032; }
+:root[data-theme="dark"] .live-planner-axis { stroke: #54765d; }
+:root[data-theme="dark"] .live-planner-route { stroke: #69c28b; }
+:root[data-theme="dark"] .live-planner-marker circle { fill: #1e2922; stroke: #71c991; }
+:root[data-theme="dark"] .live-planner-marker text { fill: #a5e3b6; }
+:root[data-theme="dark"] .live-planner-marker.is-active circle { fill: #31543b; stroke: #b0f0bf; }
+:root[data-theme="dark"] .live-planner-map text { fill: #91a899; }
+:root[data-theme="dark"] .live-autonomy-hud-readouts > div { background: #292a2d; border-color: #3a3d40; }
+:root[data-theme="dark"] .live-autonomy-hud-readouts strong { color: #e1e1e4; }
+:root[data-theme="dark"] .live-autonomy-hud > button { color: #ffc0b4; background: rgba(174, 70, 56, .16); border-color: rgba(214, 119, 101, .55); }
+:root[data-theme="dark"] .live-mission-toolbar #live-nav-clear-draft { color: #ffc0b4; background: rgba(174, 70, 56, .16); border-color: rgba(214, 119, 101, .55); }
+
+/* The route planner now contains the sensors-page autonomy HUD. Keep the
+   older floating summary out of the way so only one HUD is visible. */
+body[data-workspace="real-robot"][data-live-view="sensors"] .app-hud { display: none !important; }
+
+@media (max-width: 760px) {
+  .live-route-planner { grid-template-columns: 1fr; }
+  .live-planner-map-shell,
+  .live-autonomy-hud { grid-column: 1; grid-row: auto; }
+  .live-planner-map-shell { order: 1; }
+  .live-autonomy-hud { order: 2; }
+}
+
 :root[data-theme="dark"] nav,
 :root[data-theme="dark"] aside,
 :root[data-theme="dark"] #loading,

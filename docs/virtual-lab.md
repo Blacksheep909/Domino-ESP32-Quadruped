@@ -50,8 +50,8 @@ dashed return segment so the patrol shape is visible before it is previewed.
 When a live GPS trail is available, the map draws it as a quiet blue dotted
 line beneath the planned route so the operator can compare the dog's actual
 path with the plan.
-The map also includes a compact legend and a scale reference that update with
-the selected planning range.
+The map also includes a compact legend with an honest GPS-track state and a
+scale reference that updates with the selected planning range.
 
 The compact Domino Autonomy HUD stays beside the map and shows a complete,
 compact route/pass summary, position quality, next-point distance, total route

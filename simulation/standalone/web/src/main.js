@@ -287,10 +287,7 @@ function restoreLiveNavigationPlan() {
     liveNavigationState.plannerRangeM = restored.plannerRangeM || 40;
     if (restored.geofence) liveNavigationState.geofence = { ...liveNavigationState.geofence, ...restored.geofence };
     if (restored.obstacleBehavior) liveNavigationState.obstacleBehavior = { ...liveNavigationState.obstacleBehavior, ...restored.obstacleBehavior };
-    const missionName = document.querySelector("#live-nav-mission-name");
-    const plannerRange = document.querySelector("#live-nav-planner-range");
-    if (missionName) missionName.value = liveNavigationState.missionName;
-    if (plannerRange) plannerRange.value = String(liveNavigationState.plannerRangeM);
+    syncLiveNavigationControls();
     liveNavigationPlanStorageState = "restored";
     liveNavigationState.lastCommandStatus = `Restored ${liveNavigationState.missionDraft.length} local waypoint${liveNavigationState.missionDraft.length === 1 ? "" : "s"} from the last session.`;
   } catch {
@@ -306,6 +303,27 @@ function persistLiveNavigationPlan() {
   } catch {
     liveNavigationPlanStorageState = "unavailable";
   }
+}
+
+function syncLiveNavigationControls() {
+  const missionName = document.querySelector("#live-nav-mission-name");
+  const plannerRange = document.querySelector("#live-nav-planner-range");
+  const obstacleEnabled = document.querySelector("#live-nav-obstacle-enabled");
+  const stopDistance = document.querySelector("#live-nav-stop-distance");
+  const slowDistance = document.querySelector("#live-nav-slow-distance");
+  const geofenceEnabled = document.querySelector("#live-nav-geofence-enabled");
+  const geofenceRadius = document.querySelector("#live-nav-geofence-radius");
+  if (missionName) missionName.value = liveNavigationState.missionName;
+  if (plannerRange) plannerRange.value = String(liveNavigationState.plannerRangeM);
+  if (obstacleEnabled) obstacleEnabled.checked = liveNavigationState.obstacleBehavior.enabled;
+  if (stopDistance) stopDistance.value = String(liveNavigationState.obstacleBehavior.stopDistanceM);
+  if (slowDistance) slowDistance.value = String(liveNavigationState.obstacleBehavior.slowDistanceM);
+  if (geofenceEnabled) geofenceEnabled.checked = liveNavigationState.geofence.enabled;
+  if (geofenceRadius) geofenceRadius.value = String(liveNavigationState.geofence.maxRadiusM || 50);
+  const stopOutput = document.querySelector("#live-nav-stop-distance-value");
+  const slowOutput = document.querySelector("#live-nav-slow-distance-value");
+  if (stopOutput && stopDistance) stopOutput.textContent = `${Number(stopDistance.value).toFixed(2)} m`;
+  if (slowOutput && slowDistance) slowOutput.textContent = `${Number(slowDistance.value).toFixed(2)} m`;
 }
 
 restoreLiveNavigationPlan();
@@ -3686,6 +3704,14 @@ function selectPlannerWaypoint(index) {
   row?.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
+function handlePlannerMarkerKeydown(event) {
+  const marker = event.target?.closest?.(".live-planner-marker");
+  if (!marker || !["Enter", " "].includes(event.key)) return;
+  selectPlannerWaypoint(Number(marker.dataset.waypointIndex));
+  event.preventDefault();
+  event.stopPropagation();
+}
+
 function plannerSvgElement(name, attributes = {}) {
   const element = document.createElementNS("http://www.w3.org/2000/svg", name);
   Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, String(value)));
@@ -5941,6 +5967,7 @@ liveNavigationPlannerMap.addEventListener("pointerdown", handlePlannerPointerDow
 liveNavigationPlannerMap.addEventListener("pointermove", handlePlannerPointerMove);
 liveNavigationPlannerMap.addEventListener("pointerup", handlePlannerPointerUp);
 liveNavigationPlannerMap.addEventListener("pointercancel", handlePlannerPointerUp);
+liveNavigationPlannerMap.addEventListener("keydown", handlePlannerMarkerKeydown);
 liveNavigationPlannerMap.addEventListener("click", addPlannerWaypointFromEvent);
 document.querySelector("#live-nav-planner-range").addEventListener("change", (event) => {
   liveNavigationState.plannerRangeM = Number(event.target.value) || 40;
@@ -6113,13 +6140,11 @@ document.querySelector("#live-nav-import-file").addEventListener("change", async
     liveNavigationState.missionName = imported.name;
     liveNavigationState.missionDraft = imported.mission;
     liveNavigationState.plannerOrigin = imported.plannerOrigin || null;
+    liveNavigationState.plannerRangeM = imported.plannerRangeM || 40;
     if (imported.geofence) liveNavigationState.geofence = { ...liveNavigationState.geofence, ...imported.geofence };
     if (imported.obstacleBehavior) liveNavigationState.obstacleBehavior = { ...liveNavigationState.obstacleBehavior, ...imported.obstacleBehavior };
     persistLiveNavigationPlan();
-    document.querySelector("#live-nav-mission-name").value = liveNavigationState.missionName;
-    document.querySelector("#live-nav-obstacle-enabled").checked = liveNavigationState.obstacleBehavior.enabled;
-    document.querySelector("#live-nav-stop-distance").value = liveNavigationState.obstacleBehavior.stopDistanceM;
-    document.querySelector("#live-nav-slow-distance").value = liveNavigationState.obstacleBehavior.slowDistanceM;
+    syncLiveNavigationControls();
     document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
     liveNavigationState.lastCommandStatus = `Imported ${liveNavigationState.missionDraft.length} waypoints from ${file.name}.`;
     updateLiveComparisonUi();

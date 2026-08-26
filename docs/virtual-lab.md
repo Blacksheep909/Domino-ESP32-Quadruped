@@ -56,6 +56,10 @@ Its top bar keeps the measured battery voltage, robot arm state, PC/drive links,
 and an acknowledged E-stop visible while moving between every LIVE tool. Battery
 telemetry remains unavailable when no physical power sample exists and changes
 to a warning state below 14.0 V; it never borrows a simulated value.
+For the 4S pack, LIVE also displays total voltage divided by four as **average
+cell voltage** and a clearly labelled estimated LiPo charge percentage. The PCB
+does not read the balance connector, so these must not be interpreted as four
+independently measured cells.
 It keeps the same CAD viewport as a digital-twin surface: commanded geometry
 will be shown as the expected pose, physical joint/IMU telemetry as the measured
 pose, and the difference as joint, body-pose, timing, and graph errors. Until a
@@ -89,6 +93,16 @@ only that adapter's read-only handshake while every command remains locked. The
 connection manager shows a `RECONNECTING` phase with a bounded 1-10 second
 backoff countdown. `CANCEL RETRY` forgets the reconnect target without sending
 any robot command.
+
+An initial handshake rejection, request timeout, or selected adapter error enters
+an explicit connection `FAULT` phase and retains the bounded cause. Search and
+read-only retry remain available; an error-reporting adapter cannot start a
+handshake. `CLEAR FAULT` acknowledges only this PC-side connection record and
+does not clear a robot safety fault, restore a session, or unlock commands.
+`RESTART USB` (or the selected transport name) asks the local companion to
+close and reopen only its physical robot link, then waits up to eight seconds
+for a fresh robot announcement. Commands remain locked throughout recovery;
+an unsuccessful restart returns to `FAULT` with the restart control available.
 
 The repository now includes a runnable physical companion process for Wi-Fi
 TCP, USB serial, and Bluetooth SPP serial links. It reconnects the browser relay

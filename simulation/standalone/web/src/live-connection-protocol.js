@@ -1,5 +1,5 @@
 export const LIVE_CONNECTION_TRANSPORTS = Object.freeze(["wifi", "bluetooth", "usb"]);
-export const LIVE_CONNECTION_ACTIONS = Object.freeze(["discover", "connect", "disconnect"]);
+export const LIVE_CONNECTION_ACTIONS = Object.freeze(["discover", "connect", "disconnect", "restart"]);
 export const LIVE_ADAPTER_STATES = Object.freeze(["available", "connecting", "connected", "error"]);
 
 const boundedString = (value, maximum = 64) =>
@@ -37,6 +37,12 @@ export function validLiveConnectionCommand(message) {
       LIVE_CONNECTION_TRANSPORTS.includes(message.transport) &&
       message.safety?.readOnlyHandshake === true &&
       message.safety?.commandsBlockedUntilStateKnown === true
+    );
+  }
+  if (message.action === "restart") {
+    return Boolean(
+      LIVE_CONNECTION_TRANSPORTS.includes(message.transport) &&
+      message.safety?.commandsBlocked === true
     );
   }
   return boundedString(message.sessionId, 96);

@@ -62,6 +62,21 @@ The firmware assumes all hip servos are mounted in the same world orientation. L
 
 The project uses CRSF / ExpressLRS input over `Serial2`. Channel values are converted into microsecond-style values and filtered before the control state machine consumes them.
 
+### Standalone operation is mandatory
+
+The ESP32 and its physical CRSF receiver are the primary robot control system.
+Normal stand, stow, tilt, height, and gait operation must work after boot with
+no browser, companion process, USB data connection, Bluetooth connection, or
+Wi-Fi connection. LIVE is an optional telemetry and engineering layer, never a
+runtime dependency for the radio.
+
+A read-only LIVE connection may observe and record the robot without taking
+control. Only an explicit LIVE safety or calibration action may inhibit the
+physical path: disarm, E-stop, watchdog, fault, or acknowledged bench mode.
+Unplugging an otherwise read-only telemetry connection must leave CRSF control
+working. If LIVE has explicitly taken motion authority while armed, loss of
+that authority remains fail-closed through the independent watchdog.
+
 Important controls:
 
 - Right-stick horizontal: body roll in tilt mode; differential turn command in gait mode.

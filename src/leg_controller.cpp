@@ -24,6 +24,7 @@ constexpr float kNeutralCommandYmm = 38.0f;
 constexpr float kNeutralCommandZmm = 280.0f;
 constexpr float kCadNeutralFootYmm = 38.1f;
 constexpr float kMaxMechanicalDeltaDeg = 45.0f;
+constexpr float kMaxHipMechanicalDeltaDeg = 30.0f;
 constexpr float kPi = 3.14159265358979323846f;
 constexpr float kRadToDeg = 180.0f / kPi;
 constexpr float kDegToRad = kPi / 180.0f;
@@ -393,8 +394,8 @@ bool solveCadEndpoint(const LegConfig &leg,
   while (rootAngle < -kPi) rootAngle += 2.0f * kPi;
   *shoulderDeltaDeg = constrain(
       -rootAngle * kRadToDeg / side,
-      -kMaxMechanicalDeltaDeg,
-      kMaxMechanicalDeltaDeg);
+      -kMaxHipMechanicalDeltaDeg,
+      kMaxHipMechanicalDeltaDeg);
   return true;
 }
 

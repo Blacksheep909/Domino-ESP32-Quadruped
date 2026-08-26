@@ -18,6 +18,9 @@ constexpr int8_t kDefaultDirection[DOMINO_SERVO_CHANNEL_COUNT] = {
 };
 
 bool finite(float value) { return isfinite(value); }
+bool hipChannel(uint8_t channel) {
+  return channel == 0 || channel == 3 || channel == 9 || channel == 14;
+}
 }  // namespace
 
 ServoCalibrationProfile defaultServoCalibrationProfile() {
@@ -25,7 +28,8 @@ ServoCalibrationProfile defaultServoCalibrationProfile() {
   profile.schemaVersion = DOMINO_CALIBRATION_SCHEMA_VERSION;
   for (uint8_t index = 0; index < DOMINO_DRIVEN_JOINT_COUNT; ++index) {
     const uint8_t channel = kChannels[index];
-    profile.joints[index] = {channel, channel, 0.0f, kDefaultDirection[channel], -45.0f, 45.0f};
+    const float travel = hipChannel(channel) ? 30.0f : 45.0f;
+    profile.joints[index] = {channel, channel, 0.0f, kDefaultDirection[channel], -travel, travel};
   }
   return profile;
 }
@@ -75,6 +79,10 @@ float applyServoCalibration(const ServoCalibrationProfile &profile,
   if (!joint || defaultDirection == 0 || !finite(uncalibratedServoDeg)) return uncalibratedServoDeg;
   const float neutral = servoCalibrationNeutralDeg(logicalChannel);
   float logicalDelta = (uncalibratedServoDeg - neutral) / static_cast<float>(defaultDirection);
+  if (hipChannel(logicalChannel)) {
+    if (logicalDelta < -30.0f) logicalDelta = -30.0f;
+    if (logicalDelta > 30.0f) logicalDelta = 30.0f;
+  }
   if (logicalDelta < joint->minimumDeg) logicalDelta = joint->minimumDeg;
   if (logicalDelta > joint->maximumDeg) logicalDelta = joint->maximumDeg;
   return neutral + joint->offsetDeg + static_cast<float>(joint->direction) * logicalDelta;

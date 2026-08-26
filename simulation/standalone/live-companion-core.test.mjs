@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { DOMINO_ROBOT_LINK_PROTOCOL, LiveCompanionCore } from "./live-companion-core.mjs";
+import { createLiveCalibrationProfile } from "./web/src/live-calibration-state.js";
 import { createLiveGaitProfile } from "./web/src/live-gait-state.js";
 
 const adapterId = "adapter-test";
@@ -9,6 +10,7 @@ const hello = (robotState = "disarmed") => ({
   type: "robot-hello", protocol: DOMINO_ROBOT_LINK_PROTOCOL,
   robotId: "domino-test", robotName: "Domino test", firmwareVersion: "test", robotState,
   capabilities: { telemetry: true, calibration: true, gaitProfiles: true, persistentProfiles: true, manualControl: true },
+  gaitProfile: { schemaVersion: 2, robot: "domino-test", name: "Robot safe" },
 });
 const pose = (timestampMs) => ({
   timestampMs,
@@ -62,6 +64,8 @@ test("telemetry is published only after session negotiation", () => {
   const result = connected.handleRobot(telemetry(1_100), 1_100);
   assert.equal(result.relay[0].type, "live-telemetry");
   assert.equal(result.relay[0].sessionId, connected.sessionId);
+  assert.equal(result.relay[0].gaitProfile.name, "Robot safe");
+  assert.equal(result.relay[0].capabilities.telemetry, true);
 });
 
 test("robot monotonic timestamps are translated into the host clock domain", () => {
@@ -238,6 +242,21 @@ test("physical request timeouts return explicit rejection acknowledgements", () 
   const result = core.tick(3_051);
   assert.equal(result.relay[0].accepted, false);
   assert.match(result.relay[0].reason, /timed out/);
+});
+
+test("persistent calibration writes get a longer physical acknowledgement window", () => {
+  const core = connectedCore();
+  core.benchMode = true;
+  core.handleRelay({
+    type: "live-calibration-command", action: "save-profile", requestId: "save-1", timestampMs: 1_050,
+    adapterId, sessionId: core.sessionId, profile: createLiveCalibrationProfile(),
+    selectedChannel: 0, physicalChannel: 0, jogOffsetDeg: 0, targetServoDeg: 129.87,
+    safety: { benchModeRequired: true, maxSpeedDegPerSec: 5, jogLimitDeg: 10 },
+  }, 1_050);
+  assert.equal(core.tick(3_051).relay.length, 0);
+  const expired = core.tick(9_051);
+  assert.equal(expired.relay[0].accepted, false);
+  assert.match(expired.relay[0].reason, /timed out/);
 });
 
 test("malformed physical messages cannot keep the robot or controller link fresh", () => {

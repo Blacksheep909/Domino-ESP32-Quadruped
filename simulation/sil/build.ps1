@@ -22,6 +22,10 @@ $arguments = @(
     "-O2",
     "-Wall",
     "-Wextra",
+    # Keep the standalone firmware executable self-contained. Without this,
+    # MinGW leaves libwinpthread-1.dll as a runtime dependency and launching
+    # the Virtual Lab outside the compiler shell silently loses the SIL process.
+    "-static",
     "-DDOMINO_SIL=1",
     "-static-libgcc",
     "-static-libstdc++",

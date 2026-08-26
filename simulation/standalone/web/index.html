@@ -256,6 +256,7 @@
         <div class="live-view-tabs" role="tablist" aria-label="Live engineering view">
           <button type="button" role="tab" data-live-view="compare" aria-selected="true" aria-controls="live-view-compare">COMPARE</button>
           <button type="button" role="tab" data-live-view="data" aria-selected="false" aria-controls="live-view-data">DATA</button>
+          <button type="button" role="tab" data-live-view="sensors" aria-selected="false" aria-controls="live-view-sensors">SENSORS</button>
           <button type="button" role="tab" data-live-view="calibration" aria-selected="false" aria-controls="live-view-calibration">CALIBRATION</button>
           <button type="button" role="tab" data-live-view="gaits" aria-selected="false" aria-controls="live-view-gaits">GAITS</button>
           <button type="button" role="tab" data-live-view="diagnostics" aria-selected="false" aria-controls="live-view-diagnostics">DIAGNOSTICS</button>
@@ -270,6 +271,7 @@
             <option value="BL">BL</option>
             <option value="ALL">ALL</option>
           </select>
+          <button id="live-float-button" class="float-button" type="button" aria-pressed="false" title="Lift the preview clear of the floor while keeping live motion visible">FLOAT</button>
         </div>
         <button id="live-manual-open" class="live-manual-open" type="button">MANUAL CONTROL</button>
         <div class="experience-toggle" role="group" aria-label="Interface detail">
@@ -353,6 +355,8 @@
           <div class="comparison-heading"><h2>POWER</h2><span>MEASURED</span></div>
           <div class="live-power-row">
             <div><span>VOLTAGE</span><strong id="live-voltage">--.- V</strong></div>
+            <div><span>AVG CELL / 4S</span><strong id="live-cell-voltage">-.--- V</strong></div>
+            <div><span>EST. CHARGE</span><strong id="live-charge-percent">--%</strong></div>
             <div><span>CURRENT</span><strong id="live-current">--.- A</strong></div>
             <div><span>POWER</span><strong id="live-power">--- W</strong></div>
           </div>
@@ -370,7 +374,7 @@
               <option value="rollDeg">ROLL</option>
               <option value="yawDeg">YAW</option>
               <option value="heightMm">HEIGHT</option>
-              <option value="voltageV">BATTERY VOLTAGE</option><option value="currentA">CURRENT</option><option value="powerW">POWER</option><option value="alignmentMs">COMMAND LATENCY</option><option value="footZ0">FL FOOT Z</option><option value="footZ1">FR FOOT Z</option><option value="footZ2">BL FOOT Z</option><option value="footZ3">BR FOOT Z</option><option value="joint0">FL HIP ANGLE</option><option value="joint1">FL UPPER ANGLE</option><option value="joint2">FL LOWER ANGLE</option><option value="joint3">FR HIP ANGLE</option><option value="joint4">FR UPPER ANGLE</option><option value="joint15">FR LOWER ANGLE</option><option value="joint14">BL HIP ANGLE</option><option value="joint7">BL UPPER ANGLE</option><option value="joint8">BL LOWER ANGLE</option><option value="joint9">BR HIP ANGLE</option><option value="joint10">BR UPPER ANGLE</option><option value="joint11">BR LOWER ANGLE</option>
+              <option value="voltageV">BATTERY VOLTAGE</option><option value="averageCellVoltageV">AVERAGE CELL VOLTAGE</option><option value="estimatedChargePercent">ESTIMATED CHARGE</option><option value="currentA">CURRENT</option><option value="powerW">POWER</option><option value="alignmentMs">COMMAND LATENCY</option><option value="footZ0">FL FOOT Z</option><option value="footZ1">FR FOOT Z</option><option value="footZ2">BL FOOT Z</option><option value="footZ3">BR FOOT Z</option><option value="joint0">FL HIP ANGLE</option><option value="joint1">FL UPPER ANGLE</option><option value="joint2">FL LOWER ANGLE</option><option value="joint3">FR HIP ANGLE</option><option value="joint4">FR UPPER ANGLE</option><option value="joint15">FR LOWER ANGLE</option><option value="joint14">BL HIP ANGLE</option><option value="joint7">BL UPPER ANGLE</option><option value="joint8">BL LOWER ANGLE</option><option value="joint9">BR HIP ANGLE</option><option value="joint10">BR UPPER ANGLE</option><option value="joint11">BR LOWER ANGLE</option>
             </select>
             <label for="live-chart-window" class="sr-only">Scope window</label>
             <select id="live-chart-window" aria-label="Scope window"><option value="10">10 S</option><option value="30" selected>30 S</option><option value="60">60 S</option><option value="all">FULL</option></select>
@@ -401,32 +405,86 @@
             <header><span>CURRENT SAMPLE</span><strong id="live-data-current-time">NO TELEMETRY</strong></header>
             <div class="live-data-metrics">
               <div><span>ALIGNMENT</span><strong id="live-data-alignment">-- ms</strong></div>
-              <div><span>WORST JOINT</span><strong id="live-data-joint-error">--&deg;</strong></div>
+              <div><span>IMU PITCH</span><strong id="live-data-pitch">--.-&deg;</strong></div>
               <div><span>VOLTAGE</span><strong id="live-data-voltage">--.- V</strong></div>
+              <div><span>AVG CELL / 4S</span><strong id="live-data-cell-voltage">-.--- V</strong></div>
+              <div><span>EST. CHARGE</span><strong id="live-data-charge-percent">--%</strong></div>
               <div><span>POWER</span><strong id="live-data-power">--- W</strong></div>
             </div>
           </section>
           <section class="live-data-card live-data-controls">
             <header><span>RECORDER</span><strong id="live-data-recorder-state">WAITING FOR BOTH STREAMS</strong></header>
             <div>
-                <label for="live-data-chart-signal">SIGNAL<select id="live-data-chart-signal"><option value="pitchDeg">BODY PITCH</option><option value="rollDeg">BODY ROLL</option><option value="yawDeg">BODY YAW</option><option value="heightMm">BODY HEIGHT</option><option value="voltageV">BATTERY VOLTAGE</option><option value="currentA">CURRENT</option><option value="powerW">POWER</option><option value="alignmentMs">COMMAND LATENCY</option><option value="footZ0">FL FOOT Z</option><option value="footZ1">FR FOOT Z</option><option value="footZ2">BL FOOT Z</option><option value="footZ3">BR FOOT Z</option><option value="joint0">FL HIP ANGLE</option><option value="joint1">FL UPPER ANGLE</option><option value="joint2">FL LOWER ANGLE</option><option value="joint3">FR HIP ANGLE</option><option value="joint4">FR UPPER ANGLE</option><option value="joint15">FR LOWER ANGLE</option><option value="joint14">BL HIP ANGLE</option><option value="joint7">BL UPPER ANGLE</option><option value="joint8">BL LOWER ANGLE</option><option value="joint9">BR HIP ANGLE</option><option value="joint10">BR UPPER ANGLE</option><option value="joint11">BR LOWER ANGLE</option><option value="pulse0">FL HIP PWM</option><option value="pulse1">FL UPPER PWM</option><option value="pulse2">FL LOWER PWM</option><option value="pulse3">FR HIP PWM</option><option value="pulse4">FR UPPER PWM</option><option value="pulse15">FR LOWER PWM</option><option value="pulse14">BL HIP PWM</option><option value="pulse7">BL UPPER PWM</option><option value="pulse8">BL LOWER PWM</option><option value="pulse9">BR HIP PWM</option><option value="pulse10">BR UPPER PWM</option><option value="pulse11">BR LOWER PWM</option></select></label>
-              <label for="live-data-chart-window">WINDOW<select id="live-data-chart-window"><option value="10">10 S</option><option value="30" selected>30 S</option><option value="60">60 S</option><option value="all">FULL SESSION</option></select></label>
               <button id="live-data-recording-toggle" type="button" disabled>START RECORDING</button>
               <button id="live-data-export-csv" type="button" disabled>EXPORT CSV</button>
               <button id="live-data-export-json" type="button" disabled>EXPORT JSON</button>
+              <button id="live-data-clear" type="button" disabled>CLEAR DATA</button>
+              <button id="live-data-back" type="button">BACK TO LIVE</button>
             </div>
           </section>
-          <section class="live-data-card live-data-chart-card">
-            <header><span>TIME SERIES</span><strong id="live-data-chart-title">Body pitch / degrees</strong></header>
-            <div class="live-data-chart-wrap">
-              <canvas id="live-data-chart" aria-label="Detailed expected and measured telemetry graph"></canvas>
-              <div class="live-chart-legend" aria-hidden="true"><span><i class="expected"></i>EXPECTED</span><span><i class="measured"></i>MEASURED</span><span><i class="error"></i>ERROR</span></div>
-              <em id="live-data-chart-empty">Start recording to populate this graph.</em>
-            </div>
+          <section class="live-data-card live-data-dashboard-card">
+            <header><span>GRAPH DASHBOARD</span><div><strong>DRAG ACROSS ANY GRAPH TO ZOOM</strong><button id="live-data-add-graph" type="button">+ GRAPH</button></div></header>
+            <div id="live-data-dashboard" class="live-data-dashboard" aria-label="Configurable telemetry graphs"></div>
           </section>
           <section class="live-data-card live-data-table-card" data-expert-only>
             <header><span>RECENT SYNCHRONIZED SAMPLES</span><strong>NEWEST FIRST</strong></header>
-            <div class="live-data-table-wrap"><table><thead><tr><th>TIME</th><th>ALIGN</th><th>PITCH EXP</th><th>PITCH MEAS</th><th>ERROR</th><th>VOLTAGE</th><th>POWER</th></tr></thead><tbody id="live-data-table-body"><tr><td colspan="7">No recorded samples.</td></tr></tbody></table></div>
+            <div class="live-data-table-wrap"><table><thead><tr><th>TIME</th><th>ALIGN</th><th>PITCH EXP</th><th>PITCH MEAS</th><th>ERROR</th><th>VOLTAGE</th><th>AVG CELL</th><th>CHARGE</th><th>POWER</th></tr></thead><tbody id="live-data-table-body"><tr><td colspan="9">No recorded samples.</td></tr></tbody></table></div>
+          </section>
+        </div>
+      </section>
+
+      <section id="live-view-sensors" class="live-view-page" aria-labelledby="live-sensors-title" hidden>
+        <header class="live-page-heading">
+          <div><span>LIVE / SENSORS</span><h1 id="live-sensors-title">Sensor alignment</h1><p>Visualize body attitude, establish the IMU reference, and commission future navigation sensors.</p></div>
+          <div class="live-page-status"><span id="live-sensors-link-state" data-state="offline">PC LINK OFFLINE</span><strong id="live-sensors-imu-state">IMU WAITING</strong></div>
+        </header>
+        <div class="live-sensor-grid">
+          <section class="live-data-card live-sensor-attitude-card">
+            <header><span>3D IMU INSPECTOR</span><strong id="live-sensor-reference-state">RAW SENSOR FRAME</strong></header>
+            <div id="live-sensor-plane" class="live-sensor-inspector-copy" aria-label="Live 3D IMU attitude inspector">
+              <strong>THE ROBOT IS THE ATTITUDE INDICATOR</strong>
+              <p>The physical twin follows measured IMU roll, pitch and relative gyro yaw. Enable Inspect for body axes, joint callouts and glowing foot trails; use Float to remove the floor reference while checking all axes.</p>
+              <span>Drag the 3D preview to orbit. Select one leg or ALL from the toolbar.</span>
+            </div>
+            <div class="live-sensor-readout">
+              <div><span>ROLL</span><strong id="live-sensor-roll">--.-°</strong></div>
+              <div><span>PITCH</span><strong id="live-sensor-pitch">--.-°</strong></div>
+              <div><span>YAW / RELATIVE</span><strong id="live-sensor-yaw">--.-°</strong></div>
+              <div><span>GRAVITY</span><strong id="live-sensor-gravity">-.--- g</strong></div>
+              <div><span>SAMPLE</span><strong id="live-sensor-sample-age">-- ms</strong></div>
+            </div>
+          </section>
+
+          <section class="live-data-card live-sensor-inventory-card">
+            <header><span>SENSOR BUS</span><strong>CAPABILITY MAP</strong></header>
+            <div class="live-sensor-module" data-state="waiting"><i>IMU</i><div><strong>MPU6050</strong><span id="live-sensor-imu-detail">WAITING FOR TELEMETRY</span></div><b id="live-sensor-imu-badge">OFFLINE</b></div>
+            <div class="live-sensor-module" data-state="future"><i>GPS</i><div><strong>GNSS / GPS</strong><span>POSITION, SPEED, UTC AND FIX QUALITY</span></div><b>NOT INSTALLED</b></div>
+            <div class="live-sensor-module" data-state="future"><i>3D</i><div><strong>LiDAR</strong><span>RANGE CLOUD, OBSTACLES AND SENSOR EXTRINSICS</span></div><b>FUTURE ADAPTER</b></div>
+            <p>GPS and LiDAR remain explicitly unavailable until hardware and a robot-reported capability are present; the interface will not fabricate readings.</p>
+          </section>
+
+          <section class="live-data-card live-sensor-calibration-card">
+            <header><span>GUIDED IMU CALIBRATION</span><strong id="live-sensor-calibration-state">STEP 1 / 4</strong></header>
+            <div class="live-sensor-guide">
+              <ol>
+                <li class="active"><b>01</b><div><strong>Make the robot safe</strong><span>Support the chassis, keep servo power isolated, and leave the robot motionless.</span></div></li>
+                <li><b>02</b><div><strong>Verify the axes</strong><span>+X points forward, +Y points left and +Z points upward in the body frame.</span></div></li>
+                <li><b>03</b><div><strong>Capture level</strong><span>Place the body on a measured level reference, then capture roll and pitch zero.</span></div></li>
+                <li><b>04</b><div><strong>Validate and persist</strong><span>Check nose-up and left-up motion. Robot-side persistence will unlock with the sensor-calibration capability.</span></div></li>
+              </ol>
+              <div class="live-sensor-calibration-workspace">
+                <label><input id="live-sensor-safe-check" type="checkbox"> Robot supported, stationary and servo power isolated</label>
+                <label><input id="live-sensor-axis-check" type="checkbox"> I verified +X forward, +Y left and +Z up against the physical mounting</label>
+                <div class="live-sensor-axis-values">
+                  <div><span>RAW AX</span><strong id="live-sensor-ax">-.--- g</strong></div>
+                  <div><span>RAW AY</span><strong id="live-sensor-ay">-.--- g</strong></div>
+                  <div><span>RAW AZ</span><strong id="live-sensor-az">-.--- g</strong></div>
+                </div>
+                <div class="live-sensor-axis-guide"><span><i class="axis-x"></i>+X FORWARD</span><span><i class="axis-y"></i>+Y LEFT</span><span><i class="axis-z"></i>+Z UP</span></div>
+                <p id="live-sensor-calibration-copy">Complete the physical safety check before capturing a browser-side level reference.</p>
+                <div class="live-sensor-actions"><button id="live-sensor-capture-level" type="button" disabled>CAPTURE LEVEL</button><button id="live-sensor-reset-level" type="button" disabled>RESET REFERENCE</button><button type="button" disabled title="Requires a future robot sensor-calibration capability">SAVE TO ROBOT</button></div>
+              </div>
+            </div>
           </section>
         </div>
       </section>
@@ -463,7 +521,7 @@
                 <article><span>03</span><strong>Keep an E-stop ready</strong><p>Use low current limits and keep physical power isolation within reach.</p></article>
               </div>
               <label class="calibration-confirm"><input id="live-calibration-safety-confirm" type="checkbox"><span>I have supported the robot and understand that browser preview does not move hardware.</span></label>
-              <div class="calibration-lock-state"><span>PHYSICAL JOG</span><strong id="live-calibration-bench-state">LOCKED - BENCH MODE NOT ACKNOWLEDGED</strong><button id="live-calibration-request-bench" type="button" disabled>REQUEST BENCH MODE</button></div>
+              <div class="calibration-lock-state"><span>PHYSICAL JOG</span><strong id="live-calibration-bench-state">LOCKED - BENCH MODE NOT ACKNOWLEDGED</strong><small id="live-calibration-bench-feedback" aria-live="polite"></small><button id="live-calibration-request-bench" type="button" disabled>REQUEST BENCH MODE</button></div>
             </section>
 
             <section class="calibration-panel" data-calibration-panel="1" hidden>
@@ -478,18 +536,25 @@
 
             <section class="calibration-panel" data-calibration-panel="2" hidden>
               <div class="calibration-panel-heading"><span>STEP 3 OF 5</span><h2>Set the neutral pose</h2><p>Adjust the zero offset and direction, then use the limited jog to inspect the 3D preview.</p></div>
-              <div class="calibration-editor-heading"><div><span>SELECTED JOINT</span><strong id="live-calibration-neutral-title">FL HIP</strong></div><div><span>SERVO CHANNEL</span><strong id="live-calibration-channel">0</strong></div><div><span>REFERENCE OUTPUT</span><strong id="live-calibration-reference">129.87&deg;</strong></div></div>
+              <div class="calibration-editor-heading"><div><span>SELECTED JOINT</span><strong id="live-calibration-neutral-title">FL HIP</strong></div><div><span>SERVO CHANNEL</span><strong id="live-calibration-channel">0</strong></div><div><span>BASE REFERENCE</span><strong id="live-calibration-reference">129.87&deg;</strong></div><div><span>CALIBRATED NEUTRAL</span><strong id="live-calibration-neutral-output">129.87&deg;</strong></div></div>
               <div class="calibration-field-grid">
                 <label>ZERO OFFSET <input id="live-calibration-offset" type="number" min="-30" max="30" step="0.1" value="0"><span>degrees</span></label>
                 <label>DIRECTION <select id="live-calibration-direction"><option value="1">NORMAL</option><option value="-1">INVERTED</option></select><span>logical to servo</span></label>
                 <label class="calibration-preview-toggle"><input id="live-calibration-preview" type="checkbox" checked><strong>PREVIEW CALIBRATED NEUTRAL</strong><span>3D model only</span></label>
               </div>
+              <div class="calibration-jog-control calibration-neutral-trim">
+                <div><span>PERMANENT NEUTRAL TRIM</span><strong id="live-calibration-trim-value">+0.0&deg;</strong><small>Adjusts the selected channel's saved default / 0.1&deg; fine steps</small></div>
+                <div role="group" aria-label="Permanent neutral trim controls"><button type="button" data-calibration-trim="-1">-1&deg;</button><button type="button" data-calibration-trim="-0.1">-0.1&deg;</button><button type="button" data-calibration-trim="0.1">+0.1&deg;</button><button type="button" data-calibration-trim="1">+1&deg;</button></div>
+              </div>
               <div class="calibration-secondary-actions"><button id="live-calibration-restore-joint" type="button">RESTORE SELECTED JOINT</button><span>Resets offset, direction and limits; keeps its physical PCA9685 channel.</span></div>
               <div class="calibration-jog-control">
-                <div><span>LIMITED JOG</span><strong id="live-calibration-jog-value">+0.0&deg;</strong><small>&plusmn;10&deg; preview envelope / 5&deg;/s hardware contract</small></div>
+                <div><span>TEMPORARY TEST JOG</span><strong id="live-calibration-jog-value">+0.0&deg;</strong><small>&plusmn;10&deg; inspection only; this value is not saved</small></div>
                 <div role="group" aria-label="Calibration jog controls"><button type="button" data-calibration-jog="-1">-1&deg;</button><button type="button" data-calibration-jog="-0.1">-0.1&deg;</button><button type="button" data-calibration-jog-reset>NEUTRAL</button><button type="button" data-calibration-jog="0.1">+0.1&deg;</button><button type="button" data-calibration-jog="1">+1&deg;</button></div>
               </div>
-              <p id="live-calibration-jog-status" class="calibration-inline-status">Preview only. Connect a compatible robot adapter and receive a bench-mode acknowledgement to unlock physical movement.</p>
+              <div class="calibration-jog-status-row">
+                <p id="live-calibration-jog-status" class="calibration-inline-status">Preview only. Connect a compatible robot adapter and receive a bench-mode acknowledgement to unlock physical movement.</p>
+                <button id="live-calibration-enable-jog" type="button" hidden>ENABLE PHYSICAL JOG</button>
+              </div>
             </section>
 
             <section class="calibration-panel" data-calibration-panel="3" hidden>
@@ -783,6 +848,7 @@
         <footer>
           <p id="live-connection-status" role="status">Choose a transport and search for a compatible Domino adapter.</p>
           <div>
+            <button id="live-connection-restart" type="button" hidden>RESTART LINK</button>
             <button id="live-connection-disconnect" type="button" disabled>DISCONNECT</button>
             <button id="live-connection-connect" class="live-connection-primary" type="button" disabled>CONNECT READ-ONLY</button>
           </div>
@@ -827,6 +893,27 @@
           <span>Commands stream at 20 Hz and expire robot-side after 250 ms.</span>
           <button id="live-manual-estop" type="button" disabled>E-STOP</button>
         </div>
+      </form>
+    </dialog>
+
+    <dialog id="live-battery-alert" class="live-battery-alert" aria-labelledby="live-battery-alert-title">
+      <form method="dialog">
+        <div class="live-battery-alert-icon" aria-hidden="true">
+          <span></span>
+        </div>
+        <div>
+          <span id="live-battery-alert-kicker">LIVE / BATTERY</span>
+          <h2 id="live-battery-alert-title">Battery low</h2>
+          <p id="live-battery-alert-message">Domino's estimated battery charge is low.</p>
+          <dl>
+            <div><dt>PACK</dt><dd id="live-battery-alert-voltage">--.- V</dd></div>
+            <div><dt>EST. CHARGE</dt><dd id="live-battery-alert-percent">--%</dd></div>
+          </dl>
+        </div>
+        <footer>
+          <button id="live-battery-alert-estop" type="button" hidden>E-STOP ROBOT</button>
+          <button id="live-battery-alert-dismiss" type="button">UNDERSTOOD</button>
+        </footer>
       </form>
     </dialog>
 
@@ -920,7 +1007,9 @@
 
     <div class="camera-gizmo" aria-label="Camera axis navigation">
       <canvas class="camera-gizmo-lines" width="112" height="112" aria-hidden="true"></canvas>
-      <span class="camera-gizmo-hub" aria-hidden="true"></span>
+      <button id="camera-home-button" class="camera-home-button" type="button" aria-label="Recenter 3D camera" title="Recenter camera">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10.5 12 4l8 6.5M6.5 9.5V20h11V9.5M10 20v-6h4v6"/></svg>
+      </button>
       <button type="button" data-axis="+X" aria-label="View from positive X" title="View from +X">X</button>
       <button type="button" data-axis="-X" aria-label="View from negative X" title="View from -X">-X</button>
       <button type="button" data-axis="+Y" aria-label="View from positive Y" title="Top view">Y</button>

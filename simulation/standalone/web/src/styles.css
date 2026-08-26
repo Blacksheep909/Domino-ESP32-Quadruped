@@ -1667,6 +1667,25 @@ dd {
   filter: saturate(0.7);
 }
 
+.camera-gizmo .camera-home-button {
+  left: 50%;
+  top: 50%;
+  width: 20px;
+  height: 20px;
+  padding: 4px;
+  display: grid;
+  place-items: center;
+  color: #4f534d;
+  background: rgba(246, 246, 242, .96);
+  border: 1px solid rgba(122, 124, 118, .42);
+  border-radius: 50%;
+  box-shadow: 0 2px 7px rgba(25, 26, 23, .24);
+  cursor: pointer;
+  z-index: 3;
+}
+.camera-gizmo .camera-home-button svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.camera-gizmo .camera-home-button:hover, .camera-gizmo .camera-home-button:focus-visible { color: #2e8650; background: #f5fff8; border-color: rgba(78, 169, 109, .72); outline: none; }
+
 :root[data-theme="dark"] {
   color: #f4f4f5;
   background: #09090a;
@@ -2059,6 +2078,40 @@ dd {
 
 :root[data-theme="dark"] .joint-swatch.passive {
   background: #8b8b92;
+}
+
+:root[data-theme="dark"] .live-sensor-stage,
+:root[data-theme="dark"] .live-sensor-calibration-workspace,
+:root[data-theme="dark"] .live-sensor-readout > div,
+:root[data-theme="dark"] .live-sensor-axis-values > div {
+  background-color: #18181b;
+}
+:root[data-theme="dark"] .live-sensor-stage {
+  background-image:
+    radial-gradient(circle at 50% 50%, rgba(72, 169, 107, .12), transparent 35%),
+    linear-gradient(rgba(255, 255, 255, .055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, .055) 1px, transparent 1px);
+}
+:root[data-theme="dark"] .live-sensor-module,
+:root[data-theme="dark"] .live-sensor-guide li,
+:root[data-theme="dark"] .live-sensor-axis-guide { border-color: #343438; }
+:root[data-theme="dark"] .live-sensor-module > i { background: #222225; }
+:root[data-theme="dark"] .live-sensor-guide li.active { border-color: #3e8056; background: rgba(78, 169, 109, .09); }
+:root[data-theme="dark"] .live-sensor-calibration-workspace > label,
+:root[data-theme="dark"] .live-sensor-guide li strong,
+:root[data-theme="dark"] .live-sensor-module > div strong { color: #e1e1e4; }
+
+@media (max-width: 900px) {
+  .live-sensor-attitude-card,
+  .live-sensor-inventory-card { grid-column: 1 / -1; }
+  .live-sensor-guide { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 620px) {
+  .live-sensor-stage { min-height: 245px; }
+  .live-sensor-readout { grid-template-columns: repeat(2, 1fr); }
+  .live-sensor-axis-guide, .live-sensor-actions { flex-wrap: wrap; }
+  .live-sensor-actions button { flex: 1 1 130px; }
 }
 
 .live-manual-dialog {
@@ -3326,12 +3379,13 @@ body[data-workspace="real-robot"] #telemetry-panel:has(#joint-legend:not([hidden
 .live-data-summary { grid-column: span 6; }
 .live-data-controls { grid-column: span 6; }
 .live-data-chart-card { grid-column: 1 / -1; }
+.live-data-dashboard-card { grid-column: 1 / -1; }
 .live-data-table-card { grid-column: 1 / -1; }
 
 .live-data-metrics {
   padding-top: 14px;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 10px;
 }
 
@@ -3350,10 +3404,56 @@ body[data-workspace="real-robot"] #telemetry-panel:has(#joint-legend:not([hidden
 .live-data-controls > div {
   padding-top: 14px;
   display: grid;
-  grid-template-columns: minmax(120px, 1fr) minmax(76px, .55fr) repeat(3, auto);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   align-items: end;
   gap: 9px;
 }
+
+.live-data-dashboard-card > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.live-data-dashboard-card > header > div { display: flex; align-items: center; gap: 10px; }
+.live-data-dashboard-card > header button,
+.live-data-graph button,
+.live-data-graph select {
+  min-height: 28px;
+  padding: 0 8px;
+  color: #555852;
+  background: #f0f0ec;
+  border: 1px solid #d2d2cd;
+  border-radius: 4px;
+  font: 750 8px/1 "Cascadia Mono", Consolas, monospace;
+}
+.live-data-dashboard-card > header button:not(:disabled),
+.live-data-graph button:not(:disabled) { color: #25633e; cursor: pointer; }
+.live-data-dashboard { padding-top: 12px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.live-data-graph { min-width: 0; overflow: hidden; background: #f0f0ec; border: 1px solid #dcddd8; border-radius: 6px; }
+.live-data-graph > header {
+  position: static;
+  inset: auto;
+  width: auto;
+  height: auto;
+  min-height: 46px;
+  padding: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid #dcddd8;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+.live-data-graph > header > select { width: 100%; min-width: 0; }
+.live-data-graph > header > div { display: flex; gap: 4px; }
+.live-data-graph > header > div select { width: 58px; }
+.live-data-graph button:disabled { opacity: .36; }
+.live-data-graph-plot { position: relative; height: 205px; overflow: hidden; cursor: crosshair; background: linear-gradient(rgba(79,84,78,.07) 1px, transparent 1px), linear-gradient(90deg, rgba(79,84,78,.07) 1px, transparent 1px), #f7f7f4; background-size: 42px 34px; }
+.live-data-graph-plot canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+.live-data-graph-plot .live-chart-legend { z-index: 2; }
+.live-data-graph-plot > em { position: absolute; inset: 96px 8px auto; color: #898c86; font-size: 9px; font-style: normal; text-align: center; pointer-events: none; }
+.live-data-zoom-brush { position: absolute; top: 0; bottom: 0; display: block; background: rgba(78, 169, 109, .18); border-inline: 1px solid rgba(78, 169, 109, .7); pointer-events: none; z-index: 3; }
+.live-data-zoom-brush[hidden] { display: none; }
 
 .live-data-controls label {
   display: grid;
@@ -3447,6 +3547,125 @@ body[data-workspace="real-robot"] #telemetry-panel:has(#joint-legend:not([hidden
 .live-data-table-wrap th { color: #777a75; font-size: 8px; }
 .live-data-table-wrap td { color: #41433f; }
 .live-data-table-wrap td[colspan] { color: #898c86; text-align: center; }
+
+.live-sensor-grid {
+  max-width: 1240px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 15px;
+}
+
+.live-sensor-attitude-card { grid-column: span 7; }
+.live-sensor-inventory-card { grid-column: span 5; }
+.live-sensor-calibration-card { grid-column: 1 / -1; }
+
+.live-sensor-stage {
+  position: relative;
+  min-height: 330px;
+  margin-top: 12px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  perspective: 750px;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(72, 169, 107, .11), transparent 35%),
+    linear-gradient(rgba(79, 84, 78, .08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(79, 84, 78, .08) 1px, transparent 1px), #f0f0ec;
+  background-size: auto, 34px 34px, 34px 34px;
+  border-radius: 6px;
+  transform-style: preserve-3d;
+}
+
+.live-sensor-horizon { position: absolute; inset: 50% 7% auto; height: 1px; background: rgba(94, 99, 92, .28); }
+.live-sensor-horizon i { position: absolute; top: -4px; width: 1px; height: 9px; background: currentColor; }
+.live-sensor-horizon i:first-child { left: 25%; }
+.live-sensor-horizon i:last-child { right: 25%; }
+
+.live-sensor-plane {
+  position: relative;
+  width: min(72%, 440px);
+  aspect-ratio: 1.75;
+  transform-style: preserve-3d;
+  transition: opacity 180ms ease;
+  background: linear-gradient(135deg, rgba(79, 169, 111, .24), rgba(34, 73, 50, .08));
+  border: 1px solid rgba(65, 151, 95, .8);
+  border-radius: 12px;
+  box-shadow: inset 0 0 32px rgba(74, 181, 111, .09), 0 18px 35px rgba(33, 51, 39, .15), 0 0 22px rgba(80, 203, 122, .13);
+}
+.live-sensor-plane[data-state="offline"] { opacity: .35; filter: grayscale(1); }
+.live-sensor-plane::after { content: ""; position: absolute; inset: 8%; border: 1px dashed rgba(72, 153, 100, .35); border-radius: 7px; }
+.live-sensor-plane > i { position: absolute; z-index: 1; background: rgba(69, 153, 98, .45); }
+.live-sensor-axis-x { left: 7%; right: 7%; top: 50%; height: 1px; }
+.live-sensor-axis-y { top: 8%; bottom: 8%; left: 50%; width: 1px; }
+.live-sensor-front { position: absolute; z-index: 2; top: 9px; left: 50%; translate: -50% 0; color: #2f7d4d; font: 800 8px/1 "Cascadia Mono", Consolas, monospace; letter-spacing: .08em; }
+.live-sensor-plane > b[data-corner] {
+  position: absolute;
+  z-index: 3;
+  width: 13px;
+  height: 13px;
+  border: 2px solid #dff7e7;
+  border-radius: 50%;
+  background: #58c77d;
+  box-shadow: 0 0 8px #61d78a, 0 0 20px rgba(80, 205, 123, .85);
+  transform: translateZ(7px);
+}
+.live-sensor-plane > b[data-corner] em { position: absolute; top: 18px; left: 50%; translate: -50% 0; color: #317249; font: 800 7px/1 "Cascadia Mono", Consolas, monospace; font-style: normal; }
+.live-sensor-plane > b[data-corner="fl"] { top: 10%; left: 8%; }
+.live-sensor-plane > b[data-corner="fr"] { top: 10%; right: 8%; }
+.live-sensor-plane > b[data-corner="bl"] { bottom: 10%; left: 8%; }
+.live-sensor-plane > b[data-corner="br"] { bottom: 10%; right: 8%; }
+
+.live-sensor-side { position: absolute; z-index: -1; display: block; background: linear-gradient(#245c38, #112b1b); border: 1px solid rgba(81, 176, 113, .55); transform-style: preserve-3d; }
+.live-sensor-side[data-side="front"] { left: 0; top: 100%; width: 100%; height: 16px; transform-origin: top; transform: rotateX(-82deg); }
+.live-sensor-side[data-side="back"] { left: 0; bottom: 100%; width: 100%; height: 16px; transform-origin: bottom; transform: rotateX(82deg); }
+.live-sensor-side[data-side="left"] { right: 100%; top: 0; width: 16px; height: 100%; transform-origin: right; transform: rotateY(-82deg); }
+.live-sensor-side[data-side="right"] { left: 100%; top: 0; width: 16px; height: 100%; transform-origin: left; transform: rotateY(82deg); }
+.live-sensor-imu-chip { position: absolute; z-index: 4; left: 50%; top: 50%; width: 54px; height: 38px; translate: -50% -50%; display: grid; place-items: center; transform: translateZ(15px); color: #b8efca; background: linear-gradient(145deg, #255d39, #102719); border: 1px solid #4ca36a; border-radius: 5px; box-shadow: 0 7px 0 #0b1c11, 0 8px 18px rgba(0,0,0,.38), 0 0 14px rgba(78,185,112,.2); }
+.live-sensor-imu-chip > b { position: relative; z-index: 1; font: 800 7px/1 "Cascadia Mono", Consolas, monospace; letter-spacing: .08em; }
+.live-sensor-imu-chip > i { position: absolute; inset: 7px; border: 1px solid rgba(140,224,167,.3); border-radius: 2px; }
+.live-sensor-imu-chip::after { content: "+Z"; position: absolute; left: 50%; bottom: calc(100% + 22px); translate: -50% 0; color: #77a9dc; font: 800 7px/1 "Cascadia Mono", Consolas, monospace; }
+.live-sensor-imu-chip::before { content: ""; position: absolute; left: 50%; bottom: 100%; width: 2px; height: 22px; background: linear-gradient(#77a9dc, transparent); }
+
+.live-sensor-trails { position: absolute; inset: 0; z-index: 5; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.live-sensor-trails circle { fill: #65db8c; filter: drop-shadow(0 0 4px rgba(93, 230, 139, .9)); }
+
+.live-sensor-readout, .live-sensor-axis-values { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 10px; }
+.live-sensor-readout > div, .live-sensor-axis-values > div { padding: 10px; display: grid; gap: 6px; background: #f0f0ec; border-radius: 5px; }
+.live-sensor-readout span, .live-sensor-axis-values span, .live-sensor-axis-guide span { color: #858781; font: 750 8px/1 "Cascadia Mono", Consolas, monospace; letter-spacing: .06em; }
+.live-sensor-readout strong, .live-sensor-axis-values strong { font: 750 14px/1 "Cascadia Mono", Consolas, monospace; }
+
+.live-sensor-inventory-card { display: flex; flex-direction: column; }
+.live-sensor-module { margin-top: 11px; padding: 13px; display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 12px; border: 1px solid #dcddd8; border-radius: 6px; }
+.live-sensor-module > i { width: 42px; height: 42px; display: grid; place-items: center; color: #6c706a; background: #ecece8; border-radius: 50%; font: 800 9px/1 "Cascadia Mono", Consolas, monospace; font-style: normal; }
+.live-sensor-module > div { min-width: 0; display: grid; gap: 6px; }
+.live-sensor-module > div strong { font-size: 12px; }
+.live-sensor-module > div span, .live-sensor-module > b { color: #858781; font: 750 7px/1.25 "Cascadia Mono", Consolas, monospace; }
+.live-sensor-module[data-state="online"] { border-color: rgba(67, 158, 99, .55); background: rgba(75, 169, 108, .07); }
+.live-sensor-module[data-state="online"] > i, .live-sensor-module[data-state="online"] > b { color: #2e8650; }
+.live-sensor-module[data-state="future"] { opacity: .63; }
+.live-sensor-inventory-card > p { margin: auto 0 0; padding-top: 14px; color: #7e817b; font-size: 9px; line-height: 1.55; }
+
+.live-sensor-guide { padding-top: 14px; display: grid; grid-template-columns: minmax(250px, .72fr) minmax(0, 1.28fr); gap: 18px; }
+.live-sensor-guide ol { margin: 0; padding: 0; display: grid; gap: 7px; list-style: none; }
+.live-sensor-guide li { padding: 11px; display: grid; grid-template-columns: 30px 1fr; gap: 9px; border: 1px solid #dedfda; border-radius: 5px; opacity: .58; }
+.live-sensor-guide li.active { opacity: 1; border-color: #78b88d; background: rgba(78, 169, 109, .08); box-shadow: inset 3px 0 #4fa46d; }
+.live-sensor-guide li > b { color: #3c8b57; font: 800 9px/1 "Cascadia Mono", Consolas, monospace; }
+.live-sensor-guide li > div { display: grid; gap: 5px; }
+.live-sensor-guide li strong { font-size: 10px; }
+.live-sensor-guide li span { color: #777a74; font-size: 8px; line-height: 1.45; }
+.live-sensor-calibration-workspace { padding: 15px; display: flex; flex-direction: column; gap: 13px; background: #f0f0ec; border-radius: 6px; }
+.live-sensor-calibration-workspace > label { display: flex; align-items: center; gap: 9px; color: #555852; font-size: 9px; font-weight: 700; }
+.live-sensor-calibration-workspace input { accent-color: #3e955d; }
+.live-sensor-axis-values { grid-template-columns: repeat(3, 1fr); margin: 0; }
+.live-sensor-axis-values > div { background: rgba(255, 255, 255, .55); }
+.live-sensor-axis-guide { padding: 10px; display: flex; gap: 18px; border: 1px dashed #c8cbc5; border-radius: 5px; }
+.live-sensor-axis-guide i { display: inline-block; width: 16px; height: 2px; margin-right: 6px; vertical-align: middle; }
+.live-sensor-axis-guide .axis-x { background: #dc6c5d; }.live-sensor-axis-guide .axis-y { background: #5cb97c; }.live-sensor-axis-guide .axis-z { background: #5c8ec4; }
+.live-sensor-calibration-workspace > p { margin: 0; color: #737670; font-size: 9px; line-height: 1.5; }
+.live-sensor-actions { display: flex; gap: 8px; margin-top: auto; }
+.live-sensor-actions button { min-height: 34px; padding: 0 13px; color: #22643d; background: #e3f1e8; border: 1px solid #9bc8aa; border-radius: 5px; font-size: 8px; font-weight: 800; }
+.live-sensor-actions button:disabled { color: #969892; background: #e6e6e2; border-color: #d1d2cd; }
 
 .live-session-current {
   max-width: 1240px;
@@ -3622,7 +3841,7 @@ body[data-workspace="real-robot"][data-live-view="calibration"] #scene {
   z-index: 8;
 }
 
-body[data-workspace="real-robot"]:is([data-live-view="calibration"], [data-live-view="gaits"]) .camera-gizmo {
+body[data-workspace="real-robot"]:is([data-live-view="calibration"], [data-live-view="gaits"], [data-live-view="sensors"]) .camera-gizmo {
   top: 156px;
   right: calc(2.5vw + 12px);
   bottom: auto;
@@ -3632,16 +3851,16 @@ body[data-workspace="real-robot"]:is([data-live-view="calibration"], [data-live-
   transform-origin: top right;
 }
 
-body[data-workspace="real-robot"]:is([data-live-view="data"], [data-live-view="diagnostics"], [data-live-view="sessions"]) :is(#scene, .camera-gizmo) {
+body[data-workspace="real-robot"]:is([data-live-view="data"], [data-live-view="diagnostics"], [data-live-view="sessions"]) :is(#scene, .camera-gizmo, .camera-home-button) {
   visibility: hidden;
   pointer-events: none;
 }
 
-body[data-workspace="real-robot"]:not([data-live-view="compare"]) #real-workspace .live-inspection-control {
+body[data-workspace="real-robot"]:not(:is([data-live-view="compare"], [data-live-view="sensors"], [data-live-view="gaits"])) #real-workspace .live-inspection-control {
   display: none;
 }
 
-body[data-workspace="real-robot"]:not([data-live-view="compare"]) #real-workspace .live-toolbar {
+body[data-workspace="real-robot"]:not(:is([data-live-view="compare"], [data-live-view="sensors"], [data-live-view="gaits"])) #real-workspace .live-toolbar {
   grid-template-columns: 150px minmax(0, 1fr) auto auto;
 }
 
@@ -3689,6 +3908,44 @@ body[data-workspace="real-robot"][data-live-view="gaits"] #scene {
   border: 1px solid #303034;
   border-radius: 8px;
   z-index: 8;
+}
+
+.live-sensor-grid { padding-right: 42vw; }
+.live-sensor-attitude-card { min-height: 0; }
+.live-sensor-inspector-copy {
+  min-height: 132px;
+  padding: 20px;
+  display: grid;
+  align-content: center;
+  gap: 9px;
+  color: #505852;
+  background: radial-gradient(circle at 86% 18%, rgba(71, 160, 103, .12), transparent 38%), #f3f5f1;
+  border-bottom: 1px solid #dfe4dd;
+}
+.live-sensor-inspector-copy strong { color: #204b31; font: 750 10px/1.2 "Cascadia Mono", Consolas, monospace; letter-spacing: .08em; }
+.live-sensor-inspector-copy p { max-width: 660px; margin: 0; font-size: 11px; line-height: 1.55; }
+.live-sensor-inspector-copy span { color: #39764f; font: 700 8px/1.4 "Cascadia Mono", Consolas, monospace; }
+
+:root[data-theme="dark"] .live-sensor-inspector-copy {
+  color: #a7a7ac;
+  background: radial-gradient(circle at 86% 18%, rgba(71, 160, 103, .12), transparent 38%), #121214;
+  border-bottom-color: rgba(255, 255, 255, .09);
+}
+:root[data-theme="dark"] .live-sensor-inspector-copy strong { color: #dff4e6; }
+:root[data-theme="dark"] .live-sensor-inspector-copy span { color: #79c493; }
+
+body[data-workspace="real-robot"][data-live-view="sensors"] #scene {
+  inset: 144px 2.5vw 54px auto;
+  width: 36vw;
+  height: auto;
+  background: radial-gradient(circle at 50% 45%, #18201b, #090a0a 70%);
+  border: 1px solid rgba(121, 196, 147, .28);
+  border-radius: 8px;
+  z-index: 8;
+}
+
+body[data-workspace="real-robot"]:is([data-live-view="sensors"], [data-live-view="gaits"]) #telemetry-panel#telemetry-panel:has(#joint-legend) {
+  display: none !important;
 }
 
 .live-gait-card {
@@ -4006,6 +4263,20 @@ body[data-workspace="real-robot"][data-live-view="gaits"] #scene {
   font: 750 9px/1 "Cascadia Mono", Consolas, monospace;
 }
 
+.calibration-lock-state small {
+  grid-column: 2;
+  color: #776f69;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.calibration-lock-state small:empty { display: none; }
+
+.calibration-lock-state:has(small:not(:empty)) button {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+}
+
 .calibration-lock-state button {
   height: 32px;
   padding: 0 11px;
@@ -4018,6 +4289,34 @@ body[data-workspace="real-robot"][data-live-view="gaits"] #scene {
 }
 
 .calibration-lock-state button:disabled { color: #9b9d98; background: transparent; border-color: #d8d8d3; }
+
+.calibration-jog-status-row {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.calibration-jog-status-row .calibration-inline-status { margin: 0; }
+
+.calibration-jog-status-row button {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 0 11px;
+  color: #225c3a;
+  background: #e4f0e8;
+  border: 1px solid #9ec7ac;
+  border-radius: 5px;
+  font-size: 8px;
+  font-weight: 750;
+}
+
+.calibration-jog-status-row button:disabled {
+  color: #9b9d98;
+  background: transparent;
+  border-color: #d8d8d3;
+}
 
 .calibration-wiring-toolbar {
   margin-top: 16px;
@@ -4422,7 +4721,7 @@ body[data-workspace="real-robot"][data-live-view="gaits"] #scene {
 
 @media (max-width: 1000px) {
   body[data-workspace="real-robot"][data-live-view="calibration"] #scene { z-index: 0; inset: 0; width: 100%; height: 100%; border: 0; }
-  body[data-workspace="real-robot"]:is([data-live-view="calibration"], [data-live-view="gaits"]) .camera-gizmo { display: none; }
+  body[data-workspace="real-robot"]:is([data-live-view="calibration"], [data-live-view="gaits"]) :is(.camera-gizmo, .camera-home-button) { display: none; }
   .live-calibration-page { padding-right: clamp(22px, 4vw, 58px); }
   .calibration-preview-caption { display: none; }
   .live-calibration-layout { grid-template-columns: 1fr; }
@@ -4762,6 +5061,12 @@ body[data-experience="simple"] [data-expert-only] { display: none !important; }
     #18181a;
   background-size: 42px 34px;
 }
+:root[data-theme="dark"] .live-data-graph { background: #18181a; border-color: #303034; }
+:root[data-theme="dark"] .live-data-graph > header { border-color: #303034; }
+:root[data-theme="dark"] .live-data-dashboard-card > header button,
+:root[data-theme="dark"] .live-data-graph button,
+:root[data-theme="dark"] .live-data-graph select { color: #d9d9dc; background: #202023; border-color: #38383c; }
+:root[data-theme="dark"] .live-data-graph-plot { background: linear-gradient(rgba(255,255,255,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px), #141416; background-size: 42px 34px; }
 :root[data-theme="dark"] .live-data-table-wrap th,
 :root[data-theme="dark"] .live-data-table-wrap td { border-bottom-color: #29292c; }
 :root[data-theme="dark"] .live-data-table-wrap td { color: #d9d9dc; }
@@ -4772,6 +5077,8 @@ body[data-experience="simple"] [data-expert-only] { display: none !important; }
   .live-data-summary,
   .live-data-controls { grid-column: 1 / -1; }
   .live-data-metrics { grid-template-columns: repeat(2, 1fr); }
+  .live-data-dashboard { grid-template-columns: 1fr; }
+  .live-data-controls > div { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .live-session-current,
   .live-session-entry { grid-template-columns: 1fr 1fr; }
   .live-session-comparison > header { align-items: stretch; flex-direction: column; }
@@ -5296,6 +5603,13 @@ body[data-experience="simple"] [data-expert-only] { display: none !important; }
   border-color: rgba(255, 255, 255, 0.4);
 }
 
+:root[data-theme="dark"] .camera-home-button {
+  color: #c8cbc4;
+  background: rgba(29, 30, 28, .88);
+  border-color: rgba(190, 192, 184, .28);
+  box-shadow: 0 5px 18px rgba(0, 0, 0, .34);
+}
+
 .live-connection-open {
   min-width: 104px;
   height: 32px;
@@ -5331,6 +5645,13 @@ body[data-experience="simple"] [data-expert-only] { display: none !important; }
   color: #effff5;
   background: #237648;
   border-color: #237648;
+}
+
+.live-connection-open[data-state="fault"] {
+  color: #fff5f2;
+  background: #8f372b;
+  border-color: #bd5948;
+  box-shadow: 0 0 0 1px rgba(189, 89, 72, 0.16), 0 4px 12px rgba(118, 39, 28, 0.25);
 }
 
 .live-connection-dialog {
@@ -5401,6 +5722,12 @@ body[data-experience="simple"] [data-expert-only] { display: none !important; }
   color: #1c7042;
   border-color: rgba(39, 129, 76, 0.35);
   background: rgba(42, 142, 83, 0.09);
+}
+
+#live-connection-phase[data-state="fault"] {
+  color: #a84031;
+  border-color: rgba(184, 68, 49, 0.38);
+  background: rgba(184, 68, 49, 0.10);
 }
 
 #live-connection-close {
@@ -5602,6 +5929,12 @@ body[data-experience="simple"] [data-expert-only] { display: none !important; }
 .live-connection-workspace > footer > p { max-width: 570px; }
 .live-connection-workspace > footer > div { display: flex; gap: 8px; }
 .live-connection-workspace > footer button { min-width: 120px; padding: 0 15px; }
+.live-connection-workspace > footer button[hidden] { display: none; }
+#live-connection-restart:not(:disabled) {
+  color: #9b3f31;
+  border-color: rgba(184, 68, 49, 0.48);
+  background: rgba(184, 68, 49, 0.08);
+}
 .live-connection-workspace > footer .live-connection-primary { width: auto; min-width: 170px; }
 
 :root[data-theme="dark"] .live-connection-open {
@@ -5643,6 +5976,95 @@ body[data-experience="simple"] [data-expert-only] { display: none !important; }
   .live-connection-workspace > footer > div { width: 100%; }
   .live-connection-workspace > footer button { flex: 1; }
 }
+
+.live-battery-alert {
+  width: min(460px, calc(100vw - 32px));
+  max-width: none;
+  padding: 0;
+  overflow: hidden;
+  color: #272823;
+  border: 1px solid #c9a24c;
+  border-radius: 12px;
+  background: #f8f5ec;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.45);
+}
+
+.live-battery-alert::backdrop {
+  background: rgba(10, 10, 9, 0.62);
+  backdrop-filter: blur(6px);
+}
+
+.live-battery-alert form {
+  margin: 0;
+  padding: 24px;
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 18px;
+}
+
+.live-battery-alert-icon {
+  position: relative;
+  width: 46px;
+  height: 30px;
+  margin-top: 3px;
+  padding: 4px;
+  border: 2px solid currentColor;
+  border-radius: 5px;
+  color: #bd7d16;
+}
+
+.live-battery-alert-icon::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  right: -8px;
+  width: 4px;
+  height: 12px;
+  margin: 0;
+  border-radius: 0 3px 3px 0;
+  background: currentColor;
+}
+
+.live-battery-alert-icon span {
+  width: 70%;
+  height: 100%;
+  display: block;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+.live-battery-alert [id$="-kicker"] {
+  color: #9b6a16;
+  font: 750 9px/1 "Cascadia Mono", Consolas, monospace;
+  letter-spacing: 0.08em;
+}
+
+.live-battery-alert h2 { margin: 7px 0 8px; font-size: 24px; }
+.live-battery-alert p { margin: 0; color: #62635d; font-size: 12px; line-height: 1.55; }
+.live-battery-alert dl { margin: 18px 0 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.live-battery-alert dl div { padding: 10px; border: 1px solid #d8d5cb; border-radius: 6px; background: rgba(255,255,255,0.55); }
+.live-battery-alert dt { color: #85847d; font: 700 8px/1 "Cascadia Mono", Consolas, monospace; }
+.live-battery-alert dd { margin: 7px 0 0; font: 750 16px/1 "Cascadia Mono", Consolas, monospace; }
+.live-battery-alert footer { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; }
+.live-battery-alert footer button { min-height: 38px; padding: 0 15px; border-radius: 6px; font: 750 9px/1 "Cascadia Mono", Consolas, monospace; }
+#live-battery-alert-dismiss { color: #fff; border: 1px solid #9d701e; background: #9d701e; }
+#live-battery-alert-estop { color: #fff; border: 1px solid #a9382c; background: #a9382c; }
+
+.live-battery-alert[data-level="critical"] { border-color: #c96631; }
+.live-battery-alert[data-level="critical"] .live-battery-alert-icon,
+.live-battery-alert[data-level="critical"] [id$="-kicker"] { color: #b85124; }
+.live-battery-alert[data-level="depleted"] { border-color: #b43e32; }
+.live-battery-alert[data-level="depleted"] .live-battery-alert-icon,
+.live-battery-alert[data-level="depleted"] [id$="-kicker"] { color: #b43e32; }
+
+:root[data-theme="dark"] .live-battery-alert {
+  color: #f0f0ed;
+  border-color: #8d681f;
+  background: #151513;
+}
+:root[data-theme="dark"] .live-battery-alert p { color: #aaa9a2; }
+:root[data-theme="dark"] .live-battery-alert dl div { border-color: #3a3934; background: #1d1d1a; }
+:root[data-theme="dark"] .live-battery-alert dt { color: #7e7d76; }
 
 .firmware-deploy-button {
   height: 30px;
@@ -5844,7 +6266,19 @@ body[data-experience="simple"] [data-expert-only] { display: none !important; }
   tab-size: 2;
 }
 
-.firmware-action-panel { overflow: auto; }
+.firmware-workspace-body > aside.firmware-action-panel {
+  position: static;
+  inset: auto;
+  width: auto;
+  max-height: none;
+  overflow: auto;
+  color: inherit;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  z-index: auto;
+}
 .firmware-action-panel section { padding: 16px; border-bottom: 1px solid #303033; }
 .firmware-step-heading { margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
 .firmware-step-heading > span { color: #5ec27b; font: 750 10px/1 "Cascadia Mono", Consolas, monospace; }

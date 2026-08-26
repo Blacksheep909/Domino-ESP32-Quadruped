@@ -1,7 +1,9 @@
 import { createReadStream, createWriteStream, openSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import net from "node:net";
+import path from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 import { WebSocket } from "ws";
 
 import {
@@ -38,7 +40,7 @@ function lineReader(stream, onMessage) {
 }
 
 function configureSerialDevice(device, baud) {
-  const numericBaud = Number(baud || 115200);
+  const numericBaud = Number(baud || 460800);
   if (!Number.isSafeInteger(numericBaud) || numericBaud < 9_600 || numericBaud > 921_600) {
     throw new Error(`Invalid serial baud rate: ${baud}`);
   }
@@ -49,6 +51,37 @@ function configureSerialDevice(device, baud) {
   if (result.error || result.status !== 0) {
     throw new Error(`Could not configure ${device} for ${numericBaud} baud, 8-N-1.`);
   }
+}
+
+function openWindowsSerialLink(device, baud, onMessage, onClose) {
+  const helper = path.join(path.dirname(fileURLToPath(import.meta.url)), "windows-serial-bridge.ps1");
+  const child = spawn(
+    "powershell.exe",
+    ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", helper,
+      "-Device", device.toUpperCase(), "-Baud", String(baud)],
+    { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] },
+  );
+  let closed = false;
+  const closeOnce = () => {
+    if (closed) return;
+    closed = true;
+    onClose();
+  };
+  lineReader(child.stdout, onMessage);
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk) => {
+    const message = String(chunk).trim();
+    if (message) console.error(`Robot USB link: ${message}`);
+  });
+  child.on("error", (error) => console.error(`Robot USB bridge: ${error.message}`));
+  child.on("close", closeOnce);
+  return {
+    write: (message) => child.stdin.writable && child.stdin.write(`${JSON.stringify(message)}\n`),
+    close: () => {
+      child.stdin.end();
+      child.kill();
+    },
+  };
 }
 
 function openRobotLink(options, onMessage, onClose) {
@@ -66,6 +99,9 @@ function openRobotLink(options, onMessage, onClose) {
   }
   if (options.device) {
     configureSerialDevice(options.device, options.baud);
+    if (process.platform === "win32") {
+      return openWindowsSerialLink(options.device, Number(options.baud || 460800), onMessage, onClose);
+    }
     const device = process.platform === "win32" && /^COM\d+$/i.test(options.device)
       ? `\\\\.\\${options.device.toUpperCase()}`
       : options.device;
@@ -88,8 +124,8 @@ if (options.help) {
   console.log(`Domino LIVE companion adapter
 
 Wi-Fi:     node live-companion-adapter.mjs --robot-host 192.168.4.1 [--robot-port 8766]
-USB:       node live-companion-adapter.mjs --device COM5 [--baud 115200]
-Bluetooth: node live-companion-adapter.mjs --transport bluetooth --device COM7 [--baud 115200]
+USB:       node live-companion-adapter.mjs --device COM5 [--baud 460800]
+Bluetooth: node live-companion-adapter.mjs --transport bluetooth --device COM7 [--baud 460800]
 
 Wireless links require the DOMINO_ROBOT_LINK_KEY environment variable (16+ characters).
 
@@ -121,6 +157,9 @@ function writeRelay(message) {
   if (relay?.readyState === WebSocket.OPEN) relay.send(JSON.stringify(message));
 }
 function writeRobot(message) {
+  if (message?.kind === "calibration") {
+    console.log(`Calibration TX: ${message.action || "unknown"} / ${message.requestId || "no-request-id"}`);
+  }
   robotLink?.write(robotLinkKey ? { ...message, linkKey: robotLinkKey } : message);
 }
 function dispatch(result) {
@@ -136,7 +175,25 @@ function connectRelay() {
     writeRelay(core.announcement());
   });
   relay.on("message", (payload) => {
-    try { dispatch(core.handleRelay(JSON.parse(payload.toString()))); } catch { /* Ignore malformed relay packets. */ }
+    try {
+      const message = JSON.parse(payload.toString());
+      if (
+        message?.type === "live-connection-command" &&
+        message.action === "restart" &&
+        message.adapterId === core.adapterId
+      ) {
+        restartRobotLink("browser-link-restart");
+        writeRelay({
+          type: "live-connection-ack",
+          action: "restart",
+          requestId: message.requestId,
+          accepted: true,
+          adapterId: core.adapterId,
+        });
+        return;
+      }
+      dispatch(core.handleRelay(message));
+    } catch { /* Ignore malformed relay packets. */ }
   });
   relay.on("close", () => { if (!shuttingDown) setTimeout(connectRelay, 800); });
   relay.on("error", (error) => console.error(`Relay link: ${error.message}`));
@@ -145,20 +202,41 @@ function connectRelay() {
 function connectRobot() {
   if (shuttingDown || robotLink) return;
   try {
-    robotLink = openRobotLink(
+    let openedLink;
+    openedLink = openRobotLink(
       options,
-      (message) => dispatch(core.handleRobot(message)),
+      (message) => {
+        if (message?.type === "robot-ack" && message.kind === "calibration") {
+          console.log(
+            `Calibration RX: ${message.action || "unknown"} / ${message.requestId || "no-request-id"} / ` +
+            `${message.accepted === true ? "accepted" : "rejected"}` +
+            `${message.reason ? ` / ${message.reason}` : ""}`,
+          );
+        }
+        dispatch(core.handleRobot(message));
+      },
       () => {
+        if (robotLink !== openedLink) return;
         robotLink = null;
         dispatch(core.disconnectRobot(Date.now(), "physical-link-closed"));
         if (!shuttingDown) setTimeout(connectRobot, 800);
       },
     );
+    robotLink = openedLink;
     console.log(`Companion opening ${transport.toUpperCase()} robot link at ${endpoint}`);
   } catch (error) {
     console.error(`Robot link: ${error instanceof Error ? error.message : error}`);
     if (!shuttingDown) setTimeout(connectRobot, 800);
   }
+}
+
+function restartRobotLink(reason = "link-restart") {
+  const previousLink = robotLink;
+  robotLink = null;
+  dispatch(core.disconnectRobot(Date.now(), reason));
+  try { previousLink?.close(); } catch { /* Reopening below is the recovery path. */ }
+  if (!shuttingDown) setTimeout(connectRobot, 150);
+  console.log(`Companion restarting ${transport.toUpperCase()} robot link at ${endpoint}`);
 }
 
 connectRobot();

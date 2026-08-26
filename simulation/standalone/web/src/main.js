@@ -10,6 +10,12 @@ import {
   standServoReference,
 } from "./domino-config.js";
 import { point2, solveLinkagePose } from "./linkage.js";
+import { formatAxisValue, niceLinearScale } from "./chart-axis.js";
+import { livePreviewGroundCorrection } from "./live-preview-grounding.js";
+import {
+  LIVE_FLOAT_MINIMUM_HEIGHT_MM,
+  livePreviewBodyPose,
+} from "./live-float-state.js";
 import {
   createGaitLab,
   defaultGaitLabSettings,
@@ -65,6 +71,14 @@ import {
   LIVE_SERVO_CHANNELS,
 } from "./live-telemetry-state.js";
 import {
+  createLiveBatteryAlertState,
+  deriveLiveBatteryState,
+  dismissLiveBatteryAlert,
+  LIVE_BATTERY_ALERT_LEVELS,
+  liveBatteryCommandsBlocked,
+  observeLiveBatteryAlert,
+} from "./live-battery-state.js";
+import {
   acceptLiveControllerTelemetry,
   createLiveControllerState,
   liveControllerDiagnosticExport,
@@ -84,9 +98,11 @@ import {
   acceptLiveAdapterAnnouncement,
   acceptLiveConnectionAcknowledgement,
   cancelLiveReconnect,
+  clearLiveConnectionFault,
   createLiveConnectionCommand,
   createLiveConnectionState,
   failLiveConnectionRequest,
+  expireLiveLinkRestart,
   liveConnectionEnvelope,
   liveConnectionIsReady,
   liveConnectionStatus,
@@ -141,6 +157,7 @@ import {
 } from "./live-diagnostics-state.js";
 import {
   archiveLiveSession,
+  clearLiveSession,
   compareLiveSessions,
   createLiveSessionState,
   liveSessionCsv,
@@ -173,6 +190,7 @@ import {
   restoreSelectedCalibrationJoint,
   selectCalibrationJoint,
   selectCalibrationStep,
+  trimCalibrationJoint,
   updateCalibrationJoint,
   updateCalibrationChannelMap,
 } from "./live-calibration-state.js";
@@ -183,9 +201,18 @@ import {
   LIVE_VIEW_DATA,
   LIVE_VIEW_DIAGNOSTICS,
   LIVE_VIEW_GAITS,
+  LIVE_VIEW_SENSORS,
   LIVE_VIEW_SESSIONS,
   selectLiveView,
 } from "./live-view-state.js";
+import {
+  captureLiveSensorLevel,
+  createLiveSensorAttitudeFilterState,
+  createLiveSensorCalibrationState,
+  filterLiveSensorAttitude,
+  liveSensorSnapshot,
+  resetLiveSensorLevel,
+} from "./live-sensor-state.js";
 import {
   parsePresentationPreferencesJson,
   presentationPreferencesJson,
@@ -211,7 +238,15 @@ const liveSafetyState = createLiveSafetyState();
 const liveManualState = createLiveManualControlState();
 const liveControllerState = createLiveControllerState();
 const liveDiagnosticsState = createLiveDiagnosticsState();
+const liveBatteryAlertState = createLiveBatteryAlertState();
+let liveBatteryControlLocked = false;
+const liveSensorCalibrationState = createLiveSensorCalibrationState();
+const liveSensorAttitudeFilterState = createLiveSensorAttitudeFilterState();
+const liveSensorCornerTrails = new Map(["fl", "fr", "bl", "br"].map((corner) => [corner, []]));
+let liveSensorTrailSampleAt = 0;
 const liveSessionState = createLiveSessionState();
+const livePreviewState = createLiveSessionState(600);
+startLiveSession(livePreviewState);
 const liveSessionArchive = [];
 const liveSessionRepository = createLiveSessionRepository();
 let liveSessionStorageState = liveSessionRepository.available ? "loading" : "unavailable";
@@ -261,6 +296,9 @@ const liveCalibrationState = createLiveCalibrationState(
 let calibrationPendingRequestId = "";
 let calibrationPendingAction = "";
 let calibrationRequestTimeout = null;
+let calibrationBenchFeedback = "";
+let calibrationBenchDesired = false;
+let calibrationRecoverySessionId = "";
 let calibrationFloatEnabled = presentationPreferences.calibrationFloat;
 let calibrationChannelDraft = null;
 let calibrationWiringStage = "edit";
@@ -332,12 +370,22 @@ function applyLiveView(view) {
   const enteringCalibration = liveViewState.selected !== LIVE_VIEW_CALIBRATION && view === LIVE_VIEW_CALIBRATION;
   const leavingGaits = liveViewState.selected === LIVE_VIEW_GAITS && view !== LIVE_VIEW_GAITS;
   const enteringGaits = liveViewState.selected !== LIVE_VIEW_GAITS && view === LIVE_VIEW_GAITS;
+  const enteringSensors = liveViewState.selected !== LIVE_VIEW_SENSORS && view === LIVE_VIEW_SENSORS;
   if (!selectLiveView(liveViewState, view)) return false;
   persistPresentationPreferences();
-  if (liveViewState.selected !== LIVE_VIEW_COMPARE && jointOverlayVisible) {
+  const supportsInspection = [LIVE_VIEW_COMPARE, LIVE_VIEW_SENSORS, LIVE_VIEW_GAITS].includes(liveViewState.selected);
+  if (!supportsInspection && jointOverlayVisible) {
     jointOverlayVisible = false;
     updateJointOverlay();
   }
+  if (liveViewState.selected === LIVE_VIEW_SENSORS && !jointOverlayVisible) {
+    jointOverlayVisible = true;
+    selectedJointLeg = "ALL";
+    updateJointOverlay();
+  }
+  // Calibration has its own persistent, safety-specific float control. Do not
+  // let a hidden toolbar float state override that page's explicit toggle.
+  if (enteringCalibration && floatModeEnabled) setFloatMode(false);
   if (leavingCalibration) {
     closeCalibrationWiringDialog();
     closeRobotCalibrationConfirmation();
@@ -363,25 +411,21 @@ function applyLiveView(view) {
   });
   document.querySelector("#live-view-compare").hidden = liveViewState.selected !== LIVE_VIEW_COMPARE;
   document.querySelector("#live-view-data").hidden = liveViewState.selected !== LIVE_VIEW_DATA;
+  document.querySelector("#live-view-sensors").hidden = liveViewState.selected !== LIVE_VIEW_SENSORS;
   document.querySelector("#live-view-calibration").hidden = liveViewState.selected !== LIVE_VIEW_CALIBRATION;
   document.querySelector("#live-view-gaits").hidden = liveViewState.selected !== LIVE_VIEW_GAITS;
   document.querySelector("#live-view-diagnostics").hidden = liveViewState.selected !== LIVE_VIEW_DIAGNOSTICS;
   document.querySelector("#live-view-sessions").hidden = liveViewState.selected !== LIVE_VIEW_SESSIONS;
   if (liveViewState.selected === LIVE_VIEW_DATA) requestAnimationFrame(renderLiveComparisonChart);
+  if (liveViewState.selected === LIVE_VIEW_SENSORS) updateLiveComparisonUi();
   if (liveViewState.selected === LIVE_VIEW_CALIBRATION) renderLiveCalibrationUi();
   if (liveViewState.selected === LIVE_VIEW_GAITS) renderLiveGaitUi();
   if (liveViewState.selected === LIVE_VIEW_DIAGNOSTICS) updateLiveComparisonUi();
   if (liveViewState.selected === LIVE_VIEW_SESSIONS) renderLiveSessionArchive();
   requestAnimationFrame(() => {
     resize();
-    if (enteringCalibration || enteringGaits) {
-      resetCameraView();
-      perspectiveCamera.position.copy(robotCameraAnchor).addScaledVector(
-        defaultCameraOffset,
-        enteringCalibration ? 0.58 : 0.72,
-      );
-      perspectiveCamera.lookAt(controls.target);
-      controls.update();
+    if (enteringCalibration || enteringGaits || enteringSensors) {
+      resetCameraForActiveView();
     }
   });
   return true;
@@ -440,8 +484,12 @@ document.querySelector("#live-adapter-list").addEventListener("click", (event) =
 document.querySelector("#live-connection-connect").addEventListener("click", () => {
   sendLiveConnectionRequest("connect");
 });
+document.querySelector("#live-connection-restart").addEventListener("click", () => {
+  sendLiveConnectionRequest("restart");
+});
 document.querySelector("#live-connection-disconnect").addEventListener("click", () => {
   if (cancelLiveReconnect(liveConnectionState)) renderLiveConnectionUi();
+  else if (clearLiveConnectionFault(liveConnectionState)) renderLiveConnectionUi();
   else sendLiveConnectionRequest("disconnect");
 });
 
@@ -473,6 +521,21 @@ document.querySelector("#live-safety-estop").addEventListener("click", () => sen
 document.querySelector("#live-global-estop").addEventListener("click", () => sendLiveSafetyCommand("estop"));
 document.querySelector("#live-safety-reset-estop").addEventListener("click", () => sendLiveSafetyCommand("reset-estop"));
 document.querySelector("#live-safety-ack-fault").addEventListener("click", () => sendLiveSafetyCommand("acknowledge-fault"));
+
+const liveBatteryAlertDialog = document.querySelector("#live-battery-alert");
+document.querySelector("#live-battery-alert-dismiss").addEventListener("click", () => {
+  if (dismissLiveBatteryAlert(liveBatteryAlertState) && liveBatteryAlertDialog.open) {
+    liveBatteryAlertDialog.close();
+  }
+});
+document.querySelector("#live-battery-alert-estop").addEventListener("click", () => {
+  sendLiveSafetyCommand("estop");
+});
+liveBatteryAlertDialog.addEventListener("cancel", (event) => {
+  if (liveBatteryControlLocked || !dismissLiveBatteryAlert(liveBatteryAlertState)) {
+    event.preventDefault();
+  }
+});
 
 const liveManualDialog = document.querySelector("#live-manual-dialog");
 document.querySelector("#live-manual-open").addEventListener("click", () => {
@@ -2352,6 +2415,7 @@ function connectControlBridge() {
     liveCalibrationState.benchModeAcknowledged = false;
     calibrationPendingRequestId = "";
     calibrationPendingAction = "";
+    calibrationBenchFeedback = "PC link disconnected. Reconnect before requesting bench mode.";
     clearTimeout(calibrationRequestTimeout);
     calibrationRequestTimeout = null;
     liveGaitState.pendingRequestId = "";
@@ -2439,6 +2503,54 @@ function resetLiveCommandPermissions(reason) {
   if (reason) liveGaitState.status = reason;
 }
 
+function updateLiveBatteryAlert(battery, packVoltageV) {
+  const percent = battery?.estimatedChargePercent;
+  const wasLocked = liveBatteryControlLocked;
+  liveBatteryControlLocked = liveBatteryCommandsBlocked(percent);
+  const level = observeLiveBatteryAlert(liveBatteryAlertState, percent);
+  const dialog = document.querySelector("#live-battery-alert");
+
+  if (liveBatteryControlLocked && !wasLocked) {
+    cancelLiveArmHold(liveSafetyState);
+    if (liveManualState.authorityToken) releaseLiveManualControl(
+      "Battery reached 0%. Browser control was neutralized and released.",
+    );
+  }
+
+  if (!level) {
+    if (dialog.open) dialog.close();
+    return;
+  }
+
+  const messages = {
+    [LIVE_BATTERY_ALERT_LEVELS.LOW]: {
+      title: "Battery at 10%",
+      message: "Domino is running low. Finish the current check and prepare to power down or change the battery.",
+    },
+    [LIVE_BATTERY_ALERT_LEVELS.CRITICAL]: {
+      title: "Battery at 5%",
+      message: "Battery charge is critical. Stop motion, support the robot and replace or recharge the pack now.",
+    },
+    [LIVE_BATTERY_ALERT_LEVELS.DEPLETED]: {
+      title: "Battery depleted",
+      message: "Robot-control workflows are locked at 0%. Use E-stop if needed, then safely disconnect and recharge the battery.",
+    },
+  };
+  const copy = messages[level];
+  dialog.dataset.level = level;
+  document.querySelector("#live-battery-alert-title").textContent = copy.title;
+  document.querySelector("#live-battery-alert-message").textContent = copy.message;
+  document.querySelector("#live-battery-alert-voltage").textContent = Number.isFinite(packVoltageV)
+    ? `${packVoltageV.toFixed(2)} V`
+    : "--.- V";
+  document.querySelector("#live-battery-alert-percent").textContent = Number.isFinite(percent)
+    ? `${Math.round(percent)}%`
+    : "--%";
+  document.querySelector("#live-battery-alert-dismiss").hidden = liveBatteryControlLocked;
+  document.querySelector("#live-battery-alert-estop").hidden = !liveBatteryControlLocked;
+  if (!dialog.open) dialog.showModal();
+}
+
 function liveSafetyContext() {
   const snapshot = liveComparisonSnapshot(liveTelemetryState);
   const controller = liveControllerSnapshot(liveControllerState);
@@ -2457,7 +2569,8 @@ function liveManualContext() {
     robotState: liveSafetyState.robotState,
     telemetryFresh: snapshot.expectedFresh && snapshot.measuredFresh,
     controllerLinkReady: controller.linkReady,
-    workspaceActive: applicationState.workspace === WORKSPACE_REAL_ROBOT && document.visibilityState === "visible",
+    workspaceActive: applicationState.workspace === WORKSPACE_REAL_ROBOT &&
+      document.visibilityState === "visible" && !liveBatteryControlLocked,
   };
 }
 
@@ -2472,7 +2585,8 @@ function renderLiveManualUi() {
     : "--";
   document.querySelector("#live-manual-status").textContent = liveManualState.status;
   document.querySelector("#live-manual-consent").checked = liveManualState.safetyConfirmed;
-  document.querySelector("#live-manual-request").disabled = !liveManualCanRequest(liveManualState, context);
+  document.querySelector("#live-manual-request").disabled =
+    liveBatteryControlLocked || !liveManualCanRequest(liveManualState, context);
   document.querySelector("#live-manual-release").disabled = !liveManualState.authorityToken || Boolean(liveManualState.pendingRequestId);
   document.querySelector("#live-manual-estop").disabled = !context.connectionReady;
   const deadman = document.querySelector("#live-manual-deadman");
@@ -2493,7 +2607,8 @@ function renderLiveManualUi() {
 
 function sendLiveManualAuthority(action) {
   const connection = liveConnectionEnvelope(liveConnectionState);
-  if (socket?.readyState !== WebSocket.OPEN || !connection || !liveConnectionIsReady(liveConnectionState)) return false;
+  if (socket?.readyState !== WebSocket.OPEN || !connection || !liveConnectionIsReady(liveConnectionState) ||
+      (liveBatteryControlLocked && action !== "release-authority")) return false;
   const requestId = crypto.randomUUID();
   const command = createLiveManualAuthorityCommand(liveManualState, action, connection, requestId);
   if (!command || (action === "request-authority" && !liveManualCanRequest(liveManualState, liveManualContext()))) return false;
@@ -2521,7 +2636,7 @@ function acceptLiveManualAuthorityAck(message) {
 function sendLiveManualFrame(forceNeutral = false) {
   const connection = liveConnectionEnvelope(liveConnectionState);
   const frame = createLiveManualControlFrame(liveManualState, connection, Date.now(), forceNeutral);
-  if (!frame || socket?.readyState !== WebSocket.OPEN) return false;
+  if (!frame || socket?.readyState !== WebSocket.OPEN || (liveBatteryControlLocked && !forceNeutral)) return false;
   socket.send(JSON.stringify(frame));
   return true;
 }
@@ -2548,7 +2663,7 @@ function serviceLiveManualControl() {
     const context = liveManualContext();
     const invalid = Date.now() >= liveManualState.authorityExpiresAt ||
       context.robotState !== "armed" || !context.connectionReady || !context.telemetryFresh ||
-      !context.controllerLinkReady || !context.workspaceActive;
+      !context.controllerLinkReady || !context.workspaceActive || liveBatteryControlLocked;
     if (invalid) {
       sendLiveManualFrame(true);
       tickLiveManualControl(liveManualState, context);
@@ -2564,7 +2679,7 @@ setInterval(serviceLiveManualControl, LIVE_MANUAL_FRAME_INTERVAL_MS);
 function renderLiveSafetyUi() {
   const context = liveSafetyContext();
   const connected = context.connectionReady;
-  const canArm = liveSafetyCanArm(liveSafetyState, context);
+  const canArm = !liveBatteryControlLocked && liveSafetyCanArm(liveSafetyState, context);
   const stateLabel = connected ? liveSafetyState.robotState : "disconnected";
   const armButton = document.querySelector("#live-safety-arm");
   armButton.disabled = !canArm || Boolean(liveSafetyState.pendingRequestId);
@@ -2596,7 +2711,8 @@ function renderLiveSafetyUi() {
 
 function sendLiveSafetyCommand(action) {
   const connection = liveConnectionEnvelope(liveConnectionState);
-  if (socket?.readyState !== WebSocket.OPEN || !connection || !liveConnectionIsReady(liveConnectionState)) return false;
+  if (socket?.readyState !== WebSocket.OPEN || !connection || !liveConnectionIsReady(liveConnectionState) ||
+      (liveBatteryControlLocked && !["disarm", "estop"].includes(action))) return false;
   const requestId = crypto.randomUUID();
   const command = createLiveSafetyCommand(liveSafetyState, action, connection, requestId);
   if (!command) return false;
@@ -2657,6 +2773,8 @@ function renderLiveConnectionUi() {
   const adapters = visibleLiveAdapters(liveConnectionState, now);
   const selected = liveConnectionState.adapters[liveConnectionState.selectedAdapterId] || null;
   const reconnecting = liveConnectionState.phase === "reconnecting";
+  const restarting = liveConnectionState.phase === "restarting";
+  const connectionFault = liveConnectionState.phase === "fault";
   const phase = document.querySelector("#live-connection-phase");
   phase.textContent = liveConnectionState.phase.toUpperCase();
   phase.dataset.state = connected ? "connected" : liveConnectionState.phase;
@@ -2664,7 +2782,7 @@ function renderLiveConnectionUi() {
 
   document.querySelectorAll("[data-live-transport]").forEach((button) => {
     button.setAttribute("aria-pressed", String(button.dataset.liveTransport === liveConnectionState.transportFilter));
-    button.disabled = Boolean(liveConnectionState.sessionId || liveConnectionState.pendingRequestId || reconnecting);
+    button.disabled = Boolean(liveConnectionState.sessionId || liveConnectionState.pendingRequestId || reconnecting || restarting);
   });
 
   const list = document.querySelector("#live-adapter-list");
@@ -2676,7 +2794,7 @@ function renderLiveConnectionUi() {
     button.dataset.adapterId = adapter.adapterId;
     button.setAttribute("role", "option");
     button.setAttribute("aria-selected", String(adapter.adapterId === liveConnectionState.selectedAdapterId));
-    button.disabled = Boolean(liveConnectionState.sessionId || liveConnectionState.pendingRequestId || reconnecting);
+    button.disabled = Boolean(liveConnectionState.sessionId || liveConnectionState.pendingRequestId || reconnecting || restarting);
     const title = document.createElement("strong");
     title.textContent = adapter.name;
     const transport = document.createElement("span");
@@ -2706,20 +2824,28 @@ function renderLiveConnectionUi() {
   });
 
   document.querySelector("#live-connection-discover").disabled =
-    !liveConnectionState.bridgeConnected || reconnecting || Boolean(liveConnectionState.pendingRequestId || liveConnectionState.sessionId);
+    !liveConnectionState.bridgeConnected || reconnecting || restarting || Boolean(liveConnectionState.pendingRequestId || liveConnectionState.sessionId);
   document.querySelector("#live-connection-connect").disabled =
-    !liveConnectionState.bridgeConnected || !selected || reconnecting || Boolean(liveConnectionState.pendingRequestId || liveConnectionState.sessionId);
+    !liveConnectionState.bridgeConnected || !selected || selected.state === "error" || reconnecting || restarting || Boolean(liveConnectionState.pendingRequestId || liveConnectionState.sessionId);
+  const restartButton = document.querySelector("#live-connection-restart");
+  restartButton.hidden = !(connectionFault || restarting);
+  restartButton.textContent = restarting ? "RESTARTING..." : `RESTART ${selected?.transport?.toUpperCase() || "LINK"}`;
+  restartButton.disabled = restarting || !liveConnectionState.bridgeConnected || !selected || Boolean(liveConnectionState.pendingRequestId || liveConnectionState.sessionId);
   const disconnectButton = document.querySelector("#live-connection-disconnect");
-  disconnectButton.textContent = reconnecting ? "CANCEL RETRY" : "DISCONNECT";
+  disconnectButton.textContent = reconnecting ? "CANCEL RETRY" : connectionFault ? "CLEAR FAULT" : "DISCONNECT";
   disconnectButton.disabled =
-    (!connected && !reconnecting) || liveSafetyState.robotState === "armed" || Boolean(liveConnectionState.pendingRequestId);
+    (!connected && !reconnecting && !connectionFault) ||
+    (liveSafetyState.robotState === "armed" && !connectionFault) ||
+    Boolean(liveConnectionState.pendingRequestId);
 
   const openButton = document.querySelector("#live-connection-open");
   openButton.textContent = connected ? "MANAGE LINK" : "PAIR ROBOT";
   openButton.title = connected
     ? "Inspect or disconnect the active PC link"
-    : "Find and pair this PC with Domino";
-  openButton.dataset.state = connected ? "connected" : "ready";
+    : connectionFault
+      ? `Connection fault: ${liveConnectionState.error || "open the manager to recover"}`
+      : "Find and pair this PC with Domino";
+  openButton.dataset.state = connected ? "connected" : connectionFault ? "fault" : "ready";
   renderLiveManualUi();
 }
 
@@ -2746,8 +2872,10 @@ function sendLiveConnectionRequest(action) {
 }
 
 function serviceLiveReconnect() {
+  expireLiveLinkRestart(liveConnectionState);
   if (liveReconnectDue(liveConnectionState)) sendLiveConnectionRequest("connect");
-  if (liveConnectionState.phase === "reconnecting") renderLiveConnectionUi();
+  serviceCalibrationBenchRecovery();
+  if (liveConnectionState.phase === "reconnecting" || liveConnectionState.phase === "restarting") renderLiveConnectionUi();
 }
 
 setInterval(serviceLiveReconnect, 250);
@@ -2823,12 +2951,98 @@ function setLiveStreamState(selector, connected) {
   output.dataset.state = connected ? "connected" : "disconnected";
 }
 
+function formatSensorG(value) {
+  return Number.isFinite(value) ? `${value >= 0 ? "+" : ""}${value.toFixed(3)} g` : "-.--- g";
+}
+
+function updateLiveSensorCornerTrails(online, now = performance.now()) {
+  const stage = document.querySelector(".live-sensor-stage");
+  const svg = document.querySelector("#live-sensor-trails");
+  if (!stage || !svg) return;
+  const stageBounds = stage.getBoundingClientRect();
+  if (stageBounds.width < 10 || stageBounds.height < 10) return;
+  svg.setAttribute("viewBox", `0 0 ${stageBounds.width} ${stageBounds.height}`);
+  const shouldSample = online && now - liveSensorTrailSampleAt >= 55;
+  if (shouldSample) liveSensorTrailSampleAt = now;
+
+  liveSensorCornerTrails.forEach((samples, corner) => {
+    const group = svg.querySelector(`[data-trail="${corner}"]`);
+    if (!online) samples.length = 0;
+    if (shouldSample) {
+      const marker = document.querySelector(`#live-sensor-plane > b[data-corner="${corner}"]`);
+      const bounds = marker?.getBoundingClientRect();
+      if (bounds) {
+        const point = {
+          x: bounds.left + bounds.width / 2 - stageBounds.left,
+          y: bounds.top + bounds.height / 2 - stageBounds.top,
+          at: now,
+        };
+        const previous = samples.at(-1);
+        if (previous && Math.hypot(point.x - previous.x, point.y - previous.y) > stageBounds.width * .35) {
+          samples.length = 0;
+        }
+        samples.push(point);
+      }
+    }
+    while (samples.length && now - samples[0].at > 2_000) samples.shift();
+    group.replaceChildren(...samples.map((point) => {
+      const age = Math.max(0, Math.min(1, (now - point.at) / 2_000));
+      const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      circle.setAttribute("cx", point.x.toFixed(1));
+      circle.setAttribute("cy", point.y.toFixed(1));
+      circle.setAttribute("r", (1.4 + (1 - age) * 2.2).toFixed(1));
+      circle.setAttribute("opacity", ((1 - age) * .72).toFixed(2));
+      return circle;
+    }));
+  });
+}
+
+function renderLiveSensorsUi(comparison, diagnostics) {
+  const rawSnapshot = liveSensorSnapshot(comparison, diagnostics?.telemetry, liveSensorCalibrationState);
+  const snapshot = filterLiveSensorAttitude(liveSensorAttitudeFilterState, rawSnapshot);
+  const safeConfirmed = document.querySelector("#live-sensor-safe-check").checked;
+  const axesConfirmed = document.querySelector("#live-sensor-axis-check").checked;
+  const step = !safeConfirmed ? 0 : !axesConfirmed ? 1 : !snapshot.levelCaptured ? 2 : 3;
+  const imuModule = document.querySelector("#live-sensor-imu-badge").closest(".live-sensor-module");
+
+  document.querySelector("#live-sensors-link-state").textContent = comparison.lastRobotPacketAgeMs !== null && comparison.lastRobotPacketAgeMs <= 1_000
+    ? "PC LINK CONNECTED" : "PC LINK OFFLINE";
+  document.querySelector("#live-sensors-link-state").dataset.state = snapshot.online ? "online" : "offline";
+  document.querySelector("#live-sensors-imu-state").textContent = snapshot.online ? "IMU STREAMING" : "IMU WAITING";
+  document.querySelector("#live-sensor-reference-state").textContent = snapshot.levelCaptured ? "LEVEL REFERENCE ACTIVE" : "RAW SENSOR FRAME";
+  document.querySelector("#live-sensor-roll").textContent = formatLiveAngle(snapshot.displayRollDeg ?? snapshot.rollDeg);
+  document.querySelector("#live-sensor-pitch").textContent = formatLiveAngle(snapshot.displayPitchDeg ?? snapshot.pitchDeg);
+  document.querySelector("#live-sensor-yaw").textContent = formatLiveAngle(snapshot.displayYawDeg ?? snapshot.yawDeg);
+  document.querySelector("#live-sensor-gravity").textContent = formatSensorG(snapshot.gravityMagnitudeG);
+  document.querySelector("#live-sensor-sample-age").textContent = comparison.lastRobotPacketAgeMs === null
+    ? "-- ms" : `${Math.round(comparison.lastRobotPacketAgeMs)} ms`;
+  document.querySelector("#live-sensor-ax").textContent = formatSensorG(snapshot.axG);
+  document.querySelector("#live-sensor-ay").textContent = formatSensorG(snapshot.ayG);
+  document.querySelector("#live-sensor-az").textContent = formatSensorG(snapshot.azG);
+  document.querySelector("#live-sensor-imu-detail").textContent = snapshot.online
+    ? `${formatSensorG(snapshot.gravityMagnitudeG)} / ATTITUDE FRESH`
+    : "WAITING FOR FRESH IMU TELEMETRY";
+  document.querySelector("#live-sensor-imu-badge").textContent = snapshot.online ? "ONLINE" : "OFFLINE";
+  imuModule.dataset.state = snapshot.online ? "online" : "waiting";
+
+  document.querySelectorAll(".live-sensor-guide li").forEach((item, index) => item.classList.toggle("active", index === step));
+  document.querySelector("#live-sensor-calibration-state").textContent = `STEP ${step + 1} / 4`;
+  document.querySelector("#live-sensor-capture-level").disabled = !snapshot.online || !safeConfirmed || !axesConfirmed;
+  document.querySelector("#live-sensor-reset-level").disabled = !snapshot.levelCaptured;
+  document.querySelector("#live-sensor-calibration-copy").textContent = !safeConfirmed
+    ? "Support the robot and isolate servo power before continuing."
+    : !axesConfirmed
+      ? "Gently verify the physical sensor axes, then confirm the mounting convention."
+      : !snapshot.online
+        ? "The safety checks are complete; waiting for fresh IMU telemetry."
+        : !snapshot.levelCaptured
+          ? "Place the body on a measured level surface, let the readings settle, then capture level."
+          : `Browser reference captured ${new Date(snapshot.capturedAt).toLocaleTimeString()}. Verify nose-up and left-up motion before future robot persistence.`;
+}
+
 const liveChartCanvas = document.querySelector("#live-comparison-chart");
 const liveChartSignal = document.querySelector("#live-chart-signal");
 const liveChartWindow = document.querySelector("#live-chart-window");
-const liveDataChartCanvas = document.querySelector("#live-data-chart");
-const liveDataChartSignal = document.querySelector("#live-data-chart-signal");
-const liveDataChartWindow = document.querySelector("#live-data-chart-window");
 const bodyChartDefinition = (title, field) => ({
   title,
   expected: (sample) => sample.expectedBody?.[field],
@@ -2842,9 +3056,17 @@ const liveChartDefinitions = {
   yawDeg: bodyChartDefinition("Body yaw / degrees", "yawDeg"),
   heightMm: bodyChartDefinition("Body height / millimetres", "heightMm"),
   voltageV: measuredChartDefinition("Battery voltage / volts", (sample) => sample.power?.voltageV),
+  averageCellVoltageV: measuredChartDefinition("Average 4S cell voltage / volts", (sample) => sample.power?.averageCellVoltageV),
+  estimatedChargePercent: measuredChartDefinition("Estimated LiPo charge / percent", (sample) => sample.power?.estimatedChargePercent),
   currentA: measuredChartDefinition("Battery current / amperes", (sample) => sample.power?.currentA),
   powerW: measuredChartDefinition("Calculated power / watts", (sample) => sample.power?.powerW),
   alignmentMs: measuredChartDefinition("Command-to-measurement alignment / milliseconds", (sample) => sample.alignmentMs),
+  packetRateHz: measuredChartDefinition("Engineering packet rate / hertz", (sample) => sample.link?.packetRateHz),
+  packetAgeMs: measuredChartDefinition("Engineering packet age / milliseconds", (sample) => sample.link?.packetAgeMs),
+  packetBytes: measuredChartDefinition("Telemetry payload size / bytes", (sample) => sample.link?.packetBytes),
+  droppedPackets: measuredChartDefinition("Dropped packet total", (sample) => sample.link?.droppedPackets),
+  rejectedPackets: measuredChartDefinition("Rejected packet total", (sample) => sample.link?.rejectedPackets),
+  esp32LoopHz: measuredChartDefinition("ESP32 control loop / hertz", (sample) => sample.link?.esp32LoopHz),
 };
 const footLabels = ["FL", "FR", "BL", "BR"];
 footLabels.forEach((label, leg) => {
@@ -2872,6 +3094,153 @@ LIVE_SERVO_CHANNELS.forEach((channel, index) => {
   };
 });
 
+const liveDataGraphDefaults = [
+  "rollDeg", "pitchDeg", "yawDeg",
+  "voltageV", "averageCellVoltageV", "estimatedChargePercent", "currentA", "powerW",
+  "packetRateHz", "packetAgeMs", "packetBytes",
+];
+let liveDataGraphSequence = 0;
+const liveDataGraphs = liveDataGraphDefaults.map((signal) => ({
+  id: ++liveDataGraphSequence,
+  signal,
+  window: "30",
+  zoom: null,
+  zoomHistory: [],
+  element: null,
+}));
+
+function liveDataGraphOptions() {
+  return Object.entries(liveChartDefinitions).map(([value, definition]) => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = definition.title.toUpperCase();
+    return option;
+  });
+}
+
+function moveLiveDataGraph(graph, offset) {
+  const index = liveDataGraphs.indexOf(graph);
+  const target = index + offset;
+  if (index < 0 || target < 0 || target >= liveDataGraphs.length) return;
+  [liveDataGraphs[index], liveDataGraphs[target]] = [liveDataGraphs[target], liveDataGraphs[index]];
+  renderLiveDataDashboardStructure();
+}
+
+function applyLiveDataGraphZoom(graph, startX, endX, canvas) {
+  const range = canvas._livePlotRange;
+  if (!range || Math.abs(endX - startX) < 8) return;
+  const bounds = canvas.getBoundingClientRect();
+  const clampX = (clientX) => Math.max(range.left, Math.min(range.right, clientX - bounds.left));
+  const firstX = clampX(Math.min(startX, endX));
+  const lastX = clampX(Math.max(startX, endX));
+  const timeAt = (x) => range.first + ((x - range.left) / Math.max(1, range.right - range.left)) * (range.last - range.first);
+  if (graph.zoom) graph.zoomHistory.push({ ...graph.zoom });
+  graph.zoom = { from: timeAt(firstX), to: timeAt(lastX) };
+  renderLiveDataDashboardCharts();
+}
+
+function createLiveDataGraphElement(graph) {
+  const card = document.createElement("article");
+  card.className = "live-data-graph";
+  const header = document.createElement("header");
+  const select = document.createElement("select");
+  select.setAttribute("aria-label", "Graph signal");
+  select.append(...liveDataGraphOptions());
+  select.value = graph.signal;
+  select.addEventListener("change", () => {
+    graph.signal = select.value;
+    graph.zoom = null;
+    graph.zoomHistory = [];
+    renderLiveDataDashboardCharts();
+  });
+  const controls = document.createElement("div");
+  const windowSelect = document.createElement("select");
+  windowSelect.setAttribute("aria-label", "Graph time window");
+  [["10", "10 S"], ["30", "30 S"], ["60", "60 S"], ["all", "ALL"]].forEach(([value, label]) => {
+    const option = document.createElement("option"); option.value = value; option.textContent = label; windowSelect.append(option);
+  });
+  windowSelect.value = graph.window;
+  windowSelect.addEventListener("change", () => { graph.window = windowSelect.value; graph.zoom = null; graph.zoomHistory = []; renderLiveDataDashboardCharts(); });
+  const button = (label, title, handler) => {
+    const element = document.createElement("button"); element.type = "button"; element.textContent = label; element.title = title; element.addEventListener("click", handler); return element;
+  };
+  const earlier = button("←", "Move graph earlier", () => moveLiveDataGraph(graph, -1));
+  const later = button("→", "Move graph later", () => moveLiveDataGraph(graph, 1));
+  const remove = button("×", "Remove this graph", () => {
+    if (liveDataGraphs.length <= 1) return;
+    const index = liveDataGraphs.indexOf(graph);
+    if (index >= 0) liveDataGraphs.splice(index, 1);
+    renderLiveDataDashboardStructure();
+  });
+  const back = button("BACK", "Return to the previous zoom", () => {
+    graph.zoom = graph.zoomHistory.pop() || null;
+    renderLiveDataDashboardCharts();
+  });
+  back.dataset.graphZoomBack = "";
+  const reset = button("RESET", "Show the full selected window", () => { graph.zoom = null; graph.zoomHistory = []; renderLiveDataDashboardCharts(); });
+  reset.dataset.graphZoomReset = "";
+  controls.append(windowSelect, earlier, later, back, reset, remove);
+  header.append(select, controls);
+  const wrap = document.createElement("div");
+  wrap.className = "live-data-graph-plot";
+  const canvas = document.createElement("canvas");
+  canvas.setAttribute("aria-label", "Configurable telemetry graph");
+  const legend = document.createElement("div");
+  legend.className = "live-chart-legend";
+  legend.innerHTML = '<span><i class="expected"></i>COMMAND</span><span><i class="measured"></i>MEASURED</span><span><i class="error"></i>DELTA</span>';
+  const empty = document.createElement("em");
+  empty.textContent = "Waiting for telemetry.";
+  const brush = document.createElement("i");
+  brush.className = "live-data-zoom-brush";
+  let dragStart = null;
+  canvas.addEventListener("pointerdown", (event) => {
+    dragStart = event.clientX;
+    canvas.setPointerCapture(event.pointerId);
+    brush.hidden = false;
+    brush.style.left = `${event.offsetX}px`;
+    brush.style.width = "0px";
+  });
+  canvas.addEventListener("pointermove", (event) => {
+    if (dragStart === null) return;
+    const bounds = canvas.getBoundingClientRect();
+    const start = dragStart - bounds.left;
+    const end = event.clientX - bounds.left;
+    brush.style.left = `${Math.min(start, end)}px`;
+    brush.style.width = `${Math.abs(end - start)}px`;
+  });
+  canvas.addEventListener("pointerup", (event) => {
+    if (dragStart !== null) applyLiveDataGraphZoom(graph, dragStart, event.clientX, canvas);
+    dragStart = null;
+    brush.hidden = true;
+  });
+  wrap.append(canvas, legend, empty, brush);
+  card.append(header, wrap);
+  graph.element = { card, select, windowSelect, back, reset, remove, canvas, empty, legend };
+  return card;
+}
+
+function renderLiveDataDashboardStructure() {
+  const dashboard = document.querySelector("#live-data-dashboard");
+  dashboard.replaceChildren(...liveDataGraphs.map((graph) => graph.element?.card || createLiveDataGraphElement(graph)));
+  renderLiveDataDashboardCharts();
+}
+
+function renderLiveDataDashboardCharts() {
+  liveDataGraphs.forEach((graph) => {
+    if (!graph.element) return;
+    graph.element.back.disabled = !graph.zoom && graph.zoomHistory.length === 0;
+    graph.element.reset.disabled = !graph.zoom;
+    graph.element.remove.disabled = liveDataGraphs.length <= 1;
+    const definition = liveChartDefinitions[graph.signal] || liveChartDefinitions.pitchDeg;
+    const legendItems = graph.element.legend.querySelectorAll("span");
+    legendItems[0].hidden = typeof definition.expected !== "function";
+    legendItems[1].hidden = typeof definition.measured !== "function";
+    legendItems[2].hidden = typeof definition.error !== "function";
+    renderLiveChart(graph.element.canvas, { value: graph.signal }, { value: graph.window }, graph.element.empty, graph.zoom);
+  });
+  document.querySelector("#live-data-add-graph").disabled = liveDataGraphs.length >= 12;
+}
+
 function formatSessionDuration(durationMs) {
   if (durationMs < 10_000) return `${(durationMs / 1_000).toFixed(1)} S`;
   return `${Math.floor(durationMs / 60_000)}:${String(Math.floor(durationMs / 1_000) % 60).padStart(2, "0")}`;
@@ -2893,7 +3262,26 @@ function drawLiveSeries(context, points, color, width, height, xAt, yAt) {
   context.stroke();
 }
 
-function renderLiveChart(canvas, signal, windowSelector, emptySelector) {
+function drawChartYAxis(context, plot, scale, dark) {
+  context.save();
+  context.font = '700 9px "Cascadia Mono", Consolas, monospace';
+  context.textAlign = "right";
+  context.textBaseline = "middle";
+  context.lineWidth = 1;
+  scale.ticks.forEach((value) => {
+    const y = plot.bottom - ((value - scale.minimum) / (scale.maximum - scale.minimum)) * (plot.bottom - plot.top);
+    context.strokeStyle = dark ? "rgba(255,255,255,.08)" : "rgba(40,45,40,.1)";
+    context.beginPath();
+    context.moveTo(plot.left, y);
+    context.lineTo(plot.right, y);
+    context.stroke();
+    context.fillStyle = dark ? "rgba(225,225,229,.68)" : "rgba(55,60,55,.68)";
+    context.fillText(formatAxisValue(value, scale.step), plot.left - 7, y);
+  });
+  context.restore();
+}
+
+function renderLiveChart(canvas, signal, windowSelector, emptySelector, zoomRange = null) {
   if (applicationState.workspace !== WORKSPACE_REAL_ROBOT) return;
   const bounds = canvas.getBoundingClientRect();
   if (bounds.width < 10 || bounds.height < 10) return;
@@ -2910,8 +3298,14 @@ function renderLiveChart(canvas, signal, windowSelector, emptySelector) {
   context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
   context.clearRect(0, 0, width, height);
 
-  const samples = selectLiveSessionPlotSamples(liveSessionState.samples, windowSelector.value);
-  const emptyState = document.querySelector(emptySelector);
+  const sourceSamples = liveSessionState.samples.length > 0
+    ? liveSessionState.samples
+    : livePreviewState.samples;
+  let samples = selectLiveSessionPlotSamples(sourceSamples, windowSelector.value);
+  if (zoomRange) {
+    samples = samples.filter((sample) => sample.elapsedMs >= zoomRange.from && sample.elapsedMs <= zoomRange.to);
+  }
+  const emptyState = typeof emptySelector === "string" ? document.querySelector(emptySelector) : emptySelector;
   emptyState.hidden = samples.length > 1;
   if (samples.length < 2) return;
 
@@ -2932,22 +3326,18 @@ function renderLiveChart(canvas, signal, windowSelector, emptySelector) {
   const verticalPadding = (maximum - minimum) * 0.12;
   minimum -= verticalPadding;
   maximum += verticalPadding;
+  const verticalScale = niceLinearScale(minimum, maximum, 4);
+  minimum = verticalScale.minimum;
+  maximum = verticalScale.maximum;
   const firstTime = samples[0].elapsedMs;
   const lastTime = Math.max(firstTime + 1, samples.at(-1).elapsedMs);
-  const plot = { left: 10, right: width - 10, top: 30, bottom: height - 10 };
+  const plot = { left: 48, right: width - 10, top: 30, bottom: height - 14 };
+  canvas._livePlotRange = { first: firstTime, last: lastTime, left: plot.left, right: plot.right };
   const xAt = (time) => plot.left + ((time - firstTime) / (lastTime - firstTime)) * (plot.right - plot.left);
   const yAt = (value) => plot.bottom - ((value - minimum) / (maximum - minimum)) * (plot.bottom - plot.top);
   const dark = document.documentElement.dataset.theme === "dark";
 
-  context.strokeStyle = dark ? "rgba(255,255,255,.08)" : "rgba(40,45,40,.1)";
-  context.lineWidth = 1;
-  for (let index = 0; index <= 4; index += 1) {
-    const y = plot.top + ((plot.bottom - plot.top) * index) / 4;
-    context.beginPath();
-    context.moveTo(plot.left, y);
-    context.lineTo(plot.right, y);
-    context.stroke();
-  }
+  drawChartYAxis(context, plot, verticalScale, dark);
   if (minimum <= 0 && maximum >= 0) {
     context.strokeStyle = dark ? "rgba(255,255,255,.2)" : "rgba(40,45,40,.22)";
     context.beginPath();
@@ -2962,7 +3352,7 @@ function renderLiveChart(canvas, signal, windowSelector, emptySelector) {
 
 function renderLiveComparisonChart() {
   renderLiveChart(liveChartCanvas, liveChartSignal, liveChartWindow, "#live-chart-empty");
-  renderLiveChart(liveDataChartCanvas, liveDataChartSignal, liveDataChartWindow, "#live-data-chart-empty");
+  renderLiveDataDashboardCharts();
 }
 
 function downloadLiveSessionCsv(session, name = "domino-live-session") {
@@ -3078,15 +3468,13 @@ function renderLiveSessionComparisonChart(baseline, candidate) {
   if (maximum - minimum < 1e-6) { minimum -= 1; maximum += 1; }
   const padding = (maximum - minimum) * 0.12;
   minimum -= padding; maximum += padding;
-  const plot = { left: 12, right: width - 12, top: 34, bottom: height - 12 };
+  const verticalScale = niceLinearScale(minimum, maximum, 4);
+  minimum = verticalScale.minimum; maximum = verticalScale.maximum;
+  const plot = { left: 48, right: width - 12, top: 34, bottom: height - 14 };
   const xAt = (value) => plot.left + value * (plot.right - plot.left);
   const yAt = (value) => plot.bottom - ((value - minimum) / (maximum - minimum)) * (plot.bottom - plot.top);
   const dark = document.documentElement.dataset.theme === "dark";
-  context.strokeStyle = dark ? "rgba(255,255,255,.08)" : "rgba(40,45,40,.1)";
-  for (let index = 0; index <= 4; index += 1) {
-    const y = plot.top + ((plot.bottom - plot.top) * index) / 4;
-    context.beginPath(); context.moveTo(plot.left, y); context.lineTo(plot.right, y); context.stroke();
-  }
+  drawChartYAxis(context, plot, verticalScale, dark);
   const draw = (points, color) => {
     if (points.length < 2) return;
     context.beginPath();
@@ -3214,7 +3602,7 @@ function renderLiveDataTable() {
   if (samples.length === 0) {
     const row = body.insertRow();
     const cell = row.insertCell();
-    cell.colSpan = 7;
+    cell.colSpan = 9;
     cell.textContent = "No recorded samples.";
     return;
   }
@@ -3227,6 +3615,8 @@ function renderLiveDataTable() {
       formatLiveAngle(sample.measuredBody.pitchDeg),
       formatLiveAngle(sample.bodyError.pitchDeg),
       Number.isFinite(sample.power?.voltageV) ? `${sample.power.voltageV.toFixed(2)} V` : "--",
+      Number.isFinite(sample.power?.averageCellVoltageV) ? `${sample.power.averageCellVoltageV.toFixed(3)} V` : "--",
+      Number.isFinite(sample.power?.estimatedChargePercent) ? `${Math.round(sample.power.estimatedChargePercent)}%` : "--",
       Number.isFinite(sample.power?.powerW) ? `${sample.power.powerW.toFixed(1)} W` : "--",
     ].forEach((value) => {
       const cell = row.insertCell();
@@ -3335,15 +3725,26 @@ function renderLiveCalibrationUi() {
   document.querySelector("#live-calibration-neutral-title").textContent = definition.label.toUpperCase();
   document.querySelector("#live-calibration-channel").textContent = joint.channel;
   document.querySelector("#live-calibration-reference").textContent = `${definition.neutralServoDeg.toFixed(2)}°`;
+  document.querySelector("#live-calibration-neutral-output").textContent =
+    `${(definition.neutralServoDeg + joint.offsetDeg).toFixed(2)}°`;
   document.querySelector("#live-calibration-preview-caption").textContent =
     `${definition.label.toUpperCase()} / ${formatCalibrationDegrees(joint.offsetDeg + liveCalibrationState.jogOffsetDeg)}`;
   document.querySelector("#live-calibration-offset").value = joint.offsetDeg.toFixed(1);
+  document.querySelector("#live-calibration-trim-value").textContent =
+    formatCalibrationDegrees(joint.offsetDeg);
   document.querySelector("#live-calibration-direction").value = String(joint.direction);
   document.querySelector("#live-calibration-preview").checked = liveCalibrationState.previewEnabled;
   document.querySelector("#live-calibration-jog-value").textContent =
     formatCalibrationDegrees(liveCalibrationState.jogOffsetDeg);
-  document.querySelector("#live-calibration-minimum").value = String(joint.minimumDeg);
-  document.querySelector("#live-calibration-maximum").value = String(joint.maximumDeg);
+  const mechanicalTravel = definition.joint === "shoulder" ? 30 : 90;
+  const minimumInput = document.querySelector("#live-calibration-minimum");
+  const maximumInput = document.querySelector("#live-calibration-maximum");
+  minimumInput.min = String(-mechanicalTravel);
+  minimumInput.max = String(mechanicalTravel - 1);
+  minimumInput.value = String(joint.minimumDeg);
+  maximumInput.min = String(-mechanicalTravel + 1);
+  maximumInput.max = String(mechanicalTravel);
+  maximumInput.value = String(joint.maximumDeg);
   const logicalOutputs = [joint.minimumDeg, joint.maximumDeg].map(
     (limit) => definition.neutralServoDeg + joint.offsetDeg + joint.direction * limit,
   ).sort((a, b) => a - b);
@@ -3500,7 +3901,8 @@ function downloadCalibrationJson() {
 
 function sendCalibrationCommand(action) {
   const connection = liveConnectionEnvelope(liveConnectionState);
-  if (socket?.readyState !== WebSocket.OPEN || !connection || !liveConnectionIsReady(liveConnectionState)) return false;
+  if (socket?.readyState !== WebSocket.OPEN || !connection || !liveConnectionIsReady(liveConnectionState) ||
+      (liveBatteryControlLocked && action !== "exit")) return false;
   const requestId = crypto.randomUUID();
   const command = createCalibrationBenchCommand(
     liveCalibrationState,
@@ -3511,18 +3913,44 @@ function sendCalibrationCommand(action) {
   Object.assign(command, connection);
   calibrationPendingRequestId = requestId;
   calibrationPendingAction = action;
+  if (action === "enter") {
+    calibrationBenchDesired = true;
+    calibrationRecoverySessionId = connection.sessionId;
+    calibrationBenchFeedback = "Request sent. Waiting for the robot over the live link...";
+  }
   socket.send(JSON.stringify(command));
   clearTimeout(calibrationRequestTimeout);
+  const requestTimeoutMs = action === "save-profile" ? 10_000 : 3_000;
   calibrationRequestTimeout = setTimeout(() => {
     if (calibrationPendingRequestId !== requestId) return;
     calibrationPendingRequestId = "";
     calibrationPendingAction = "";
     liveCalibrationState.benchModeAcknowledged = false;
+    calibrationBenchFeedback =
+      "No reply after 3 seconds. The robot remains locked; check the USB link, then press Try again.";
     document.querySelector("#live-calibration-review-status").textContent =
       "The robot did not acknowledge the calibration request. Physical movement remains locked.";
     updateLiveComparisonUi();
-  }, 3_000);
+  }, requestTimeoutMs);
   return true;
+}
+
+function serviceCalibrationBenchRecovery() {
+  const connection = liveConnectionEnvelope(liveConnectionState);
+  if (
+    !calibrationBenchDesired ||
+    liveViewState.selected !== LIVE_VIEW_CALIBRATION ||
+    !liveCalibrationState.safetyConfirmed ||
+    liveCalibrationState.benchModeAcknowledged ||
+    calibrationPendingRequestId ||
+    socket?.readyState !== WebSocket.OPEN ||
+    !connection ||
+    liveConnectionState.robotState !== "disarmed" ||
+    calibrationRecoverySessionId === connection.sessionId
+  ) return false;
+  calibrationBenchFeedback =
+    "The PC link reconnected during calibration. Reconfirming bench mode; no servo command is being sent.";
+  return sendCalibrationCommand("enter");
 }
 
 function acceptCalibrationAcknowledgement(message) {
@@ -3544,12 +3972,20 @@ function acceptCalibrationAcknowledgement(message) {
       message.supportsSafeJog === true &&
       Number(message.maxSpeedDegPerSec) <= 5,
     );
+    calibrationBenchFeedback = liveCalibrationState.benchModeAcknowledged
+      ? "Robot acknowledged bench mode. No servo moves until you issue a joint jog."
+      : `Robot refused bench mode${message.reason ? `: ${message.reason}` : "."}`;
   } else if (message.action === "exit") {
     liveCalibrationState.benchModeAcknowledged = false;
+    if (accepted) calibrationBenchDesired = false;
+    calibrationBenchFeedback = accepted
+      ? "Bench mode closed and servo outputs disabled."
+      : `Robot refused to close bench mode${message.reason ? `: ${message.reason}` : "."}`;
   } else if (message.action === "save-profile") {
     const status = document.querySelector("#live-calibration-review-status");
     if (accepted && message.persisted === true) {
       liveCalibrationState.benchModeAcknowledged = false;
+      calibrationBenchDesired = false;
       liveCalibrationState.profile.savedAt = Date.now();
       liveCalibrationState.dirty = false;
     }
@@ -3704,7 +4140,7 @@ function renderLiveGaitIkInspector(telemetry = liveGaitPreviewLab.getTelemetry()
   const apply = document.querySelector("#live-gait-apply");
   const adapter = liveConnectionState.adapters[liveConnectionState.selectedAdapterId];
   const gaitLinkReady = liveConnectionIsReady(liveConnectionState) && adapter?.capabilities.gaitProfiles === true;
-  if (apply) apply.disabled = !gaitLinkReady || !liveGaitCanApplyDraft(liveGaitState);
+  if (apply) apply.disabled = liveBatteryControlLocked || !gaitLinkReady || !liveGaitCanApplyDraft(liveGaitState);
   if (details.length && !liveGaitState.previewAssessment.safe && !liveGaitState.pendingRequestId) {
     document.querySelector("#live-gait-apply-state").textContent = "PREVIEW BLOCKED / FIX IK";
   }
@@ -3745,9 +4181,11 @@ function renderLiveGaitUi() {
     ? `WAITING / ${liveGaitState.pendingAction.toUpperCase()}`
     : liveGaitCanApply(liveGaitState) ? "DISARMED / READY TO APPLY" : "PREVIEW ONLY";
   document.querySelector("#live-gait-status").textContent = liveGaitState.status;
-  document.querySelector("#live-gait-apply").disabled = !gaitLinkReady || !liveGaitCanApplyDraft(liveGaitState);
+  document.querySelector("#live-gait-apply").disabled =
+    liveBatteryControlLocked || !gaitLinkReady || !liveGaitCanApplyDraft(liveGaitState);
   document.querySelector("#live-gait-use-robot").disabled = !gaitLinkReady || !liveGaitState.robotProfile || Boolean(liveGaitState.pendingRequestId);
-  document.querySelector("#live-gait-revert").disabled = !gaitLinkReady || !liveGaitState.previousRobotProfile || !liveGaitCanApply(liveGaitState);
+  document.querySelector("#live-gait-revert").disabled =
+    liveBatteryControlLocked || !gaitLinkReady || !liveGaitState.previousRobotProfile || !liveGaitCanApply(liveGaitState);
   document.querySelector("#live-gait-request-profile").disabled = !gaitLinkReady || Boolean(liveGaitState.pendingRequestId);
   syncLiveGaitLibrary(liveGaitState.selectedLibraryName);
   rebuildLiveGaitSettings();
@@ -3760,7 +4198,8 @@ function sendLiveGaitCommand(action, profileOverride = null) {
     socket?.readyState !== WebSocket.OPEN ||
     !connection ||
     !liveConnectionIsReady(liveConnectionState) ||
-    liveGaitState.pendingRequestId
+    liveGaitState.pendingRequestId ||
+    (liveBatteryControlLocked && ["apply-profile", "revert-profile"].includes(action))
   ) return false;
   const requestId = crypto.randomUUID();
   const originalDraft = liveGaitState.draft;
@@ -3987,6 +4426,7 @@ function updateLiveDiagnosticsUi(snapshot, liveSnapshot, controllerSnapshot) {
 }
 
 function updateLiveSessionUi(snapshot) {
+  recordLiveComparisonSample(livePreviewState, snapshot);
   if (liveSessionState.status === "recording") {
     recordLiveComparisonSample(liveSessionState, snapshot);
   }
@@ -4024,17 +4464,23 @@ function updateLiveSessionUi(snapshot) {
       : snapshot.paired
         ? "READY TO RECORD"
         : "WAITING FOR BOTH STREAMS";
-  document.querySelector("#live-data-sample-count").textContent = `${summary.sampleCount.toLocaleString()} SAMPLES`;
+  document.querySelector("#live-data-sample-count").textContent = summary.sampleCount > 0
+    ? `${summary.sampleCount.toLocaleString()} SAMPLES`
+    : snapshot.paired
+      ? "LIVE PREVIEW"
+      : "0 SAMPLES";
   document.querySelector("#live-chart-empty").textContent = recording && !snapshot.paired
     ? "Telemetry interrupted. Recording will resume when both streams return."
     : summary.sampleCount > 0
       ? "Waiting for another synchronized sample."
       : "Connect the PC link, then start recording.";
-  document.querySelector("#live-data-chart-empty").textContent = recording && !snapshot.paired
-    ? "Telemetry interrupted. Recording will resume automatically."
-    : summary.sampleCount > 0
-      ? "Waiting for another synchronized sample."
-      : "Start recording to populate this graph.";
+  liveDataGraphs.forEach((graph) => {
+    if (!graph.element) return;
+    graph.element.empty.textContent = recording && !snapshot.paired
+      ? "Telemetry interrupted. Recording will resume automatically."
+      : snapshot.paired ? "Collecting live telemetry..." : "Pair the robot to begin the live preview.";
+  });
+  document.querySelector("#live-data-clear").disabled = recording || (summary.sampleCount === 0 && livePreviewState.samples.length === 0);
   renderLiveDataTable();
   renderLiveSessionArchive();
   renderLiveComparisonChart();
@@ -4078,17 +4524,42 @@ function updateLiveComparisonUi() {
     ? "WAITING FOR ROBOT"
     : liveCalibrationState.benchModeAcknowledged
       ? "BENCH MODE READY"
-      : "REQUEST BENCH MODE";
+      : calibrationBenchFeedback.startsWith("No reply") || calibrationBenchFeedback.startsWith("Robot refused")
+        ? "TRY AGAIN"
+        : "REQUEST BENCH MODE";
   document.querySelector("#live-calibration-bench-state").textContent =
     liveCalibrationState.benchModeAcknowledged
       ? "UNLOCKED - ROBOT SAFETY ACKNOWLEDGED"
       : calibrationPendingAction === "enter"
         ? "LOCKED - WAITING FOR ROBOT ACKNOWLEDGEMENT"
         : "LOCKED - BENCH MODE NOT ACKNOWLEDGED";
+  document.querySelector("#live-calibration-bench-feedback").textContent = calibrationBenchFeedback;
+  const physicalJogReady = engineeringConnected &&
+    calibrationSupported &&
+    liveCalibrationState.safetyConfirmed &&
+    liveCalibrationState.benchModeAcknowledged;
+  document.querySelectorAll("[data-calibration-jog], [data-calibration-trim], [data-calibration-jog-reset]").forEach((control) => {
+    control.disabled = !physicalJogReady || Boolean(calibrationPendingRequestId);
+    control.title = physicalJogReady
+      ? "Send a bounded single-servo command to the robot"
+      : "Physical jog is locked. Enable bench mode first; preview changes alone do not move hardware.";
+  });
+  const enablePhysicalJog = document.querySelector("#live-calibration-enable-jog");
+  enablePhysicalJog.hidden = physicalJogReady;
+  enablePhysicalJog.disabled =
+    !engineeringConnected ||
+    !calibrationSupported ||
+    !liveCalibrationState.safetyConfirmed ||
+    Boolean(calibrationPendingRequestId);
+  enablePhysicalJog.textContent = calibrationPendingAction === "enter"
+    ? "WAITING FOR ROBOT"
+    : "ENABLE PHYSICAL JOG";
   document.querySelector("#live-calibration-jog-status").textContent =
     liveCalibrationState.benchModeAcknowledged
       ? "Robot bench mode is active. Jog requests remain limited to ±10° and 5°/s."
-      : "Preview only. Connect a compatible robot adapter and receive a bench-mode acknowledgement to unlock physical movement.";
+      : engineeringConnected
+        ? "Preview only — the PC link is paired, but physical jog needs a separate robot bench-mode acknowledgement."
+        : "Preview only. Connect a compatible robot adapter and receive a bench-mode acknowledgement to unlock physical movement.";
   document.querySelector("#live-data-current-time").textContent = engineeringConnected
     ? `PACKET ${formatPacketAge(snapshot.lastRobotPacketAgeMs)} AGO`
     : "NO TELEMETRY";
@@ -4144,8 +4615,8 @@ function updateLiveComparisonUi() {
   document.querySelector("#live-worst-joint-error").textContent =
     formatLiveAngle(snapshot.worstJointErrorDeg, "--°");
 
-  document.querySelector("#live-data-joint-error").textContent =
-    formatLiveAngle(snapshot.worstJointErrorDeg, "--°");
+  document.querySelector("#live-data-pitch").textContent =
+    formatLiveAngle(snapshot.measured?.body?.pitchDeg, "--.-°");
 
   document.querySelectorAll("[data-live-body]").forEach((output) => {
     const stream = snapshot[output.dataset.stream];
@@ -4175,34 +4646,89 @@ function updateLiveComparisonUi() {
           : "ok";
   });
 
-  document.querySelector("#live-voltage").textContent = snapshot.power
+  const measuredVoltage = Number.isFinite(snapshot.power?.voltageV);
+  const measuredCurrent = Number.isFinite(snapshot.power?.currentA);
+  const measuredPower = Number.isFinite(snapshot.power?.powerW);
+  const battery = deriveLiveBatteryState(snapshot.power?.voltageV);
+  const batteryAlertActive = applicationState.workspace === WORKSPACE_REAL_ROBOT &&
+    liveConnectionIsReady(liveConnectionState) && measuredVoltage;
+  updateLiveBatteryAlert(
+    batteryAlertActive ? battery : null,
+    batteryAlertActive ? snapshot.power.voltageV : null,
+  );
+  if (snapshot.power && measuredVoltage) {
+    snapshot.power.averageCellVoltageV = battery.averageCellVoltageV;
+    snapshot.power.estimatedChargePercent = battery.estimatedChargePercent;
+    snapshot.power.cellCount = battery.cellCount;
+  }
+  document.querySelector("#live-voltage").textContent = measuredVoltage
     ? `${snapshot.power.voltageV.toFixed(2)} V`
     : "--.- V";
-  document.querySelector("#live-data-voltage").textContent = snapshot.power
+  document.querySelector("#live-data-voltage").textContent = measuredVoltage
     ? `${snapshot.power.voltageV.toFixed(2)} V`
-    : "--.- V";
+    : "N/A";
+  document.querySelector("#live-data-voltage").title = measuredVoltage
+    ? "Measured battery voltage from the Domino PCB voltage-divider sensor"
+    : "No fresh PCB voltage-sensor sample is available.";
+  document.querySelector("#live-cell-voltage").textContent = Number.isFinite(battery.averageCellVoltageV)
+    ? `${battery.averageCellVoltageV.toFixed(3)} V`
+    : "-.--- V";
+  document.querySelector("#live-data-cell-voltage").textContent = Number.isFinite(battery.averageCellVoltageV)
+    ? `${battery.averageCellVoltageV.toFixed(3)} V`
+    : "N/A";
+  document.querySelector("#live-data-cell-voltage").title = Number.isFinite(battery.averageCellVoltageV)
+    ? "Average cell voltage calculated from total pack voltage divided by four; individual cells are not measured"
+    : "No fresh pack-voltage sample is available.";
+  const chargeText = Number.isFinite(battery.estimatedChargePercent)
+    ? `${Math.round(battery.estimatedChargePercent)}%`
+    : "--%";
+  document.querySelector("#live-charge-percent").textContent = chargeText;
+  document.querySelector("#live-data-charge-percent").textContent = Number.isFinite(battery.estimatedChargePercent)
+    ? chargeText
+    : "N/A";
+  const chargeTitle = Number.isFinite(battery.estimatedChargePercent)
+    ? "Estimated 4S LiPo state of charge from average cell voltage; servo load, temperature and pack age affect accuracy"
+    : "No fresh pack-voltage sample is available.";
+  document.querySelector("#live-charge-percent").title = chargeTitle;
+  document.querySelector("#live-data-charge-percent").title = chargeTitle;
   const headerBattery = document.querySelector("#real-battery-status");
-  headerBattery.textContent = snapshot.power ? `BAT ${snapshot.power.voltageV.toFixed(1)} V` : "BAT --.- V";
-  headerBattery.dataset.state = !snapshot.power
+  headerBattery.textContent = measuredVoltage
+    ? `BAT ${snapshot.power.voltageV.toFixed(1)} V / ${Number.isFinite(battery.estimatedChargePercent) ? `${Math.round(battery.estimatedChargePercent)}%` : "--%"}`
+    : "BAT --.- V";
+  headerBattery.dataset.state = !measuredVoltage
     ? "unavailable"
     : snapshot.power.voltageV < 14.0 ? "warning" : "ok";
-  headerBattery.title = !snapshot.power
+  headerBattery.title = !measuredVoltage
     ? "No fresh measured battery telemetry"
     : snapshot.power.voltageV < 14.0
       ? `Measured battery voltage ${snapshot.power.voltageV.toFixed(2)} V is below the 14.0 V warning threshold`
-      : `Measured robot battery voltage ${snapshot.power.voltageV.toFixed(2)} V`;
-  document.querySelector("#live-current").textContent = snapshot.power
+      : `Measured robot battery voltage ${snapshot.power.voltageV.toFixed(2)} V; average cell ${battery.averageCellVoltageV.toFixed(3)} V; estimated charge ${Math.round(battery.estimatedChargePercent)}%`;
+  document.querySelector("#live-current").textContent = measuredCurrent
     ? `${snapshot.power.currentA.toFixed(2)} A`
     : "--.- A";
-  document.querySelector("#live-power").textContent = snapshot.power
+  document.querySelector("#live-power").textContent = measuredPower
     ? `${snapshot.power.powerW.toFixed(1)} W`
     : "--- W";
-  document.querySelector("#live-data-power").textContent = snapshot.power
+  document.querySelector("#live-data-power").textContent = measuredPower
     ? `${snapshot.power.powerW.toFixed(1)} W`
-    : "--- W";
+    : "N/A";
+  document.querySelector("#live-data-power").title = measuredPower
+    ? "Measured electrical power"
+    : "Voltage is available from the PCB; current and watts require a working current monitor.";
   const diagnosticSnapshot = liveDiagnosticsSnapshot(liveDiagnosticsState, snapshot);
+  snapshot.link = {
+    packetRateHz: diagnosticSnapshot.packetRateHz,
+    packetAgeMs: diagnosticSnapshot.packetAgeMs,
+    packetBytes: diagnosticSnapshot.lastPacket?.payloadBytes ?? null,
+    droppedPackets: diagnosticSnapshot.droppedPackets,
+    rejectedPackets: diagnosticSnapshot.rejectedPackets,
+    esp32LoopHz: diagnosticSnapshot.telemetry?.esp32LoopHz ?? null,
+  };
   if (liveViewState.selected === LIVE_VIEW_DIAGNOSTICS) {
     updateLiveDiagnosticsUi(diagnosticSnapshot, snapshot, liveControllerSnapshot(liveControllerState));
+  }
+  if (liveViewState.selected === LIVE_VIEW_SENSORS) {
+    renderLiveSensorsUi(snapshot, diagnosticSnapshot);
   }
   updateLiveSessionUi(snapshot);
 }
@@ -4227,6 +4753,23 @@ function toggleLiveRecording() {
 document.querySelector("#live-recording-toggle").addEventListener("click", toggleLiveRecording);
 document.querySelector("#live-data-recording-toggle").addEventListener("click", toggleLiveRecording);
 
+["#live-sensor-safe-check", "#live-sensor-axis-check"].forEach((selector) => {
+  document.querySelector(selector).addEventListener("change", updateLiveComparisonUi);
+});
+document.querySelector("#live-sensor-capture-level").addEventListener("click", () => {
+  const comparison = liveComparisonSnapshot(liveTelemetryState);
+  const diagnostics = liveDiagnosticsSnapshot(liveDiagnosticsState, comparison);
+  captureLiveSensorLevel(
+    liveSensorCalibrationState,
+    liveSensorSnapshot(comparison, diagnostics.telemetry, liveSensorCalibrationState),
+  );
+  updateLiveComparisonUi();
+});
+document.querySelector("#live-sensor-reset-level").addEventListener("click", () => {
+  resetLiveSensorLevel(liveSensorCalibrationState);
+  updateLiveComparisonUi();
+});
+
 if (liveSessionRepository.available) {
   liveSessionRepository.load().then((sessions) => {
     mergeArchivedLiveSessions(liveSessionArchive, sessions);
@@ -4247,12 +4790,22 @@ liveChartSignal.addEventListener("change", () => {
 });
 liveChartWindow.addEventListener("change", renderLiveComparisonChart);
 
-liveDataChartSignal.addEventListener("change", () => {
-  const definition = liveChartDefinitions[liveDataChartSignal.value] || liveChartDefinitions.pitchDeg;
-  document.querySelector("#live-data-chart-title").textContent = definition.title;
-  renderLiveComparisonChart();
+document.querySelector("#live-data-add-graph").addEventListener("click", () => {
+  if (liveDataGraphs.length >= 12) return;
+  liveDataGraphs.push({ id: ++liveDataGraphSequence, signal: "voltageV", window: "30", zoom: null, zoomHistory: [], element: null });
+  renderLiveDataDashboardStructure();
 });
-liveDataChartWindow.addEventListener("change", renderLiveComparisonChart);
+document.querySelector("#live-data-clear").addEventListener("click", () => {
+  if (liveSessionState.status === "recording") return;
+  clearLiveSession(liveSessionState);
+  stopLiveSession(livePreviewState);
+  clearLiveSession(livePreviewState);
+  startLiveSession(livePreviewState);
+  liveDataGraphs.forEach((graph) => { graph.zoom = null; graph.zoomHistory = []; });
+  updateLiveComparisonUi();
+});
+document.querySelector("#live-data-back").addEventListener("click", () => applyLiveView(LIVE_VIEW_COMPARE));
+renderLiveDataDashboardStructure();
 
 document.querySelector("#live-export-csv").addEventListener("click", () => {
   downloadLiveSessionCsv(liveSessionState);
@@ -4278,9 +4831,14 @@ document.querySelectorAll("[data-calibration-step]").forEach((button) => {
 });
 document.querySelector("#live-calibration-safety-confirm").addEventListener("change", (event) => {
   liveCalibrationState.safetyConfirmed = event.target.checked;
+  if (!liveCalibrationState.safetyConfirmed) calibrationBenchDesired = false;
   renderLiveCalibrationUi();
 });
 document.querySelector("#live-calibration-request-bench").addEventListener("click", () => {
+  if (!liveCalibrationState.safetyConfirmed || !sendCalibrationCommand("enter")) return;
+  updateLiveComparisonUi();
+});
+document.querySelector("#live-calibration-enable-jog").addEventListener("click", () => {
   if (!liveCalibrationState.safetyConfirmed || !sendCalibrationCommand("enter")) return;
   updateLiveComparisonUi();
 });
@@ -4344,6 +4902,8 @@ document.querySelector("#live-calibration-wiring-dialog").addEventListener("canc
 });
 document.querySelector("#live-calibration-offset").addEventListener("change", (event) => {
   updateCalibrationJoint(liveCalibrationState, { offsetDeg: event.target.value });
+  liveCalibrationState.jogOffsetDeg = 0;
+  if (liveCalibrationState.benchModeAcknowledged) sendCalibrationCommand("jog");
   renderLiveCalibrationUi();
 });
 document.querySelector("#live-calibration-direction").addEventListener("change", (event) => {
@@ -4363,6 +4923,15 @@ document.querySelectorAll("[data-calibration-jog]").forEach((button) => {
   button.addEventListener("click", () => {
     jogCalibrationJoint(liveCalibrationState, button.dataset.calibrationJog);
     if (liveCalibrationState.benchModeAcknowledged) sendCalibrationCommand("jog");
+    renderLiveCalibrationUi();
+  });
+});
+document.querySelectorAll("[data-calibration-trim]").forEach((button) => {
+  button.addEventListener("click", () => {
+    if (!trimCalibrationJoint(liveCalibrationState, button.dataset.calibrationTrim)) return;
+    if (liveCalibrationState.benchModeAcknowledged) sendCalibrationCommand("jog");
+    document.querySelector("#live-calibration-jog-status").textContent =
+      "Neutral trim updated for the selected channel. Finish all joints, then use Send to Robot to persist the complete profile.";
     renderLiveCalibrationUi();
   });
 });
@@ -4791,6 +5360,12 @@ function setFloatMode(enabled) {
     // Capture the exact visible pose. Float mode is an inspection constraint,
     // not a reset, so entering it must not lift or level the robot.
     floatAnchorPosition.copy(robotWorld.position);
+    if (applicationState.workspace === WORKSPACE_REAL_ROBOT) {
+      floatAnchorPosition.y = Math.max(
+        LIVE_FLOAT_MINIMUM_HEIGHT_MM / 1_000,
+        floatAnchorPosition.y,
+      );
+    }
     floatAnchorQuaternion.copy(robotWorld.quaternion);
     visualBasePosition.copy(floatAnchorPosition);
     visualBaseQuaternion.copy(floatAnchorQuaternion);
@@ -4804,13 +5379,14 @@ function setFloatMode(enabled) {
     visualPhysicsResetCount = -1;
   }
   courseVisuals.visible = !floatModeEnabled;
-  const button = document.querySelector("#float-button");
-  button.classList.toggle("active", floatModeEnabled);
-  button.setAttribute("aria-pressed", String(floatModeEnabled));
-  button.textContent = floatModeEnabled ? "FLOAT ON" : "FLOAT";
-  button.title = floatModeEnabled
-    ? "Restore ground physics"
-    : "Suspend Domino and disable ground physics";
+  document.querySelectorAll("#float-button, #live-float-button").forEach((button) => {
+    button.classList.toggle("active", floatModeEnabled);
+    button.setAttribute("aria-pressed", String(floatModeEnabled));
+    button.textContent = floatModeEnabled ? "FLOAT ON" : "FLOAT";
+    button.title = floatModeEnabled
+      ? "Restore the floor reference"
+      : "Lift the preview clear of the floor while keeping live motion visible";
+  });
   canvas.dataset.floatMode = String(floatModeEnabled);
 }
 
@@ -4831,6 +5407,20 @@ function resetCameraView() {
   perspectiveCamera.zoom = 1;
   perspectiveCamera.updateProjectionMatrix();
   cameraGizmo.dataset.view = "";
+  controls.update();
+}
+
+function resetCameraForActiveView() {
+  resetCameraView();
+  if (applicationState.workspace !== WORKSPACE_REAL_ROBOT) return;
+  const compactView = [LIVE_VIEW_CALIBRATION, LIVE_VIEW_GAITS, LIVE_VIEW_SENSORS].includes(liveViewState.selected);
+  if (!compactView) return;
+  perspectiveCamera.position.copy(robotCameraAnchor).addScaledVector(defaultCameraOffset, 0.58);
+  perspectiveCamera.zoom = liveViewState.selected === LIVE_VIEW_SENSORS
+    ? 1.2
+    : liveViewState.selected === LIVE_VIEW_GAITS ? 1.35 : 1;
+  perspectiveCamera.updateProjectionMatrix();
+  perspectiveCamera.lookAt(controls.target);
   controls.update();
 }
 
@@ -4872,6 +5462,11 @@ function updateJointOverlay() {
     button.setAttribute("aria-pressed", String(jointOverlayVisible));
     button.textContent = jointOverlayVisible ? "INSPECT ON" : "INSPECT";
     button.closest(".inspection-control")?.classList.toggle("active", jointOverlayVisible);
+  });
+  document.querySelectorAll("#float-button, #live-float-button").forEach((button) => {
+    button.classList.toggle("active", floatModeEnabled);
+    button.setAttribute("aria-pressed", String(floatModeEnabled));
+    button.textContent = floatModeEnabled ? "FLOAT ON" : "FLOAT";
   });
   document.querySelectorAll("#joint-leg, #live-joint-leg").forEach((select) => {
     select.value = selectedJointLeg;
@@ -5067,7 +5662,8 @@ document.querySelector("#gait-lab-reset").addEventListener("click", () => {
 syncGaitLabUi();
 syncGaitProfileUi();
 document.querySelector("#reset-button").addEventListener("click", resetRobot);
-document.querySelector("#reset-view-button").addEventListener("click", resetCameraView);
+document.querySelector("#reset-view-button").addEventListener("click", resetCameraForActiveView);
+document.querySelector("#camera-home-button").addEventListener("click", resetCameraForActiveView);
 document.querySelectorAll("#joints-button, #live-joints-button").forEach((button) => {
   button.addEventListener("click", () => {
     jointOverlayVisible = !jointOverlayVisible;
@@ -5092,8 +5688,8 @@ document.querySelector("#joint-opacity").addEventListener("input", (event) => {
   jointOverlayOpacity = Number(event.currentTarget.value);
   updateJointOverlay();
 });
-document.querySelector("#float-button").addEventListener("click", () => {
-  setFloatMode(!floatModeEnabled);
+document.querySelectorAll("#float-button, #live-float-button").forEach((button) => {
+  button.addEventListener("click", () => setFloatMode(!floatModeEnabled));
 });
 
 const gamepadButtonState = new Map();
@@ -5541,18 +6137,22 @@ function smoothLiveServoAngles(current, target, delta) {
 
 function applyLiveBodyPose(group, body) {
   if (!group || !body) return;
-  group.position.y = body.heightMm / 1_000;
+  if (Number.isFinite(body.heightMm)) group.position.y = body.heightMm / 1_000;
+  const rollDeg = Number.isFinite(body.rollDeg) ? body.rollDeg : 0;
+  const pitchDeg = Number.isFinite(body.pitchDeg) ? body.pitchDeg : 0;
+  const yawDeg = Number.isFinite(body.yawDeg) ? body.yawDeg : 0;
   group.quaternion.setFromEuler(new THREE.Euler(
-    THREE.MathUtils.degToRad(body.rollDeg),
-    THREE.MathUtils.degToRad(body.yawDeg),
-    THREE.MathUtils.degToRad(-body.pitchDeg),
+    THREE.MathUtils.degToRad(rollDeg),
+    THREE.MathUtils.degToRad(yawDeg),
+    THREE.MathUtils.degToRad(-pitchDeg),
     "YXZ",
   ));
 }
 
-function groundLivePreviewFromFeet() {
+function groundLivePreviewFromFeet(group = robotWorld, runtimes = linkageRuntimes) {
+  if (!group || !Array.isArray(runtimes)) return 0;
   scene.updateMatrixWorld(true);
-  const footSurfaces = linkageRuntimes
+  const footSurfaces = runtimes
     .filter(Boolean)
     .map((runtime) => {
       runtime.footProbe.getWorldPosition(visualFootPosition);
@@ -5560,14 +6160,47 @@ function groundLivePreviewFromFeet() {
     })
     .filter(Number.isFinite);
   if (!footSurfaces.length) return 0;
-  const correction = VISUAL_FLOOR_CLEARANCE - Math.min(...footSurfaces);
-  robotWorld.position.y += correction;
-  robotWorld.updateMatrixWorld(true);
+  const correction = livePreviewGroundCorrection(footSurfaces, VISUAL_FLOOR_CLEARANCE);
+  group.position.y += correction;
+  group.updateMatrixWorld(true);
   canvas.dataset.liveGroundOffsetMm = (correction * 1_000).toFixed(2);
   return correction;
 }
 
 function updateLiveTwinPose(delta) {
+  const snapshot = liveComparisonSnapshot(liveTelemetryState);
+  if (liveViewState.selected === LIVE_VIEW_SENSORS && linkageRuntimesReady()) {
+    if (snapshot.expected) {
+      liveExpectedServoAngles = smoothLiveServoAngles(
+        liveExpectedServoAngles,
+        snapshot.expected.servoAngleDeg,
+        delta,
+      );
+      applyServoAnglesToRuntimes(linkageRuntimes, liveExpectedServoAngles);
+    }
+    const measuredBody = snapshot.measured?.body;
+    const inspectionBody = {
+      rollDeg: measuredBody && liveSensorAttitudeFilterState.initialized
+        ? liveSensorAttitudeFilterState.rollDeg
+        : measuredBody?.rollDeg,
+      pitchDeg: measuredBody && liveSensorAttitudeFilterState.initialized
+        ? liveSensorAttitudeFilterState.pitchDeg
+        : measuredBody?.pitchDeg,
+      yawDeg: measuredBody && liveSensorAttitudeFilterState.initialized
+        ? liveSensorAttitudeFilterState.yawDeg
+        : measuredBody?.yawDeg,
+      heightMm: snapshot.expected?.body?.heightMm,
+    };
+    applyLiveBodyPose(
+      robotWorld,
+      livePreviewBodyPose(inspectionBody, floatModeEnabled, floatAnchorPosition.y * 1_000),
+    );
+    if (!floatModeEnabled) groundLivePreviewFromFeet(robotWorld, linkageRuntimes);
+    if (measuredRobotWorld) measuredRobotWorld.visible = false;
+    canvas.dataset.liveExpectedPose = snapshot.expected ? "sensor-skeleton" : "unavailable";
+    canvas.dataset.liveMeasuredPose = measuredBody ? "imu-attitude" : "unavailable";
+    return;
+  }
   if (liveViewState.selected === LIVE_VIEW_CALIBRATION && linkageRuntimesReady()) {
     const previewAngles = liveCalibrationState.previewEnabled
       ? calibrationPreviewServoAngles(liveCalibrationState)
@@ -5578,7 +6211,13 @@ function updateLiveTwinPose(delta) {
       delta,
     );
     applyServoAnglesToRuntimes(linkageRuntimes, liveExpectedServoAngles);
-    applyLiveBodyPose(robotWorld, { rollDeg: 0, pitchDeg: 0, yawDeg: 0, heightMm: 280 });
+    applyLiveBodyPose(
+      robotWorld,
+      livePreviewBodyPose(
+        { rollDeg: 0, pitchDeg: 0, yawDeg: 0, heightMm: 280 },
+        calibrationFloatEnabled,
+      ),
+    );
     if (!calibrationFloatEnabled) groundLivePreviewFromFeet();
     if (measuredRobotWorld) measuredRobotWorld.visible = false;
     canvas.dataset.liveExpectedPose = "calibration-preview";
@@ -5614,13 +6253,16 @@ function updateLiveTwinPose(delta) {
       delta,
     );
     applyServoAnglesToRuntimes(linkageRuntimes, liveExpectedServoAngles);
-    applyLiveBodyPose(robotWorld, {
-      rollDeg: 0,
-      pitchDeg: 0,
-      yawDeg: 0,
-      heightMm: liveGaitPreviewOutput.pose_z_mm,
-    });
-    groundLivePreviewFromFeet();
+    applyLiveBodyPose(
+      robotWorld,
+      livePreviewBodyPose({
+        rollDeg: 0,
+        pitchDeg: 0,
+        yawDeg: 0,
+        heightMm: liveGaitPreviewOutput.pose_z_mm,
+      }, floatModeEnabled, floatAnchorPosition.y * 1_000),
+    );
+    if (!floatModeEnabled) groundLivePreviewFromFeet();
     if (measuredRobotWorld) measuredRobotWorld.visible = false;
     canvas.dataset.liveExpectedPose = "gait-preview";
     canvas.dataset.liveMeasuredPose = "unavailable";
@@ -5635,7 +6277,6 @@ function updateLiveTwinPose(delta) {
     }
     return;
   }
-  const snapshot = liveComparisonSnapshot(liveTelemetryState);
   canvas.dataset.liveExpectedPose = snapshot.expected ? "fresh" : "unavailable";
   if (snapshot.expected && linkageRuntimesReady()) {
     liveExpectedServoAngles = smoothLiveServoAngles(
@@ -5644,7 +6285,15 @@ function updateLiveTwinPose(delta) {
       delta,
     );
     applyServoAnglesToRuntimes(linkageRuntimes, liveExpectedServoAngles);
-    applyLiveBodyPose(robotWorld, snapshot.expected.body);
+    applyLiveBodyPose(
+      robotWorld,
+      livePreviewBodyPose(
+        snapshot.expected.body,
+        floatModeEnabled,
+        floatAnchorPosition.y * 1_000,
+      ),
+    );
+    if (!floatModeEnabled) groundLivePreviewFromFeet(robotWorld, linkageRuntimes);
   }
 
   if (measuredRobotWorld) {
@@ -5661,7 +6310,17 @@ function updateLiveTwinPose(delta) {
       applyServoAnglesToRuntimes(measuredLinkageRuntimes, liveMeasuredServoAngles);
       measuredRobotWorld.position.x = robotWorld.position.x;
       measuredRobotWorld.position.z = robotWorld.position.z;
-      applyLiveBodyPose(measuredRobotWorld, snapshot.measured.body);
+      applyLiveBodyPose(
+        measuredRobotWorld,
+        livePreviewBodyPose(
+          snapshot.measured.body,
+          floatModeEnabled,
+          floatAnchorPosition.y * 1_000,
+        ),
+      );
+      if (!floatModeEnabled) {
+        groundLivePreviewFromFeet(measuredRobotWorld, measuredLinkageRuntimes);
+      }
     }
     canvas.dataset.liveMeasuredPose = measuredRobotWorld.visible ? "fresh" : "unavailable";
   }
@@ -6078,9 +6737,10 @@ function animate(now) {
   if (telemetryDatasetDue) telemetryDatasetElapsed = 0;
   if (applicationState.workspace !== WORKSPACE_SIMULATION) {
     updateLiveTwinPose(delta);
-    const floatingCalibration = liveViewState.selected === LIVE_VIEW_CALIBRATION && calibrationFloatEnabled;
-    ground.visible = !floatingCalibration;
-    grid.visible = !floatingCalibration;
+    const floatingLivePreview = floatModeEnabled ||
+      (liveViewState.selected === LIVE_VIEW_CALIBRATION && calibrationFloatEnabled);
+    ground.visible = !floatingLivePreview;
+    grid.visible = !floatingLivePreview;
     courseVisuals.visible = false;
     if (!updateCameraSnap(now)) controls.update();
     updateJointCalloutScale();

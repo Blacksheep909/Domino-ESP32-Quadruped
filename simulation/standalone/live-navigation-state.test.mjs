@@ -8,10 +8,12 @@ import {
   liveNavigationSnapshot,
   localOffsetToCoordinate,
   moveNavigationWaypoint,
+  navigationMissionMetrics,
   navigationMissionJson,
   parseNavigationMissionJson,
   removeNavigationWaypoint,
   sanitizeLiveNavigation,
+  missionWaypointHasCoordinate,
 } from "./web/src/live-navigation-state.js";
 
 test("navigation state sanitizes GPS, LiDAR, and ArduPilot telemetry", () => {
@@ -81,4 +83,25 @@ test("route planner preserves local waypoints and converts them around a GPS ori
   assert.equal(parsed.plannerOrigin.lon, origin.lon);
   assert.deepEqual(parsed.mission[0].local, { northM: 4, eastM: -2 });
   assert.equal(parsed.mission[0].lat, null);
+  assert.equal(missionWaypointHasCoordinate(parsed.mission[0]), false);
+});
+
+test("route planner reports measurable distance and an honest unresolved state", () => {
+  const metrics = navigationMissionMetrics([
+    { local: { northM: 0, eastM: 0 }, speedMps: 1, holdS: 2 },
+    { local: { northM: 3, eastM: 4 }, speedMps: 2, holdS: 1 },
+  ]);
+  assert.equal(metrics.waypointCount, 2);
+  assert.equal(metrics.totalDistanceM, 5);
+  assert.equal(metrics.estimatedSeconds, 5.5);
+  assert.equal(metrics.coordinateReady, false);
+  assert.equal(metrics.unresolvedCount, 0);
+
+  const unresolved = navigationMissionMetrics([
+    { local: { northM: 0, eastM: 0 } },
+    { lat: -36.85, lon: 174.76 },
+  ]);
+  assert.equal(unresolved.totalDistanceM, null);
+  assert.equal(unresolved.estimatedSeconds, null);
+  assert.equal(unresolved.unresolvedCount, 1);
 });

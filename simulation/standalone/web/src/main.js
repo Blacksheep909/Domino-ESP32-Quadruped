@@ -164,6 +164,7 @@ import {
   missionWaypointHasCoordinate,
   moveNavigationWaypoint,
   navigationFixLabel,
+  navigationMissionMetrics,
   navigationMissionJson,
   parseNavigationMissionJson,
   removeNavigationWaypoint,
@@ -3490,6 +3491,15 @@ function formatNavigationDistance(value, fallback = "--.- m") {
   return Number.isFinite(value) ? `${value.toFixed(2)} m` : fallback;
 }
 
+function formatNavigationDuration(value, fallback = "--") {
+  if (!Number.isFinite(value)) return fallback;
+  const seconds = Math.max(0, Math.round(value));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return remainder ? `${minutes}m ${remainder}s` : `${minutes}m`;
+}
+
 function formatNavigationAge(value, fallback = "--") {
   if (!Number.isFinite(value)) return fallback;
   return value < 1_000 ? `${Math.round(value)} ms` : `${(value / 1_000).toFixed(1)} s`;
@@ -3633,9 +3643,13 @@ function renderLiveNavigationPlanner(navigation) {
   const hudState = document.querySelector("#live-nav-hud-state");
   const hudRoute = document.querySelector("#live-nav-hud-route");
   const hudNext = document.querySelector("#live-nav-hud-next");
+  const hudTotal = document.querySelector("#live-nav-hud-total");
+  const hudEta = document.querySelector("#live-nav-hud-eta");
   const hudPosition = document.querySelector("#live-nav-hud-position");
   const hudObstacle = document.querySelector("#live-nav-hud-obstacle");
-  if (!map || !route || !markers || !vehicle || !status || !hudMode || !hudState || !hudRoute || !hudNext || !hudPosition || !hudObstacle) return;
+  const helpStatus = document.querySelector("#live-nav-planner-help-status");
+  const referencePlan = document.querySelector("#live-nav-reference-plan");
+  if (!map || !route || !markers || !vehicle || !status || !hudMode || !hudState || !hudRoute || !hudNext || !hudTotal || !hudEta || !hudPosition || !hudObstacle || !helpStatus || !referencePlan) return;
 
   const origin = navigationPlannerOrigin(navigation);
   const range = Math.max(10, Number(liveNavigationState.plannerRangeM) || 40);
@@ -3649,7 +3663,7 @@ function renderLiveNavigationPlanner(navigation) {
   const currentMissionIndex = Number.isFinite(navigation.mission?.current) ? navigation.mission.current : -1;
   waypointPoints.forEach((point, index) => {
     if (!point) return;
-    const group = plannerSvgElement("g", { class: index === currentMissionIndex ? "live-planner-marker is-active" : "live-planner-marker", transform: `translate(${point.x.toFixed(2)} ${point.y.toFixed(2)})` });
+    const group = plannerSvgElement("g", { class: index === currentMissionIndex ? "live-planner-marker is-active" : "live-planner-marker", transform: `translate(${point.x.toFixed(2)} ${point.y.toFixed(2)})`, "data-waypoint-index": index, role: "button", tabindex: 0, "aria-label": `Select waypoint ${index + 1}` });
     group.append(
       plannerSvgElement("circle", { r: 3.4 }),
       plannerSvgElement("text", { x: 0, y: 0.9, "text-anchor": "middle" }),
@@ -3665,10 +3679,24 @@ function renderLiveNavigationPlanner(navigation) {
   vehicle.classList.toggle("is-live", Boolean(currentPoint));
 
   const hasOrigin = Boolean(origin);
-  status.textContent = hasOrigin ? "HOME REFERENCE ACTIVE" : "LOCAL PLANNING FRAME";
-  status.dataset.state = hasOrigin ? "online" : "warning";
   const routeCount = liveNavigationState.missionDraft.length;
+  const metrics = navigationMissionMetrics(liveNavigationState.missionDraft, origin);
+  const localOnlyCount = liveNavigationState.missionDraft.filter((waypoint) => !missionWaypointHasCoordinate(waypoint)).length;
+  status.textContent = !routeCount
+    ? "READY TO PLAN"
+    : localOnlyCount && !hasOrigin
+      ? "LOCAL PLAN / HOME REQUIRED"
+      : localOnlyCount
+        ? "LOCAL PLAN / REFERENCE REQUIRED"
+        : "GPS ROUTE READY";
+  status.dataset.state = hasOrigin ? "online" : "warning";
+  helpStatus.textContent = localOnlyCount
+    ? hasOrigin ? "Home is available. Reference local points before sending the route." : "No home reference yet; this draft stays local and cannot be sent."
+    : "All waypoints have GPS coordinates and can pass the vehicle route gate.";
+  referencePlan.disabled = !hasOrigin || !localOnlyCount;
   hudRoute.textContent = routeCount ? `DRAFT / ${routeCount}` : "DRAFT / 0";
+  hudTotal.textContent = formatNavigationDistance(metrics.totalDistanceM, "--");
+  hudEta.textContent = formatNavigationDuration(metrics.estimatedSeconds);
   hudPosition.textContent = navigation.hasFix ? navigationFixLabel(navigation.gps?.fixType) : hasOrigin ? "HOME SET" : "NO FIX";
   hudObstacle.textContent = navigation.lidarFresh ? formatNavigationDistance(navigation.frontM, "--.- m") : "WAITING";
   hudMode.textContent = navigation.mode?.label?.toUpperCase() || (routeCount ? "PLANNING" : "READY TO PLAN");
@@ -3694,6 +3722,16 @@ function renderLiveNavigationPlanner(navigation) {
 }
 
 function addPlannerWaypointFromEvent(event) {
+  const marker = event.target?.closest?.(".live-planner-marker");
+  if (marker) {
+    const index = Number(marker.dataset.waypointIndex);
+    document.querySelectorAll(".live-waypoint-row.is-selected").forEach((row) => row.classList.remove("is-selected"));
+    const row = document.querySelector(`.live-waypoint-row[data-index="${index}"]`);
+    row?.classList.add("is-selected");
+    row?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    event.stopPropagation();
+    return;
+  }
   const map = event.currentTarget;
   const rect = map.getBoundingClientRect();
   if (!rect.width || !rect.height) return;
@@ -3758,6 +3796,7 @@ function renderLiveWaypointList(navigation = liveNavigationSnapshot(liveTelemetr
   liveNavigationState.missionDraft.forEach((waypoint, index) => {
     const row = document.createElement("article");
     row.className = "live-waypoint-row";
+    row.tabIndex = -1;
     row.dataset.index = String(index);
     const hasCoordinate = missionWaypointHasCoordinate(waypoint);
     const localSummary = waypoint.local ? `LOCAL N ${waypoint.local.northM.toFixed(1)} / E ${waypoint.local.eastM.toFixed(1)} M` : "GPS REFERENCE";
@@ -3895,11 +3934,11 @@ function renderLiveNavigationUi(navigation) {
   document.querySelector("#live-nav-add-current").disabled = !navigation.hasFix;
   document.querySelector("#live-nav-set-home-current").disabled = !commandReady || !navigation.hasFix || Boolean(liveNavigationState.pendingRequestId);
 
+  const missionReady = liveNavigationState.missionDraft.length > 0;
+  const missionCoordinatesReady = missionReady && liveNavigationState.missionDraft.every(missionWaypointHasCoordinate);
   updateNavigationMissionHeader(navigation);
   renderLiveWaypointList(navigation);
   renderLiveNavigationPlanner(navigation);
-  const missionReady = liveNavigationState.missionDraft.length > 0;
-  const missionCoordinatesReady = missionReady && liveNavigationState.missionDraft.every(missionWaypointHasCoordinate);
   document.querySelector("#live-nav-upload-mission").disabled = !commandReady || !autopilotHealthy || autopilot?.armed || !missionCoordinatesReady || Boolean(liveNavigationState.pendingRequestId);
   document.querySelector("#live-nav-start-mission").disabled = !commandReady || !autopilot?.armed || !navigation.autonomyReady || !missionCoordinatesReady || Boolean(liveNavigationState.pendingRequestId);
   document.querySelector("#live-nav-pause-mission").disabled = !commandReady || !autopilot?.armed || Boolean(liveNavigationState.pendingRequestId);
@@ -3919,6 +3958,7 @@ function renderLiveNavigationUi(navigation) {
   setNavigationCheck("ekf", autopilot?.ekfHealthy === true ? "ok" : autopilot?.ekfHealthy === false ? "fault" : "waiting", autopilot?.ekfHealthy === true ? "HEALTHY" : autopilot?.ekfHealthy === false ? "FAULT" : "WAITING");
   setNavigationCheck("obstacle", obstacleHealthy ? "ok" : "warning", obstacleEnabled ? (navigation.lidarFresh ? "READY" : "WAITING") : "BYPASSED");
   setNavigationCheck("fence", !fenceEnabled || (navigation.home && fenceRadius >= 5) ? "ok" : "warning", !fenceEnabled ? "OFF" : navigation.home && fenceRadius >= 5 ? "READY" : "SET HOME");
+  setNavigationCheck("route", missionCoordinatesReady ? "ok" : missionReady ? "warning" : "waiting", missionCoordinatesReady ? "READY" : missionReady ? "REFERENCE GPS" : "EMPTY");
   document.querySelector("#live-nav-safety-copy").textContent = !commandReady
     ? "Pair a navigation-capable vehicle adapter to unlock physical actions."
     : navigation.autonomyReady && obstacleHealthy
@@ -5756,6 +5796,25 @@ document.querySelector("#live-nav-mission-name").addEventListener("input", (even
 document.querySelector("#live-nav-planner-map").addEventListener("click", addPlannerWaypointFromEvent);
 document.querySelector("#live-nav-planner-range").addEventListener("change", (event) => {
   liveNavigationState.plannerRangeM = Number(event.target.value) || 40;
+  updateLiveComparisonUi();
+});
+document.querySelector("#live-nav-reference-plan").addEventListener("click", () => {
+  const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
+  const origin = navigationPlannerOrigin(navigation);
+  if (!origin) return;
+  let referenced = 0;
+  liveNavigationState.missionDraft = liveNavigationState.missionDraft.map((waypoint) => {
+    if (missionWaypointHasCoordinate(waypoint) || !waypoint.local) return waypoint;
+    const coordinate = localOffsetToCoordinate(waypoint.local, origin);
+    if (!coordinate) return waypoint;
+    referenced += 1;
+    return { ...waypoint, lat: coordinate.lat, lon: coordinate.lon };
+  });
+  liveNavigationState.plannerOrigin = origin;
+  document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
+  liveNavigationState.lastCommandStatus = referenced
+    ? `Referenced ${referenced} local waypoint${referenced === 1 ? "" : "s"} to the active home position.`
+    : "The route already uses the active home reference.";
   updateLiveComparisonUi();
 });
 document.querySelector("#live-nav-manual-override").addEventListener("click", () => {

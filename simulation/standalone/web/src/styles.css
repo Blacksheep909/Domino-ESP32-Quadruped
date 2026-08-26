@@ -2478,6 +2478,7 @@ dd {
 .live-mission-toolbar { align-items: end; padding-bottom: 12px; border-bottom: 1px solid #dedfd9; }
 .live-mission-toolbar label { min-width: 170px; flex: 1 1 190px; display: grid; gap: 6px; }
 .live-waypoint-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding-top: 12px; }
+.live-waypoint-row.is-selected { border-color: #4d9e6a; box-shadow: 0 0 0 1px rgba(77, 158, 106, .2), inset 3px 0 0 #4d9e6a; }
 .live-waypoint-row { min-width: 0; padding: 10px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; background: #f0f0ec; border: 1px solid #dedfd9; border-radius: 5px; }
 .live-waypoint-heading { grid-column: 1 / -1; display: flex; align-items: center; gap: 9px; }
 .live-waypoint-heading strong { color: #31764d; font: 800 9px/1 "Cascadia Mono", Consolas, monospace; }
@@ -6787,6 +6788,10 @@ body[data-workspace="real-robot"] .toast-region {
   cursor: crosshair;
   touch-action: manipulation;
 }
+.live-planner-actions { display: flex; align-items: center; gap: 9px; margin-top: 9px; min-width: 0; }
+.live-planner-actions button { flex: 0 0 auto; min-height: 28px; padding: 0 9px; color: #286442; background: #e3f1e8; border: 1px solid #9bc8aa; border-radius: 4px; cursor: pointer; font: 800 8px/1 "Cascadia Mono", Consolas, monospace; }
+.live-planner-actions button:disabled { color: #8c9089; background: #e7e8e3; border-color: #d2d4ce; cursor: not-allowed; }
+.live-planner-actions span { min-width: 0; overflow: hidden; color: #737871; font-size: 8px; line-height: 1.35; text-overflow: ellipsis; }
 .live-planner-map-surface { fill: #edf1ec; }
 .live-planner-grid-major { fill: none; stroke: #d6ddd6; stroke-width: .45; }
 .live-planner-axis { fill: none; stroke: #9bb8a1; stroke-width: .7; stroke-dasharray: 2 2; }
@@ -6832,6 +6837,10 @@ body[data-workspace="real-robot"] .toast-region {
 :root[data-theme="dark"] .live-planner-map text { fill: #91a899; }
 :root[data-theme="dark"] .live-autonomy-hud-readouts > div { background: #292a2d; border-color: #3a3d40; }
 :root[data-theme="dark"] .live-autonomy-hud-readouts strong { color: #e1e1e4; }
+:root[data-theme="dark"] .live-planner-actions button { color: #b9efc6; background: rgba(66, 142, 88, .18); border-color: rgba(113, 201, 145, .52); }
+:root[data-theme="dark"] .live-planner-actions button:disabled { color: #777b80; background: #292a2d; border-color: #3a3d40; }
+:root[data-theme="dark"] .live-planner-actions span { color: #96999e; }
+:root[data-theme="dark"] .live-waypoint-row.is-selected { border-color: #69c28b; box-shadow: 0 0 0 1px rgba(105, 194, 139, .24), inset 3px 0 0 #69c28b; }
 :root[data-theme="dark"] .live-autonomy-hud > button { color: #ffc0b4; background: rgba(174, 70, 56, .16); border-color: rgba(214, 119, 101, .55); }
 :root[data-theme="dark"] .live-mission-toolbar #live-nav-clear-draft { color: #ffc0b4; background: rgba(174, 70, 56, .16); border-color: rgba(214, 119, 101, .55); }
 

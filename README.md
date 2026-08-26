@@ -120,7 +120,7 @@ remain local and fail-closed.
 | --- | --- |
 | **Compare** | Expected-versus-measured CAD, body/joint error, power, safety state, recording, and guarded manual control. |
 | **Data** | Larger synchronized graphs, recorder controls, CSV export, and an Expert sample table. |
-| **Sensors** | Stabilized 3D IMU attitude platform with four illuminated body corners and fading motion trails, live GPS/LiDAR telemetry, a native click-to-plan route map, compact autonomy HUD, safety gates, and manual override access. |
+| **Sensors** | Stabilized 3D IMU attitude platform with four illuminated body corners and fading motion trails, live GPS/LiDAR telemetry, a native click-to-plan route map, offline local planning with deliberate GPS referencing, route metrics, compact autonomy HUD, safety gates, and manual override access. |
 | **Calibration** | Five-step servo setup, remappable PCA9685 channels, neutral offsets, direction, limits, guarded default restoration, safe jog contracts, and JSON backup. |
 | **Gaits** | Cross-compatible Simulation profiles, local animated preview, risk checks, robot comparison, persistent apply, and rollback. |
 | **Diagnostics** | Command-pipeline tracing, CRSF/ELRS health, packet counters, event history, and Expert raw packet inspection. |

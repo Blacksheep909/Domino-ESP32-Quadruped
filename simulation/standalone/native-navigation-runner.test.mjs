@@ -9,6 +9,7 @@ import {
   pauseNativeNavigationRunner,
   resetNativeNavigationRunner,
   resumeNativeNavigationRunner,
+  skipNativeNavigationRunnerWaypoint,
   startNativeNavigationRunner,
   stopNativeNavigationRunner,
 } from "./web/src/native-navigation-runner.js";
@@ -98,4 +99,43 @@ test("native route runner rejects invalid commands and records operator stop", (
   assert.equal(stopNativeNavigationRunner(state, "Operator override"), true);
   assert.equal(state.phase, "stopped");
   assert.equal(stopNativeNavigationRunner(state), true);
+});
+
+test("native route runner skips the current waypoint and clears an active hold", () => {
+  const state = createNativeNavigationRunnerState();
+  startNativeNavigationRunner(state, 3);
+  assert.equal(acceptNativeNavigationCommand(state, { state: "arrived", holdS: 2, forward: 0, turn: 0 }, 1_000), true);
+  assert.equal(skipNativeNavigationRunnerWaypoint(state), true);
+  assert.equal(state.currentIndex, 1);
+  assert.equal(state.phase, "running");
+  assert.equal(state.holdingIndex, -1);
+  assert.equal(state.holdUntilMs, 0);
+  assert.equal(state.lastCommand.state, "skipped");
+  assert.equal(state.lastCommand.skippedIndex, 0);
+});
+
+test("native route runner keeps a paused route paused when skipping a waypoint", () => {
+  const state = createNativeNavigationRunnerState();
+  startNativeNavigationRunner(state, 2);
+  pauseNativeNavigationRunner(state);
+  assert.equal(skipNativeNavigationRunnerWaypoint(state), true);
+  assert.equal(state.currentIndex, 1);
+  assert.equal(state.phase, "paused");
+});
+
+test("native route runner completes when its final route waypoint is skipped", () => {
+  const state = createNativeNavigationRunnerState();
+  startNativeNavigationRunner(state, 1);
+  assert.equal(skipNativeNavigationRunnerWaypoint(state), true);
+  assert.equal(state.currentIndex, 0);
+  assert.equal(state.phase, "complete");
+  assert.equal(nativeNavigationRunnerIsActive(state), false);
+});
+
+test("native route runner never skips Return Home", () => {
+  const state = createNativeNavigationRunnerState();
+  startNativeNavigationRunner(state, 1, "return-home");
+  assert.equal(skipNativeNavigationRunnerWaypoint(state), false);
+  assert.equal(state.currentIndex, 0);
+  assert.equal(state.phase, "running");
 });

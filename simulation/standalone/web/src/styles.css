@@ -2480,6 +2480,7 @@ dd {
 .live-mission-toolbar .live-native-route-button { color: #1f6841; background: #dff3e5; border-color: #78b78d; }
 .live-mission-toolbar .live-native-route-home-button { color: #245c7d; background: #e4f1f8; border-color: #8bb6ca; }
 .live-mission-toolbar .live-native-route-pause-button { color: #80611e; background: #fff4d9; border-color: #d6b66c; }
+.live-mission-toolbar .live-native-route-skip-button { color: #65521e; background: #fff7df; border-color: #d7bd72; }
 .live-native-route-state {
   min-height: 32px;
   display: inline-flex;
@@ -7016,6 +7017,7 @@ body[data-workspace="real-robot"] .toast-region {
 :root[data-theme="dark"] .live-mission-toolbar .live-native-route-button { color: #c5f3d0; background: rgba(66, 142, 88, .28); border-color: rgba(113, 201, 145, .7); }
 :root[data-theme="dark"] .live-mission-toolbar .live-native-route-home-button { color: #b9e4f3; background: rgba(47, 111, 143, .24); border-color: rgba(116, 177, 202, .68); }
 :root[data-theme="dark"] .live-mission-toolbar .live-native-route-pause-button { color: #f2d28b; background: rgba(164, 123, 38, .2); border-color: rgba(214, 182, 108, .65); }
+:root[data-theme="dark"] .live-mission-toolbar .live-native-route-skip-button { color: #f2d28b; background: rgba(164, 123, 38, .16); border-color: rgba(214, 182, 108, .6); }
 :root[data-theme="dark"] .live-native-route-state { color: #96999e; background: #292a2d; border-color: #3a3d40; }
 :root[data-theme="dark"] .live-native-route-state[data-state="online"] { color: #9ee4b0; border-color: rgba(113, 201, 145, .65); }
 :root[data-theme="dark"] .live-native-route-state[data-state="error"] { color: #ffc0b4; border-color: rgba(214, 119, 101, .6); }

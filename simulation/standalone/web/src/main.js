@@ -347,6 +347,7 @@ function restoreLiveNavigationHistorySnapshot(snapshot, message) {
 function applyParsedLiveNavigationPlan(restored, message) {
   liveNavigationState.missionName = restored.name;
   liveNavigationState.missionDraft = restored.mission;
+  liveNavigationState.loopCount = restored.loopCount || 1;
   liveNavigationState.plannerOrigin = restored.plannerOrigin || null;
   liveNavigationState.plannerRangeM = restored.plannerRangeM || 40;
   if (restored.geofence) liveNavigationState.geofence = { ...liveNavigationState.geofence, ...restored.geofence };
@@ -379,6 +380,7 @@ function restoreLiveNavigationPlan() {
     const restored = parseNavigationMissionJson(stored);
     liveNavigationState.missionName = restored.name;
     liveNavigationState.missionDraft = restored.mission;
+    liveNavigationState.loopCount = restored.loopCount || 1;
     liveNavigationState.plannerOrigin = restored.plannerOrigin || null;
     liveNavigationState.plannerRangeM = restored.plannerRangeM || 40;
     if (restored.geofence) liveNavigationState.geofence = { ...liveNavigationState.geofence, ...restored.geofence };
@@ -405,6 +407,7 @@ function currentLiveNavigationPlan() {
   return {
     missionName: liveNavigationState.missionName,
     missionDraft: liveNavigationState.missionDraft,
+    loopCount: liveNavigationState.loopCount,
     plannerOrigin: liveNavigationState.plannerOrigin,
     plannerRangeM: liveNavigationState.plannerRangeM,
     geofence: liveNavigationState.geofence,
@@ -501,6 +504,7 @@ function deleteLiveNavigationPlanFromLibrary() {
 
 function syncLiveNavigationControls() {
   const missionName = document.querySelector("#live-nav-mission-name");
+  const loopCount = document.querySelector("#live-nav-loop-count");
   const plannerRange = document.querySelector("#live-nav-planner-range");
   const obstacleEnabled = document.querySelector("#live-nav-obstacle-enabled");
   const stopDistance = document.querySelector("#live-nav-stop-distance");
@@ -508,6 +512,7 @@ function syncLiveNavigationControls() {
   const geofenceEnabled = document.querySelector("#live-nav-geofence-enabled");
   const geofenceRadius = document.querySelector("#live-nav-geofence-radius");
   if (missionName) missionName.value = liveNavigationState.missionName;
+  if (loopCount) loopCount.value = String(liveNavigationState.loopCount || 1);
   if (plannerRange) plannerRange.value = String(liveNavigationState.plannerRangeM);
   if (obstacleEnabled) obstacleEnabled.checked = liveNavigationState.obstacleBehavior.enabled;
   if (stopDistance) stopDistance.value = String(liveNavigationState.obstacleBehavior.stopDistanceM);
@@ -4021,6 +4026,8 @@ function nativeNavigationCommandFor(navigation) {
     position: vehicleLocal,
     headingDeg: navigation.gps?.courseDeg,
     currentIndex: liveNativeNavigationState.currentIndex,
+    loopCount: liveNativeNavigationState.loopCount,
+    completedLoops: liveNativeNavigationState.completedLoops,
     obstacle: {
       enabled: liveNavigationState.obstacleBehavior.enabled,
       frontM: navigation.lidarFresh ? navigation.frontM : null,
@@ -4128,7 +4135,7 @@ function startLiveNativeNavigation(mode = "route") {
     return;
   }
   const waypointCount = mode === "return-home" ? 1 : liveNavigationState.missionDraft.length;
-  if (!startNativeNavigationRunner(liveNativeNavigationState, waypointCount, mode)) return;
+  if (!startNativeNavigationRunner(liveNativeNavigationState, waypointCount, mode, mode === "route" ? liveNavigationState.loopCount : 1)) return;
   liveNavigationState.lastCommandStatus = mode === "return-home"
     ? "Domino return-home active. Manual override remains available."
     : "Domino route active. Manual override remains available.";
@@ -4167,6 +4174,7 @@ function serviceLiveNativeNavigation() {
 function navigationStateSignature() {
   return JSON.stringify({
     name: liveNavigationState.missionName,
+    loopCount: liveNavigationState.loopCount,
     mission: liveNavigationState.missionDraft,
   });
 }
@@ -4238,7 +4246,7 @@ function liveNavigationPreviewRoute() {
   return {
     navigation,
     origin,
-    preview: navigationMissionPreview(liveNavigationState.missionDraft, origin, liveNavigationPreviewState.elapsedSeconds),
+    preview: navigationMissionPreview(liveNavigationState.missionDraft, origin, liveNavigationPreviewState.elapsedSeconds, liveNavigationState.loopCount),
   };
 }
 
@@ -4249,9 +4257,9 @@ function tickLiveNavigationPreview(timestamp) {
     return;
   }
   const { navigation, origin } = liveNavigationPreviewRoute();
-  const previewRoute = navigationMissionPreview(liveNavigationState.missionDraft, origin, 0);
+  const previewRoute = navigationMissionPreview(liveNavigationState.missionDraft, origin, 0, liveNavigationState.loopCount);
   tickNativeNavigationExecution(liveNavigationPreviewState, previewRoute.totalSeconds || 0, timestamp);
-  const preview = navigationMissionPreview(liveNavigationState.missionDraft, origin, liveNavigationPreviewState.elapsedSeconds);
+  const preview = navigationMissionPreview(liveNavigationState.missionDraft, origin, liveNavigationPreviewState.elapsedSeconds, liveNavigationState.loopCount);
   if (!preview.ready) {
     stopLiveNavigationPreview("Route preview stopped because the draft is no longer plannable.");
     return;
@@ -4357,9 +4365,9 @@ function renderLiveNavigationPlanner(navigation) {
   const hasOrigin = Boolean(origin);
   const previewSession = liveNavigationPreviewState.phase !== "idle";
   const preview = previewSession
-    ? navigationMissionPreview(liveNavigationState.missionDraft, origin, liveNavigationPreviewState.elapsedSeconds)
+    ? navigationMissionPreview(liveNavigationState.missionDraft, origin, liveNavigationPreviewState.elapsedSeconds, liveNavigationState.loopCount)
     : null;
-  const previewRoute = navigationMissionPreview(liveNavigationState.missionDraft, origin, 0);
+  const previewRoute = navigationMissionPreview(liveNavigationState.missionDraft, origin, 0, liveNavigationState.loopCount);
   if (previewButton) {
     previewButton.disabled = !previewRoute.ready;
     previewButton.textContent = liveNavigationPreviewState.active ? "STOP PREVIEW" : "PREVIEW ROUTE";
@@ -4416,7 +4424,7 @@ function renderLiveNavigationPlanner(navigation) {
   vehicle.classList.toggle("is-preview", Boolean(previewPoint));
 
   const routeCount = liveNavigationState.missionDraft.length;
-  const metrics = navigationMissionMetrics(liveNavigationState.missionDraft, origin);
+  const metrics = navigationMissionMetrics(liveNavigationState.missionDraft, origin, liveNavigationState.loopCount);
   const localOnlyCount = liveNavigationState.missionDraft.filter((waypoint) => !missionWaypointHasCoordinate(waypoint)).length;
   status.textContent = previewSession && preview?.ready
     ? liveNavigationPreviewState.phase === "complete" || preview.complete
@@ -4457,8 +4465,8 @@ function renderLiveNavigationPlanner(navigation) {
   storageStatus.dataset.state = liveNavigationPlanStorageState === "unavailable" ? "warning" : "saved";
   referencePlan.disabled = !hasOrigin || !localOnlyCount;
   hudRoute.textContent = previewSession && preview?.ready
-    ? `PREVIEW ${preview.currentIndex + 1}/${routeCount}`
-    : routeCount ? `DRAFT / ${routeCount}` : "DRAFT / 0";
+    ? `PREVIEW ${preview.currentIndex + 1}/${routeCount} · ${preview.loopIndex + 1}/${preview.loopCount}`
+    : routeCount ? `DRAFT / ${routeCount} · ${liveNavigationState.loopCount}X` : "DRAFT / 0";
   hudTotal.textContent = formatNavigationDistance(metrics.totalDistanceM, "--");
   hudEta.textContent = previewSession && preview?.ready
     ? formatNavigationDuration(Math.max(0, (preview.totalSeconds || 0) - preview.elapsedSeconds))
@@ -4502,6 +4510,8 @@ function renderLiveNavigationPlanner(navigation) {
     position: vehicleLocal,
     headingDeg: navigation.gps?.courseDeg,
     currentIndex: currentMissionIndex >= 0 ? currentMissionIndex : 0,
+    loopCount: nativeRunnerActive ? liveNativeNavigationState.loopCount : liveNavigationState.loopCount,
+    completedLoops: nativeRunnerActive ? liveNativeNavigationState.completedLoops : 0,
     obstacle: {
       enabled: !previewSession && liveNavigationState.obstacleBehavior.enabled,
       frontM: navigation.lidarFresh ? navigation.frontM : null,
@@ -6764,6 +6774,14 @@ document.querySelector("#live-nav-planner-range").addEventListener("change", (ev
   persistLiveNavigationPlan();
   updateLiveComparisonUi();
 });
+document.querySelector("#live-nav-loop-count").addEventListener("change", (event) => {
+  const loopCount = Math.max(1, Math.min(5, Math.round(Number(event.target.value) || 1)));
+  if (liveNavigationState.loopCount !== loopCount) captureLiveNavigationHistory();
+  liveNavigationState.loopCount = loopCount;
+  if (liveNavigationPreviewState.active) stopLiveNavigationPreview("Route loop count changed. Preview stopped.");
+  persistLiveNavigationPlan();
+  updateLiveComparisonUi();
+});
 document.querySelector("#live-nav-reference-plan").addEventListener("click", () => {
   const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
   const origin = navigationPlannerOrigin(navigation);
@@ -6969,6 +6987,7 @@ document.querySelector("#live-nav-import-file").addEventListener("change", async
     if (liveNavigationPreviewState.active) stopLiveNavigationPreview();
     liveNavigationState.missionName = imported.name;
     liveNavigationState.missionDraft = imported.mission;
+    liveNavigationState.loopCount = imported.loopCount || 1;
     liveNavigationState.plannerOrigin = imported.plannerOrigin || null;
     liveNavigationState.plannerRangeM = imported.plannerRangeM || 40;
     if (imported.geofence) liveNavigationState.geofence = { ...liveNavigationState.geofence, ...imported.geofence };

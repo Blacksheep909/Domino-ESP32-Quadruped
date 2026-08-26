@@ -39,6 +39,13 @@ The recent GPS trail can be cleared or turned into a bounded local route with
 resamples long trails, and leaves the resulting draft behind the same review,
 geofence, and vehicle-command gates as any hand-planned route.
 
+For a repeating patrol, set **LOOPS** to 1x, 2x, 3x, or 5x. This is a
+Domino-owned route setting: the planner previews each pass, includes the
+closing leg back to the first waypoint in distance and ETA, and the guarded
+native runner starts each next pass at waypoint one. Return Home remains a
+separate one-shot safety action, and every loop still passes the same fresh
+sensor, geofence, lease, and neutral-on-fault checks.
+
 The compact Domino Autonomy HUD stays beside the map and shows route progress,
 position quality, next-point distance, total route distance, a conservative
 time estimate, and front obstacle distance. The route checklist calls out
@@ -56,8 +63,9 @@ and safety checks all report ready.
 
 **PREVIEW ROUTE** runs the draft entirely in the Domino planner: it animates
 the local vehicle marker through each segment using waypoint speeds and holds,
-and never sends a vehicle command. This gives operators a quick route sanity
-check before choosing the separate vehicle upload/start actions.
+repeats the selected bounded loop count, and never sends a vehicle command.
+This gives operators a quick route sanity check before choosing the separate
+vehicle upload/start actions.
 
 **START DOMINO ROUTE** is the app-owned execution path for a compatible Domino
 adapter. It uses the existing time-limited manual-control lease to stream

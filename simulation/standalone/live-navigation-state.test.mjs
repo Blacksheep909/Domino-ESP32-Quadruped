@@ -172,6 +172,30 @@ test("route planner previews a local route without vehicle execution", () => {
   assert.equal(navigationMissionPreview([{ lat: -36.85, lon: 174.76 }], null, 0).ready, false);
 });
 
+test("route planner repeats a bounded Domino patrol loop with a closing leg", () => {
+  const mission = [
+    { local: { northM: 0, eastM: 0 }, speedMps: 1 },
+    { local: { northM: 0, eastM: 4 }, speedMps: 1 },
+  ];
+  const metrics = navigationMissionMetrics(mission, null, 2);
+  assert.equal(metrics.loopCount, 2);
+  assert.equal(metrics.totalDistanceM, 12);
+  assert.equal(metrics.estimatedSeconds, 12);
+
+  const preview = navigationMissionPreview(mission, null, 6, 2);
+  assert.equal(preview.ready, true);
+  assert.equal(preview.loopIndex, 1);
+  assert.equal(preview.currentIndex, 0);
+  assert.equal(preview.position.eastM, 2);
+  assert.equal(preview.totalSeconds, 12);
+  assert.equal(navigationMissionPreview(mission, null, 12, 2).complete, true);
+
+  const state = createLiveNavigationState();
+  state.loopCount = 3;
+  const parsed = parseNavigationMissionJson(navigationMissionJson(state));
+  assert.equal(parsed.loopCount, 3);
+});
+
 test("route planner recommends a readable map range for the draft", () => {
   assert.equal(navigationMissionRecommendedRange([
     { local: { northM: 2, eastM: -3 } },

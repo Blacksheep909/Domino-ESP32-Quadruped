@@ -7,6 +7,8 @@ export function createNativeNavigationRunnerState() {
     mode: "route",
     currentIndex: 0,
     waypointCount: 0,
+    loopCount: 1,
+    completedLoops: 0,
     holdingIndex: -1,
     holdUntilMs: 0,
     holdRemainingMs: 0,
@@ -15,13 +17,16 @@ export function createNativeNavigationRunnerState() {
   };
 }
 
-export function startNativeNavigationRunner(state, waypointCount, mode = "route") {
+export function startNativeNavigationRunner(state, waypointCount, mode = "route", loopCount = 1) {
   const count = Number(waypointCount);
+  const loops = Math.max(1, Math.min(5, Math.round(Number(loopCount) || 1)));
   if (!state || !Number.isSafeInteger(count) || count < 1 || !NAVIGATION_MODES.includes(mode)) return false;
   state.phase = "running";
   state.mode = mode;
   state.currentIndex = 0;
   state.waypointCount = count;
+  state.loopCount = mode === "route" ? loops : 1;
+  state.completedLoops = 0;
   state.holdingIndex = -1;
   state.holdUntilMs = 0;
   state.holdRemainingMs = 0;
@@ -80,8 +85,14 @@ export function skipNativeNavigationRunnerWaypoint(state) {
   };
   state.currentIndex += 1;
   if (state.currentIndex >= state.waypointCount) {
-    state.currentIndex = Math.max(0, state.waypointCount - 1);
-    state.phase = "complete";
+    if (state.completedLoops + 1 < state.loopCount) {
+      state.completedLoops += 1;
+      state.currentIndex = 0;
+      state.lastCommand = { state: "loop", forward: 0, turn: 0, completedLoops: state.completedLoops };
+    } else {
+      state.currentIndex = Math.max(0, state.waypointCount - 1);
+      state.phase = "complete";
+    }
   }
   return true;
 }
@@ -123,7 +134,15 @@ export function acceptNativeNavigationCommand(state, command, nowMs = Date.now()
       }
     }
     state.currentIndex += 1;
-    if (state.currentIndex >= state.waypointCount) state.phase = "complete";
+    if (state.currentIndex >= state.waypointCount) {
+      if (state.completedLoops + 1 < state.loopCount) {
+        state.completedLoops += 1;
+        state.currentIndex = 0;
+        state.lastCommand = { state: "loop", forward: 0, turn: 0, completedLoops: state.completedLoops };
+      } else {
+        state.phase = "complete";
+      }
+    }
     return true;
   }
   if (command.state === "complete") {

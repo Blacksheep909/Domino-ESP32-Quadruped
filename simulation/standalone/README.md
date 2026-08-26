@@ -89,6 +89,10 @@ supports offline local waypoints, drag-to-edit markers, JSON import/export,
 autosaved drafts, a bounded local saved-route library, project-bundle portability, undo/redo editing with Ctrl+Z/Ctrl+Shift+Z/Ctrl+Y shortcuts,
 fit-to-route framing, live GPS-track-to-plan conversion, home-radius geofence gating, and an offline route preview
 that animates the local vehicle marker without sending a command to the robot.
+Domino patrols can repeat a reviewed route 1x, 2x, 3x, or 5x; the selected
+loop count is persisted with the plan, included in distance/ETA, shown in the
+HUD, and enforced by the guarded native runner with a closing leg between
+passes. Return Home remains a separate one-shot action.
 The planner HUD also exposes Domino's bounded native forward/turn intent and
 stops it for missing obstacle data, close obstacles, or an active geofence, and
 uses side-range pressure to bias away from nearby left/right obstacles.

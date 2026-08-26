@@ -109,6 +109,19 @@ test("native navigation stops when the target crosses the home-radius fence", ()
   assert.equal(command.forward, 0);
 });
 
+test("native navigation checks the home-radius fence before accepting arrival", () => {
+  const command = nativeNavigationCommand({
+    waypoints: [{ local: { northM: 0, eastM: 5.5 }, radiusM: 1.2, speedMps: 0.8 }],
+    position: { northM: 0, eastM: 5.2 },
+    headingDeg: 90,
+    obstacle: { enabled: false },
+    geofence: { enabled: true, maxRadiusM: 5 },
+  });
+  assert.equal(command.state, "geofence-stop");
+  assert.equal(command.forward, 0);
+  assert.match(command.reason, /outside the active home-radius geofence/);
+});
+
 test("native navigation refuses to invent control without a fresh obstacle range", () => {
   const command = nativeNavigationCommand({
     waypoints: route,

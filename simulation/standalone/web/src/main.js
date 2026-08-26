@@ -7731,6 +7731,14 @@ function currentProjectBundle() {
     calibrationProfile: liveCalibrationState.profile,
     liveGaitLibrary,
     liveGaitDraft: liveGaitState.draft,
+    navigationPlan: {
+      missionName: liveNavigationState.missionName,
+      missionDraft: liveNavigationState.missionDraft,
+      plannerOrigin: liveNavigationState.plannerOrigin,
+      plannerRangeM: liveNavigationState.plannerRangeM,
+      geofence: liveNavigationState.geofence,
+      obstacleBehavior: liveNavigationState.obstacleBehavior,
+    },
   });
 }
 
@@ -7743,6 +7751,7 @@ function renderProjectSummary() {
   document.querySelector("#project-live-gait-count").textContent = String(summary.liveGaitProfileCount);
   document.querySelector("#project-controller-count").textContent = String(summary.gamepadMappingCount);
   document.querySelector("#project-calibration-count").textContent = `${summary.calibratedJointCount} JOINTS`;
+  document.querySelector("#project-route-count").textContent = String(summary.routeWaypointCount);
   document.querySelector("#project-storage-mode").textContent = hasNativeProjectFiles
     ? "DESKTOP FILES / NATIVE OPEN + SAVE"
     : "PORTABLE FILE / IMPORT + EXPORT";
@@ -7845,7 +7854,9 @@ function applyImportedProject(bundle, fileName) {
   if (liveCalibrationState.benchModeAcknowledged) {
     throw new Error("Exit robot bench mode before importing a project.");
   }
-  if (liveManualState.authorityToken) {
+  if (nativeNavigationRunnerIsActive(liveNativeNavigationState)) {
+    haltLiveNativeNavigation("Project import stopped the active Domino route.");
+  } else if (liveManualState.authorityToken) {
     releaseLiveManualControl("Project import released browser-control authority.");
   }
 
@@ -7875,6 +7886,25 @@ function applyImportedProject(bundle, fileName) {
   calibrationPendingAction = "";
   calibrationBenchFeedback = "Project calibration loaded locally. Robot storage was not changed.";
 
+  const importedNavigation = bundle.live.navigation;
+  liveNavigationState.missionName = importedNavigation.missionName;
+  liveNavigationState.missionDraft = importedNavigation.missionDraft.map((waypoint) => ({
+    ...waypoint,
+    local: waypoint.local ? { ...waypoint.local } : null,
+  }));
+  liveNavigationState.plannerOrigin = importedNavigation.plannerOrigin
+    ? { ...importedNavigation.plannerOrigin }
+    : null;
+  liveNavigationState.plannerRangeM = importedNavigation.plannerRangeM;
+  liveNavigationState.geofence = { ...liveNavigationState.geofence, ...importedNavigation.geofence };
+  liveNavigationState.obstacleBehavior = { ...liveNavigationState.obstacleBehavior, ...importedNavigation.obstacleBehavior };
+  liveNavigationState.pendingRequestId = "";
+  liveNavigationState.pendingAction = "";
+  liveNavigationState.lastCommandStatus = `Imported ${liveNavigationState.missionDraft.length} local route waypoint${liveNavigationState.missionDraft.length === 1 ? "" : "s"}. Review the plan before sending it to a vehicle.`;
+  document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
+  syncLiveNavigationControls();
+  persistLiveNavigationPlan();
+
   const persisted = replaceLocalProjectStorage({
     ...bundle,
     simulation: { ...bundle.simulation, gaitProfiles },
@@ -7886,6 +7916,7 @@ function applyImportedProject(bundle, fileName) {
   syncLiveGaitLibrary();
   renderLiveGaitUi();
   renderLiveCalibrationUi();
+  updateLiveComparisonUi();
   renderProjectSummary();
   setProjectStatus(
     persisted

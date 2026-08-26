@@ -11,6 +11,10 @@ import {
   createLiveCalibrationProfile,
   parseCalibrationProfileJson,
 } from "./live-calibration-state.js";
+import {
+  createLiveNavigationState,
+  parseNavigationMissionJson,
+} from "./live-navigation-state.js";
 
 export const PROJECT_BUNDLE_SCHEMA_VERSION = 1;
 export const PROJECT_BUNDLE_TYPE = "domino-quadruped-project";
@@ -20,6 +24,11 @@ export const PROJECT_NAME_MAX_LENGTH = 80;
 const MAX_GAIT_PROFILES = 40;
 const MAX_GAMEPAD_MAPPINGS = 32;
 const DEFAULT_PROJECT_NAME = "Domino V2";
+
+const boundedNumber = (value, fallback, minimum, maximum) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(minimum, Math.min(maximum, number)) : fallback;
+};
 
 export const DOMINO_PROJECT_ROBOT = Object.freeze({
   id: PROJECT_ROBOT_ID,
@@ -114,6 +123,39 @@ function normalizeLiveGaitDraft(raw) {
   );
 }
 
+function normalizeNavigationPlan(raw) {
+  const defaults = createLiveNavigationState();
+  const source = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  const parsed = parseNavigationMissionJson(JSON.stringify({
+    name: source.name ?? source.missionName ?? defaults.missionName,
+    mission: Array.isArray(source.mission) ? source.mission : Array.isArray(source.missionDraft) ? source.missionDraft : [],
+    plannerOrigin: source.plannerOrigin || null,
+    plannerRangeM: source.plannerRangeM ?? defaults.plannerRangeM,
+    geofence: source.geofence || null,
+    obstacleBehavior: source.obstacleBehavior || null,
+  }));
+  const geofenceSource = source.geofence && typeof source.geofence === "object" ? source.geofence : {};
+  const obstacleSource = source.obstacleBehavior && typeof source.obstacleBehavior === "object"
+    ? source.obstacleBehavior
+    : {};
+  return {
+    missionName: parsed.name,
+    missionDraft: parsed.mission,
+    plannerOrigin: parsed.plannerOrigin,
+    plannerRangeM: parsed.plannerRangeM,
+    geofence: {
+      enabled: geofenceSource.enabled === true,
+      maxRadiusM: boundedNumber(geofenceSource.maxRadiusM, defaults.geofence.maxRadiusM, 5, 500),
+    },
+    obstacleBehavior: {
+      enabled: obstacleSource.enabled !== false,
+      stopDistanceM: boundedNumber(obstacleSource.stopDistanceM, defaults.obstacleBehavior.stopDistanceM, 0.1, 5),
+      slowDistanceM: boundedNumber(obstacleSource.slowDistanceM, defaults.obstacleBehavior.slowDistanceM, 0.2, 10),
+      maxSpeedMps: boundedNumber(obstacleSource.maxSpeedMps, defaults.obstacleBehavior.maxSpeedMps, 0.05, 5),
+    },
+  };
+}
+
 function normalizeRobot(candidate) {
   const robot = requireObject(candidate, "Project bundle is missing its robot definition.");
   if (robot.id !== PROJECT_ROBOT_ID) throw new Error("This project targets a different robot.");
@@ -141,6 +183,7 @@ function normalizeBundle(candidate, now = Date.now()) {
   const gaitProfiles = sanitizeGaitProfiles(simulation.gaitProfiles);
   const liveGaitLibrary = normalizeLiveGaitLibrary(live.gaitLibrary);
   const liveGaitDraft = normalizeLiveGaitDraft(live.gaitDraft);
+  const navigation = normalizeNavigationPlan(live.navigation);
   const exportedAt = finiteTimestamp(source.exportedAt, finiteTimestamp(project.updatedAt, now));
 
   return {
@@ -163,6 +206,7 @@ function normalizeBundle(candidate, now = Date.now()) {
       calibration,
       gaitLibrary: liveGaitLibrary,
       gaitDraft: liveGaitDraft,
+      navigation,
     },
   };
 }
@@ -176,6 +220,7 @@ export function createDominoProjectBundle({
   calibrationProfile = {},
   liveGaitLibrary = {},
   liveGaitDraft = createLiveGaitProfile(defaultGaitLabSettings, "Balanced"),
+  navigationPlan = null,
 } = {}) {
   return normalizeBundle({
     schemaVersion: PROJECT_BUNDLE_SCHEMA_VERSION,
@@ -192,6 +237,7 @@ export function createDominoProjectBundle({
       calibration: createLiveCalibrationProfile(calibrationProfile),
       gaitLibrary: liveGaitLibrary,
       gaitDraft: liveGaitDraft,
+      navigation: navigationPlan,
     },
   }, exportedAt);
 }
@@ -218,6 +264,7 @@ export function projectBundleSummary(bundle) {
     liveGaitProfileCount: Object.keys(normalized.live.gaitLibrary).length,
     gamepadMappingCount: Object.keys(normalized.controller.gamepadMappings).length,
     calibratedJointCount: normalized.live.calibration.joints.length,
+    routeWaypointCount: normalized.live.navigation.missionDraft.length,
   };
 }
 

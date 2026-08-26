@@ -28,6 +28,17 @@ function fixture() {
       Balanced: { name: "Balanced", settings: { cadenceHz: 1.2, strideMm: 70 } },
     },
     liveGaitDraft: { name: "Bench Draft", settings: { cadenceHz: 0.7, strideMm: 45 } },
+    navigationPlan: {
+      missionName: "Bench patrol",
+      missionDraft: [
+        { local: { northM: 4, eastM: -2 }, radiusM: 1.8, speedMps: 0.4, holdS: 3, label: "Inspect" },
+        { lat: -41.2, lon: 174.8, radiusM: 2.2, speedMps: 0.6, label: "Return" },
+      ],
+      plannerOrigin: { lat: -41.2, lon: 174.8 },
+      plannerRangeM: 80,
+      geofence: { enabled: true, maxRadiusM: 35 },
+      obstacleBehavior: { enabled: true, stopDistanceM: 0.5, slowDistanceM: 1.6, maxSpeedMps: 0.7 },
+    },
     calibrationProfile: {
       joints: Array.from({ length: 12 }, (_, channel) => ({
         logicalChannel: channel,
@@ -50,6 +61,11 @@ test("project bundles contain the robot contract and portable configuration", ()
   assert.equal(bundle.live.gaitLibrary.Balanced.settings.strideMm, 70);
   assert.equal(bundle.live.gaitDraft.name, "Bench Draft");
   assert.equal(bundle.live.calibration.joints[0].offsetDeg, 3.2);
+  assert.equal(bundle.live.navigation.missionName, "Bench patrol");
+  assert.equal(bundle.live.navigation.missionDraft.length, 2);
+  assert.equal(bundle.live.navigation.missionDraft[0].holdS, 3);
+  assert.equal(bundle.live.navigation.plannerRangeM, 80);
+  assert.equal(bundle.live.navigation.geofence.maxRadiusM, 35);
   assert.equal("safety" in bundle, false);
   assert.equal("connection" in bundle, false);
   assert.equal("benchModeAcknowledged" in bundle.live, false);
@@ -65,7 +81,16 @@ test("project JSON round-trips with bounded summaries", () => {
     liveGaitProfileCount: 1,
     gamepadMappingCount: 1,
     calibratedJointCount: 12,
+    routeWaypointCount: 2,
   });
+});
+
+test("project bundle keeps older files compatible with an empty local route plan", () => {
+  const bundle = fixture();
+  delete bundle.live.navigation;
+  const restored = parseProjectBundleJson(projectBundleJson(bundle));
+  assert.deepEqual(restored.live.navigation.missionDraft, []);
+  assert.equal(restored.live.navigation.geofence.enabled, false);
 });
 
 test("project parser rejects wrong files and unsafe physical mappings", () => {

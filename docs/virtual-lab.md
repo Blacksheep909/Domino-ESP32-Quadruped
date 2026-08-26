@@ -76,6 +76,13 @@ local planning works offline, while physical route execution remains closed
 until the selected vehicle adapter, position, EKF, obstacle policy, geofence,
 and safety checks all report ready.
 
+Each waypoint also has two deliberately different actions. **DRIVE** runs only
+to that selected point through Domino's guarded native controller, which is
+useful for testing or recovering a route without executing the rest of the
+draft. **GUIDE** is the explicit ArduPilot handoff for that point. Neither
+action bypasses the connection, safety, freshness, heading, obstacle, or
+geofence gates.
+
 **PREVIEW ROUTE** runs the draft entirely in the Domino planner: it animates
 the local vehicle marker through each segment using waypoint speeds and holds,
 repeats the selected bounded loop count, and never sends a vehicle command.

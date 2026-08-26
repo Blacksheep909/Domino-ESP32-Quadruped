@@ -15,6 +15,11 @@ import {
   createLiveNavigationState,
   parseNavigationMissionJson,
 } from "./live-navigation-state.js";
+import {
+  MAX_NAVIGATION_PLAN_LIBRARY_ENTRIES,
+  navigationPlanLibraryJson,
+  parseNavigationPlanLibraryJson,
+} from "./navigation-plan-library.js";
 
 export const PROJECT_BUNDLE_SCHEMA_VERSION = 1;
 export const PROJECT_BUNDLE_TYPE = "domino-quadruped-project";
@@ -158,6 +163,14 @@ function normalizeNavigationPlan(raw) {
   };
 }
 
+function normalizeNavigationPlanLibrary(raw) {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw) || raw.length > MAX_NAVIGATION_PLAN_LIBRARY_ENTRIES) {
+    throw new Error(`Project route library must contain up to ${MAX_NAVIGATION_PLAN_LIBRARY_ENTRIES} saved plans.`);
+  }
+  return parseNavigationPlanLibraryJson(navigationPlanLibraryJson(raw));
+}
+
 function normalizeRobot(candidate) {
   const robot = requireObject(candidate, "Project bundle is missing its robot definition.");
   if (robot.id !== PROJECT_ROBOT_ID) throw new Error("This project targets a different robot.");
@@ -186,6 +199,7 @@ function normalizeBundle(candidate, now = Date.now()) {
   const liveGaitLibrary = normalizeLiveGaitLibrary(live.gaitLibrary);
   const liveGaitDraft = normalizeLiveGaitDraft(live.gaitDraft);
   const navigation = normalizeNavigationPlan(live.navigation);
+  const navigationPlanLibrary = normalizeNavigationPlanLibrary(live.navigationPlanLibrary);
   const exportedAt = finiteTimestamp(source.exportedAt, finiteTimestamp(project.updatedAt, now));
 
   return {
@@ -209,6 +223,7 @@ function normalizeBundle(candidate, now = Date.now()) {
       gaitLibrary: liveGaitLibrary,
       gaitDraft: liveGaitDraft,
       navigation,
+      navigationPlanLibrary,
     },
   };
 }
@@ -223,6 +238,7 @@ export function createDominoProjectBundle({
   liveGaitLibrary = {},
   liveGaitDraft = createLiveGaitProfile(defaultGaitLabSettings, "Balanced"),
   navigationPlan = null,
+  navigationPlanLibrary = [],
 } = {}) {
   return normalizeBundle({
     schemaVersion: PROJECT_BUNDLE_SCHEMA_VERSION,
@@ -240,6 +256,7 @@ export function createDominoProjectBundle({
       gaitLibrary: liveGaitLibrary,
       gaitDraft: liveGaitDraft,
       navigation: navigationPlan,
+      navigationPlanLibrary,
     },
   }, exportedAt);
 }
@@ -267,6 +284,7 @@ export function projectBundleSummary(bundle) {
     gamepadMappingCount: Object.keys(normalized.controller.gamepadMappings).length,
     calibratedJointCount: normalized.live.calibration.joints.length,
     routeWaypointCount: normalized.live.navigation.missionDraft.length,
+    routeLibraryCount: normalized.live.navigationPlanLibrary.length,
   };
 }
 

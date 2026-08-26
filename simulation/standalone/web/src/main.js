@@ -8245,6 +8245,7 @@ function currentProjectBundle() {
     liveGaitLibrary,
     liveGaitDraft: liveGaitState.draft,
     navigationPlan: currentLiveNavigationPlan(),
+    navigationPlanLibrary: liveNavigationPlanLibrary,
   });
 }
 
@@ -8258,6 +8259,7 @@ function renderProjectSummary() {
   document.querySelector("#project-controller-count").textContent = String(summary.gamepadMappingCount);
   document.querySelector("#project-calibration-count").textContent = `${summary.calibratedJointCount} JOINTS`;
   document.querySelector("#project-route-count").textContent = String(summary.routeWaypointCount);
+  document.querySelector("#project-route-library-count").textContent = String(summary.routeLibraryCount);
   document.querySelector("#project-storage-mode").textContent = hasNativeProjectFiles
     ? "DESKTOP FILES / NATIVE OPEN + SAVE"
     : "PORTABLE FILE / IMPORT + EXPORT";
@@ -8348,6 +8350,7 @@ function replaceLocalProjectStorage(bundle) {
     localStorage.setItem(GAIT_PROFILE_STORAGE_KEY, JSON.stringify(bundle.simulation.gaitProfiles));
     localStorage.setItem(GAMEPAD_MAPPING_STORAGE_KEY, JSON.stringify(bundle.controller.gamepadMappings));
     localStorage.setItem(LIVE_GAIT_LIBRARY_KEY, JSON.stringify(bundle.live.gaitLibrary));
+    localStorage.setItem(LIVE_NAVIGATION_PLAN_LIBRARY_STORAGE_KEY, navigationPlanLibraryJson(bundle.live.navigationPlanLibrary));
     localStorage.setItem(LIVE_CALIBRATION_STORAGE_KEY, calibrationProfileJson(bundle.live.calibration));
     localStorage.setItem(PROJECT_NAME_STORAGE_KEY, bundle.project.name);
     return true;
@@ -8404,18 +8407,23 @@ function applyImportedProject(bundle, fileName) {
   liveNavigationState.plannerRangeM = importedNavigation.plannerRangeM;
   liveNavigationState.geofence = { ...liveNavigationState.geofence, ...importedNavigation.geofence };
   liveNavigationState.obstacleBehavior = { ...liveNavigationState.obstacleBehavior, ...importedNavigation.obstacleBehavior };
+  liveNavigationPlanLibrary = bundle.live.navigationPlanLibrary.map((entry) => ({
+    ...entry,
+    plan: { ...entry.plan, mission: entry.plan.mission.map((waypoint) => ({ ...waypoint, local: waypoint.local ? { ...waypoint.local } : null })) },
+  }));
   liveNavigationState.pendingRequestId = "";
   liveNavigationState.pendingAction = "";
   liveNavigationState.lastCommandStatus = `Imported ${liveNavigationState.missionDraft.length} local route waypoint${liveNavigationState.missionDraft.length === 1 ? "" : "s"}. Review the plan before sending it to a vehicle.`;
   document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
   syncLiveNavigationControls();
   persistLiveNavigationPlan();
+  persistLiveNavigationPlanLibrary();
 
   const persisted = replaceLocalProjectStorage({
     ...bundle,
     simulation: { ...bundle.simulation, gaitProfiles },
     controller: { gamepadMappings },
-    live: { ...bundle.live, gaitLibrary: liveGaitLibrary },
+    live: { ...bundle.live, gaitLibrary: liveGaitLibrary, navigationPlanLibrary: liveNavigationPlanLibrary },
   });
   syncGaitLabUi();
   syncGaitProfileUi();

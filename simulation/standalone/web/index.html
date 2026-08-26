@@ -717,10 +717,11 @@
                   <text x="50" y="5" text-anchor="middle">N</text><text x="96" y="53">E</text>
                 </svg>
                 <p class="live-planner-help">Click the field to place a waypoint. The planner stores local metres until a GPS/home reference is available.</p>
+                <div class="live-planner-actions"><button id="live-nav-reference-plan" type="button" disabled>REFERENCE LOCAL PLAN</button><span id="live-nav-planner-help-status">Local plans can be referenced when a home position is available.</span></div>
               </div>
               <aside class="live-autonomy-hud" aria-label="Domino autonomy status">
                 <div class="live-autonomy-hud-heading"><div><span>DOMINO AUTONOMY</span><strong id="live-nav-hud-mode">PLANNING</strong></div><span id="live-nav-hud-state" data-state="offline">OFFLINE</span></div>
-                <div class="live-autonomy-hud-readouts"><div><span>ROUTE</span><strong id="live-nav-hud-route">DRAFT / 0</strong></div><div><span>NEXT</span><strong id="live-nav-hud-next">--</strong></div><div><span>POSITION</span><strong id="live-nav-hud-position">NO FIX</strong></div><div><span>OBSTACLE</span><strong id="live-nav-hud-obstacle">--</strong></div></div>
+                <div class="live-autonomy-hud-readouts"><div><span>ROUTE</span><strong id="live-nav-hud-route">DRAFT / 0</strong></div><div><span>NEXT</span><strong id="live-nav-hud-next">--</strong></div><div><span>TOTAL</span><strong id="live-nav-hud-total">--</strong></div><div><span>ETA</span><strong id="live-nav-hud-eta">--</strong></div><div><span>POSITION</span><strong id="live-nav-hud-position">NO FIX</strong></div><div><span>OBSTACLE</span><strong id="live-nav-hud-obstacle">--</strong></div></div>
                 <button id="live-nav-manual-override" type="button">OPEN MANUAL OVERRIDE</button>
                 <p>Manual control remains available as the operator handoff. Vehicle actions stay gated by the active safety checks.</p>
               </aside>
@@ -742,6 +743,7 @@
               <li data-check="ekf"><i></i><span>ArduPilot EKF</span><b>WAITING</b></li>
               <li data-check="obstacle"><i></i><span>Obstacle guard</span><b>WAITING</b></li>
               <li data-check="fence"><i></i><span>Geofence</span><b>WAITING</b></li>
+              <li data-check="route"><i></i><span>Route plan</span><b>WAITING</b></li>
             </ul>
             <p id="live-nav-safety-copy">Position modes remain blocked until the link, GPS, EKF and safety policy are healthy.</p>
           </section>

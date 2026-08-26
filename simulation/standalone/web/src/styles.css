@@ -6906,7 +6906,7 @@ body[data-workspace="real-robot"] .toast-region {
   justify-content: space-between;
   gap: 10px;
 }
-.live-planner-map-heading > div,
+.live-planner-map-heading > div:first-child,
 .live-autonomy-hud-heading > div { min-width: 0; display: grid; gap: 5px; }
 .live-planner-map-heading span,
 .live-autonomy-hud-heading span,
@@ -6923,9 +6923,10 @@ body[data-workspace="real-robot"] .toast-region {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.live-planner-map-heading label { display: grid; gap: 5px; flex: 0 0 70px; }
-.live-planner-map-heading label > span { font-size: 7px; text-align: right; }
-.live-planner-map-heading select {
+.live-planner-map-settings { display: flex; flex: 0 0 auto; gap: 8px; }
+.live-planner-map-settings label { display: grid; gap: 5px; flex: 0 0 70px; }
+.live-planner-map-settings label > span { font-size: 7px; text-align: right; }
+.live-planner-map-settings select {
   height: 25px;
   color: #353833;
   background: #fff;
@@ -7017,7 +7018,7 @@ body[data-workspace="real-robot"] .toast-region {
 :root[data-theme="dark"] .live-autonomy-hud > p { color: #96999e; }
 :root[data-theme="dark"] .live-planner-map-heading strong,
 :root[data-theme="dark"] .live-autonomy-hud-heading strong { color: #78c894; }
-:root[data-theme="dark"] .live-planner-map-heading select { color: #dddde1; background: #292a2d; border-color: #4a4c50; }
+:root[data-theme="dark"] .live-planner-map-settings select { color: #dddde1; background: #292a2d; border-color: #4a4c50; }
 :root[data-theme="dark"] .live-planner-map { background: #17201b; border-color: #3c5544; }
 :root[data-theme="dark"] .live-planner-map-surface { fill: #17201b; }
 :root[data-theme="dark"] .live-planner-grid-major { stroke: #2a4032; }

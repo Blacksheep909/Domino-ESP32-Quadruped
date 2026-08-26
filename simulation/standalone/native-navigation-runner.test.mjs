@@ -43,6 +43,23 @@ test("native route runner advances and completes at the final waypoint", () => {
   assert.equal(nativeNavigationRunnerIsActive(state), false);
 });
 
+test("native route runner starts the next bounded patrol loop at waypoint one", () => {
+  const state = createNativeNavigationRunnerState();
+  assert.equal(startNativeNavigationRunner(state, 2, "route", 2), true);
+  assert.equal(state.loopCount, 2);
+  assert.equal(acceptNativeNavigationCommand(state, { state: "arrived" }), true);
+  assert.equal(state.currentIndex, 1);
+  assert.equal(acceptNativeNavigationCommand(state, { state: "arrived" }), true);
+  assert.equal(state.phase, "running");
+  assert.equal(state.completedLoops, 1);
+  assert.equal(state.currentIndex, 0);
+  assert.equal(state.lastCommand.state, "loop");
+  assert.equal(acceptNativeNavigationCommand(state, { state: "arrived" }), true);
+  assert.equal(state.currentIndex, 1);
+  assert.equal(acceptNativeNavigationCommand(state, { state: "arrived" }), true);
+  assert.equal(state.phase, "complete");
+});
+
 test("native route runner preserves a waypoint dwell across pause and resume", () => {
   const state = createNativeNavigationRunnerState();
   startNativeNavigationRunner(state, 2);

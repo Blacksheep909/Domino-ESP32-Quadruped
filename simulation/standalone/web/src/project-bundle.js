@@ -129,6 +129,7 @@ function normalizeNavigationPlan(raw) {
   const parsed = parseNavigationMissionJson(JSON.stringify({
     name: source.name ?? source.missionName ?? defaults.missionName,
     mission: Array.isArray(source.mission) ? source.mission : Array.isArray(source.missionDraft) ? source.missionDraft : [],
+    loopCount: source.loopCount ?? defaults.loopCount,
     plannerOrigin: source.plannerOrigin || null,
     plannerRangeM: source.plannerRangeM ?? defaults.plannerRangeM,
     geofence: source.geofence || null,
@@ -141,6 +142,7 @@ function normalizeNavigationPlan(raw) {
   return {
     missionName: parsed.name,
     missionDraft: parsed.mission,
+    loopCount: parsed.loopCount,
     plannerOrigin: parsed.plannerOrigin,
     plannerRangeM: parsed.plannerRangeM,
     geofence: {

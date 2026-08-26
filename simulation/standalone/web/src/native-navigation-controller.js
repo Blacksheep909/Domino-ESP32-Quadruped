@@ -44,6 +44,8 @@ export function nativeNavigationCommand({
   position = { northM: 0, eastM: 0 },
   headingDeg,
   currentIndex = 0,
+  loopCount = 1,
+  completedLoops = 0,
   obstacle = {},
   geofence = {},
 } = {}) {
@@ -59,8 +61,10 @@ export function nativeNavigationCommand({
   const arrivalRadiusM = Math.max(0.1, finite(waypoints[index]?.radiusM) ?? 1.5);
   if (distanceM <= arrivalRadiusM) {
     const holdS = Math.max(0, finite(waypoints[index]?.holdS) ?? 0);
+    const finalLoop = Math.max(1, Math.min(5, Math.round(Number(loopCount) || 1))) <= Math.max(0, Math.round(Number(completedLoops) || 0)) + 1;
+    const complete = index === route.length - 1 && holdS <= 0 && finalLoop;
     return {
-      ...zeroCommand(index === route.length - 1 && holdS <= 0 ? "complete" : "arrived", index === route.length - 1 && holdS <= 0 ? "Final waypoint reached." : "Waypoint arrival radius reached.", index),
+      ...zeroCommand(complete ? "complete" : "arrived", complete ? "Final waypoint reached." : "Waypoint arrival radius reached.", index),
       target,
       distanceM,
       holdS,

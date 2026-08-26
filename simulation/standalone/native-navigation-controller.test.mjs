@@ -35,6 +35,28 @@ test("native navigation zeros the command when a waypoint is reached", () => {
   assert.equal(command.turn, 0);
 });
 
+test("native navigation holds the final waypoint until the patrol loop count is met", () => {
+  const waypoint = [{ local: { northM: 0, eastM: 0 }, radiusM: 1.2, speedMps: 0.8 }];
+  const firstLoop = nativeNavigationCommand({
+    waypoints: waypoint,
+    position: { northM: 0, eastM: 0 },
+    headingDeg: 0,
+    loopCount: 2,
+    completedLoops: 0,
+    obstacle: { enabled: false },
+  });
+  assert.equal(firstLoop.state, "arrived");
+  const finalLoop = nativeNavigationCommand({
+    waypoints: waypoint,
+    position: { northM: 0, eastM: 0 },
+    headingDeg: 0,
+    loopCount: 2,
+    completedLoops: 1,
+    obstacle: { enabled: false },
+  });
+  assert.equal(finalLoop.state, "complete");
+});
+
 test("native navigation carries waypoint dwell time into the runner contract", () => {
   const command = nativeNavigationCommand({
     waypoints: [{ ...route[0], holdS: 2 }],

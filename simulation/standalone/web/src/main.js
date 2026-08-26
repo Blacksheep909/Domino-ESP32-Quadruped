@@ -4355,10 +4355,15 @@ function renderLiveNavigationPlanner(navigation) {
   hudNext.textContent = nextDistance === null
     ? nativeMode === "return-home" ? "HOME" : nextPoint ? `WP ${String(nextIndex + 1).padStart(2, "0")}` : "--"
     : `${nextDistance.toFixed(1)} m`;
-  hudControl.textContent = nativeControl.state === "navigating" || nativeControl.state === "sensor-wait"
+  const nativeHoldRemainingS = nativeRunnerActive && liveNativeNavigationState.lastCommand?.state === "holding"
+    ? Number(liveNativeNavigationState.lastCommand.holdRemainingS)
+    : null;
+  hudControl.textContent = Number.isFinite(nativeHoldRemainingS)
+    ? `HOLD ${nativeHoldRemainingS.toFixed(1)} S`
+    : nativeControl.state === "navigating" || nativeControl.state === "sensor-wait"
     ? `F ${Math.round(nativeControl.forward * 100)} / T ${nativeControl.turn >= 0 ? "+" : ""}${Math.round(nativeControl.turn * 100)}`
     : nativeControl.state.toUpperCase().replaceAll("-", " ");
-  hudControl.title = nativeControl.reason;
+  hudControl.title = Number.isFinite(nativeHoldRemainingS) ? "Holding at the active waypoint before advancing." : nativeControl.reason;
 }
 
 function addPlannerWaypointFromEvent(event) {

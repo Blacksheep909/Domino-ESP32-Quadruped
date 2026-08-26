@@ -4193,16 +4193,37 @@ body[data-workspace="real-robot"] #telemetry-panel:has(#joint-legend:not([hidden
 .live-sensor-readout span, .live-sensor-axis-values span, .live-sensor-axis-guide span { color: #858781; font: 750 8px/1 "Cascadia Mono", Consolas, monospace; letter-spacing: .06em; }
 .live-sensor-readout strong, .live-sensor-axis-values strong { font: 750 14px/1 "Cascadia Mono", Consolas, monospace; }
 
-.live-sensor-inventory-card { display: flex; flex-direction: column; }
+.live-sensor-inventory-card { display: flex; flex-direction: column; container-type: inline-size; }
 .live-sensor-module { margin-top: 11px; padding: 13px; display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 12px; border: 1px solid #dcddd8; border-radius: 6px; }
 .live-sensor-module > i { width: 42px; height: 42px; display: grid; place-items: center; color: #6c706a; background: #ecece8; border-radius: 50%; font: 800 9px/1 "Cascadia Mono", Consolas, monospace; font-style: normal; }
 .live-sensor-module > div { min-width: 0; display: grid; gap: 6px; }
 .live-sensor-module > div strong { font-size: 12px; }
-.live-sensor-module > div span, .live-sensor-module > b { color: #858781; font: 750 7px/1.25 "Cascadia Mono", Consolas, monospace; }
+.live-sensor-module > div span, .live-sensor-module > b { min-width: 0; color: #858781; font: 750 7px/1.25 "Cascadia Mono", Consolas, monospace; overflow-wrap: anywhere; }
+.live-sensor-module > b { text-align: right; }
 .live-sensor-module[data-state="online"] { border-color: rgba(67, 158, 99, .55); background: rgba(75, 169, 108, .07); }
 .live-sensor-module[data-state="online"] > i, .live-sensor-module[data-state="online"] > b { color: #2e8650; }
 .live-sensor-module[data-state="future"] { opacity: .63; }
 .live-sensor-inventory-card > p { margin: auto 0 0; padding-top: 14px; color: #7e817b; font-size: 9px; line-height: 1.55; }
+
+@container (max-width: 340px) {
+  .live-sensor-module {
+    grid-template-columns: 36px minmax(0, 1fr);
+    align-items: start;
+    gap: 7px 10px;
+    padding: 11px;
+  }
+
+  .live-sensor-module > i {
+    width: 36px;
+    height: 36px;
+  }
+
+  .live-sensor-module > b {
+    grid-column: 2;
+    justify-self: start;
+    text-align: left;
+  }
+}
 
 .live-sensor-guide { padding-top: 14px; display: grid; grid-template-columns: minmax(250px, .72fr) minmax(0, 1.28fr); gap: 18px; }
 .live-sensor-guide ol { margin: 0; padding: 0; display: grid; gap: 7px; list-style: none; }
@@ -8725,6 +8746,76 @@ body[data-workspace="real-robot"][data-live-view="calibration"] .camera-gizmo {
   width: 100%;
   margin: 0;
   box-sizing: border-box;
+}
+
+/* The Sensors page reserves a large preview lane, so its capability column
+   can be narrow even on a desktop viewport. Stack each badge under its
+   description in that column; this keeps long offline/future status copy
+   inside the card instead of letting the final grid column overlap it. */
+#live-view-sensors .live-sensor-module {
+  grid-template-columns: 38px minmax(0, 1fr);
+  align-items: start;
+  gap: 7px 10px;
+  padding: 11px;
+}
+
+#live-view-sensors .live-sensor-module > i {
+  width: 38px;
+  height: 38px;
+}
+
+#live-view-sensors .live-sensor-module > b {
+  grid-column: 2;
+  justify-self: start;
+  text-align: left;
+}
+
+@media (min-width: 821px) and (max-width: 1100px) {
+  #live-view-compare .live-error-scope {
+    height: 220px;
+  }
+
+  #live-view-compare .live-scope-heading {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  #live-view-compare .live-scope-actions {
+    min-width: 0;
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  #live-view-compare .live-scope-actions > span {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+
+  #live-view-compare .live-scope-actions :is(select, button) {
+    min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  #live-view-compare .live-scope-grid {
+    height: 92px;
+  }
+
+  #live-view-data .live-data-controls > div {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  #live-view-gaits .live-gait-library-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #live-view-gaits .live-gait-library-controls > * {
+    width: 100%;
+    box-sizing: border-box;
+  }
 }
 
 @media (max-width: 720px) {

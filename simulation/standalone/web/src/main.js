@@ -159,6 +159,7 @@ import {
   addNavigationWaypoint,
   coordinateToLocalOffset,
   createLiveNavigationState,
+  duplicateNavigationWaypoint,
   liveNavigationSnapshot,
   localOffsetToCoordinate,
   missionWaypointHasCoordinate,
@@ -4701,7 +4702,7 @@ function renderLiveWaypointList(navigation = liveNavigationSnapshot(liveTelemetr
     const hasCoordinate = missionWaypointHasCoordinate(waypoint);
     const localSummary = waypoint.local ? `LOCAL N ${waypoint.local.northM.toFixed(1)} / E ${waypoint.local.eastM.toFixed(1)} M` : "GPS REFERENCE";
     row.innerHTML = `
-      <div class="live-waypoint-heading"><strong>WP ${String(index + 1).padStart(2, "0")}</strong><span>${escapeNavigationHtml(waypoint.label || "Waypoint")} / ${localSummary}</span><div><button type="button" data-waypoint-action="goto" ${guidedReady && hasCoordinate ? "" : "disabled"} title="Send this waypoint as a guided target">GO</button><button type="button" data-waypoint-action="up" title="Move waypoint up">↑</button><button type="button" data-waypoint-action="down" title="Move waypoint down">↓</button><button type="button" data-waypoint-action="remove" title="Remove waypoint">×</button></div></div>
+      <div class="live-waypoint-heading"><strong>WP ${String(index + 1).padStart(2, "0")}</strong><span>${escapeNavigationHtml(waypoint.label || "Waypoint")} / ${localSummary}</span><div><button type="button" data-waypoint-action="goto" ${guidedReady && hasCoordinate ? "" : "disabled"} title="Send this waypoint as a guided target">GO</button><button type="button" data-waypoint-action="up" title="Move waypoint up">↑</button><button type="button" data-waypoint-action="down" title="Move waypoint down">↓</button><button type="button" data-waypoint-action="duplicate" title="Duplicate waypoint">⧉</button><button type="button" data-waypoint-action="remove" title="Remove waypoint">×</button></div></div>
       <label><span>LAT</span><input data-waypoint-field="lat" type="number" step="0.000001" min="-90" max="90" value="${hasCoordinate ? Number(waypoint.lat).toFixed(6) : ""}" ${hasCoordinate ? "" : "disabled"}></label>
       <label><span>LON</span><input data-waypoint-field="lon" type="number" step="0.000001" min="-180" max="180" value="${hasCoordinate ? Number(waypoint.lon).toFixed(6) : ""}" ${hasCoordinate ? "" : "disabled"}></label>
       <label><span>RADIUS M</span><input data-waypoint-field="radiusM" type="number" step="0.1" min="0.1" max="100" value="${Number(waypoint.radiusM || 1.5).toFixed(1)}"></label>
@@ -6893,10 +6894,11 @@ document.querySelector("#live-nav-waypoint-list").addEventListener("click", (eve
     });
     return;
   }
-  if (action === "remove" || action === "up" || action === "down") captureLiveNavigationHistory();
+  if (action === "remove" || action === "up" || action === "down" || action === "duplicate") captureLiveNavigationHistory();
   if (action === "remove") removeNavigationWaypoint(liveNavigationState, index);
   if (action === "up") moveNavigationWaypoint(liveNavigationState, index, "up");
   if (action === "down") moveNavigationWaypoint(liveNavigationState, index, "down");
+  if (action === "duplicate") duplicateNavigationWaypoint(liveNavigationState, index);
   persistLiveNavigationPlan();
   document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
   updateLiveComparisonUi();

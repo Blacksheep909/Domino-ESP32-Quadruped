@@ -26,7 +26,7 @@ frontend so these UI changes do not diverge between them.
 
 The LIVE Sensors view now includes a Domino-owned top-down route planner. Click
 the map to place waypoints, adjust the planning range, reorder or remove points,
-and export the plan as JSON. Plans created before a GPS fix use a local north/east
+duplicate a waypoint when shaping a patrol, and export the plan as JSON. Plans created before a GPS fix use a local north/east
 metre frame and retain that frame through import/export; once a GPS or home
 reference is available, new points also carry georeferenced coordinates. Use
 **REFERENCE LOCAL PLAN** to deliberately bind an existing offline draft to the

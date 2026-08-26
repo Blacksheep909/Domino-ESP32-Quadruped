@@ -3366,6 +3366,39 @@ body[data-workspace="real-robot"]:is(
   }
 }
 
+@media (max-width: 900px) {
+  #live-view-compare .live-compare-page-heading {
+    position: fixed;
+    top: calc(var(--live-content-top) + 12px);
+    right: 10px;
+    left: 10px;
+    width: auto;
+    max-width: none;
+    margin: 0;
+    padding: 14px 18px;
+    color: #20211f;
+    background: rgba(250, 250, 248, 0.94);
+    border: 1px solid #d2d2cd;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(35, 35, 31, 0.08);
+    backdrop-filter: blur(14px);
+    z-index: 10;
+  }
+
+  body[data-workspace="real-robot"][data-live-view="compare"] #live-view-compare .live-safety-dock,
+  body[data-workspace="real-robot"][data-live-view="compare"] #real-workspace .live-comparison-panel {
+    top: calc(var(--live-content-top) + 210px);
+  }
+
+  #live-view-compare .live-error-scope {
+    height: 250px;
+  }
+
+  #live-view-compare .live-scope-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 :root[data-theme="dark"] #live-view-compare .live-compare-page-heading {
   color: var(--live-text);
   background: rgba(18, 23, 27, 0.96);
@@ -8896,4 +8929,46 @@ body[data-workspace="real-robot"]:is(
   [data-live-view="gaits"]
 ) .camera-gizmo {
   top: calc(var(--live-preview-top) + 12px);
+}
+
+/* Narrow Compare keeps its fixed safety/telemetry lanes below the wrapped
+   title, and gives the compact chart controls two honest columns. */
+@media (max-width: 900px) {
+  #live-view-compare .live-compare-page-heading {
+    position: fixed;
+    top: calc(var(--live-content-top) + 12px);
+    right: 10px;
+    left: 10px;
+    width: auto;
+    max-width: none;
+    margin: 0;
+    padding: 14px 18px;
+    color: #20211f;
+    background: rgba(250, 250, 248, 0.94);
+    border: 1px solid #d2d2cd;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(35, 35, 31, 0.08);
+    backdrop-filter: blur(14px);
+    z-index: 10;
+  }
+
+  body[data-workspace="real-robot"][data-live-view="compare"] #live-view-compare .live-safety-dock,
+  body[data-workspace="real-robot"][data-live-view="compare"] #real-workspace .live-comparison-panel {
+    top: calc(var(--live-content-top) + 210px);
+  }
+
+  #live-view-compare .live-error-scope {
+    height: 250px;
+  }
+
+  #live-view-compare .live-scope-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+:root[data-theme="dark"] #live-view-compare .live-compare-page-heading {
+  color: var(--live-text);
+  background: rgba(18, 23, 27, 0.96);
+  border-color: var(--live-border);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.025);
 }

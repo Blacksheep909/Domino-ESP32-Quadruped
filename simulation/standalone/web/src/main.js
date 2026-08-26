@@ -283,6 +283,54 @@ const liveNavigationPreviewState = {
   elapsedSeconds: 0,
 };
 let liveNavigationPreviewFrame = null;
+const liveNavigationHistory = { past: [], future: [] };
+const LIVE_NAVIGATION_HISTORY_LIMIT = 50;
+let liveNavigationFieldHistorySnapshot = null;
+
+function pushLiveNavigationHistorySnapshot(snapshot) {
+  if (!snapshot || liveNavigationHistory.past.at(-1) === snapshot) return;
+  liveNavigationHistory.past.push(snapshot);
+  if (liveNavigationHistory.past.length > LIVE_NAVIGATION_HISTORY_LIMIT) liveNavigationHistory.past.shift();
+  liveNavigationHistory.future = [];
+}
+
+function captureLiveNavigationHistory() {
+  pushLiveNavigationHistorySnapshot(navigationMissionJson(liveNavigationState));
+}
+
+function restoreLiveNavigationHistorySnapshot(snapshot, message) {
+  try {
+    const restored = parseNavigationMissionJson(snapshot);
+    liveNavigationState.missionName = restored.name;
+    liveNavigationState.missionDraft = restored.mission;
+    liveNavigationState.plannerOrigin = restored.plannerOrigin || null;
+    liveNavigationState.plannerRangeM = restored.plannerRangeM || 40;
+    if (restored.geofence) liveNavigationState.geofence = { ...liveNavigationState.geofence, ...restored.geofence };
+    if (restored.obstacleBehavior) liveNavigationState.obstacleBehavior = { ...liveNavigationState.obstacleBehavior, ...restored.obstacleBehavior };
+    syncLiveNavigationControls();
+    persistLiveNavigationPlan();
+    document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
+    liveNavigationState.lastCommandStatus = message;
+    updateLiveComparisonUi();
+  } catch {
+    liveNavigationState.lastCommandStatus = "The route history entry could not be restored.";
+    updateLiveComparisonUi();
+  }
+}
+
+function undoLiveNavigationEdit() {
+  const previous = liveNavigationHistory.past.pop();
+  if (!previous) return;
+  liveNavigationHistory.future.push(navigationMissionJson(liveNavigationState));
+  restoreLiveNavigationHistorySnapshot(previous, "Undid the last route-plan edit.");
+}
+
+function redoLiveNavigationEdit() {
+  const next = liveNavigationHistory.future.pop();
+  if (!next) return;
+  liveNavigationHistory.past.push(navigationMissionJson(liveNavigationState));
+  restoreLiveNavigationHistorySnapshot(next, "Redid the route-plan edit.");
+}
 
 function restoreLiveNavigationPlan() {
   try {
@@ -902,6 +950,20 @@ window.addEventListener("keydown", (event) => {
   }
   if ((shortcutsDialog && !shortcutsDialog.hidden) || (projectDialog && !projectDialog.hidden)) return;
   if (event.repeat || isShortcutEditingTarget(event.target) || document.querySelector("dialog[open]")) return;
+  if (applicationState.workspace === WORKSPACE_REAL_ROBOT && liveViewState.selected === LIVE_VIEW_SENSORS && event.ctrlKey && !event.altKey) {
+    const key = event.key.toLowerCase();
+    if (key === "z") {
+      event.preventDefault();
+      if (event.shiftKey) redoLiveNavigationEdit();
+      else undoLiveNavigationEdit();
+      return;
+    }
+    if (key === "y") {
+      event.preventDefault();
+      redoLiveNavigationEdit();
+      return;
+    }
+  }
   if (event.key === "?") {
     event.preventDefault();
     openShortcuts();
@@ -3797,6 +3859,8 @@ function renderLiveNavigationPlanner(navigation) {
   const referencePlan = document.querySelector("#live-nav-reference-plan");
   const previewButton = document.querySelector("#live-nav-preview-route");
   const fitButton = document.querySelector("#live-nav-fit-route");
+  const undoButton = document.querySelector("#live-nav-undo");
+  const redoButton = document.querySelector("#live-nav-redo");
   if (!map || !route || !markers || !vehicle || !geofence || !status || !hudMode || !hudState || !hudRoute || !hudNext || !hudTotal || !hudEta || !hudPosition || !hudObstacle || !helpStatus || !storageStatus || !referencePlan) return;
 
   const origin = navigationPlannerOrigin(navigation);
@@ -3816,6 +3880,8 @@ function renderLiveNavigationPlanner(navigation) {
     previewButton.setAttribute("aria-pressed", String(liveNavigationPreviewState.active));
   }
   if (fitButton) fitButton.disabled = !liveNavigationState.missionDraft.length;
+  if (undoButton) undoButton.disabled = liveNavigationHistory.past.length === 0;
+  if (redoButton) redoButton.disabled = liveNavigationHistory.future.length === 0;
   const fence = navigation.geofence || liveNavigationState.geofence;
   const fenceStatus = navigationMissionGeofenceStatus(liveNavigationState.missionDraft, origin, fence?.maxRadiusM, fence?.enabled === true);
   const fenceRadius = Number(fence?.maxRadiusM);
@@ -3938,6 +4004,7 @@ function addPlannerWaypointFromEvent(event) {
   const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
   const origin = navigationPlannerOrigin(navigation);
   const coordinate = origin ? localOffsetToCoordinate(local, origin) : null;
+  captureLiveNavigationHistory();
   addNavigationWaypoint(liveNavigationState, {
     ...(coordinate || {}),
     local,
@@ -3957,6 +4024,8 @@ function fitLiveNavigationPlanner() {
     showAppToast("Fit route needs local waypoints or a GPS/home reference.", "warning");
     return;
   }
+  if (liveNavigationState.plannerRangeM === recommendedRange) return;
+  captureLiveNavigationHistory();
   liveNavigationState.plannerRangeM = recommendedRange;
   persistLiveNavigationPlan();
   updateLiveComparisonUi();
@@ -3968,6 +4037,7 @@ function handlePlannerPointerDown(event) {
   const index = Number(marker.dataset.waypointIndex);
   const local = plannerLocalFromPointer(event, event.currentTarget);
   if (!Number.isInteger(index) || !local) return;
+  captureLiveNavigationHistory();
   plannerDragIndex = index;
   plannerDragPointerId = event.pointerId;
   plannerDragMoved = false;
@@ -6073,7 +6143,10 @@ liveNavigationPlannerMap.addEventListener("keydown", handlePlannerMarkerKeydown)
 liveNavigationPlannerMap.addEventListener("click", addPlannerWaypointFromEvent);
 document.querySelector("#live-nav-preview-route").addEventListener("click", toggleLiveNavigationPreview);
 document.querySelector("#live-nav-fit-route").addEventListener("click", fitLiveNavigationPlanner);
+document.querySelector("#live-nav-undo").addEventListener("click", undoLiveNavigationEdit);
+document.querySelector("#live-nav-redo").addEventListener("click", redoLiveNavigationEdit);
 document.querySelector("#live-nav-planner-range").addEventListener("change", (event) => {
+  if (liveNavigationState.plannerRangeM !== (Number(event.target.value) || 40)) captureLiveNavigationHistory();
   liveNavigationState.plannerRangeM = Number(event.target.value) || 40;
   persistLiveNavigationPlan();
   updateLiveComparisonUi();
@@ -6082,6 +6155,8 @@ document.querySelector("#live-nav-reference-plan").addEventListener("click", () 
   const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
   const origin = navigationPlannerOrigin(navigation);
   if (!origin) return;
+  if (!liveNavigationState.missionDraft.some((waypoint) => !missionWaypointHasCoordinate(waypoint) && waypoint.local)) return;
+  captureLiveNavigationHistory();
   let referenced = 0;
   liveNavigationState.missionDraft = liveNavigationState.missionDraft.map((waypoint) => {
     if (missionWaypointHasCoordinate(waypoint) || !waypoint.local) return waypoint;
@@ -6103,6 +6178,8 @@ document.querySelector("#live-nav-manual-override").addEventListener("click", ()
 });
 document.querySelector("#live-nav-clear-draft").addEventListener("click", () => {
   if (liveNavigationPreviewState.active) stopLiveNavigationPreview();
+  if (!liveNavigationState.missionDraft.length) return;
+  captureLiveNavigationHistory();
   liveNavigationState.missionDraft = [];
   persistLiveNavigationPlan();
   document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
@@ -6137,6 +6214,17 @@ document.querySelector("#live-nav-waypoint-list").addEventListener("input", (eve
   updateNavigationMissionHeader(liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState));
   updateLiveComparisonUi();
 });
+document.querySelector("#live-nav-waypoint-list").addEventListener("focusin", (event) => {
+  if (event.target.closest("[data-waypoint-field]")) liveNavigationFieldHistorySnapshot = navigationMissionJson(liveNavigationState);
+});
+document.querySelector("#live-nav-waypoint-list").addEventListener("focusout", (event) => {
+  if (!event.target.closest("[data-waypoint-field]")) return;
+  const current = navigationMissionJson(liveNavigationState);
+  if (liveNavigationFieldHistorySnapshot && liveNavigationFieldHistorySnapshot !== current) {
+    pushLiveNavigationHistorySnapshot(liveNavigationFieldHistorySnapshot);
+  }
+  liveNavigationFieldHistorySnapshot = null;
+});
 document.querySelector("#live-nav-waypoint-list").addEventListener("click", (event) => {
   const button = event.target.closest("[data-waypoint-action]");
   const row = button?.closest("[data-index]");
@@ -6152,6 +6240,7 @@ document.querySelector("#live-nav-waypoint-list").addEventListener("click", (eve
     });
     return;
   }
+  if (action === "remove" || action === "up" || action === "down") captureLiveNavigationHistory();
   if (action === "remove") removeNavigationWaypoint(liveNavigationState, index);
   if (action === "up") moveNavigationWaypoint(liveNavigationState, index, "up");
   if (action === "down") moveNavigationWaypoint(liveNavigationState, index, "down");
@@ -6167,6 +6256,7 @@ document.querySelector("#live-nav-add-waypoint").addEventListener("click", () =>
     ? coordinateToLocalOffset(navigation.gps.position, origin)
     : { northM: 0, eastM: 0 };
   const coordinate = origin ? localOffsetToCoordinate(local, origin) : null;
+  captureLiveNavigationHistory();
   addNavigationWaypoint(liveNavigationState, {
     ...(coordinate || {}),
     altM: coordinate?.altM || navigation.gps?.altitudeM || 0,
@@ -6180,6 +6270,7 @@ document.querySelector("#live-nav-add-waypoint").addEventListener("click", () =>
 document.querySelector("#live-nav-add-current").addEventListener("click", () => {
   const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
   if (!navigation.gps?.position) return;
+  captureLiveNavigationHistory();
   addNavigationWaypoint(liveNavigationState, {
     lat: navigation.gps.position.lat,
     lon: navigation.gps.position.lon,
@@ -6248,6 +6339,7 @@ document.querySelector("#live-nav-import-file").addEventListener("change", async
   if (!file) return;
   try {
     const imported = parseNavigationMissionJson(await file.text());
+    captureLiveNavigationHistory();
     if (liveNavigationPreviewState.active) stopLiveNavigationPreview();
     liveNavigationState.missionName = imported.name;
     liveNavigationState.missionDraft = imported.mission;

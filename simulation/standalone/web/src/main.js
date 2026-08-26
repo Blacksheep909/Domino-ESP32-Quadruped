@@ -184,6 +184,7 @@ import {
 import {
   clearLiveNavigationActivity,
   createLiveNavigationActivityState,
+  liveNavigationActivityBundle,
   liveNavigationActivitySnapshot,
   recordLiveNavigationActivity,
 } from "./live-navigation-activity.js";
@@ -7081,6 +7082,19 @@ document.querySelector("#live-nav-activity-clear").addEventListener("click", () 
   clearLiveNavigationActivity(liveNavigationActivity);
   renderLiveNavigationActivity();
 });
+document.querySelector("#live-nav-activity-export").addEventListener("click", () => {
+  const bundle = liveNavigationActivityBundle(liveNavigationActivity, {
+    mission: currentLiveNavigationPlan(),
+    workspace: applicationState.workspace,
+  });
+  const blob = new Blob([`${JSON.stringify(bundle, null, 2)}\n`], { type: "application/json;charset=utf-8" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `domino-autonomy-activity-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 0);
+  showAppToast("Autonomy activity log exported.", "success");
+});
 document.querySelector("#live-nav-start-native-route").addEventListener("click", startLiveNativeNavigation);
 document.querySelector("#live-nav-return-home").addEventListener("click", () => startLiveNativeNavigation("return-home"));
 document.querySelector("#live-nav-pause-native-route").addEventListener("click", toggleLiveNativeNavigationPause);
@@ -7701,6 +7715,10 @@ document.querySelector("#live-diagnostics-export").addEventListener("click", () 
     controller: liveControllerDiagnosticExport(liveControllerState),
     calibration: createLiveCalibrationProfile(liveCalibrationState.profile),
     activeSession: liveSessionSummary(liveSessionState),
+  });
+  bundle.autonomy = liveNavigationActivityBundle(liveNavigationActivity, {
+    mission: currentLiveNavigationPlan(),
+    workspace: applicationState.workspace,
   });
   const blob = new Blob([`${JSON.stringify(bundle, null, 2)}\n`], { type: "application/json;charset=utf-8" });
   const link = document.createElement("a");

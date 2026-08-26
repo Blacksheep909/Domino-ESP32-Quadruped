@@ -58,10 +58,12 @@ export function nativeNavigationCommand({
   const distanceM = Math.hypot(target.northM - current.northM, target.eastM - current.eastM);
   const arrivalRadiusM = Math.max(0.1, finite(waypoints[index]?.radiusM) ?? 1.5);
   if (distanceM <= arrivalRadiusM) {
+    const holdS = Math.max(0, finite(waypoints[index]?.holdS) ?? 0);
     return {
-      ...zeroCommand(index === route.length - 1 ? "complete" : "arrived", index === route.length - 1 ? "Final waypoint reached." : "Waypoint arrival radius reached.", index),
+      ...zeroCommand(index === route.length - 1 && holdS <= 0 ? "complete" : "arrived", index === route.length - 1 && holdS <= 0 ? "Final waypoint reached." : "Waypoint arrival radius reached.", index),
       target,
       distanceM,
+      holdS,
     };
   }
 

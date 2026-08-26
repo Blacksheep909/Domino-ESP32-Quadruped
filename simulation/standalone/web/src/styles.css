@@ -6841,6 +6841,14 @@ body[data-workspace="real-robot"] .toast-region {
 .live-autonomy-hud-readouts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin-top: 14px; }
 .live-autonomy-hud-readouts > div { min-width: 0; padding: 8px; display: grid; gap: 5px; background: #e9ebe6; border: 1px solid #d9ddd7; border-radius: 4px; }
 .live-autonomy-hud-readouts strong { overflow: hidden; color: #30352f; font: 800 11px/1.1 "Cascadia Mono", Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.live-native-preflight { margin-top: 12px; padding-top: 10px; border-top: 1px solid #d9ddd7; }
+.live-native-preflight-title { color: #757970; font: 800 8px/1.15 "Cascadia Mono", Consolas, monospace; letter-spacing: .08em; }
+.live-native-preflight-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; margin-top: 7px; }
+.live-native-preflight-grid > span { min-width: 0; display: flex; justify-content: space-between; gap: 5px; padding: 5px 6px; color: #858981; background: #e9ebe6; border: 1px solid #d9ddd7; border-radius: 4px; font: 800 7px/1 "Cascadia Mono", Consolas, monospace; }
+.live-native-preflight-grid b { overflow: hidden; font-weight: 800; letter-spacing: .05em; text-overflow: ellipsis; }
+.live-native-preflight-grid strong { color: #ad7621; font: inherit; white-space: nowrap; }
+.live-native-preflight-grid > span[data-state="online"] strong { color: #318051; }
+.live-native-preflight-grid > span[data-state="offline"] strong { color: #8d9095; }
 .live-autonomy-hud > button { width: 100%; min-height: 34px; margin-top: 12px; padding: 0 8px; color: #8e382d; background: #fff0ec; border: 1px solid #d69a8f; border-radius: 5px; cursor: pointer; font: 800 8px/1 "Cascadia Mono", Consolas, monospace; }
 .live-autonomy-hud > button:hover, .live-autonomy-hud > button:focus-visible { border-color: #b95a4b; outline: none; }
 .live-autonomy-hud > p { margin: 10px 0 0; color: #757970; font-size: 9px; line-height: 1.45; }
@@ -6869,6 +6877,12 @@ body[data-workspace="real-robot"] .toast-region {
 :root[data-theme="dark"] .live-planner-map text { fill: #91a899; }
 :root[data-theme="dark"] .live-autonomy-hud-readouts > div { background: #292a2d; border-color: #3a3d40; }
 :root[data-theme="dark"] .live-autonomy-hud-readouts strong { color: #e1e1e4; }
+:root[data-theme="dark"] .live-native-preflight { border-color: #3a3d40; }
+:root[data-theme="dark"] .live-native-preflight-title { color: #96999e; }
+:root[data-theme="dark"] .live-native-preflight-grid > span { color: #96999e; background: #292a2d; border-color: #3a3d40; }
+:root[data-theme="dark"] .live-native-preflight-grid strong { color: #e7b45c; }
+:root[data-theme="dark"] .live-native-preflight-grid > span[data-state="online"] strong { color: #78c894; }
+:root[data-theme="dark"] .live-native-preflight-grid > span[data-state="offline"] strong { color: #777b80; }
 :root[data-theme="dark"] .live-planner-actions button { color: #b9efc6; background: rgba(66, 142, 88, .18); border-color: rgba(113, 201, 145, .52); }
 :root[data-theme="dark"] .live-planner-actions button:disabled { color: #777b80; background: #292a2d; border-color: #3a3d40; }
 :root[data-theme="dark"] .live-planner-actions span { color: #96999e; }

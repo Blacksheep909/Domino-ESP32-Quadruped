@@ -3785,6 +3785,31 @@ function nativeNavigationReadiness(navigation, routeReady) {
   return { ready: checks.every(([valid]) => valid), reason: checks.find(([valid]) => !valid)?.[1] || "Domino route checks are ready." };
 }
 
+function setNativeNavigationPreflightCheck(name, ready, text, state = ready ? "online" : "warning") {
+  const check = document.querySelector(`[data-native-preflight="${name}"]`);
+  if (!check) return;
+  check.dataset.state = state;
+  const value = check.querySelector("strong");
+  if (value) value.textContent = text;
+}
+
+function renderNativeNavigationPreflight(navigation, routeReady) {
+  const context = liveManualContext();
+  const gate = liveNativeRouteGate(navigation);
+  const adapterReady = nativeNavigationCapabilityAvailable();
+  const obstacleEnabled = liveNavigationState.obstacleBehavior.enabled;
+  const headingReady = Number.isFinite(navigation.gps?.courseDeg);
+  const safetyReady = context.connectionReady && context.robotState === "armed" && context.telemetryFresh && context.controllerLinkReady && context.workspaceActive;
+  const fenceReady = !gate.fenceEnabled || Boolean(navigation.home) && gate.fenceStatus.checked && gate.fenceStatus.outsideCount === 0 && navigation.geofence?.breached !== true;
+  setNativeNavigationPreflightCheck("adapter", adapterReady, adapterReady ? "READY" : "WAITING", adapterReady ? "online" : "offline");
+  setNativeNavigationPreflightCheck("route", routeReady, routeReady ? "READY" : "CHECK");
+  setNativeNavigationPreflightCheck("gps", navigation.hasFix, navigation.hasFix ? "3D FIX" : "WAITING", navigation.hasFix ? "online" : "warning");
+  setNativeNavigationPreflightCheck("heading", headingReady, headingReady ? "READY" : "WAITING", headingReady ? "online" : "warning");
+  setNativeNavigationPreflightCheck("lidar", !obstacleEnabled || navigation.lidarFresh, !obstacleEnabled ? "BYPASS" : navigation.lidarFresh ? "READY" : "WAITING", !obstacleEnabled || navigation.lidarFresh ? "online" : "warning");
+  setNativeNavigationPreflightCheck("safety", safetyReady, safetyReady ? "ARMED" : context.robotState === "armed" ? "CHECK" : "DISARMED", safetyReady ? "online" : "warning");
+  setNativeNavigationPreflightCheck("fence", fenceReady, !gate.fenceEnabled ? "OFF" : fenceReady ? "READY" : "CHECK", !gate.fenceEnabled || fenceReady ? "online" : "warning");
+}
+
 function navigationTelemetryAvailable() {
   const adapter = navigationAdapter();
   return Boolean(
@@ -4569,6 +4594,7 @@ function renderLiveNavigationUi(navigation) {
   updateNavigationMissionHeader(navigation);
   renderLiveWaypointList(navigation);
   renderLiveNavigationPlanner(navigation);
+  renderNativeNavigationPreflight(navigation, routeReady);
   const nativeRouteReadiness = nativeNavigationReadiness(navigation, routeReady);
   const nativeRouteButton = document.querySelector("#live-nav-start-native-route");
   const nativeRoutePauseButton = document.querySelector("#live-nav-pause-native-route");

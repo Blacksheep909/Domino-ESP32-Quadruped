@@ -59,7 +59,10 @@ Domino-owned route setting: the planner previews each pass, includes the
 closing leg back to the first waypoint in distance and ETA, and the guarded
 native runner starts each next pass at waypoint one. Return Home remains a
 separate one-shot safety action, and every loop still passes the same fresh
-sensor, geofence, lease, and neutral-on-fault checks.
+sensor, geofence, lease, and neutral-on-fault checks. The app-owned controller
+checks the home-radius fence before its arrival-radius check, so a waypoint
+cannot be accepted merely because the dog is close to a target outside the
+permitted area.
 When more than one loop is selected, the map also draws that closing leg as a
 dashed return segment so the patrol shape is visible before it is previewed.
 When a live GPS trail is available, the map draws it as a quiet blue dotted

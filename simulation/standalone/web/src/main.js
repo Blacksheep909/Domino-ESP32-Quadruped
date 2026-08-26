@@ -1128,6 +1128,7 @@ document.querySelector("#live-manual-open").addEventListener("click", () => {
 });
 document.querySelector("#live-manual-close").addEventListener("click", () => {
   if (liveManualState.deadmanActive) stopLiveManualDeadman();
+  if (!liveManualState.authorityToken) liveNativeNavigationStartRequested = false;
 });
 document.querySelector("#live-manual-consent").addEventListener("change", (event) => {
   liveManualState.safetyConfirmed = event.target.checked;
@@ -3218,6 +3219,7 @@ function sendLiveManualAuthority(action) {
   clearTimeout(liveManualRequestTimeout);
   liveManualRequestTimeout = setTimeout(() => {
     if (failLiveManualRequest(liveManualState, requestId, "Manual-control acknowledgement timed out. No authority was assumed.")) {
+      liveNativeNavigationStartRequested = false;
       renderLiveManualUi();
     }
   }, 2_000);

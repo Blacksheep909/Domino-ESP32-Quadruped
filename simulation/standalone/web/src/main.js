@@ -186,6 +186,7 @@ import {
   nativeNavigationRunnerIsActive,
   pauseNativeNavigationRunner,
   resetNativeNavigationRunner,
+  skipNativeNavigationRunnerWaypoint,
   resumeNativeNavigationRunner,
   startNativeNavigationRunner,
   stopNativeNavigationRunner,
@@ -3935,6 +3936,21 @@ function toggleLiveNativeNavigationPause() {
   updateLiveComparisonUi();
 }
 
+function skipLiveNativeNavigationWaypoint() {
+  if (!nativeNavigationRunnerIsActive(liveNativeNavigationState) || liveNativeNavigationState.mode !== "route") return;
+  const skippedWaypoint = liveNativeNavigationState.currentIndex + 1;
+  sendLiveManualFrame(true);
+  if (!skipNativeNavigationRunnerWaypoint(liveNativeNavigationState)) return;
+  if (liveNativeNavigationState.phase === "complete") {
+    finishLiveNativeNavigation(`Skipped WP ${String(skippedWaypoint).padStart(2, "0")}; Domino route complete. Vehicle is held neutral.`);
+    return;
+  }
+  liveNavigationState.lastCommandStatus = liveNativeNavigationState.phase === "paused"
+    ? `Skipped WP ${String(skippedWaypoint).padStart(2, "0")}. Domino route remains paused.`
+    : `Skipped WP ${String(skippedWaypoint).padStart(2, "0")}. Continuing with manual override available.`;
+  updateLiveComparisonUi();
+}
+
 function startLiveNativeNavigation(mode = "route") {
   if (nativeNavigationRunnerIsActive(liveNativeNavigationState)) {
     haltLiveNativeNavigation(mode === "return-home" ? "Domino return-home stopped by operator." : "Domino route stopped by operator.");
@@ -4676,6 +4692,17 @@ function renderLiveNavigationUi(navigation) {
     nativeRoutePauseButton.title = liveNativeNavigationState.phase === "paused"
       ? "Resume the held route after rechecking the safety state."
       : "Hold the vehicle neutral while retaining the route and guarded lease.";
+  }
+  const nativeRouteSkipButton = document.querySelector("#live-nav-skip-waypoint");
+  if (nativeRouteSkipButton) {
+    const canSkipWaypoint = nativeRouteActive && liveNativeNavigationState.mode === "route";
+    nativeRouteSkipButton.disabled = !canSkipWaypoint;
+    nativeRouteSkipButton.textContent = canSkipWaypoint
+      ? `SKIP WP ${String(liveNativeNavigationState.currentIndex + 1).padStart(2, "0")}`
+      : "SKIP WAYPOINT";
+    nativeRouteSkipButton.title = canSkipWaypoint
+      ? "Advance past the current waypoint while keeping the guarded Domino route active."
+      : "Available only while an active Domino route is running or paused.";
   }
   if (nativeRouteState) {
     const phase = liveNativeNavigationState.phase;
@@ -6605,6 +6632,7 @@ document.querySelector("#live-nav-manual-override").addEventListener("click", ()
 document.querySelector("#live-nav-start-native-route").addEventListener("click", startLiveNativeNavigation);
 document.querySelector("#live-nav-return-home").addEventListener("click", () => startLiveNativeNavigation("return-home"));
 document.querySelector("#live-nav-pause-native-route").addEventListener("click", toggleLiveNativeNavigationPause);
+document.querySelector("#live-nav-skip-waypoint").addEventListener("click", skipLiveNativeNavigationWaypoint);
 document.querySelector("#live-nav-clear-draft").addEventListener("click", () => {
   if (liveNavigationPreviewState.active) stopLiveNavigationPreview();
   if (!liveNavigationState.missionDraft.length) return;

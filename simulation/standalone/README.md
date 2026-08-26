@@ -110,7 +110,11 @@ guarded **RESUME DOMINO ROUTE** action that preserves waypoint progress. A
 separate **RETURN HOME** mode targets the active home origin without modifying
 the mission draft and remains behind the same physical safety gates. Waypoint
 dwell times are honored by the Domino runner, and pausing during a dwell
-preserves the remaining hold time before advancing.
+preserves the remaining hold time before advancing. While a route is running or
+paused, **SKIP WP** advances past the current waypoint without releasing the
+guarded lease; it clears any dwell timer, keeps a paused route paused, and
+completes cleanly when the final route point is skipped. Return Home cannot be
+skipped.
 
 The safety dock adds a separate `live-safety-command` contract for arm, disarm,
 E-stop, and physical-latch reset. Arm requires a 1.5-second uninterrupted hold,

@@ -60,6 +60,32 @@ export function stopNativeNavigationRunner(state, reason = "Route stopped by ope
   return true;
 }
 
+/**
+ * Advance an active Domino route past its current waypoint without changing
+ * the guarded control lease. This is an operator recovery action for a route
+ * that is still safe to continue; Return Home deliberately cannot be skipped.
+ */
+export function skipNativeNavigationRunnerWaypoint(state) {
+  if (!state || !nativeNavigationRunnerIsActive(state) || state.mode !== "route") return false;
+  if (!Number.isSafeInteger(state.currentIndex) || !Number.isSafeInteger(state.waypointCount) || state.waypointCount < 1) return false;
+  const skippedIndex = state.currentIndex;
+  state.holdingIndex = -1;
+  state.holdUntilMs = 0;
+  state.holdRemainingMs = 0;
+  state.lastCommand = {
+    state: "skipped",
+    forward: 0,
+    turn: 0,
+    skippedIndex,
+  };
+  state.currentIndex += 1;
+  if (state.currentIndex >= state.waypointCount) {
+    state.currentIndex = Math.max(0, state.waypointCount - 1);
+    state.phase = "complete";
+  }
+  return true;
+}
+
 export function blockNativeNavigationRunner(state, reason = "Native route safety gate blocked motion.") {
   if (!state || state.phase === "idle") return false;
   state.phase = "blocked";

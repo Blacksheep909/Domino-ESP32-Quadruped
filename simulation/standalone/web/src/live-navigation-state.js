@@ -526,6 +526,24 @@ export function moveNavigationWaypointToLocal(state, index, offset, origin = nul
   return true;
 }
 
+export function nudgeNavigationWaypoint(state, index, direction, stepM = 0.5, origin = null) {
+  const waypointIndex = Number(index);
+  const waypoint = state?.missionDraft?.[waypointIndex];
+  const current = localOffset(waypoint?.local) || (origin ? coordinateToLocalOffset(waypoint, origin) : null);
+  const step = finite(stepM);
+  const delta = {
+    ArrowUp: { northM: 1, eastM: 0 },
+    ArrowDown: { northM: -1, eastM: 0 },
+    ArrowLeft: { northM: 0, eastM: -1 },
+    ArrowRight: { northM: 0, eastM: 1 },
+  }[direction];
+  if (!current || !delta || step === null || step <= 0 || step > 100) return false;
+  return moveNavigationWaypointToLocal(state, waypointIndex, {
+    northM: current.northM + delta.northM * step,
+    eastM: current.eastM + delta.eastM * step,
+  }, origin);
+}
+
 function missionWaypointLocalPosition(waypoint, origin) {
   if (waypoint?.local) return localOffset(waypoint.local);
   return missionWaypointHasCoordinate(waypoint) && origin

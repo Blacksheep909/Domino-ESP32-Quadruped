@@ -10,6 +10,7 @@ import {
   localOffsetToCoordinate,
   moveNavigationWaypoint,
   moveNavigationWaypointToLocal,
+  nudgeNavigationWaypoint,
   navigationMissionMetrics,
   navigationMissionGeofenceStatus,
   navigationMissionJson,
@@ -246,6 +247,20 @@ test("route planner drags a waypoint within the active local frame", () => {
   assert.ok(Number.isFinite(state.missionDraft[0].lat));
   assert.ok(Number.isFinite(state.missionDraft[0].lon));
   assert.equal(moveNavigationWaypointToLocal(state, 0, { northM: 20_001, eastM: 0 }, origin), false);
+});
+
+test("route planner nudges a local waypoint with bounded keyboard steps", () => {
+  const origin = { lat: -36.85, lon: 174.76, altM: 18 };
+  const state = createLiveNavigationState();
+  assert.equal(addNavigationWaypoint(state, { local: { northM: 2, eastM: 1 }, label: "Dock" }), true);
+  assert.equal(nudgeNavigationWaypoint(state, 0, "ArrowUp", 0.5, origin), true);
+  assert.deepEqual(state.missionDraft[0].local, { northM: 2.5, eastM: 1 });
+  assert.equal(nudgeNavigationWaypoint(state, 0, "ArrowLeft", 5, origin), true);
+  assert.deepEqual(state.missionDraft[0].local, { northM: 2.5, eastM: -4 });
+  assert.ok(Number.isFinite(state.missionDraft[0].lat));
+  assert.equal(nudgeNavigationWaypoint(state, 0, "PageUp", 0.5, origin), false);
+  assert.equal(nudgeNavigationWaypoint(state, 0, "ArrowDown", 101, origin), false);
+  assert.equal(nudgeNavigationWaypoint(state, 1, "ArrowUp", 0.5, origin), false);
 });
 
 test("route planner can reverse a route while preserving waypoint data", () => {

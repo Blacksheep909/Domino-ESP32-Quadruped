@@ -380,10 +380,14 @@ export function parseNavigationMissionJson(text) {
 }
 
 export function missionWaypointHasCoordinate(waypoint) {
+  const lat = waypoint?.lat;
+  const lon = waypoint?.lon;
   return Boolean(
     waypoint &&
-    Number.isFinite(Number(waypoint.lat)) &&
-    Number.isFinite(Number(waypoint.lon)),
+    lat !== null && lat !== undefined &&
+    lon !== null && lon !== undefined &&
+    Number.isFinite(Number(lat)) &&
+    Number.isFinite(Number(lon)),
   );
 }
 
@@ -411,5 +415,73 @@ export function localOffsetToCoordinate(offset, origin) {
     lat: reference.lat + toDeg(local.northM / earthRadiusM),
     lon: reference.lon + toDeg(local.eastM / (earthRadiusM * cosLatitude)),
     altM: reference.altM,
+  };
+}
+
+function missionWaypointLocalPosition(waypoint, origin) {
+  if (waypoint?.local) return localOffset(waypoint.local);
+  return missionWaypointHasCoordinate(waypoint) && origin
+    ? coordinateToLocalOffset(waypoint, origin)
+    : null;
+}
+
+function coordinateDistanceM(first, second) {
+  const a = coordinate(first);
+  const b = coordinate(second);
+  if (!a || !b) return null;
+  const earthRadiusM = 6_371_000;
+  const toRad = (value) => value * Math.PI / 180;
+  const latitude = toRad(b.lat - a.lat);
+  const longitude = toRad(b.lon - a.lon);
+  const latitudeA = toRad(a.lat);
+  const latitudeB = toRad(b.lat);
+  const haversine = Math.sin(latitude / 2) ** 2
+    + Math.cos(latitudeA) * Math.cos(latitudeB) * Math.sin(longitude / 2) ** 2;
+  return 2 * earthRadiusM * Math.asin(Math.min(1, Math.sqrt(haversine)));
+}
+
+/**
+ * Return display-only route metrics without claiming vehicle execution.
+ * Local drafts remain measurable offline; GPS-backed routes use the same
+ * north/east frame when an origin is available and fall back to haversine
+ * distance when it is not.
+ */
+export function navigationMissionMetrics(mission = [], origin = null) {
+  const waypoints = Array.isArray(mission) ? mission : [];
+  const positions = waypoints.map((waypoint) => missionWaypointLocalPosition(waypoint, origin));
+  const unresolvedCount = positions.filter((position) => !position).length;
+  const localRouteKnown = waypoints.length > 0 && positions.every(Boolean);
+  const coordinateRouteKnown = !localRouteKnown && waypoints.length > 0 && waypoints.every(missionWaypointHasCoordinate);
+  let totalDistanceM = 0;
+  if (localRouteKnown) {
+    for (let index = 1; index < positions.length; index += 1) {
+      totalDistanceM += Math.hypot(
+        positions[index].northM - positions[index - 1].northM,
+        positions[index].eastM - positions[index - 1].eastM,
+      );
+    }
+  } else if (coordinateRouteKnown) {
+    for (let index = 1; index < waypoints.length; index += 1) {
+      totalDistanceM += coordinateDistanceM(waypoints[index - 1], waypoints[index]) || 0;
+    }
+  }
+  const distanceKnown = localRouteKnown || coordinateRouteKnown;
+  const estimatedSeconds = distanceKnown
+    ? waypoints.reduce((seconds, waypoint, index) => {
+        const speedMps = Number(waypoint?.speedMps) > 0 ? Number(waypoint.speedMps) : 0.5;
+        const segmentDistanceM = index > 0 && localRouteKnown
+          ? Math.hypot(positions[index].northM - positions[index - 1].northM, positions[index].eastM - positions[index - 1].eastM)
+          : index > 0 && coordinateRouteKnown
+            ? coordinateDistanceM(waypoints[index - 1], waypoint) || 0
+            : 0;
+        return seconds + segmentDistanceM / speedMps + (Number(waypoint?.holdS) || 0);
+      }, 0)
+    : null;
+  return {
+    waypointCount: waypoints.length,
+    totalDistanceM: distanceKnown ? totalDistanceM : null,
+    estimatedSeconds: distanceKnown ? estimatedSeconds : null,
+    unresolvedCount,
+    coordinateReady: waypoints.length > 0 && waypoints.every(missionWaypointHasCoordinate),
   };
 }

@@ -28,15 +28,19 @@ The LIVE Sensors view now includes a Domino-owned top-down route planner. Click
 the map to place waypoints, adjust the planning range, reorder or remove points,
 and export the plan as JSON. Plans created before a GPS fix use a local north/east
 metre frame and retain that frame through import/export; once a GPS or home
-reference is available, new points also carry georeferenced coordinates.
+reference is available, new points also carry georeferenced coordinates. Use
+**REFERENCE LOCAL PLAN** to deliberately bind an existing offline draft to the
+active home position; the control stays disabled until that reference exists.
 
 The compact Domino Autonomy HUD stays beside the map and shows route progress,
-position quality, the next-point distance when it can be calculated, and the
-front obstacle distance. **OPEN MANUAL OVERRIDE** opens the existing guarded
-manual-control handoff at any time. Sending a plan to a vehicle remains a
-separate, explicit action: local planning works offline, while physical route
-execution remains closed until the selected vehicle adapter, position, EKF,
-obstacle policy, and safety checks all report ready.
+position quality, next-point distance, total route distance, a conservative
+time estimate, and front obstacle distance. The route checklist calls out
+whether the plan is empty, still local, or ready for GPS upload. Clicking a
+waypoint marker selects its editable row. **OPEN MANUAL OVERRIDE** opens the
+existing guarded manual-control handoff at any time. Sending a plan to a
+vehicle remains a separate, explicit action: local planning works offline,
+while physical route execution remains closed until the selected vehicle
+adapter, position, EKF, obstacle policy, and safety checks all report ready.
 
 ## Workspaces
 

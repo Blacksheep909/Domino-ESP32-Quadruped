@@ -7,6 +7,7 @@ import {
 export const LIVE_ADAPTER_FRESH_MS = 4_000;
 export const LIVE_RECONNECT_BASE_MS = 1_000;
 export const LIVE_RECONNECT_MAX_MS = 10_000;
+export const LIVE_LINK_RESTART_TIMEOUT_MS = 8_000;
 
 const safeText = (value, fallback = "") => typeof value === "string" ? value.slice(0, 96) : fallback;
 
@@ -53,6 +54,8 @@ export function createLiveConnectionState() {
     reconnectAttempt: 0,
     reconnectAt: 0,
     reconnectReason: "",
+    restartStartedAt: 0,
+    restartDeadlineAt: 0,
     status: "Choose a transport and search for a compatible Domino adapter.",
     error: "",
   };
@@ -105,6 +108,24 @@ export function cancelLiveReconnect(state) {
   return true;
 }
 
+export function clearLiveConnectionFault(state) {
+  if (!state || state.phase !== "fault" || state.sessionId || state.pendingRequestId) return false;
+  state.phase = "disconnected";
+  state.error = "";
+  state.status = "Connection fault cleared locally. Robot commands remain blocked until a new read-only handshake succeeds.";
+  return true;
+}
+
+export function expireLiveLinkRestart(state, now = Date.now()) {
+  if (!state || state.phase !== "restarting" || !state.restartDeadlineAt || now < state.restartDeadlineAt) return false;
+  state.phase = "fault";
+  state.restartStartedAt = 0;
+  state.restartDeadlineAt = 0;
+  state.error = "The companion could not reopen the physical link.";
+  state.status = `${state.error} Check the cable and port, then restart the link again.`;
+  return true;
+}
+
 export function setLiveConnectionBridge(state, connected, now = Date.now()) {
   if (!state) return false;
   state.bridgeConnected = Boolean(connected);
@@ -136,8 +157,25 @@ export function acceptLiveAdapterAnnouncement(state, message, receivedAt = Date.
     state.selectedAdapterId = adapter.adapterId;
   }
   if (!state.selectedAdapterId) state.selectedAdapterId = adapter.adapterId;
-  if (state.sessionId && state.selectedAdapterId === adapter.adapterId && adapter.state === "error") {
+  if (
+    state.phase === "restarting" &&
+    state.selectedAdapterId === adapter.adapterId &&
+    adapter.state !== "error"
+  ) {
+    state.phase = "disconnected";
+    state.restartStartedAt = 0;
+    state.restartDeadlineAt = 0;
+    state.error = "";
+    state.status = `${adapter.name} reopened ${adapter.endpoint || "the physical link"}. Connect read-only when ready.`;
+  } else if (state.sessionId && state.selectedAdapterId === adapter.adapterId && adapter.state === "error") {
     scheduleLiveReconnect(state, `${adapter.name} reported a connection fault.`, receivedAt);
+  } else if (
+    state.phase !== "restarting" && state.phase !== "fault" && !state.sessionId && !state.pendingRequestId &&
+    state.selectedAdapterId === adapter.adapterId && adapter.state === "error"
+  ) {
+    state.phase = "fault";
+    state.error = `${adapter.name} reported a connection fault.`;
+    state.status = `${state.error} Robot commands remain blocked. Search again, select a healthy adapter, or clear the local fault.`;
   }
   return true;
 }
@@ -146,6 +184,10 @@ export function selectLiveAdapter(state, adapterId) {
   if (!state || !state.adapters[adapterId] || state.sessionId) return false;
   state.selectedAdapterId = adapterId;
   state.error = "";
+  if (state.phase === "fault" && state.adapters[adapterId].state !== "error") {
+    state.phase = "disconnected";
+    state.status = `${state.adapters[adapterId].name} selected. Verify the identity before connecting read-only.`;
+  }
   return true;
 }
 
@@ -202,6 +244,12 @@ export function createLiveConnectionCommand(state, action, requestId, now = Date
   const adapter = state.adapters[state.selectedAdapterId];
   if (!adapter) return null;
   if (action === "connect" && !state.sessionId) {
+    if (adapter.state === "error") {
+      state.phase = "fault";
+      state.error = `${adapter.name} is reporting an adapter fault.`;
+      state.status = `${state.error} Robot commands remain blocked.`;
+      return null;
+    }
     state.phase = "connecting";
     state.status = `Requesting a read-only handshake with ${adapter.name}...`;
     return {
@@ -209,6 +257,18 @@ export function createLiveConnectionCommand(state, action, requestId, now = Date
       adapterId: adapter.adapterId,
       transport: adapter.transport,
       safety: { readOnlyHandshake: true, commandsBlockedUntilStateKnown: true },
+    };
+  }
+  if (action === "restart" && !state.sessionId) {
+    state.phase = "restarting";
+    state.restartStartedAt = now;
+    state.restartDeadlineAt = now + LIVE_LINK_RESTART_TIMEOUT_MS;
+    state.status = `Restarting the ${adapter.transport.toUpperCase()} link. Robot commands remain blocked.`;
+    return {
+      ...base,
+      adapterId: adapter.adapterId,
+      transport: adapter.transport,
+      safety: { commandsBlocked: true },
     };
   }
   if (action === "disconnect" && state.sessionId) {
@@ -242,9 +302,11 @@ export function acceptLiveConnectionAcknowledgement(state, message, receivedAt =
       scheduleLiveReconnect(state, state.error, receivedAt);
       return true;
     }
-    state.phase = state.sessionId ? "connected" : "disconnected";
+    state.phase = state.sessionId ? "connected" : "fault";
     state.error = safeText(message.reason, "The adapter rejected the request.");
-    state.status = state.error;
+    state.status = state.sessionId
+      ? state.error
+      : `${state.error} Robot commands remain blocked. Retry, search for another adapter, or clear the local fault.`;
     return true;
   }
   if (message.action === "discover") {
@@ -263,6 +325,12 @@ export function acceptLiveConnectionAcknowledgement(state, message, receivedAt =
     state.status = message.robotState === "disarmed"
       ? "Engineering session established. Robot commands remain explicitly gated."
       : `Connected while the robot reports ${message.robotState.toUpperCase()}. Motion commands are blocked.`;
+  } else if (message.action === "restart") {
+    state.phase = "restarting";
+    state.restartStartedAt = receivedAt;
+    state.restartDeadlineAt = receivedAt + LIVE_LINK_RESTART_TIMEOUT_MS;
+    state.error = "";
+    state.status = "Physical link restart requested. Waiting for the robot to report a healthy connection; commands remain blocked.";
   } else {
     state.phase = "disconnected";
     state.sessionId = "";
@@ -309,8 +377,10 @@ export function failLiveConnectionRequest(state, requestId, reason) {
     scheduleLiveReconnect(state, reason);
     return true;
   }
-  state.phase = state.sessionId ? "connected" : "disconnected";
+  state.phase = state.sessionId ? "connected" : "fault";
   state.error = reason;
-  state.status = reason;
+  state.status = state.sessionId
+    ? reason
+    : `${reason} Retry, search for another adapter, or clear the local fault.`;
   return true;
 }

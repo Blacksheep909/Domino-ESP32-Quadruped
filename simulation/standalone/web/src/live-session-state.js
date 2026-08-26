@@ -1,4 +1,5 @@
 import { LIVE_SERVO_CHANNELS } from "./live-telemetry-state.js";
+import { deriveLiveBatteryState } from "./live-battery-state.js";
 
 export const LIVE_SESSION_MAX_SAMPLES = 18_000;
 export const LIVE_SESSION_MAX_ARCHIVE_ENTRIES = 20;
@@ -31,10 +32,21 @@ export function stopLiveSession(state, stoppedAt = Date.now()) {
   return true;
 }
 
+export function clearLiveSession(state) {
+  if (!state || state.status === "recording") return false;
+  state.status = "idle";
+  state.startedAt = null;
+  state.stoppedAt = null;
+  state.samples = [];
+  state.lastSourceKey = "";
+  return true;
+}
+
 export function recordLiveComparisonSample(state, snapshot, capturedAt = Date.now()) {
   if (!state || state.status !== "recording" || !snapshot?.paired) return false;
   const sourceKey = `${snapshot.expected.timestampMs}:${snapshot.measured.timestampMs}`;
   if (sourceKey === state.lastSourceKey) return false;
+  const battery = deriveLiveBatteryState(snapshot.power?.voltageV);
   const sample = {
     capturedAt,
     elapsedMs: Math.max(0, capturedAt - state.startedAt),
@@ -55,7 +67,13 @@ export function recordLiveComparisonSample(state, snapshot, capturedAt = Date.no
     expectedFootTargetsMm: Array.isArray(snapshot.expected.footTargetMm)
       ? snapshot.expected.footTargetMm.map((target) => [...target])
       : null,
-    power: snapshot.power ? { ...snapshot.power } : null,
+    power: snapshot.power ? {
+      ...snapshot.power,
+      cellCount: battery.cellCount,
+      averageCellVoltageV: battery.averageCellVoltageV,
+      estimatedChargePercent: battery.estimatedChargePercent,
+    } : null,
+    link: snapshot.link ? { ...snapshot.link } : null,
   };
   state.samples.push(sample);
   if (state.samples.length > state.maxSamples) {
@@ -112,6 +130,7 @@ export function archiveLiveSession(archive, state, identifier = `session-${Date.
       measuredJointAnglesDeg: sample.measuredJointAnglesDeg ? [...sample.measuredJointAnglesDeg] : null,
       expectedFootTargetsMm: sample.expectedFootTargetsMm?.map((target) => [...target]) || null,
       power: sample.power ? { ...sample.power } : null,
+      link: sample.link ? { ...sample.link } : null,
     })),
   };
   archive.unshift(entry);
@@ -259,8 +278,16 @@ export function liveSessionCsv(state) {
     "height_error_mm",
     "worst_joint_error_deg",
     "voltage_v",
+    "average_cell_voltage_v",
+    "estimated_charge_percent",
     "current_a",
     "power_w",
+    "engineering_packet_rate_hz",
+    "engineering_packet_age_ms",
+    "telemetry_payload_bytes",
+    "dropped_packets_total",
+    "rejected_packets_total",
+    "esp32_loop_hz",
     "fl_foot_target_z_mm",
     "fr_foot_target_z_mm",
     "bl_foot_target_z_mm",
@@ -290,8 +317,16 @@ export function liveSessionCsv(state) {
     csvNumber(sample.bodyError.heightMm, 2),
     csvNumber(sample.worstJointErrorDeg),
     csvNumber(sample.power?.voltageV),
+    csvNumber(sample.power?.averageCellVoltageV),
+    csvNumber(sample.power?.estimatedChargePercent, 1),
     csvNumber(sample.power?.currentA),
     csvNumber(sample.power?.powerW),
+    csvNumber(sample.link?.packetRateHz),
+    csvNumber(sample.link?.packetAgeMs, 1),
+    csvNumber(sample.link?.packetBytes, 0),
+    csvNumber(sample.link?.droppedPackets, 0),
+    csvNumber(sample.link?.rejectedPackets, 0),
+    csvNumber(sample.link?.esp32LoopHz),
     ...Array.from({ length: 4 }, (_, leg) => csvNumber(sample.expectedFootTargetsMm?.[leg]?.[2])),
     ...sample.expectedJointAnglesDeg.map((value) => csvNumber(value)),
     ...sample.expectedServoPulseUs.map((value) => csvNumber(value, 0)),

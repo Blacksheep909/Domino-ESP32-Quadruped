@@ -170,7 +170,9 @@ pio run -t upload
 pio device monitor
 ```
 
-Expected: 115200-baud logs and all PCA9685 outputs remain off.
+Expected: 460800-baud application logs and the defined safe startup pose. ESP32
+ROM boot text is emitted before the application changes baud and may therefore
+appear garbled in a monitor already set to 460800.
 
 ### Gate C — receiver and IMU
 

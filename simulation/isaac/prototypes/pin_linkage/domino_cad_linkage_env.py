@@ -32,7 +32,11 @@ from domino_action_contract import (
     EXPECTED_FOOT_COUNT,
     VALIDATED_INITIAL_POLICY_ACTION_SCALE_DEG,
 )
-from domino_locomotion_rewards import command_motion_terms, quadruped_support_terms
+from domino_locomotion_rewards import (
+    command_motion_terms,
+    quadruped_posture_terms,
+    quadruped_support_terms,
+)
 from domino_foot_reward_metrics import DominoFootRewardTracker
 from domino_reference_gait import (
     PHASE_OFFSETS_RAD,
@@ -180,7 +184,9 @@ class DominoCadLinkageEnvCfg(DirectRLEnvCfg):
     enable_body_collisions = True
     terminate_on_non_foot_ground_contact = True
     terminate_on_joint_separation = True
+    terminate_on_front_foot_backward_reach = True
     max_joint_separation_m = 0.005
+    front_foot_backward_termination_body_x_m = 0.10
     non_foot_ground_contact_margin_m = 0.001
     foot_contact_epsilon_m = 0.004
     target_swing_clearance_m = 0.012
@@ -198,6 +204,7 @@ class DominoCadLinkageEnvCfg(DirectRLEnvCfg):
     alive_reward_scale = 1.0
     height_reward_scale = -20.0
     flat_orientation_reward_scale = -1.5
+    pitch_orientation_reward_scale = -6.0
     vertical_velocity_reward_scale = -0.05
     angular_velocity_reward_scale = -0.02
     command_velocity_reward_scale = -4.0
@@ -223,7 +230,13 @@ class DominoCadLinkageEnvCfg(DirectRLEnvCfg):
     air_time_variance_reward_scale = -0.50
     valid_foot_cycle_reward_scale = 0.50
     front_rear_support_reward_scale = 1.0
+    axle_support_imbalance_penalty_scale = -2.0
+    same_axle_airborne_penalty_scale = -3.0
     excess_airborne_penalty_scale = -2.0
+    front_foot_backward_reach_penalty_scale = -4.0
+    front_pair_backward_reach_penalty_scale = -12.0
+    front_foot_min_body_x_m = 0.20
+    front_foot_reach_normalization_m = 0.10
     foot_cycle_min_air_time_s = 0.06
     foot_cycle_target_air_time_s = 0.20
     foot_cycle_min_clearance_m = 0.004
@@ -1165,6 +1178,7 @@ class DominoCadLinkageEnv(DirectRLEnv):
     def _get_rewards(self) -> torch.Tensor:
         height_errors = []
         flat_orientation_terms = []
+        pitch_orientation_terms = []
         vertical_velocity_terms = []
         angular_velocity_terms = []
         command_velocity_terms = []
@@ -1184,7 +1198,11 @@ class DominoCadLinkageEnv(DirectRLEnv):
         air_time_variance_terms = []
         valid_foot_cycle_terms = []
         front_rear_support_terms = []
+        axle_support_imbalance_terms = []
+        same_axle_airborne_terms = []
         excess_airborne_terms = []
+        front_foot_backward_reach_terms = []
+        front_pair_backward_reach_terms = []
         reference_action_tracking_terms = []
         reference_action_mse_terms = []
         actions_np = self._actions.detach().cpu().numpy().astype(np.float32)
@@ -1252,18 +1270,42 @@ class DominoCadLinkageEnv(DirectRLEnv):
             front_rear_support_terms.append(
                 support_terms["front_rear_support_balance"]
             )
+            axle_support_imbalance_terms.append(
+                support_terms["axle_support_imbalance"]
+            )
+            same_axle_airborne_terms.append(
+                support_terms["same_axle_airborne_pairs"]
+            )
             excess_airborne_terms.append(support_terms["excess_airborne_feet"])
+            body_relative_foot_positions = self._body_relative_foot_positions_np(
+                env_index,
+                foot_positions,
+                body_position=position,
+                body_orientation=orientation,
+            )
+            posture_terms = quadruped_posture_terms(
+                projected_gravity,
+                body_relative_foot_positions,
+                front_foot_min_body_x_m=float(
+                    self.cfg.front_foot_min_body_x_m
+                ),
+                reach_normalization_m=float(
+                    self.cfg.front_foot_reach_normalization_m
+                ),
+            )
+            pitch_orientation_terms.append(posture_terms["pitch_orientation_sq"])
+            front_foot_backward_reach_terms.append(
+                posture_terms["front_foot_backward_reach"]
+            )
+            front_pair_backward_reach_terms.append(
+                posture_terms["front_pair_backward_reach"]
+            )
             foot_reward_metrics = self._foot_reward_tracker.update_env(
                 env_index,
                 foot_contacts_np,
                 ground_clearance,
                 foot_positions,
-                self._body_relative_foot_positions_np(
-                    env_index,
-                    foot_positions,
-                    body_position=position,
-                    body_orientation=orientation,
-                ),
+                body_relative_foot_positions,
                 command_moving=(
                     float(np.linalg.norm(command[:2])) + abs(float(command[2]))
                     >= float(self.cfg.locomotion_command_threshold)
@@ -1312,6 +1354,7 @@ class DominoCadLinkageEnv(DirectRLEnv):
                 reference_action_mse_terms.append(0.0)
         height_error = torch.tensor(height_errors, dtype=torch.float32, device=self.device)
         flat_orientation = torch.tensor(flat_orientation_terms, dtype=torch.float32, device=self.device)
+        pitch_orientation = torch.tensor(pitch_orientation_terms, dtype=torch.float32, device=self.device)
         vertical_velocity = torch.tensor(vertical_velocity_terms, dtype=torch.float32, device=self.device)
         angular_velocity = torch.tensor(angular_velocity_terms, dtype=torch.float32, device=self.device)
         command_velocity = torch.tensor(command_velocity_terms, dtype=torch.float32, device=self.device)
@@ -1343,8 +1386,28 @@ class DominoCadLinkageEnv(DirectRLEnv):
             dtype=torch.float32,
             device=self.device,
         )
+        axle_support_imbalance = torch.tensor(
+            axle_support_imbalance_terms,
+            dtype=torch.float32,
+            device=self.device,
+        )
+        same_axle_airborne = torch.tensor(
+            same_axle_airborne_terms,
+            dtype=torch.float32,
+            device=self.device,
+        )
         excess_airborne = torch.tensor(
             excess_airborne_terms,
+            dtype=torch.float32,
+            device=self.device,
+        )
+        front_foot_backward_reach = torch.tensor(
+            front_foot_backward_reach_terms,
+            dtype=torch.float32,
+            device=self.device,
+        )
+        front_pair_backward_reach = torch.tensor(
+            front_pair_backward_reach_terms,
             dtype=torch.float32,
             device=self.device,
         )
@@ -1356,6 +1419,7 @@ class DominoCadLinkageEnv(DirectRLEnv):
             "alive": torch.ones(self.num_envs, dtype=torch.float32, device=self.device),
             "height_error_sq": torch.square(height_error),
             "flat_orientation": flat_orientation,
+            "pitch_orientation_sq": pitch_orientation,
             "vertical_velocity_sq": vertical_velocity,
             "angular_velocity_sq": angular_velocity,
             "command_velocity_error_sq": command_velocity,
@@ -1377,7 +1441,11 @@ class DominoCadLinkageEnv(DirectRLEnv):
             "air_contact_time_variance_s2": air_time_variance,
             "valid_foot_cycle_touchdown": valid_foot_cycle,
             "front_rear_support_balance": front_rear_support,
+            "axle_support_imbalance": axle_support_imbalance,
+            "same_axle_airborne_pairs": same_axle_airborne,
             "excess_airborne_feet": excess_airborne,
+            "front_foot_backward_reach": front_foot_backward_reach,
+            "front_pair_backward_reach": front_pair_backward_reach,
             "reference_action_tracking": reference_action_tracking,
             "reference_action_mse": reference_action_mse,
         }
@@ -1385,6 +1453,7 @@ class DominoCadLinkageEnv(DirectRLEnv):
             "alive": float(self.cfg.alive_reward_scale),
             "height_error_sq": float(self.cfg.height_reward_scale),
             "flat_orientation": float(self.cfg.flat_orientation_reward_scale),
+            "pitch_orientation_sq": float(self.cfg.pitch_orientation_reward_scale),
             "vertical_velocity_sq": float(self.cfg.vertical_velocity_reward_scale),
             "angular_velocity_sq": float(self.cfg.angular_velocity_reward_scale),
             "command_velocity_error_sq": float(self.cfg.command_velocity_reward_scale),
@@ -1412,8 +1481,20 @@ class DominoCadLinkageEnv(DirectRLEnv):
             "front_rear_support_balance": float(
                 self.cfg.front_rear_support_reward_scale
             ),
+            "axle_support_imbalance": float(
+                self.cfg.axle_support_imbalance_penalty_scale
+            ),
+            "same_axle_airborne_pairs": float(
+                self.cfg.same_axle_airborne_penalty_scale
+            ),
             "excess_airborne_feet": float(
                 self.cfg.excess_airborne_penalty_scale
+            ),
+            "front_foot_backward_reach": float(
+                self.cfg.front_foot_backward_reach_penalty_scale
+            ),
+            "front_pair_backward_reach": float(
+                self.cfg.front_pair_backward_reach_penalty_scale
             ),
             "reference_action_tracking": float(self.cfg.reference_action_tracking_reward_scale),
             "reference_action_mse": float(self.cfg.reference_action_mse_reward_scale),
@@ -1440,6 +1521,7 @@ class DominoCadLinkageEnv(DirectRLEnv):
         above_tilt_values = []
         non_foot_contact_values = []
         joint_separation_values = []
+        front_pair_backward_values = []
         max_joint_separation_values = []
         done_diagnostics = []
         for env_index in range(self.num_envs):
@@ -1463,16 +1545,31 @@ class DominoCadLinkageEnv(DirectRLEnv):
                 self.cfg.terminate_on_joint_separation
                 and max_joint_separation_m > float(self.cfg.max_joint_separation_m)
             )
+            body_relative_foot_positions = self._body_relative_foot_positions_np(
+                env_index,
+                self._foot_positions(env_index),
+                body_position=position,
+                body_orientation=orientation,
+            )
+            front_pair_backward = bool(
+                self.cfg.terminate_on_front_foot_backward_reach
+                and np.all(
+                    body_relative_foot_positions[:2, 0]
+                    < float(self.cfg.front_foot_backward_termination_body_x_m)
+                )
+            )
             below_height_values.append(bool(below_height))
             above_tilt_values.append(bool(above_tilt))
             non_foot_contact_values.append(non_foot_ground_contact)
             joint_separation_values.append(joint_separation)
+            front_pair_backward_values.append(front_pair_backward)
             max_joint_separation_values.append(max_joint_separation_m)
             died_values.append(
                 below_height
                 or above_tilt
                 or non_foot_ground_contact
                 or joint_separation
+                or front_pair_backward
             )
             done_diagnostics.append(
                 {
@@ -1483,6 +1580,14 @@ class DominoCadLinkageEnv(DirectRLEnv):
                     "above_max_tilt": bool(above_tilt),
                     "non_foot_ground_contact": non_foot_ground_contact,
                     "joint_separation": joint_separation,
+                    "front_pair_backward_reach": front_pair_backward,
+                    "front_foot_body_x_m": [
+                        round(float(value), 6)
+                        for value in body_relative_foot_positions[:2, 0]
+                    ],
+                    "front_foot_backward_termination_body_x_m": float(
+                        self.cfg.front_foot_backward_termination_body_x_m
+                    ),
                     "max_joint_separation_m": round(max_joint_separation_m, 6),
                     "joint_separation_limit_m": float(self.cfg.max_joint_separation_m),
                     "separated_joints": [
@@ -1529,6 +1634,11 @@ class DominoCadLinkageEnv(DirectRLEnv):
             ),
             "Termination/joint_separation_rate": torch.tensor(
                 joint_separation_values,
+                dtype=torch.float32,
+                device=self.device,
+            ),
+            "Termination/front_pair_backward_reach_rate": torch.tensor(
+                front_pair_backward_values,
                 dtype=torch.float32,
                 device=self.device,
             ),

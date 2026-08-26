@@ -24,3 +24,10 @@ float ina226CurrentA(uint16_t raw, const PowerMonitorScale &scale) {
 float ina226PowerW(uint16_t raw, const PowerMonitorScale &scale) {
   return scale.valid ? static_cast<float>(raw) * 25.0f * scale.currentLsbA : 0.0f;
 }
+
+float dividerBatteryVoltageV(uint32_t adcMilliVolts, float dividerRatio,
+                             float calibrationScale) {
+  if (!isfinite(dividerRatio) || !isfinite(calibrationScale) ||
+      dividerRatio <= 0.0f || calibrationScale <= 0.0f) return NAN;
+  return static_cast<float>(adcMilliVolts) * 0.001f * dividerRatio * calibrationScale;
+}

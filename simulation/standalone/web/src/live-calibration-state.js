@@ -39,13 +39,14 @@ const finite = (value, fallback) => Number.isFinite(Number(value)) ? Number(valu
 const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
 
 function defaultJointCalibration(definition) {
+  const travel = definition.joint === "shoulder" ? 30 : 45;
   return {
     logicalChannel: definition.channel,
     channel: definition.channel,
     offsetDeg: 0,
     direction: definition.defaultDirection,
-    minimumDeg: -45,
-    maximumDeg: 45,
+    minimumDeg: -travel,
+    maximumDeg: travel,
   };
 }
 
@@ -69,8 +70,9 @@ export function createLiveCalibrationProfile(candidate = {}) {
     joints: LIVE_CALIBRATION_JOINTS.map((definition) => {
       const defaults = defaultJointCalibration(definition);
       const source = suppliedByLogicalChannel.get(definition.channel) || {};
-      const minimumDeg = clamp(finite(source.minimumDeg, defaults.minimumDeg), -90, 89);
-      const maximumDeg = clamp(finite(source.maximumDeg, defaults.maximumDeg), minimumDeg + 1, 90);
+      const travel = definition.joint === "shoulder" ? 30 : 90;
+      const minimumDeg = clamp(finite(source.minimumDeg, defaults.minimumDeg), -travel, travel - 1);
+      const maximumDeg = clamp(finite(source.maximumDeg, defaults.maximumDeg), minimumDeg + 1, travel);
       return {
         logicalChannel: definition.channel,
         channel: validRequestedMap ? Number(source.channel ?? definition.channel) : definition.channel,
@@ -117,8 +119,10 @@ export function selectCalibrationJoint(state, channel) {
 export function updateCalibrationJoint(state, patch = {}) {
   const joint = state?.profile?.joints?.find((candidate) => candidate.logicalChannel === state.selectedChannel);
   if (!joint) return false;
-  const minimumDeg = clamp(finite(patch.minimumDeg, joint.minimumDeg), -90, 89);
-  const maximumDeg = clamp(finite(patch.maximumDeg, joint.maximumDeg), minimumDeg + 1, 90);
+  const definition = LIVE_CALIBRATION_JOINTS.find((candidate) => candidate.channel === joint.logicalChannel);
+  const travel = definition?.joint === "shoulder" ? 30 : 90;
+  const minimumDeg = clamp(finite(patch.minimumDeg, joint.minimumDeg), -travel, travel - 1);
+  const maximumDeg = clamp(finite(patch.maximumDeg, joint.maximumDeg), minimumDeg + 1, travel);
   joint.offsetDeg = clamp(finite(patch.offsetDeg, joint.offsetDeg), -30, 30);
   joint.direction = Number(patch.direction ?? joint.direction) === -1 ? -1 : 1;
   joint.minimumDeg = minimumDeg;
@@ -158,6 +162,22 @@ export function jogCalibrationJoint(state, incrementDeg) {
     -LIVE_CALIBRATION_JOG_LIMIT_DEG,
     LIVE_CALIBRATION_JOG_LIMIT_DEG,
   );
+  return true;
+}
+
+export function trimCalibrationJoint(state, incrementDeg) {
+  const joint = state?.profile?.joints?.find(
+    (candidate) => candidate.logicalChannel === state.selectedChannel,
+  );
+  if (!joint) return false;
+  const increment = finite(incrementDeg, 0);
+  joint.offsetDeg = clamp(
+    Math.round((joint.offsetDeg + increment) * 10) / 10,
+    -30,
+    30,
+  );
+  state.jogOffsetDeg = 0;
+  state.dirty = true;
   return true;
 }
 
@@ -240,6 +260,9 @@ export function createCalibrationBenchCommand(state, action, requestId, now = Da
   if (!state || !allowedActions.includes(action)) return null;
   const joint = state.profile.joints.find((candidate) => candidate.logicalChannel === state.selectedChannel);
   if (!joint) return null;
+  const persistedProfile = action === "save-profile"
+    ? createLiveCalibrationProfile({ ...state.profile, savedAt: state.profile.savedAt ?? now })
+    : undefined;
   return {
     type: "live-calibration-command",
     action,
@@ -254,6 +277,6 @@ export function createCalibrationBenchCommand(state, action, requestId, now = Da
     physicalChannel: joint.channel,
     jogOffsetDeg: state.jogOffsetDeg,
     targetServoDeg: calibrationPreviewServoAngles(state)[state.selectedChannel],
-    profile: action === "save-profile" ? createLiveCalibrationProfile(state.profile) : undefined,
+    profile: persistedProfile,
   };
 }

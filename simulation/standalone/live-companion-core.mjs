@@ -20,6 +20,8 @@ import {
 export const DOMINO_ROBOT_LINK_PROTOCOL = "domino-robot-link-v1";
 export const COMPANION_ROBOT_FRESH_MS = 1_000;
 export const COMPANION_ANNOUNCE_INTERVAL_MS = 1_000;
+export const COMPANION_COMMAND_ACK_TIMEOUT_MS = 2_000;
+export const COMPANION_PERSISTENCE_ACK_TIMEOUT_MS = 8_000;
 
 const boundedString = (value, max = 128) => typeof value === "string" && value.length > 0 && value.length <= max;
 const finite = (value) => Number.isFinite(Number(value));
@@ -142,6 +144,7 @@ export class LiveCompanionCore {
     this.lastTelemetryAt = 0;
     this.robotState = "unknown";
     this.controller = null;
+    this.gaitProfile = null;
     this.sessionId = "";
     this.telemetrySequence = 0;
     this.pending = new Map();
@@ -351,6 +354,9 @@ export class LiveCompanionCore {
       Object.keys(this.capabilities).forEach((capability) => {
         this.capabilities[capability] = message.capabilities?.[capability] === true;
       });
+      if (message.gaitProfile && typeof message.gaitProfile === "object") {
+        this.gaitProfile = message.gaitProfile;
+      }
       return { relay, robot };
     }
 
@@ -367,13 +373,17 @@ export class LiveCompanionCore {
           this.capabilities[capability] = normalizedTelemetry.capabilities[capability] === true;
         });
       }
+      if (normalizedTelemetry.gaitProfile && typeof normalizedTelemetry.gaitProfile === "object") {
+        this.gaitProfile = normalizedTelemetry.gaitProfile;
+      }
       this.lastTelemetryAt = now;
       if (this.sessionId) {
         relay.push({
           type: "live-telemetry", adapterId: this.adapterId, sessionId: this.sessionId,
           sequence: this.telemetrySequence++, expected: normalizedTelemetry.expected, measured: normalizedTelemetry.measured,
           power: normalizedTelemetry.power, controller: this.controller, diagnostics: normalizedTelemetry.diagnostics,
-          gaitProfile: normalizedTelemetry.gaitProfile, capabilities: normalizedTelemetry.capabilities,
+          gaitProfile: normalizedTelemetry.gaitProfile || this.gaitProfile,
+          capabilities: normalizedTelemetry.capabilities || { ...this.capabilities },
         });
       }
       return { relay, robot };
@@ -458,7 +468,11 @@ export class LiveCompanionCore {
       this.manualAuthority = null;
     }
     for (const [requestId, pending] of this.pending) {
-      if (now - pending.sentAt <= 2_000) continue;
+      const timeoutMs = ["calibration", "gait"].includes(pending.kind) &&
+        ["save-profile", "apply-profile", "revert-profile"].includes(pending.action)
+        ? COMPANION_PERSISTENCE_ACK_TIMEOUT_MS
+        : COMPANION_COMMAND_ACK_TIMEOUT_MS;
+      if (now - pending.sentAt <= timeoutMs) continue;
       this.pending.delete(requestId);
       if (pending.kind === "safety") relay.push(this.safetyAck(pending.message, false, "Physical robot acknowledgement timed out."));
       if (pending.kind === "manual-authority") relay.push(this.manualAuthorityAck(pending.message, false, "Physical robot acknowledgement timed out."));

@@ -43,32 +43,40 @@ param(
     [double]$GaitFrequencyHz = 1.0,
     [double]$EpisodeLengthS = 20.0,
     [double]$MinHeightM = 0.02,
-    [double]$MaxTiltDeg = 75.0,
+    [double]$MaxTiltDeg = 35.0,
     [double]$ActualCadGroundClearanceM = 0.001,
     [double]$GroundSizeM = 10.0,
-    [double]$AliveRewardScale = 1.0,
-    [double]$VerticalVelocityRewardScale = -2.0,
-    [double]$AngularVelocityRewardScale = -0.10,
-    [double]$FlatOrientationRewardScale = -5.0,
-    [double]$CommandProgressRewardScale = 0.0,
-    [double]$CommandVelocityRewardScale = 0.0,
-    [double]$CommandVelocityTrackingRewardScale = 5.0,
-    [double]$CommandVelocityTrackingSigma = 0.08,
-    [double]$CommandStagnationPenaltyScale = -3.0,
+    [double]$AliveRewardScale = 0.2,
+    [double]$VerticalVelocityRewardScale = -0.5,
+    [double]$AngularVelocityRewardScale = -0.25,
+    [double]$FlatOrientationRewardScale = -8.0,
+    [double]$PitchOrientationRewardScale = -12.0,
+    [double]$CommandProgressRewardScale = 10.0,
+    [double]$CommandVelocityRewardScale = -4.0,
+    [double]$CommandVelocityTrackingRewardScale = 12.0,
+    [double]$CommandVelocityTrackingSigma = 0.04,
+    [double]$CommandStagnationPenaltyScale = -8.0,
     [double]$CommandStagnationSpeedMps = 0.03,
     [double]$LateralDriftRewardScale = -650.0,
     [double]$YawDriftRewardScale = -3.0,
     [double]$CommandYawRewardScale = -1.5,
-    [double]$GaitContactRewardScale = 6.0,
+    [double]$GaitContactRewardScale = 5.0,
     [double]$StanceContactRewardScale = 1.0,
     [double]$SwingContactPenaltyScale = -6.0,
-    [double]$FootClearanceRewardScale = 2.0,
+    [double]$FootClearanceRewardScale = 4.0,
     [double]$FootContactRewardScale = 0.0,
     [double]$FootSlipRewardScale = -0.25,
-    [double]$AirTimeVarianceRewardScale = -0.5,
-    [double]$ValidFootCycleRewardScale = 3.0,
-    [double]$FrontRearSupportRewardScale = 2.0,
+    [double]$AirTimeVarianceRewardScale = -1.0,
+    [double]$ValidFootCycleRewardScale = 6.0,
+    [double]$FrontRearSupportRewardScale = 3.0,
+    [double]$AxleSupportImbalancePenaltyScale = -4.0,
+    [double]$SameAxleAirbornePenaltyScale = -6.0,
     [double]$ExcessAirbornePenaltyScale = -4.0,
+    [double]$FrontFootBackwardReachPenaltyScale = -8.0,
+    [double]$FrontPairBackwardReachPenaltyScale = -12.0,
+    [double]$FrontFootMinBodyXM = 0.20,
+    [double]$FrontFootReachNormalizationM = 0.10,
+    [double]$FrontFootBackwardTerminationBodyXM = 0.10,
     [double]$FootCycleMinAirTimeS = 0.06,
     [double]$FootCycleTargetAirTimeS = 0.20,
     [double]$FootCycleMinClearanceM = 0.004,
@@ -83,6 +91,7 @@ param(
     [string]$RunName = "linkage_swing_hipframe_bc_training",
     [string]$ReferenceGait = "",
     [switch]$OpenPolicy,
+    [switch]$OpenPolicyReferencePrior,
     [ValidateSet("flat", "stairs")]
     [string]$TerrainType = "flat",
     [ValidateSet("linkage-lower-closure", "actual-cad-visual-bottom", "actual-cad-grounded-support")]
@@ -137,9 +146,13 @@ $resolvedResumeCheckpoint = ""
 if ($ResumeCheckpoint -and $ResumeCheckpoint.Trim().Length -gt 0) {
     $resolvedResumeCheckpoint = (Resolve-Path -LiteralPath $ResumeCheckpoint).Path
 }
-if ($OpenPolicy -and ($ReferenceActionIdentityInit -or $ReferenceActionBcSteps -gt 0)) {
-    throw "Open-policy training requires -ReferenceActionIdentityInit:`$false and -ReferenceActionBcSteps 0."
+if ($OpenPolicy -and $ReferenceActionIdentityInit) {
+    throw "Open-policy training requires -ReferenceActionIdentityInit:`$false."
 }
+if ($OpenPolicy -and $ReferenceActionBcSteps -gt 0 -and -not $OpenPolicyReferencePrior) {
+    throw "Open-policy behavior cloning requires -OpenPolicyReferencePrior."
+}
+$useReferencePrior = (-not $OpenPolicy) -or $OpenPolicyReferencePrior
 $referenceGaitCandidates = @(
     (Join-Path $repoRoot "simulation\isaac\config\domino_linkage_swing_cycle_teacher.json"),
     (Join-Path $repoRoot "simulation\isaac\config\domino_calibrated_neutral_teacher.json"),
@@ -148,7 +161,7 @@ $referenceGaitCandidates = @(
     (Join-Path $repoRoot "simulation\isaac\out\cad_identity\teacher_grid\teacher_random001_scale70_freq225.json")
 )
 $referenceGait = ""
-if (-not $OpenPolicy) {
+if ($useReferencePrior) {
     if ($ReferenceGait -and $ReferenceGait.Trim().Length -gt 0) {
         $referenceGait = (Resolve-Path -LiteralPath $ReferenceGait).Path
     } else {
@@ -159,7 +172,7 @@ $logRoot = Join-Path $repoRoot ("simulation\isaac\out\cad_identity\next_policy\"
 $reportPath = Join-Path $repoRoot ("simulation\isaac\out\cad_identity\next_policy\" + $RunName + ".json")
 
 $requiredArtifacts = @($trainScript)
-if (-not $OpenPolicy) {
+if ($useReferencePrior) {
     $requiredArtifacts += $referenceGait
 }
 if ($resolvedResumeCheckpoint) {
@@ -245,6 +258,7 @@ $args = @(
     "--vertical-velocity-reward-scale", ([string]$VerticalVelocityRewardScale),
     "--angular-velocity-reward-scale", ([string]$AngularVelocityRewardScale),
     "--flat-orientation-reward-scale", ([string]$FlatOrientationRewardScale),
+    "--pitch-orientation-reward-scale", ([string]$PitchOrientationRewardScale),
     "--command-progress-reward-scale", ([string]$CommandProgressRewardScale),
     "--command-velocity-reward-scale", ([string]$CommandVelocityRewardScale),
     "--command-velocity-tracking-reward-scale", ([string]$CommandVelocityTrackingRewardScale),
@@ -263,7 +277,14 @@ $args = @(
     "--air-time-variance-reward-scale", ([string]$AirTimeVarianceRewardScale),
     "--valid-foot-cycle-reward-scale", ([string]$ValidFootCycleRewardScale),
     "--front-rear-support-reward-scale", ([string]$FrontRearSupportRewardScale),
+    "--axle-support-imbalance-penalty-scale", ([string]$AxleSupportImbalancePenaltyScale),
+    "--same-axle-airborne-penalty-scale", ([string]$SameAxleAirbornePenaltyScale),
     "--excess-airborne-penalty-scale", ([string]$ExcessAirbornePenaltyScale),
+    "--front-foot-backward-reach-penalty-scale", ([string]$FrontFootBackwardReachPenaltyScale),
+    "--front-pair-backward-reach-penalty-scale", ([string]$FrontPairBackwardReachPenaltyScale),
+    "--front-foot-min-body-x-m", ([string]$FrontFootMinBodyXM),
+    "--front-foot-reach-normalization-m", ([string]$FrontFootReachNormalizationM),
+    "--front-foot-backward-termination-body-x-m", ([string]$FrontFootBackwardTerminationBodyXM),
     "--foot-cycle-min-air-time-s", ([string]$FootCycleMinAirTimeS),
     "--foot-cycle-target-air-time-s", ([string]$FootCycleTargetAirTimeS),
     "--foot-cycle-min-clearance-m", ([string]$FootCycleMinClearanceM),
@@ -275,13 +296,12 @@ $args = @(
     "--rendering_mode", "performance"
 )
 
-if (-not $OpenPolicy) {
+if ($useReferencePrior) {
     $args += @(
         "--reference-gait-candidate", $referenceGait,
-        "--include-reference-actions-in-observation",
         "--reference-action-bc-steps", ([string]$ReferenceActionBcSteps),
         "--reference-action-bc-settle-steps", "0",
-        "--reference-action-bc-replay-steps", "0",
+        "--reference-action-bc-replay-steps", $(if ($OpenPolicyReferencePrior) { "30" } else { "0" }),
         "--reference-action-bc-batch-size", "256",
         "--reference-action-bc-lr", "0.0002",
         "--reference-action-bc-output-penalty", "0.0",
@@ -291,6 +311,9 @@ if (-not $OpenPolicy) {
         "--reference-action-tracking-sigma", ([string]$ReferenceTrackingSigma),
         "--reference-action-mse-reward-scale", ([string]$ReferenceMseRewardScale)
     )
+    if (-not $OpenPolicy) {
+        $args += "--include-reference-actions-in-observation"
+    }
 }
 
 if ($NumEnvs -gt 1) {
@@ -340,7 +363,17 @@ Write-Host ("Command range: +/-{0:N1} deg; servo target slew: {1:N1} deg/s." -f 
 Write-Host ("Devices: policy={0}; physics={1}." -f $PolicyDevice, $PhysicsDevice)
 Write-Host ("Report: {0}" -f $reportPath)
 Write-Host ("Log root: {0}" -f $logRoot)
-Write-Host ("Policy initialization: {0}" -f $(if ($OpenPolicy) { "random PPO; no reference observation or imitation reward" } else { "reference-guided" }))
+Write-Host (
+    "Policy initialization: {0}" -f $(
+        if ($OpenPolicyReferencePrior) {
+            "open policy with phase-based gait prior; no reference-action observations"
+        } elseif ($OpenPolicy) {
+            "random PPO; no reference observation or imitation reward"
+        } else {
+            "reference-guided"
+        }
+    )
+)
 if ($resolvedResumeCheckpoint) {
     Write-Host ("Resume checkpoint: {0}" -f $resolvedResumeCheckpoint)
 } else {

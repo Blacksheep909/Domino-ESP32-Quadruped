@@ -64,13 +64,16 @@ function sanitizePower(power, receivedAt) {
   if (!power || typeof power !== "object") return null;
   const voltageV = finiteNumber(power.voltageV);
   const currentA = finiteNumber(power.currentA);
-  if (voltageV === null || currentA === null || voltageV < 0 || currentA < 0) return null;
+  if ((voltageV !== null && voltageV < 0) || (currentA !== null && currentA < 0)) return null;
   const suppliedPower = finiteNumber(power.powerW);
+  if (voltageV === null && currentA === null && suppliedPower === null) return null;
   return {
     receivedAt,
     voltageV,
     currentA,
-    powerW: suppliedPower === null ? voltageV * currentA : suppliedPower,
+    powerW: suppliedPower === null && voltageV !== null && currentA !== null
+      ? voltageV * currentA
+      : suppliedPower,
   };
 }
 
@@ -95,7 +98,17 @@ export function acceptLiveTelemetryPacket(state, packet, receivedAt = Date.now()
 
   state.sequence = sequence;
   state.lastRobotPacketAt = receivedAt;
-  if (expected) state.expected = expected;
+  if (expected) {
+    // Fast physical packets intentionally omit slowly changing routing and
+    // kinematic detail. Retain the latest detailed values instead of making
+    // the calibration/inspect UI blink between populated and empty states.
+    state.expected = {
+      ...expected,
+      servoPulseUs: expected.servoPulseUs ?? state.expected?.servoPulseUs ?? null,
+      servoPhysicalChannel: expected.servoPhysicalChannel ?? state.expected?.servoPhysicalChannel ?? null,
+      footTargetMm: expected.footTargetMm ?? state.expected?.footTargetMm ?? null,
+    };
+  }
   if (measured) state.measured = measured;
   if (power) state.power = power;
   return true;

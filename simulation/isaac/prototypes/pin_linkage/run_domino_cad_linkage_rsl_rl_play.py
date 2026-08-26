@@ -211,6 +211,12 @@ parser.add_argument("--stairs-step-height-m", type=float, default=None, help="St
 parser.add_argument("--stairs-width-m", type=float, default=None, help="Width of the stair obstacle.")
 parser.add_argument("--stairs-start-x-m", type=float, default=None, help="Local x position where the first stair starts.")
 parser.add_argument("--stairs-top-platform-length-m", type=float, default=None, help="Flat platform length after the last stair.")
+parser.add_argument(
+    "--renderer",
+    choices=["RaytracedLighting", "RealTimePathTracing", "PathTracing", "MinimalRendering"],
+    default=None,
+    help="Isaac Sim renderer override. MinimalRendering keeps the real CAD visuals while reducing RTX startup cost.",
+)
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 

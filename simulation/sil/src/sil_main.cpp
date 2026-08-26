@@ -61,6 +61,18 @@ bool validateCalibrationMath() {
     std::cerr << "FAIL: default servo calibration profile is invalid\n";
     return false;
   }
+  ServoCalibrationProfile reviewedProfile = defaultServoCalibrationProfile();
+  const float reviewedOffsets[DOMINO_DRIVEN_JOINT_COUNT] = {
+      -5.0f, 5.0f, -3.0f, 7.0f, -0.5f, 1.0f,
+      3.0f, 8.5f, -9.0f, 0.0f, -6.0f, -3.0f,
+  };
+  for (uint8_t index = 0; index < DOMINO_DRIVEN_JOINT_COUNT; ++index) {
+    reviewedProfile.joints[index].offsetDeg = reviewedOffsets[index];
+  }
+  if (!validateServoCalibrationProfile(reviewedProfile)) {
+    std::cerr << "FAIL: reviewed browser calibration profile is invalid in firmware\n";
+    return false;
+  }
   ServoCalibrationJoint *flUpper = nullptr;
   for (ServoCalibrationJoint &joint : profile.joints) {
     if (joint.logicalChannel == 1) flUpper = &joint;
@@ -178,10 +190,12 @@ bool validatePowerMonitorMath() {
   const bool negativeCurrentWorks = ina226CurrentA(static_cast<uint16_t>(-500), scale) < 0.0f;
   const bool unsafeScaleRejected = !makeIna226Scale(0.0f, 30.0f).valid &&
       !makeIna226Scale(0.002f, NAN).valid;
-  if (!exampleMatches || !negativeCurrentWorks || !unsafeScaleRejected) {
-    std::cerr << "FAIL: INA226 calibration or register scaling failed\n";
+  const bool dividerMatches =
+      fabsf(dividerBatteryVoltageV(3168, 5.0f) - 15.84f) < 0.001f;
+  if (!exampleMatches || !negativeCurrentWorks || !unsafeScaleRejected || !dividerMatches) {
+    std::cerr << "FAIL: power-monitor calibration or register scaling failed\n";
   }
-  return exampleMatches && negativeCurrentWorks && unsafeScaleRejected;
+  return exampleMatches && negativeCurrentWorks && unsafeScaleRejected && dividerMatches;
 }
 
 bool validatePowerFaultGuard() {

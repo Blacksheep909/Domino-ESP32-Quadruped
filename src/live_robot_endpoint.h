@@ -25,4 +25,8 @@ void liveRobotEndpointSetExpectedPose(const LiveRobotPoseSnapshot &pose);
 void liveRobotEndpointSetExpectedFootTarget(uint8_t legIndex, float xMm, float yMm, float zMm);
 LiveRobotState liveRobotEndpointState();
 bool liveRobotEndpointAllowsLocomotion();
+// The CRSF receiver remains usable without a PC. LIVE can explicitly inhibit
+// that path through its safety and calibration state machines.
+bool liveRobotEndpointAllowsRadioControl();
+bool liveRobotEndpointCalibrationOwnsOutputs();
 LiveManualControlSnapshot liveRobotEndpointManualControl();

@@ -31,6 +31,8 @@ param(
     [int]$HoldOpenExitAfterFrames = 0,
     [double]$VisibleStartDelayS = 0.0,
     [double]$VisibleStepDelayS = 0.0,
+    [ValidateSet("RaytracedLighting", "RealTimePathTracing", "PathTracing", "MinimalRendering")]
+    [string]$Renderer = "MinimalRendering",
     [string]$CaptureViewportPath = "",
     [string]$ReferenceGait = "",
     [switch]$OpenPolicy,
@@ -200,6 +202,7 @@ $args = @(
     "--foot-clearance-reward-scale", "4.0",
     "--foot-contact-reward-scale", "0.0",
     "--report-path", $reportPath,
+    "--renderer", $Renderer,
     "--rendering_mode", "performance"
 )
 

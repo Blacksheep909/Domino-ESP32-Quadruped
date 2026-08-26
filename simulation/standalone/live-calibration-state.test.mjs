@@ -17,6 +17,7 @@ import {
   restoreSelectedCalibrationJoint,
   selectCalibrationJoint,
   selectCalibrationStep,
+  trimCalibrationJoint,
   updateCalibrationJoint,
   updateCalibrationChannelMap,
 } from "./web/src/live-calibration-state.js";
@@ -32,6 +33,20 @@ test("creates one bounded calibration record for every driven Domino joint", () 
     profile.joints.map((joint) => joint.channel),
     LIVE_CALIBRATION_JOINTS.map((joint) => joint.channel),
   );
+});
+
+test("all four physical hip servos share the same normal direction", () => {
+  const hips = LIVE_CALIBRATION_JOINTS.filter((joint) => joint.joint === "shoulder");
+  assert.deepEqual(hips.map((joint) => joint.leg).sort(), ["BL", "BR", "FL", "FR"]);
+  assert.ok(hips.every((joint) => joint.defaultDirection === 1));
+
+  const profile = createLiveCalibrationProfile();
+  const hipChannels = new Set(hips.map((joint) => joint.channel));
+  assert.ok(profile.joints
+    .filter((joint) => hipChannels.has(joint.logicalChannel))
+    .every((joint) => joint.direction === 1
+      && joint.minimumDeg === -30
+      && joint.maximumDeg === 30));
 });
 
 test("selects wizard steps and joints without accepting unknown values", () => {
@@ -57,8 +72,8 @@ test("calibration edits are clamped to conservative configuration bounds", () =>
     channel: state.selectedChannel,
     offsetDeg: 30,
     direction: -1,
-    minimumDeg: -90,
-    maximumDeg: 90,
+    minimumDeg: -30,
+    maximumDeg: 30,
   });
   assert.equal(state.dirty, true);
 });
@@ -76,8 +91,8 @@ test("restores one joint without changing its physical servo assignment", () => 
   assert.equal(joint.channel, remapped[0]);
   assert.equal(joint.offsetDeg, 0);
   assert.equal(joint.direction, definition.defaultDirection);
-  assert.equal(joint.minimumDeg, -45);
-  assert.equal(joint.maximumDeg, 45);
+  assert.equal(joint.minimumDeg, -30);
+  assert.equal(joint.maximumDeg, 30);
   assert.equal(state.jogOffsetDeg, 0);
 });
 
@@ -89,7 +104,17 @@ test("restores all tuning defaults while resetting wiring only when requested", 
   updateCalibrationJoint(state, { offsetDeg: 9, minimumDeg: -12, maximumDeg: 22 });
   assert.equal(restoreCalibrationDefaults(state), true);
   assert.deepEqual(calibrationChannelMap(state.profile), remapped);
-  assert.ok(state.profile.joints.every((joint) => joint.offsetDeg === 0 && joint.minimumDeg === -45 && joint.maximumDeg === 45));
+  const hipChannels = new Set(
+    LIVE_CALIBRATION_JOINTS
+      .filter((joint) => joint.joint === "shoulder")
+      .map((joint) => joint.channel),
+  );
+  assert.ok(state.profile.joints.every((joint) => {
+    const travel = hipChannels.has(joint.logicalChannel) ? 30 : 45;
+    return joint.offsetDeg === 0
+      && joint.minimumDeg === -travel
+      && joint.maximumDeg === travel;
+  }));
   assert.equal(restoreCalibrationDefaults(state, true), true);
   assert.deepEqual(calibrationChannelMap(state.profile), LIVE_CALIBRATION_JOINTS.map((joint) => joint.channel));
 });
@@ -136,6 +161,22 @@ test("preview jogging is limited and only changes the selected servo", () => {
   assert.equal(preview.filter((angle, channel) => angle !== baseline[channel]).length, 1);
 });
 
+test("neutral trim works in 0.1 degree steps and becomes the physical neutral target", () => {
+  const state = createLiveCalibrationState();
+  state.jogOffsetDeg = 3;
+  assert.equal(trimCalibrationJoint(state, 0.1), true);
+  assert.equal(trimCalibrationJoint(state, 0.1), true);
+  const joint = state.profile.joints.find(
+    (candidate) => candidate.logicalChannel === state.selectedChannel,
+  );
+  assert.equal(joint.offsetDeg, 0.2);
+  assert.equal(state.jogOffsetDeg, 0);
+  assert.equal(state.dirty, true);
+  const command = createCalibrationBenchCommand(state, "jog", "trim-1", 1234);
+  assert.equal(command.jogOffsetDeg, 0);
+  assert.equal(command.targetServoDeg, LIVE_CALIBRATION_JOINTS[0].neutralServoDeg + 0.2);
+});
+
 test("calibration JSON round-trips and rejects other schemas or robots", () => {
   const profile = createLiveCalibrationProfile({
     joints: [{ channel: 0, offsetDeg: 2.5, direction: -1, minimumDeg: -40, maximumDeg: 42 }],
@@ -171,4 +212,27 @@ test("bench commands carry explicit robot-side safety limits", () => {
     accepted: true,
   }), false);
   assert.equal(createCalibrationBenchCommand(state, "unsafe-sweep", "request-2"), null);
+});
+
+test("robot persistence commands always carry a concrete save timestamp", () => {
+  const state = createLiveCalibrationState();
+  const command = createCalibrationBenchCommand(state, "save-profile", "save-timestamp", 1234);
+  assert.equal(command.profile.savedAt, 1234);
+});
+
+test("a complete calibration save envelope fits the firmware USB receive ring", () => {
+  const state = createLiveCalibrationState();
+  const command = createCalibrationBenchCommand(state, "save-profile", "save-size", 1234);
+  const physicalEnvelope = {
+    type: "companion-command",
+    protocol: "domino-robot-link-v1",
+    kind: "calibration",
+    action: command.action,
+    requestId: command.requestId,
+    timestampMs: 1234,
+    payload: command,
+  };
+  const bytes = Buffer.byteLength(JSON.stringify(physicalEnvelope), "utf8") + 1;
+  assert.ok(bytes > 1024, "the regression command must exceed the former 1 KB reservation");
+  assert.ok(bytes <= 4096, "profile writes must remain inside the firmware's 4 KB RX ring");
 });

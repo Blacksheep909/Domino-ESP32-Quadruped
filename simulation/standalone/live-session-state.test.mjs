@@ -6,6 +6,7 @@ import {
   analyzeLiveSession,
   compareLiveSessions,
   createLiveSessionState,
+  clearLiveSession,
   liveSessionCsv,
   liveSessionJson,
   liveSessionSummary,
@@ -18,6 +19,17 @@ import {
   startLiveSession,
   stopLiveSession,
 } from "./web/src/live-session-state.js";
+
+test("clears a stopped active session without clearing while recording", () => {
+  const session = createLiveSessionState();
+  session.status = "recording";
+  session.samples = [{ elapsedMs: 0 }];
+  assert.equal(clearLiveSession(session), false);
+  session.status = "stopped";
+  assert.equal(clearLiveSession(session), true);
+  assert.equal(session.status, "idle");
+  assert.deepEqual(session.samples, []);
+});
 
 const snapshot = (expectedTimestampMs = 1_000, measuredTimestampMs = 1_012) => ({
   paired: true,
@@ -92,6 +104,9 @@ test("records each synchronized source pair once", () => {
   assert.equal(session.samples[0].expectedFootTargetsMm[3][2], 283);
   assert.equal(session.samples[0].expectedServoPulseUs[1], 1401);
   assert.equal(session.samples[0].expectedServoPhysicalChannels[1], 14);
+  assert.equal(session.samples[0].power.cellCount, 4);
+  assert.equal(session.samples[0].power.averageCellVoltageV, 3.8);
+  assert.equal(session.samples[0].power.estimatedChargePercent, 40);
 });
 
 test("does not record unpaired or stopped telemetry", () => {
@@ -149,6 +164,8 @@ test("exports analysis-ready CSV with power, pose, timing and joint error", () =
   assert.match(csv, /joint_15_command_pulse_us/);
   assert.match(csv, /joint_15_pca_output/);
   assert.match(csv, /fl_foot_target_z_mm/);
+  assert.match(csv, /average_cell_voltage_v/);
+  assert.match(csv, /estimated_charge_percent/);
   assert.match(csv, /45\.6000/);
   assert.equal(csv.split("\n").length, 2);
 });

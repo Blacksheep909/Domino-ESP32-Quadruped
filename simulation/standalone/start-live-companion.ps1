@@ -6,7 +6,7 @@ param(
     [int]$RobotPort = 8766,
     [string]$Device = "",
     [ValidateRange(9600, 921600)]
-    [int]$Baud = 115200,
+    [int]$Baud = 460800,
     [string]$Relay = "ws://127.0.0.1:8770/control",
     [string]$AdapterId = "domino-physical-1",
     [string]$RobotId = "domino-1"

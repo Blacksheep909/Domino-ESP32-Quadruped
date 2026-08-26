@@ -6791,6 +6791,9 @@ body[data-workspace="real-robot"] .toast-region {
 .live-planner-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; margin-top: 9px; min-width: 0; }
 .live-planner-actions button { flex: 0 0 auto; min-height: 28px; padding: 0 9px; color: #286442; background: #e3f1e8; border: 1px solid #9bc8aa; border-radius: 4px; cursor: pointer; font: 800 8px/1 "Cascadia Mono", Consolas, monospace; }
 .live-planner-actions button:disabled { color: #8c9089; background: #e7e8e3; border-color: #d2d4ce; cursor: not-allowed; }
+.live-planner-speed { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 0 6px; color: #737871; border: 1px solid #d0d5ce; border-radius: 4px; font: 800 8px/1 "Cascadia Mono", Consolas, monospace; }
+.live-planner-speed span { color: inherit; font: inherit; letter-spacing: .08em; white-space: nowrap; }
+.live-planner-speed select { height: 22px; min-width: 46px; padding: 0 3px; color: #353833; background: #fff; border: 1px solid #cfd1ca; border-radius: 3px; font: 800 8px/1 "Cascadia Mono", Consolas, monospace; }
 .live-planner-actions span { min-width: 0; overflow: hidden; color: #737871; font-size: 8px; line-height: 1.35; text-overflow: ellipsis; }
 .live-planner-actions > span:last-child { flex: 1 1 180px; }
 .live-planner-actions #live-nav-plan-storage-status { flex: 0 0 auto; color: #3c8456; font: 800 8px/1 "Cascadia Mono", Consolas, monospace; white-space: nowrap; }
@@ -6853,6 +6856,8 @@ body[data-workspace="real-robot"] .toast-region {
 :root[data-theme="dark"] .live-planner-actions button { color: #b9efc6; background: rgba(66, 142, 88, .18); border-color: rgba(113, 201, 145, .52); }
 :root[data-theme="dark"] .live-planner-actions button:disabled { color: #777b80; background: #292a2d; border-color: #3a3d40; }
 :root[data-theme="dark"] .live-planner-actions span { color: #96999e; }
+:root[data-theme="dark"] .live-planner-speed { color: #96999e; border-color: #3a3d40; }
+:root[data-theme="dark"] .live-planner-speed select { color: #e1e1e4; background: #292a2d; border-color: #4a4d50; }
 :root[data-theme="dark"] .live-planner-actions #live-nav-plan-storage-status { color: #78c894; }
 :root[data-theme="dark"] .live-planner-actions #live-nav-plan-storage-status[data-state="warning"] { color: #e7b45c; }
 :root[data-theme="dark"] .live-waypoint-row.is-selected { border-color: #69c28b; box-shadow: 0 0 0 1px rgba(105, 194, 139, .24), inset 3px 0 0 #69c28b; }

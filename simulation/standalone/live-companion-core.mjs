@@ -68,6 +68,7 @@ function validRobotTelemetry(message, receivedAt) {
       gps: message.gps,
       lidar: message.lidar,
       autopilot: message.autopilot,
+      camera: message.camera,
       home: message.home,
       geofence: message.geofence,
       obstacleBehavior: message.obstacleBehavior,

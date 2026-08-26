@@ -124,6 +124,28 @@ function sanitizeMission(mission) {
   };
 }
 
+function sanitizeLiveCamera(camera, receivedAt) {
+  if (!camera || typeof camera !== "object") return null;
+  const yawDeg = finite(camera.yawDeg ?? camera.yaw);
+  const pitchDeg = finite(camera.pitchDeg ?? camera.pitch);
+  const fovDeg = finite(camera.fovDeg ?? camera.fieldOfViewDeg ?? camera.fov);
+  const fps = finite(camera.fps ?? camera.frameRate);
+  const connected = typeof camera.connected === "boolean" ? camera.connected : null;
+  const error = typeof camera.error === "boolean" ? camera.error : null;
+  if (yawDeg === null && pitchDeg === null && fovDeg === null && fps === null && connected === null && error === null) return null;
+  return {
+    receivedAt,
+    timestampMs: timestampFor(camera, receivedAt),
+    yawDeg: yawDeg === null ? null : clamp(yawDeg, -180, 180),
+    pitchDeg: pitchDeg === null ? null : clamp(pitchDeg, -90, 90),
+    fovDeg: fovDeg === null ? null : clamp(fovDeg, 1, 179),
+    fps: fps === null ? null : clamp(fps, 0, 240),
+    connected,
+    error,
+    source: boundedText(camera.source, "camera"),
+  };
+}
+
 function normalizeMissionWaypoint(waypoint, index = 0) {
   if (!waypoint || typeof waypoint !== "object") return null;
   const lat = finite(waypoint.lat);
@@ -178,6 +200,7 @@ export function sanitizeLiveNavigation(navigation, receivedAt = Date.now()) {
   const gps = sanitizeLiveGps(navigation.gps, receivedAt);
   const lidar = sanitizeLiveLidar(navigation.lidar, receivedAt);
   const autopilot = sanitizeLiveAutopilot(navigation.autopilot, receivedAt);
+  const camera = sanitizeLiveCamera(navigation.camera, receivedAt);
   const home = coordinate(navigation.home) || gps?.home || autopilot?.home || null;
   const geofence = navigation.geofence && typeof navigation.geofence === "object"
     ? {
@@ -197,12 +220,13 @@ export function sanitizeLiveNavigation(navigation, receivedAt = Date.now()) {
         maxSpeedMps: finite(navigation.obstacleBehavior.maxSpeedMps) ?? 0.5,
       }
     : null;
-  if (!gps && !lidar && !autopilot && !home && !geofence && !obstacleBehavior) return null;
+  if (!gps && !lidar && !autopilot && !camera && !home && !geofence && !obstacleBehavior) return null;
   return {
     receivedAt,
     gps,
     lidar,
     autopilot,
+    camera,
     home,
     geofence,
     obstacleBehavior,
@@ -215,6 +239,15 @@ function mergeObject(previous, next) {
   return { ...previous, ...next };
 }
 
+function mergeSparseObject(previous, next) {
+  if (!previous) return next;
+  if (!next) return previous;
+  return Object.fromEntries(Object.keys({ ...previous, ...next }).map((key) => [
+    key,
+    next[key] === null ? previous[key] ?? null : next[key],
+  ]));
+}
+
 export function mergeLiveNavigation(previous, next) {
   if (!next) return previous || null;
   return {
@@ -224,6 +257,7 @@ export function mergeLiveNavigation(previous, next) {
     gps: mergeObject(previous?.gps, next.gps),
     lidar: mergeObject(previous?.lidar, next.lidar),
     autopilot: mergeObject(previous?.autopilot, next.autopilot),
+    camera: mergeSparseObject(previous?.camera, next.camera),
     home: next.home || previous?.home || null,
     geofence: mergeObject(previous?.geofence, next.geofence),
     obstacleBehavior: mergeObject(previous?.obstacleBehavior, next.obstacleBehavior),
@@ -310,6 +344,7 @@ export function liveNavigationSnapshot(navigation, uiState = createLiveNavigatio
     gps,
     lidar,
     autopilot,
+    camera: navigation?.camera || null,
     gpsFresh,
     lidarFresh,
     autopilotFresh,

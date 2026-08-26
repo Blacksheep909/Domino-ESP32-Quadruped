@@ -102,6 +102,7 @@ export function acceptLiveTelemetryPacket(state, packet, receivedAt = Date.now()
       gps: packet.gps,
       lidar: packet.lidar,
       autopilot: packet.autopilot,
+      camera: packet.camera,
       home: packet.home,
       geofence: packet.geofence,
       obstacleBehavior: packet.obstacleBehavior,

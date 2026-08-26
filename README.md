@@ -106,8 +106,9 @@ Simulation and LIVE are deliberately separate top-level workspaces:
   the independent robot safety checks succeed.
 
 The LIVE digital twin can overlay robot-reported measured joint and IMU state
-against the expected command. Its six pages divide normal operation from the
-deeper engineering tools:
+against the expected command. Its seven pages divide normal operation from the
+deeper engineering tools. The desktop and browser builds use the same frontend
+source, so LIVE layout, typography, and behavior are kept in sync:
 
 The always-available **PROJECT** control now exports and imports a validated
 Dog V2 `.qstudio.json` bundle. This is the first project-driven desktop step:

@@ -2439,6 +2439,17 @@ dd {
   margin-top: 10px;
 }
 
+/* These cards can be narrow even on a wide operator viewport because the
+   Sensors page reserves a separate preview lane. Let each card respond to its
+   own width so internal grids never create a second horizontal scrollbar. */
+.live-lidar-card,
+.live-planner-map-shell { container-type: inline-size; }
+
+@container (max-width: 520px) {
+  .live-lidar-layout { grid-template-columns: minmax(0, 1fr); }
+  .live-lidar-radar-wrap { width: min(100%, 220px); margin: 0 auto; }
+}
+
 .live-lidar-radar-wrap {
   min-width: 0;
   padding: 5px;
@@ -7051,6 +7062,12 @@ body[data-workspace="real-robot"] .toast-region {
 .live-plan-library-controls button { min-height: 28px; padding: 0 8px; color: #286442; background: #e3f1e8; border: 1px solid #9bc8aa; border-radius: 4px; cursor: pointer; font: 800 7px/1 "Cascadia Mono", Consolas, monospace; }
 .live-plan-library-controls button:hover,
 .live-plan-library-controls button:focus-visible { border-color: #4d9e6a; outline: none; }
+
+@container (max-width: 520px) {
+  .live-plan-library-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .live-plan-library-controls button { width: 100%; }
+}
+
 .live-mission-toolbar #live-nav-clear-draft { color: #a24a3a; background: #fff0ec; border-color: #d8a095; }
 .live-autonomy-hud-heading > span { color: #777a74; white-space: nowrap; }
 .live-autonomy-hud-heading > span[data-state="online"] { color: #318051; }
@@ -8708,7 +8725,8 @@ body[data-workspace="real-robot"][data-live-view="calibration"] .camera-gizmo {
 }
 
 #live-view-sensors .live-page-heading {
-  width: calc(100% + clamp(22px, 4vw, 58px));
+  width: calc(100% + clamp(22px, 4vw, 58px) - 14px);
+  margin-right: calc(-1 * clamp(22px, 4vw, 58px) + 14px);
 }
 
 #live-view-sensors {

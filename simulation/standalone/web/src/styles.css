@@ -8795,9 +8795,16 @@ body[data-workspace="real-robot"][data-live-view="calibration"] .camera-gizmo {
 }
 
 #live-view-gaits .live-page-heading {
-  width: auto;
+  /* The page reserves a right-hand preview lane. Expand the banner by that
+     exact amount so its border reaches the same content edge as the preview
+     without changing the editor's usable width. */
+  width: calc(100% + clamp(430px, calc(38.5vw + 16px), 776px));
   max-width: none;
-  margin-right: clamp(-776px, calc(-38.5vw - 16px), -430px);
+  margin-right: calc(-1 * clamp(430px, calc(38.5vw + 16px), 776px));
+}
+
+#live-view-gaits {
+  overflow-x: hidden;
 }
 
 #live-view-sensors .live-sensor-grid,

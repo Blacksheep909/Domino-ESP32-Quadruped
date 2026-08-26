@@ -24,6 +24,14 @@ const coordinate = (value) => {
   };
 };
 
+const localOffset = (value) => {
+  if (!value || typeof value !== "object") return null;
+  const northM = finite(value.northM ?? value.north);
+  const eastM = finite(value.eastM ?? value.east);
+  if (northM === null || eastM === null || Math.abs(northM) > 10_000 || Math.abs(eastM) > 10_000) return null;
+  return { northM, eastM };
+};
+
 function timestampFor(value, receivedAt) {
   const timestampMs = finite(value?.timestampMs ?? value?.timeMs ?? value?.time_usec / 1_000);
   return timestampMs !== null && timestampMs > 0 ? timestampMs : receivedAt;
@@ -120,10 +128,13 @@ function normalizeMissionWaypoint(waypoint, index = 0) {
   if (!waypoint || typeof waypoint !== "object") return null;
   const lat = finite(waypoint.lat);
   const lon = finite(waypoint.lon);
-  if (lat === null || lon === null || lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
+  const local = localOffset(waypoint.local || waypoint.offsetM);
+  const hasCoordinate = lat !== null && lon !== null && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180;
+  if (!hasCoordinate && !local) return null;
   return {
-    lat,
-    lon,
+    lat: hasCoordinate ? lat : null,
+    lon: hasCoordinate ? lon : null,
+    local,
     altM: clamp(finite(waypoint.altM) ?? 0, -1_000, 10_000),
     radiusM: clamp(finite(waypoint.radiusM) ?? 1.5, 0.1, 100),
     speedMps: clamp(finite(waypoint.speedMps) ?? 0, 0, 30),
@@ -223,6 +234,8 @@ export function createLiveNavigationState() {
   return {
     missionDraft: [],
     missionName: "Domino patrol",
+    plannerOrigin: null,
+    plannerRangeM: 40,
     gpsTrack: [],
     obstacleBehavior: {
       enabled: true,
@@ -234,7 +247,7 @@ export function createLiveNavigationState() {
     selectedMode: "hold",
     pendingRequestId: "",
     pendingAction: "",
-    lastCommandStatus: "Navigation commands are locked until an ArduPilot-capable adapter reports in.",
+    lastCommandStatus: "Vehicle actions are locked until a navigation adapter reports in.",
     lastCommandAt: 0,
     lastAck: null,
   };
@@ -344,6 +357,7 @@ export function navigationMissionJson(state) {
     schemaVersion: 1,
     name: state?.missionName || "Domino patrol",
     mission: state?.missionDraft || [],
+    plannerOrigin: state?.plannerOrigin || null,
     geofence: state?.geofence || null,
     obstacleBehavior: state?.obstacleBehavior || null,
   }, null, 2);
@@ -359,7 +373,43 @@ export function parseNavigationMissionJson(text) {
   return {
     name: boundedText(parsed.name, "Domino patrol"),
     mission,
+    plannerOrigin: coordinate(parsed.plannerOrigin),
     geofence: parsed.geofence && typeof parsed.geofence === "object" ? parsed.geofence : null,
     obstacleBehavior: parsed.obstacleBehavior && typeof parsed.obstacleBehavior === "object" ? parsed.obstacleBehavior : null,
+  };
+}
+
+export function missionWaypointHasCoordinate(waypoint) {
+  return Boolean(
+    waypoint &&
+    Number.isFinite(Number(waypoint.lat)) &&
+    Number.isFinite(Number(waypoint.lon)),
+  );
+}
+
+export function coordinateToLocalOffset(position, origin) {
+  const point = coordinate(position);
+  const reference = coordinate(origin);
+  if (!point || !reference) return null;
+  const earthRadiusM = 6_371_000;
+  const toRad = (value) => value * Math.PI / 180;
+  return {
+    northM: toRad(point.lat - reference.lat) * earthRadiusM,
+    eastM: toRad(point.lon - reference.lon) * earthRadiusM * Math.cos(toRad(reference.lat)),
+  };
+}
+
+export function localOffsetToCoordinate(offset, origin) {
+  const local = localOffset(offset);
+  const reference = coordinate(origin);
+  if (!local || !reference) return null;
+  const earthRadiusM = 6_371_000;
+  const toDeg = (value) => value * 180 / Math.PI;
+  const latitudeRadians = reference.lat * Math.PI / 180;
+  const cosLatitude = Math.max(0.01, Math.cos(latitudeRadians));
+  return {
+    lat: reference.lat + toDeg(local.northM / earthRadiusM),
+    lon: reference.lon + toDeg(local.eastM / (earthRadiusM * cosLatitude)),
+    altM: reference.altM,
   };
 }

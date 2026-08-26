@@ -163,6 +163,7 @@ import {
   localOffsetToCoordinate,
   missionWaypointHasCoordinate,
   moveNavigationWaypoint,
+  moveNavigationWaypointToLocal,
   navigationFixLabel,
   navigationMissionGeofenceStatus,
   navigationMissionMetrics,
@@ -3664,6 +3665,27 @@ function plannerPointFromWaypoint(waypoint, origin) {
     : null;
 }
 
+let plannerDragIndex = null;
+let plannerDragPointerId = null;
+let plannerDragMoved = false;
+let plannerSuppressNextClick = false;
+
+function plannerLocalFromPointer(event, map) {
+  const rect = map.getBoundingClientRect();
+  if (!rect.width || !rect.height) return null;
+  const x = ((event.clientX - rect.left) / rect.width) * 100;
+  const y = ((event.clientY - rect.top) / rect.height) * 100;
+  const range = Math.max(10, Number(liveNavigationState.plannerRangeM) || 40);
+  return { eastM: (x - 50) * range / 100, northM: (50 - y) * range / 100 };
+}
+
+function selectPlannerWaypoint(index) {
+  document.querySelectorAll(".live-waypoint-row.is-selected").forEach((row) => row.classList.remove("is-selected"));
+  const row = document.querySelector(`.live-waypoint-row[data-index="${index}"]`);
+  row?.classList.add("is-selected");
+  row?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
 function plannerSvgElement(name, attributes = {}) {
   const element = document.createElementNS("http://www.w3.org/2000/svg", name);
   Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, String(value)));
@@ -3783,23 +3805,21 @@ function renderLiveNavigationPlanner(navigation) {
 }
 
 function addPlannerWaypointFromEvent(event) {
+  if (plannerSuppressNextClick) {
+    plannerSuppressNextClick = false;
+    event.preventDefault();
+    return;
+  }
   const marker = event.target?.closest?.(".live-planner-marker");
   if (marker) {
     const index = Number(marker.dataset.waypointIndex);
-    document.querySelectorAll(".live-waypoint-row.is-selected").forEach((row) => row.classList.remove("is-selected"));
-    const row = document.querySelector(`.live-waypoint-row[data-index="${index}"]`);
-    row?.classList.add("is-selected");
-    row?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    selectPlannerWaypoint(index);
     event.stopPropagation();
     return;
   }
   const map = event.currentTarget;
-  const rect = map.getBoundingClientRect();
-  if (!rect.width || !rect.height) return;
-  const x = ((event.clientX - rect.left) / rect.width) * 100;
-  const y = ((event.clientY - rect.top) / rect.height) * 100;
-  const range = Math.max(10, Number(liveNavigationState.plannerRangeM) || 40);
-  const local = { eastM: (x - 50) * range / 100, northM: (50 - y) * range / 100 };
+  const local = plannerLocalFromPointer(event, map);
+  if (!local) return;
   const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
   const origin = navigationPlannerOrigin(navigation);
   const coordinate = origin ? localOffsetToCoordinate(local, origin) : null;
@@ -3812,6 +3832,49 @@ function addPlannerWaypointFromEvent(event) {
   persistLiveNavigationPlan();
   document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
   updateLiveComparisonUi();
+}
+
+function handlePlannerPointerDown(event) {
+  const marker = event.target?.closest?.(".live-planner-marker");
+  if (!marker || event.button !== 0) return;
+  const index = Number(marker.dataset.waypointIndex);
+  const local = plannerLocalFromPointer(event, event.currentTarget);
+  if (!Number.isInteger(index) || !local) return;
+  plannerDragIndex = index;
+  plannerDragPointerId = event.pointerId;
+  plannerDragMoved = false;
+  event.currentTarget.setPointerCapture?.(event.pointerId);
+  marker.classList.add("is-dragging");
+  selectPlannerWaypoint(index);
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+function handlePlannerPointerMove(event) {
+  if (plannerDragIndex === null || event.pointerId !== plannerDragPointerId) return;
+  const local = plannerLocalFromPointer(event, event.currentTarget);
+  if (!local) return;
+  const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
+  const origin = navigationPlannerOrigin(navigation);
+  if (!moveNavigationWaypointToLocal(liveNavigationState, plannerDragIndex, local, origin)) return;
+  plannerDragMoved = true;
+  document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
+  updateLiveComparisonUi();
+  event.preventDefault();
+}
+
+function handlePlannerPointerUp(event) {
+  if (plannerDragIndex === null || event.pointerId !== plannerDragPointerId) return;
+  const map = event.currentTarget;
+  if (map.hasPointerCapture?.(event.pointerId)) map.releasePointerCapture(event.pointerId);
+  if (plannerDragMoved) {
+    plannerSuppressNextClick = true;
+    persistLiveNavigationPlan();
+  }
+  document.querySelectorAll(".live-planner-marker.is-dragging").forEach((marker) => marker.classList.remove("is-dragging"));
+  plannerDragIndex = null;
+  plannerDragPointerId = null;
+  plannerDragMoved = false;
 }
 
 function renderLiveLidarRadar(snapshot) {
@@ -5873,7 +5936,12 @@ document.querySelector("#live-nav-mission-name").addEventListener("input", (even
   document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
   updateLiveComparisonUi();
 });
-document.querySelector("#live-nav-planner-map").addEventListener("click", addPlannerWaypointFromEvent);
+const liveNavigationPlannerMap = document.querySelector("#live-nav-planner-map");
+liveNavigationPlannerMap.addEventListener("pointerdown", handlePlannerPointerDown);
+liveNavigationPlannerMap.addEventListener("pointermove", handlePlannerPointerMove);
+liveNavigationPlannerMap.addEventListener("pointerup", handlePlannerPointerUp);
+liveNavigationPlannerMap.addEventListener("pointercancel", handlePlannerPointerUp);
+liveNavigationPlannerMap.addEventListener("click", addPlannerWaypointFromEvent);
 document.querySelector("#live-nav-planner-range").addEventListener("change", (event) => {
   liveNavigationState.plannerRangeM = Number(event.target.value) || 40;
   persistLiveNavigationPlan();

@@ -423,6 +423,23 @@ export function localOffsetToCoordinate(offset, origin) {
   };
 }
 
+export function moveNavigationWaypointToLocal(state, index, offset, origin = null) {
+  if (!state || !Number.isInteger(Number(index)) || !state.missionDraft[Number(index)]) return false;
+  const local = localOffset(offset);
+  if (!local) return false;
+  const waypointIndex = Number(index);
+  const waypoint = state.missionDraft[waypointIndex];
+  const coordinateValue = origin ? localOffsetToCoordinate(local, origin) : null;
+  state.missionDraft[waypointIndex] = {
+    ...waypoint,
+    ...(coordinateValue
+      ? { lat: coordinateValue.lat, lon: coordinateValue.lon }
+      : { lat: null, lon: null }),
+    local,
+  };
+  return true;
+}
+
 function missionWaypointLocalPosition(waypoint, origin) {
   if (waypoint?.local) return localOffset(waypoint.local);
   return missionWaypointHasCoordinate(waypoint) && origin

@@ -272,6 +272,12 @@ import {
   projectBundleSummary,
   sanitizeProjectName,
 } from "./project-bundle.js";
+import {
+  navigationPlanLibraryJson,
+  parseNavigationPlanLibraryJson,
+  removeNavigationPlanLibraryEntry,
+  upsertNavigationPlanLibraryEntry,
+} from "./navigation-plan-library.js";
 import "./styles.css";
 
 initializeFirmwareWorkspace();
@@ -299,8 +305,10 @@ const liveManualState = createLiveManualControlState();
 const liveControllerState = createLiveControllerState();
 const liveDiagnosticsState = createLiveDiagnosticsState();
 const LIVE_NAVIGATION_PLAN_STORAGE_KEY = "domino-live-navigation-plan-v1";
+const LIVE_NAVIGATION_PLAN_LIBRARY_STORAGE_KEY = "domino-live-navigation-plan-library-v1";
 const liveNavigationState = createLiveNavigationState();
 let liveNavigationPlanStorageState = "new";
+let liveNavigationPlanLibrary = [];
 const liveNavigationPreviewState = createNativeNavigationExecutionState();
 let liveNavigationPreviewFrame = null;
 const liveNativeNavigationState = createNativeNavigationRunnerState();
@@ -327,21 +335,25 @@ function captureLiveNavigationHistory() {
 function restoreLiveNavigationHistorySnapshot(snapshot, message) {
   try {
     const restored = parseNavigationMissionJson(snapshot);
-    liveNavigationState.missionName = restored.name;
-    liveNavigationState.missionDraft = restored.mission;
-    liveNavigationState.plannerOrigin = restored.plannerOrigin || null;
-    liveNavigationState.plannerRangeM = restored.plannerRangeM || 40;
-    if (restored.geofence) liveNavigationState.geofence = { ...liveNavigationState.geofence, ...restored.geofence };
-    if (restored.obstacleBehavior) liveNavigationState.obstacleBehavior = { ...liveNavigationState.obstacleBehavior, ...restored.obstacleBehavior };
-    syncLiveNavigationControls();
-    persistLiveNavigationPlan();
-    document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
-    liveNavigationState.lastCommandStatus = message;
-    updateLiveComparisonUi();
+    applyParsedLiveNavigationPlan(restored, message);
   } catch {
     liveNavigationState.lastCommandStatus = "The route history entry could not be restored.";
     updateLiveComparisonUi();
   }
+}
+
+function applyParsedLiveNavigationPlan(restored, message) {
+  liveNavigationState.missionName = restored.name;
+  liveNavigationState.missionDraft = restored.mission;
+  liveNavigationState.plannerOrigin = restored.plannerOrigin || null;
+  liveNavigationState.plannerRangeM = restored.plannerRangeM || 40;
+  if (restored.geofence) liveNavigationState.geofence = { ...liveNavigationState.geofence, ...restored.geofence };
+  if (restored.obstacleBehavior) liveNavigationState.obstacleBehavior = { ...liveNavigationState.obstacleBehavior, ...restored.obstacleBehavior };
+  syncLiveNavigationControls();
+  persistLiveNavigationPlan();
+  document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
+  liveNavigationState.lastCommandStatus = message;
+  updateLiveComparisonUi();
 }
 
 function undoLiveNavigationEdit() {
@@ -387,6 +399,104 @@ function persistLiveNavigationPlan() {
   }
 }
 
+function currentLiveNavigationPlan() {
+  return {
+    missionName: liveNavigationState.missionName,
+    missionDraft: liveNavigationState.missionDraft,
+    plannerOrigin: liveNavigationState.plannerOrigin,
+    plannerRangeM: liveNavigationState.plannerRangeM,
+    geofence: liveNavigationState.geofence,
+    obstacleBehavior: liveNavigationState.obstacleBehavior,
+  };
+}
+
+function restoreLiveNavigationPlanLibrary() {
+  try {
+    const stored = localStorage.getItem(LIVE_NAVIGATION_PLAN_LIBRARY_STORAGE_KEY);
+    if (stored) liveNavigationPlanLibrary = parseNavigationPlanLibraryJson(stored);
+  } catch {
+    liveNavigationPlanLibrary = [];
+  }
+}
+
+function persistLiveNavigationPlanLibrary() {
+  try {
+    localStorage.setItem(
+      LIVE_NAVIGATION_PLAN_LIBRARY_STORAGE_KEY,
+      navigationPlanLibraryJson(liveNavigationPlanLibrary),
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function renderLiveNavigationPlanLibrary() {
+  const select = document.querySelector("#live-nav-plan-library");
+  const count = document.querySelector("#live-nav-plan-library-count");
+  if (!select) return;
+  const signature = liveNavigationPlanLibrary.map((entry) => `${entry.name}:${entry.savedAt}:${entry.plan.mission.length}`).join("|");
+  if (select.dataset.signature === signature) return;
+  const selected = select.value;
+  select.replaceChildren();
+  const empty = document.createElement("option");
+  empty.value = "";
+  empty.textContent = liveNavigationPlanLibrary.length ? "SELECT A SAVED PLAN" : "NO SAVED PLANS";
+  select.append(empty);
+  liveNavigationPlanLibrary.forEach((entry) => {
+    const option = document.createElement("option");
+    option.value = entry.name;
+    option.textContent = `${entry.name} / ${entry.plan.mission.length} WP`;
+    select.append(option);
+  });
+  select.value = liveNavigationPlanLibrary.some((entry) => entry.name === selected) ? selected : "";
+  select.dataset.signature = signature;
+  if (count) count.textContent = `${liveNavigationPlanLibrary.length} SAVED`;
+}
+
+function saveLiveNavigationPlanToLibrary() {
+  if (!liveNavigationState.missionDraft.length) {
+    showAppToast("Add at least one waypoint before saving a route plan.", "warning");
+    return;
+  }
+  const input = document.querySelector("#live-nav-library-name");
+  const name = input?.value.trim() || liveNavigationState.missionName;
+  liveNavigationPlanLibrary = upsertNavigationPlanLibraryEntry(
+    liveNavigationPlanLibrary,
+    name,
+    currentLiveNavigationPlan(),
+  );
+  if (!persistLiveNavigationPlanLibrary()) {
+    showAppToast("The route plan was not saved because browser storage is unavailable.", "warning");
+    return;
+  }
+  renderLiveNavigationPlanLibrary();
+  const select = document.querySelector("#live-nav-plan-library");
+  if (select) select.value = liveNavigationPlanLibrary[0]?.name || "";
+  if (input) input.value = liveNavigationPlanLibrary[0]?.name || name;
+  liveNavigationState.lastCommandStatus = `Saved local route plan “${liveNavigationPlanLibrary[0]?.name || name}”. No vehicle command was sent.`;
+  updateLiveComparisonUi();
+}
+
+function openLiveNavigationPlanFromLibrary() {
+  const name = document.querySelector("#live-nav-plan-library")?.value;
+  const entry = liveNavigationPlanLibrary.find((candidate) => candidate.name === name);
+  if (!entry) return;
+  captureLiveNavigationHistory();
+  applyParsedLiveNavigationPlan(entry.plan, `Opened local route plan “${entry.name}”. Review it before sending it to a vehicle.`);
+}
+
+function deleteLiveNavigationPlanFromLibrary() {
+  const select = document.querySelector("#live-nav-plan-library");
+  const name = select?.value;
+  if (!name) return;
+  liveNavigationPlanLibrary = removeNavigationPlanLibraryEntry(liveNavigationPlanLibrary, name);
+  persistLiveNavigationPlanLibrary();
+  renderLiveNavigationPlanLibrary();
+  liveNavigationState.lastCommandStatus = `Deleted local route plan “${name}”. The current draft was not changed.`;
+  updateLiveComparisonUi();
+}
+
 function syncLiveNavigationControls() {
   const missionName = document.querySelector("#live-nav-mission-name");
   const plannerRange = document.querySelector("#live-nav-planner-range");
@@ -409,6 +519,7 @@ function syncLiveNavigationControls() {
 }
 
 restoreLiveNavigationPlan();
+restoreLiveNavigationPlanLibrary();
 const liveBatteryAlertState = createLiveBatteryAlertState();
 let liveBatteryControlLocked = false;
 const liveSensorCalibrationState = createLiveSensorCalibrationState();
@@ -4201,6 +4312,7 @@ function renderLiveNavigationPlanner(navigation) {
   const undoButton = document.querySelector("#live-nav-undo");
   const redoButton = document.querySelector("#live-nav-redo");
   if (!map || !route || !markers || !vehicle || !geofence || !status || !hudMode || !hudState || !hudRoute || !hudNext || !hudTotal || !hudEta || !hudPosition || !hudObstacle || !hudControl || !helpStatus || !storageStatus || !referencePlan) return;
+  renderLiveNavigationPlanLibrary();
 
   const origin = navigationPlannerOrigin(navigation);
   const range = Math.max(10, Number(liveNavigationState.plannerRangeM) || 40);
@@ -6595,6 +6707,9 @@ document.querySelector("#live-nav-preview-speed").addEventListener("change", upd
 document.querySelector("#live-nav-fit-route").addEventListener("click", fitLiveNavigationPlanner);
 document.querySelector("#live-nav-undo").addEventListener("click", undoLiveNavigationEdit);
 document.querySelector("#live-nav-redo").addEventListener("click", redoLiveNavigationEdit);
+document.querySelector("#live-nav-library-save").addEventListener("click", saveLiveNavigationPlanToLibrary);
+document.querySelector("#live-nav-library-open").addEventListener("click", openLiveNavigationPlanFromLibrary);
+document.querySelector("#live-nav-library-delete").addEventListener("click", deleteLiveNavigationPlanFromLibrary);
 document.querySelector("#live-nav-planner-range").addEventListener("change", (event) => {
   if (liveNavigationState.plannerRangeM !== (Number(event.target.value) || 40)) captureLiveNavigationHistory();
   liveNavigationState.plannerRangeM = Number(event.target.value) || 40;
@@ -7731,14 +7846,7 @@ function currentProjectBundle() {
     calibrationProfile: liveCalibrationState.profile,
     liveGaitLibrary,
     liveGaitDraft: liveGaitState.draft,
-    navigationPlan: {
-      missionName: liveNavigationState.missionName,
-      missionDraft: liveNavigationState.missionDraft,
-      plannerOrigin: liveNavigationState.plannerOrigin,
-      plannerRangeM: liveNavigationState.plannerRangeM,
-      geofence: liveNavigationState.geofence,
-      obstacleBehavior: liveNavigationState.obstacleBehavior,
-    },
+    navigationPlan: currentLiveNavigationPlan(),
   });
 }
 

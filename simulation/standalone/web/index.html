@@ -728,6 +728,16 @@
                   <text x="50" y="5" text-anchor="middle">N</text><text x="96" y="53">E</text>
                 </svg>
                 <p class="live-planner-help">Click to add a waypoint. Drag a marker to reposition it. Plans stay local until a GPS/home reference is available.</p>
+                <details class="live-plan-library">
+                  <summary><span>SAVED ROUTES</span><strong id="live-nav-plan-library-count">0 SAVED</strong></summary>
+                  <div class="live-plan-library-controls">
+                    <label><span>PLAN NAME</span><input id="live-nav-library-name" type="text" maxlength="64" placeholder="Morning patrol" autocomplete="off"></label>
+                    <label><span>OPEN PLAN</span><select id="live-nav-plan-library" aria-label="Saved route plans"><option value="">NO SAVED PLANS</option></select></label>
+                    <button id="live-nav-library-save" type="button">SAVE CURRENT</button>
+                    <button id="live-nav-library-open" type="button">OPEN SELECTED</button>
+                    <button id="live-nav-library-delete" type="button">DELETE SELECTED</button>
+                  </div>
+                </details>
                 <div class="live-planner-actions"><button id="live-nav-undo" type="button" disabled title="Undo the last route-plan edit">UNDO</button><button id="live-nav-redo" type="button" disabled title="Redo the route-plan edit">REDO</button><button id="live-nav-preview-route" type="button" disabled>PREVIEW ROUTE</button><button id="live-nav-preview-pause" type="button" disabled>PAUSE</button><button id="live-nav-preview-step" type="button" disabled>STEP</button><label class="live-planner-speed"><span>SPEED</span><select id="live-nav-preview-speed" aria-label="Preview speed"><option value="0.5">0.5X</option><option value="1" selected>1X</option><option value="2">2X</option><option value="4">4X</option></select></label><button id="live-nav-fit-route" type="button" disabled>FIT ROUTE</button><button id="live-nav-reference-plan" type="button" disabled>REFERENCE LOCAL PLAN</button><span id="live-nav-plan-storage-status" data-state="saved">LOCAL AUTOSAVE ON</span><span id="live-nav-planner-help-status">Local plans can be referenced when a home position is available.</span></div>
               </div>
               <aside class="live-autonomy-hud" aria-label="Domino autonomy status">

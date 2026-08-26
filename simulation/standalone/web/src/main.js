@@ -169,6 +169,7 @@ import {
   navigationMissionMetrics,
   navigationMissionJson,
   navigationMissionPreview,
+  navigationMissionRecommendedRange,
   parseNavigationMissionJson,
   removeNavigationWaypoint,
 } from "./live-navigation-state.js";
@@ -3795,6 +3796,7 @@ function renderLiveNavigationPlanner(navigation) {
   const storageStatus = document.querySelector("#live-nav-plan-storage-status");
   const referencePlan = document.querySelector("#live-nav-reference-plan");
   const previewButton = document.querySelector("#live-nav-preview-route");
+  const fitButton = document.querySelector("#live-nav-fit-route");
   if (!map || !route || !markers || !vehicle || !geofence || !status || !hudMode || !hudState || !hudRoute || !hudNext || !hudTotal || !hudEta || !hudPosition || !hudObstacle || !helpStatus || !storageStatus || !referencePlan) return;
 
   const origin = navigationPlannerOrigin(navigation);
@@ -3813,6 +3815,7 @@ function renderLiveNavigationPlanner(navigation) {
     previewButton.textContent = liveNavigationPreviewState.active ? "STOP PREVIEW" : "PREVIEW ROUTE";
     previewButton.setAttribute("aria-pressed", String(liveNavigationPreviewState.active));
   }
+  if (fitButton) fitButton.disabled = !liveNavigationState.missionDraft.length;
   const fence = navigation.geofence || liveNavigationState.geofence;
   const fenceStatus = navigationMissionGeofenceStatus(liveNavigationState.missionDraft, origin, fence?.maxRadiusM, fence?.enabled === true);
   const fenceRadius = Number(fence?.maxRadiusM);
@@ -3943,6 +3946,19 @@ function addPlannerWaypointFromEvent(event) {
   });
   persistLiveNavigationPlan();
   document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
+  updateLiveComparisonUi();
+}
+
+function fitLiveNavigationPlanner() {
+  const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
+  const origin = navigationPlannerOrigin(navigation);
+  const recommendedRange = navigationMissionRecommendedRange(liveNavigationState.missionDraft, origin);
+  if (!recommendedRange) {
+    showAppToast("Fit route needs local waypoints or a GPS/home reference.", "warning");
+    return;
+  }
+  liveNavigationState.plannerRangeM = recommendedRange;
+  persistLiveNavigationPlan();
   updateLiveComparisonUi();
 }
 
@@ -6056,6 +6072,7 @@ liveNavigationPlannerMap.addEventListener("pointercancel", handlePlannerPointerU
 liveNavigationPlannerMap.addEventListener("keydown", handlePlannerMarkerKeydown);
 liveNavigationPlannerMap.addEventListener("click", addPlannerWaypointFromEvent);
 document.querySelector("#live-nav-preview-route").addEventListener("click", toggleLiveNavigationPreview);
+document.querySelector("#live-nav-fit-route").addEventListener("click", fitLiveNavigationPlanner);
 document.querySelector("#live-nav-planner-range").addEventListener("change", (event) => {
   liveNavigationState.plannerRangeM = Number(event.target.value) || 40;
   persistLiveNavigationPlan();

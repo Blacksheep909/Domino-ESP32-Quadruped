@@ -13,6 +13,7 @@ import {
   navigationMissionGeofenceStatus,
   navigationMissionJson,
   parseNavigationMissionJson,
+  navigationMissionPreview,
   removeNavigationWaypoint,
   sanitizeLiveNavigation,
   missionWaypointHasCoordinate,
@@ -130,6 +131,22 @@ test("route planner reports waypoints outside the active home radius", () => {
   assert.equal(unreferenced.checked, false);
   assert.equal(unreferenced.outsideCount, 0);
   assert.equal(unreferenced.unresolvedCount, 0);
+});
+
+test("route planner previews a local route without vehicle execution", () => {
+  const state = createLiveNavigationState();
+  addNavigationWaypoint(state, { local: { northM: 0, eastM: 0 }, speedMps: 1 });
+  addNavigationWaypoint(state, { local: { northM: 0, eastM: 4 }, speedMps: 2, holdS: 2 });
+  const preview = navigationMissionPreview(state.missionDraft, null, 1);
+  assert.equal(preview.ready, true);
+  assert.equal(preview.currentIndex, 1);
+  assert.equal(preview.position.eastM, 2);
+  assert.equal(preview.complete, false);
+  const finished = navigationMissionPreview(state.missionDraft, null, 4);
+  assert.equal(finished.complete, true);
+  assert.equal(finished.position.eastM, 4);
+  assert.equal(navigationMissionPreview([{ local: { northM: 1, eastM: 1 } }], null, 0).ready, true);
+  assert.equal(navigationMissionPreview([{ lat: -36.85, lon: 174.76 }], null, 0).ready, false);
 });
 
 test("route planner drags a waypoint within the active local frame", () => {

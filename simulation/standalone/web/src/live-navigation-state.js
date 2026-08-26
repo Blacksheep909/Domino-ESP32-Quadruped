@@ -508,6 +508,78 @@ export function navigationMissionMetrics(mission = [], origin = null) {
   };
 }
 
+export function navigationMissionPreview(mission = [], origin = null, elapsedSeconds = 0) {
+  const waypoints = Array.isArray(mission) ? mission : [];
+  const positions = waypoints.map((waypoint) => missionWaypointLocalPosition(waypoint, origin));
+  if (!waypoints.length || positions.some((position) => !position)) {
+    return {
+      ready: false,
+      position: null,
+      currentIndex: -1,
+      progress: 0,
+      elapsedSeconds: 0,
+      totalSeconds: null,
+      complete: false,
+    };
+  }
+
+  const timeline = [];
+  let totalSeconds = 0;
+  const append = (type, index, start, end, duration) => {
+    const boundedDuration = Math.max(0, Number(duration) || 0);
+    if (boundedDuration <= 0) return;
+    timeline.push({ type, index, start, end, from: start, to: end, duration: boundedDuration, beginsAt: totalSeconds });
+    totalSeconds += boundedDuration;
+  };
+  append("hold", 0, positions[0], positions[0], waypoints[0]?.holdS);
+  for (let index = 1; index < positions.length; index += 1) {
+    const previous = positions[index - 1];
+    const current = positions[index];
+    const distanceM = Math.hypot(current.northM - previous.northM, current.eastM - previous.eastM);
+    const speedMps = Number(waypoints[index]?.speedMps) > 0 ? Number(waypoints[index].speedMps) : 0.5;
+    append("segment", index, previous, current, distanceM / speedMps);
+    append("hold", index, current, current, waypoints[index]?.holdS);
+  }
+
+  const requestedSeconds = Math.max(0, Number(elapsedSeconds) || 0);
+  if (!timeline.length) {
+    return {
+      ready: true,
+      position: positions[0],
+      currentIndex: 0,
+      progress: 1,
+      elapsedSeconds: requestedSeconds,
+      totalSeconds: 0,
+      complete: requestedSeconds > 0,
+    };
+  }
+  if (requestedSeconds >= totalSeconds) {
+    return {
+      ready: true,
+      position: positions.at(-1),
+      currentIndex: positions.length - 1,
+      progress: 1,
+      elapsedSeconds: totalSeconds,
+      totalSeconds,
+      complete: true,
+    };
+  }
+  const active = timeline.find((entry) => requestedSeconds < entry.beginsAt + entry.duration) || timeline.at(-1);
+  const progress = Math.max(0, Math.min(1, (requestedSeconds - active.beginsAt) / active.duration));
+  return {
+    ready: true,
+    position: {
+      northM: active.from.northM + (active.to.northM - active.from.northM) * progress,
+      eastM: active.from.eastM + (active.to.eastM - active.from.eastM) * progress,
+    },
+    currentIndex: active.index,
+    progress,
+    elapsedSeconds: requestedSeconds,
+    totalSeconds,
+    complete: false,
+  };
+}
+
 export function navigationMissionGeofenceStatus(mission = [], origin = null, radiusM = 0, enabled = false) {
   const waypoints = Array.isArray(mission) ? mission : [];
   const radius = Number(radiusM);

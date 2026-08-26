@@ -343,6 +343,34 @@ export function removeNavigationWaypoint(state, index) {
   return true;
 }
 
+/**
+ * Turn a recorded GPS trail into a bounded mission draft. The first and last
+ * fixes are always retained; intermediate fixes are evenly resampled so a
+ * long walk cannot exceed the mission waypoint limit.
+ */
+export function gpsTrackToMission(track = [], origin = null, maxWaypoints = 100) {
+  const candidates = (Array.isArray(track) ? track : [])
+    .map((point) => coordinate(point?.position || point))
+    .filter(Boolean);
+  if (!candidates.length) return [];
+  const limit = Math.max(1, Math.min(100, Math.floor(Number(maxWaypoints) || 100)));
+  const sampled = candidates.length <= limit
+    ? candidates
+    : limit === 1
+      ? [candidates[0]]
+      : Array.from({ length: limit }, (_, index) => candidates[Math.round(index * (candidates.length - 1) / (limit - 1))]);
+  return sampled.map((point, index) => ({
+    lat: point.lat,
+    lon: point.lon,
+    local: origin ? coordinateToLocalOffset(point, origin) : null,
+    altM: point.altM ?? 0,
+    radiusM: 1.5,
+    speedMps: 0.5,
+    holdS: 0,
+    label: `TRACK ${String(index + 1).padStart(2, "0")}`,
+  }));
+}
+
 export function moveNavigationWaypoint(state, index, direction) {
   if (!state) return false;
   const from = Number(index);

@@ -165,6 +165,7 @@ import {
   missionWaypointHasCoordinate,
   moveNavigationWaypoint,
   moveNavigationWaypointToLocal,
+  nudgeNavigationWaypoint,
   navigationFixLabel,
   navigationMissionGeofenceStatus,
   navigationMissionMetrics,
@@ -4428,6 +4429,19 @@ function handlePlannerMarkerKeydown(event) {
     liveNavigationState.lastCommandStatus = `Removed waypoint ${String(index + 1).padStart(2, "0")} from the local route plan.`;
     updateLiveComparisonUi();
     showAppToast("Route waypoint removed. Use Undo to restore it.", "info");
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
+  if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
+    const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
+    const origin = navigationPlannerOrigin(navigation);
+    const stepM = event.shiftKey ? 5 : 0.5;
+    if (!nudgeNavigationWaypoint(liveNavigationState, index, event.key, stepM, origin)) return;
+    document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
+    persistLiveNavigationPlan();
+    updateLiveComparisonUi();
+    if (!event.repeat) showAppToast(`Moved waypoint ${String(index + 1).padStart(2, "0")} ${event.shiftKey ? "5" : "0.5"} m.`, "info");
     event.preventDefault();
     event.stopPropagation();
     return;

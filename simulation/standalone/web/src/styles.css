@@ -5933,7 +5933,7 @@ body[data-experience="simple"] [data-expert-only] { display: none !important; }
   nav {
     min-height: 82px;
     padding: 6px;
-    grid-template-columns: 190px 310px 250px;
+    grid-template-columns: minmax(170px, 0.9fr) minmax(300px, 1.55fr) minmax(220px, 1fr);
     grid-template-rows: repeat(2, 32px);
     column-gap: 0;
     row-gap: 4px;
@@ -8246,22 +8246,80 @@ body[data-workspace="real-robot"][data-live-view="sensors"] .app-hud { display: 
     top: 138px;
     right: 10px;
     width: auto;
-    min-height: 38px;
-    height: 38px;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    overflow-y: hidden;
+    min-height: 0;
+    height: auto;
+    display: grid;
+    grid-template-columns: minmax(0, 0.86fr) minmax(0, 1.14fr);
+    grid-template-areas:
+      "pose walk"
+      "height height"
+      "reset reset"
+      "inspect inspect";
+    gap: 4px;
+    overflow: visible;
   }
 
   nav .toolbar-group {
-    flex: 0 0 auto;
+    width: 100%;
+    min-width: 0;
+    height: 32px;
+    margin: 0;
+    padding: 0 6px;
+  }
+
+  nav .pose-control { grid-area: pose; }
+  nav .walk-control { grid-area: walk; }
+  nav .height-control { grid-area: height; }
+  nav .reset-control { grid-area: reset; }
+  nav .inspection-control { grid-area: inspect; }
+
+  nav .pose-control,
+  nav .reset-control,
+  nav .inspection-control {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  nav .walk-control {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr) 58px;
+    gap: 4px;
+  }
+
+  nav .height-control {
+    grid-template-columns: minmax(82px, 110px) minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  nav .segmented-control,
+  nav .gait-lab-button,
+  nav .inspection-control select {
+    min-width: 0;
+    height: 32px;
+    margin: 0;
+  }
+
+  nav .segmented-control button {
+    min-width: 0;
+    padding-inline: 4px;
+  }
+
+  nav .inspection-control {
+    grid-template-columns: 78px 54px 62px minmax(0, 1fr);
+  }
+
+  nav .inspection-control button,
+  nav .joint-opacity-control {
+    min-width: 0;
+    width: 100%;
   }
 
   .gait-lab-panel {
-    top: 184px;
+    top: 306px;
     left: 10px;
     width: min(390px, calc(100vw - 20px));
-    max-height: calc(100vh - 194px);
+    max-height: calc(100vh - 316px);
     overflow-y: auto;
   }
 }

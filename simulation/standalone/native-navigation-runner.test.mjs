@@ -42,6 +42,30 @@ test("native route runner advances and completes at the final waypoint", () => {
   assert.equal(nativeNavigationRunnerIsActive(state), false);
 });
 
+test("native route runner preserves a waypoint dwell across pause and resume", () => {
+  const state = createNativeNavigationRunnerState();
+  startNativeNavigationRunner(state, 2);
+  assert.equal(acceptNativeNavigationCommand(state, { state: "arrived", holdS: 2, forward: 0, turn: 0 }, 1_000), true);
+  assert.equal(state.currentIndex, 0);
+  assert.equal(state.lastCommand.state, "holding");
+  assert.equal(pauseNativeNavigationRunner(state, 1_500), true);
+  assert.equal(state.holdRemainingMs, 1_500);
+  assert.equal(resumeNativeNavigationRunner(state, 5_000), true);
+  assert.equal(acceptNativeNavigationCommand(state, { state: "arrived", holdS: 2, forward: 0, turn: 0 }, 6_400), true);
+  assert.equal(state.lastCommand.state, "holding");
+  assert.equal(acceptNativeNavigationCommand(state, { state: "arrived", holdS: 2, forward: 0, turn: 0 }, 6_600), true);
+  assert.equal(state.currentIndex, 1);
+});
+
+test("native route runner completes a final waypoint only after its dwell", () => {
+  const state = createNativeNavigationRunnerState();
+  startNativeNavigationRunner(state, 1);
+  assert.equal(acceptNativeNavigationCommand(state, { state: "arrived", holdS: 1, forward: 0, turn: 0 }, 2_000), true);
+  assert.equal(state.phase, "running");
+  assert.equal(acceptNativeNavigationCommand(state, { state: "arrived", holdS: 1, forward: 0, turn: 0 }, 3_001), true);
+  assert.equal(state.phase, "complete");
+});
+
 test("native route runner pauses and resumes without losing waypoint progress", () => {
   const state = createNativeNavigationRunnerState();
   startNativeNavigationRunner(state, 3);

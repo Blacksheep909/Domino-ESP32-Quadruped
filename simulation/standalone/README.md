@@ -108,7 +108,9 @@ is integrated and validated.
 The runner also supports an explicit neutral **PAUSE DOMINO ROUTE** hold and a
 guarded **RESUME DOMINO ROUTE** action that preserves waypoint progress. A
 separate **RETURN HOME** mode targets the active home origin without modifying
-the mission draft and remains behind the same physical safety gates.
+the mission draft and remains behind the same physical safety gates. Waypoint
+dwell times are honored by the Domino runner, and pausing during a dwell
+preserves the remaining hold time before advancing.
 
 The safety dock adds a separate `live-safety-command` contract for arm, disarm,
 E-stop, and physical-latch reset. Arm requires a 1.5-second uninterrupted hold,

@@ -6,6 +6,22 @@ It is source code that runs from this repository. It is not a hosted GitHub
 Pages site and does not require an internet connection after dependencies are
 installed.
 
+## Current desktop release
+
+Domino Quadruped Studio `0.2.1` is the primary distribution. The Windows
+installer bundles the same frontend source used by the local browser build,
+along with the local service, CAD assets, firmware SIL, and companion adapter.
+Use the desktop installer for normal operation and updates; use the browser
+launcher as the secondary source-development path.
+
+The current LIVE UI uses one shared visual system across all seven views:
+consistent title banners, readable telemetry labels, contained controls, and a
+responsive preview lane that keeps navigation status panels below the title
+area. The Sensors view labels the IMU panel as **Attitude reference** and keeps
+its guidance focused on measured orientation, Inspect/Float behavior, and the
+available leg selection. The browser and packaged app are built from the same
+frontend so these UI changes do not diverge between them.
+
 ## Workspaces
 
 ### Simulation
@@ -152,7 +168,7 @@ alignment, body pose, power, commanded foot Z, commanded joint angles, and all
 12 driven-joint errors. The screenshot
 above uses local relay verification data, not a connected physical robot.
 
-The LIVE navigation has six working views. Compare keeps the digital twin,
+The LIVE navigation has seven working views. Compare keeps the digital twin,
 pose deltas, power readings, and compact scope together. Data provides a larger
 signal graph, recorder controls, live robot metrics, and a newest-first
 table of synchronized samples. Sessions keeps completed recordings in a local

@@ -42,6 +42,11 @@ Simulation and LIVE work offline without a separately opened terminal.
 The browser version remains available for development and lightweight review,
 but the desktop application is the primary distribution and update path.
 
+The LIVE Sensors view includes a top-down route planner, local autosave, named
+editable waypoints, offline route preview, LiDAR clearance sectors, a
+geofence gate, an autonomy activity timeline, and explicit Domino `DRIVE`
+versus ArduPilot `GUIDE` actions.
+
 ## Why This Project Matters
 
 Domino is the successor to my earlier SpotMicro ESP32 Nitro work. The earlier project gave me a working base for servo-driven quadruped control, PCB packaging, and RC-controlled robot bring-up. Domino moves beyond that reference design into a more custom platform:

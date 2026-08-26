@@ -181,6 +181,12 @@ import {
   createLiveNavigationCommand,
   validLiveNavigationAcknowledgement,
 } from "./live-navigation-protocol.js";
+import {
+  clearLiveNavigationActivity,
+  createLiveNavigationActivityState,
+  liveNavigationActivitySnapshot,
+  recordLiveNavigationActivity,
+} from "./live-navigation-activity.js";
 import { nativeNavigationCommand } from "./native-navigation-controller.js";
 import {
   acceptNativeNavigationCommand,
@@ -310,6 +316,7 @@ const liveDiagnosticsState = createLiveDiagnosticsState();
 const LIVE_NAVIGATION_PLAN_STORAGE_KEY = "domino-live-navigation-plan-v1";
 const LIVE_NAVIGATION_PLAN_LIBRARY_STORAGE_KEY = "domino-live-navigation-plan-library-v1";
 const liveNavigationState = createLiveNavigationState();
+const liveNavigationActivity = createLiveNavigationActivityState();
 let liveNavigationPlanStorageState = "new";
 let liveNavigationPlanLibrary = [];
 const liveNavigationPreviewState = createNativeNavigationExecutionState();
@@ -322,6 +329,40 @@ let liveNativeNavigationTargetIndex = null;
 const liveNavigationHistory = { past: [], future: [] };
 const LIVE_NAVIGATION_HISTORY_LIMIT = 50;
 let liveNavigationFieldHistorySnapshot = null;
+
+function renderLiveNavigationActivity() {
+  const list = document.querySelector("#live-nav-activity-list");
+  const count = document.querySelector("#live-nav-activity-count");
+  if (!list || !count) return;
+  const events = liveNavigationActivitySnapshot(liveNavigationActivity);
+  count.textContent = `${events.length} EVENT${events.length === 1 ? "" : "S"}`;
+  list.replaceChildren();
+  if (!events.length) {
+    const empty = document.createElement("p");
+    empty.className = "live-empty-state";
+    empty.textContent = "No autonomy actions recorded in this session.";
+    list.append(empty);
+    return;
+  }
+  events.slice(0, 8).forEach((event) => {
+    const row = document.createElement("article");
+    row.dataset.tone = event.tone;
+    const time = document.createElement("time");
+    time.dateTime = new Date(event.timestampMs).toISOString();
+    time.textContent = new Date(event.timestampMs).toLocaleTimeString();
+    const kind = document.createElement("strong");
+    kind.textContent = event.kind.toUpperCase();
+    const message = document.createElement("p");
+    message.textContent = event.message;
+    row.append(time, kind, message);
+    list.append(row);
+  });
+}
+
+function recordLiveNavigationActivityEvent(kind, message, tone = "info") {
+  recordLiveNavigationActivity(liveNavigationActivity, kind, message, tone);
+  renderLiveNavigationActivity();
+}
 
 function pushLiveNavigationHistorySnapshot(snapshot) {
   if (!snapshot || liveNavigationHistory.past.at(-1) === snapshot) return;
@@ -4140,6 +4181,7 @@ function finishLiveNativeNavigation(message = "Domino route complete.") {
   if (liveManualState.deadmanActive) endLiveManualDeadman(liveManualState, message);
   if (liveManualState.authorityToken) releaseLiveManualControl(message);
   liveNavigationState.lastCommandStatus = message;
+  recordLiveNavigationActivityEvent("route", message, "success");
   updateLiveComparisonUi();
 }
 
@@ -4153,6 +4195,7 @@ function haltLiveNativeNavigation(reason, blocked = false) {
   liveNativeNavigationStartRequestedTargetIndex = null;
   liveNativeNavigationTargetIndex = null;
   liveNavigationState.lastCommandStatus = reason;
+  recordLiveNavigationActivityEvent("safety stop", reason, blocked ? "fault" : "warning");
   updateLiveComparisonUi();
 }
 
@@ -4162,6 +4205,7 @@ function toggleLiveNativeNavigationPause() {
     endLiveManualDeadman(liveManualState, "Domino route paused. Vehicle is held neutral.");
     pauseNativeNavigationRunner(liveNativeNavigationState);
     liveNavigationState.lastCommandStatus = "Domino route paused. Resume only after checking the vehicle area.";
+    recordLiveNavigationActivityEvent("route", liveNavigationState.lastCommandStatus, "warning");
     updateLiveComparisonUi();
     return;
   }
@@ -4179,6 +4223,7 @@ function toggleLiveNativeNavigationPause() {
   liveNavigationState.lastCommandStatus = mode === "return-home"
     ? "Domino return-home resumed. Manual override remains available."
     : "Domino route resumed. Manual override remains available.";
+  recordLiveNavigationActivityEvent("route", liveNavigationState.lastCommandStatus, "success");
   updateLiveComparisonUi();
 }
 
@@ -4196,6 +4241,7 @@ function skipLiveNativeNavigationWaypoint() {
   liveNavigationState.lastCommandStatus = liveNativeNavigationState.phase === "paused"
     ? `Skipped WP ${String(skippedWaypoint).padStart(2, "0")}. Domino route remains paused.`
     : `Skipped WP ${String(skippedWaypoint).padStart(2, "0")}. Continuing with manual override available.`;
+  recordLiveNavigationActivityEvent("route", liveNavigationState.lastCommandStatus, "warning");
   updateLiveComparisonUi();
 }
 
@@ -4244,6 +4290,7 @@ function startLiveNativeNavigation(mode = "route", targetIndex = null) {
     : directTargetIndex === null
       ? "Domino route active. Manual override remains available."
       : `Domino direct drive active for waypoint ${String(directTargetIndex + 1).padStart(2, "0")}. Manual override remains available.`;
+  recordLiveNavigationActivityEvent("route", liveNavigationState.lastCommandStatus, "success");
   updateLiveComparisonUi();
 }
 
@@ -5152,6 +5199,7 @@ function sendLiveNavigationCommand(action, payload = {}) {
   liveNavigationState.pendingAction = action;
   liveNavigationState.lastCommandAt = Date.now();
   liveNavigationState.lastCommandStatus = `Waiting for ArduPilot to acknowledge ${action.replaceAll("-", " ")}...`;
+  recordLiveNavigationActivityEvent("ArduPilot", `${action.replaceAll("-", " ")} requested.`, "info");
   socket.send(JSON.stringify(command));
   clearTimeout(liveNavigationPendingTimeout);
   liveNavigationPendingTimeout = setTimeout(() => {
@@ -5184,6 +5232,7 @@ function acceptLiveNavigationAcknowledgement(message) {
   liveNavigationState.lastCommandStatus = message.accepted
     ? `${action.replaceAll("-", " ")} accepted by ArduPilot.`
     : `ArduPilot rejected ${action.replaceAll("-", " ")}${message.reason ? `: ${message.reason}` : "."}`;
+  recordLiveNavigationActivityEvent("ArduPilot", liveNavigationState.lastCommandStatus, message.accepted ? "success" : "warning");
   if (message.mode) liveNavigationState.selectedMode = String(message.mode).toLowerCase();
   if (message.state?.obstacleBehavior) {
     liveNavigationState.obstacleBehavior = {
@@ -6902,6 +6951,7 @@ function updateLiveComparisonUi() {
   if (liveViewState.selected === LIVE_VIEW_SENSORS) {
     renderLiveSensorsUi(snapshot, diagnosticSnapshot);
   }
+  renderLiveNavigationActivity();
   updateLiveSessionUi(snapshot);
   renderAutonomyHud();
 }
@@ -7021,10 +7071,15 @@ document.querySelector("#live-nav-reference-plan").addEventListener("click", () 
   updateLiveComparisonUi();
 });
 document.querySelector("#live-nav-manual-override").addEventListener("click", () => {
+  recordLiveNavigationActivityEvent("manual", "Manual override opened. Domino autonomy will hold neutral before handoff.", "warning");
   if (nativeNavigationRunnerIsActive(liveNativeNavigationState)) {
     haltLiveNativeNavigation("Manual override requested. Domino route was neutralized.");
   }
   document.querySelector("#live-manual-open")?.click();
+});
+document.querySelector("#live-nav-activity-clear").addEventListener("click", () => {
+  clearLiveNavigationActivity(liveNavigationActivity);
+  renderLiveNavigationActivity();
 });
 document.querySelector("#live-nav-start-native-route").addEventListener("click", startLiveNativeNavigation);
 document.querySelector("#live-nav-return-home").addEventListener("click", () => startLiveNativeNavigation("return-home"));

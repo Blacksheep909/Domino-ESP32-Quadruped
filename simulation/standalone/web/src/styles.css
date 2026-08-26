@@ -2523,6 +2523,23 @@ dd {
 .live-waypoint-row label span { color: #858781; font: 750 7px/1 "Cascadia Mono", Consolas, monospace; }
 .live-waypoint-row input { min-width: 0; width: 100%; height: 28px; padding: 0 6px; color: #343732; background: #fafaf7; border: 1px solid #d2d3ce; border-radius: 4px; font: 700 9px/1 "Cascadia Mono", Consolas, monospace; }
 .live-empty-state { grid-column: 1 / -1; margin: 5px 0; padding: 18px; color: #858781; background: #f0f0ec; border: 1px dashed #cfd1ca; border-radius: 5px; font-size: 9px; text-align: center; }
+.live-activity-log { margin-top: 12px; border-top: 1px solid #dedfd9; }
+.live-activity-log > summary { min-height: 32px; padding-top: 10px; display: flex; align-items: center; gap: 10px; color: #626860; cursor: pointer; list-style: none; font: 800 8px/1 "Cascadia Mono", Consolas, monospace; letter-spacing: .08em; }
+.live-activity-log > summary::-webkit-details-marker { display: none; }
+.live-activity-log > summary::after { content: "+"; color: #3f8257; font-size: 13px; line-height: 1; }
+.live-activity-log[open] > summary::after { content: "−"; }
+.live-activity-log > summary strong { margin-left: auto; color: #3f8257; font: inherit; letter-spacing: .04em; }
+.live-activity-log-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0 7px; border-top: 1px solid #dedfd9; color: #777a74; font: 800 7px/1 "Cascadia Mono", Consolas, monospace; letter-spacing: .07em; }
+.live-activity-log-heading button { min-height: 24px; padding: 0 7px; color: #777a74; background: #e9e9e4; border: 1px solid #d0d2cc; border-radius: 3px; cursor: pointer; font: 800 7px/1 "Cascadia Mono", Consolas, monospace; }
+.live-activity-log-list { display: grid; gap: 5px; max-height: 260px; overflow: auto; }
+.live-activity-log-list .live-empty-state { margin: 0; padding: 12px; }
+.live-activity-log-list article { min-width: 0; padding: 7px 8px; display: grid; grid-template-columns: max-content max-content minmax(0, 1fr); align-items: baseline; gap: 8px; background: #f0f0ec; border: 1px solid #dedfd9; border-left: 3px solid #9da19a; border-radius: 4px; }
+.live-activity-log-list article[data-tone="success"] { border-left-color: #4d9e6a; }
+.live-activity-log-list article[data-tone="warning"] { border-left-color: #c28a33; }
+.live-activity-log-list article[data-tone="fault"] { border-left-color: #b84d3f; }
+.live-activity-log-list time { color: #858781; font: 700 8px/1 "Cascadia Mono", Consolas, monospace; white-space: nowrap; }
+.live-activity-log-list strong { color: #31764d; font: 800 7px/1 "Cascadia Mono", Consolas, monospace; letter-spacing: .06em; white-space: nowrap; }
+.live-activity-log-list p { min-width: 0; margin: 0; overflow: hidden; color: #555852; font-size: 9px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
 
 .live-nav-safety-grid { align-items: end; }
 .live-nav-safety-grid label { min-width: 180px; flex: 1 1 210px; display: grid; gap: 6px; }
@@ -2571,6 +2588,20 @@ dd {
 :root[data-theme="dark"] .live-obstacle-policy,
 :root[data-theme="dark"] .live-mission-toolbar,
 :root[data-theme="dark"] .live-nav-prearm-checklist { border-color: #343438; }
+:root[data-theme="dark"] .live-activity-log,
+:root[data-theme="dark"] .live-activity-log-heading { border-color: #343438; }
+:root[data-theme="dark"] .live-activity-log > summary { color: #96999e; }
+:root[data-theme="dark"] .live-activity-log > summary strong,
+:root[data-theme="dark"] .live-activity-log > summary::after { color: #78c894; }
+:root[data-theme="dark"] .live-activity-log-heading { color: #96999e; }
+:root[data-theme="dark"] .live-activity-log-heading button { color: #b5b8bd; background: #292a2d; border-color: #3a3d40; }
+:root[data-theme="dark"] .live-activity-log-list article { background: #242427; border-color: #343438; border-left-color: #777b80; }
+:root[data-theme="dark"] .live-activity-log-list article[data-tone="success"] { border-left-color: #69c28b; }
+:root[data-theme="dark"] .live-activity-log-list article[data-tone="warning"] { border-left-color: #d8a45a; }
+:root[data-theme="dark"] .live-activity-log-list article[data-tone="fault"] { border-left-color: #ef8d78; }
+:root[data-theme="dark"] .live-activity-log-list time { color: #96999e; }
+:root[data-theme="dark"] .live-activity-log-list strong { color: #8dd7a0; }
+:root[data-theme="dark"] .live-activity-log-list p { color: #c1c2c6; }
 :root[data-theme="dark"] .live-toggle-line,
 :root[data-theme="dark"] .live-nav-prearm-checklist span { color: #b6b6bb; }
 :root[data-theme="dark"] #live-gps-track rect { fill: #1f2523; stroke: #343438; }

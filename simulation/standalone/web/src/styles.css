@@ -7063,6 +7063,8 @@ body[data-workspace="real-robot"] .toast-region {
 .live-plan-library-controls button { min-height: 28px; padding: 0 8px; color: #286442; background: #e3f1e8; border: 1px solid #9bc8aa; border-radius: 4px; cursor: pointer; font: 800 7px/1 "Cascadia Mono", Consolas, monospace; }
 .live-plan-library-controls button:hover,
 .live-plan-library-controls button:focus-visible { border-color: #4d9e6a; outline: none; }
+.live-plan-library-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 7px; }
+.live-plan-library-actions button { flex: 0 1 auto; }
 
 @container (max-width: 520px) {
   .live-plan-library-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }

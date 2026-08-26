@@ -46,6 +46,9 @@ arm, authority, and active execution state remain excluded from local persistenc
 The current draft, route name, map range, obstacle policy, and geofence settings
 are also autosaved locally and restored on the next launch. This convenience
 record never includes connection, arm, authority, or vehicle-execution state.
+Use **EXPORT LIBRARY** and **IMPORT LIBRARY** in the saved-routes drawer to move
+the bounded named-route collection between desktop installs; importing replaces
+only the saved library and never changes the active draft or vehicle state.
 The recent GPS trail can be cleared or turned into a bounded local route with
 **CREATE PLAN FROM TRACK**. The action keeps the first and last fixes,
 resamples long trails, and leaves the resulting draft behind the same review,

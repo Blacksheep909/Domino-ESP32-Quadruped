@@ -43,14 +43,12 @@ geofence, or ready for GPS upload. When a home reference and radius are active,
 the planner draws that safety boundary and marks out-of-bounds waypoints before
 they can pass the route gate. Clicking or keyboard-selecting a waypoint marker
 selects its editable row, and dragging a marker repositions it in the active
-local planning frame while keeping the GPS conversion synchronized.
-row. **OPEN MANUAL OVERRIDE** opens the existing guarded manual-control handoff
+local planning frame while keeping the GPS conversion synchronized. **OPEN
+MANUAL OVERRIDE** opens the existing guarded manual-control handoff
 at any time. Sending a plan to a vehicle remains a separate, explicit action:
 local planning works offline, while physical route execution remains closed
 until the selected vehicle adapter, position, EKF, obstacle policy, geofence,
-and safety checks all report ready. Drag a waypoint marker to reposition it in
-the active local planning frame; the planner keeps the GPS conversion and local
-draft data synchronized as the marker moves.
+and safety checks all report ready.
 
 ## Workspaces
 
@@ -451,3 +449,7 @@ meaningful interface milestones. Short GIFs should demonstrate one focused
 interaction - such as switching workspaces, opening the gait lab, inspecting a
 joint, or recording a session - and remain short enough to be practical in the
 repository.
+**PREVIEW ROUTE** runs the draft entirely in the Domino planner: it animates
+the local vehicle marker through each segment using waypoint speeds and holds,
+and never sends a vehicle command. This gives operators a quick route sanity
+check before choosing the separate vehicle upload/start actions.

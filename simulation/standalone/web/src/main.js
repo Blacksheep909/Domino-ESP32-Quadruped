@@ -550,6 +550,36 @@ function deleteLiveNavigationPlanFromLibrary() {
   updateLiveComparisonUi();
 }
 
+function exportLiveNavigationPlanLibrary() {
+  const blob = new Blob([navigationPlanLibraryJson(liveNavigationPlanLibrary)], { type: "application/json" });
+  const anchor = document.createElement("a");
+  anchor.href = URL.createObjectURL(blob);
+  anchor.download = `domino-route-library-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(anchor.href), 0);
+  showAppToast(`Exported ${liveNavigationPlanLibrary.length} saved route${liveNavigationPlanLibrary.length === 1 ? "" : "s"}.`, "success");
+}
+
+async function importLiveNavigationPlanLibrary(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  try {
+    const imported = parseNavigationPlanLibraryJson(await file.text());
+    liveNavigationPlanLibrary = imported;
+    if (!persistLiveNavigationPlanLibrary()) throw new Error("Browser storage is unavailable.");
+    renderLiveNavigationPlanLibrary();
+    const select = document.querySelector("#live-nav-plan-library");
+    if (select) select.value = "";
+    liveNavigationState.lastCommandStatus = `Imported ${imported.length} saved route${imported.length === 1 ? "" : "s"} from ${file.name}. The current draft was not changed.`;
+    updateLiveComparisonUi();
+    showAppToast(`Imported ${imported.length} saved route${imported.length === 1 ? "" : "s"}.`, "success");
+  } catch (error) {
+    showAppToast(error instanceof Error ? error.message : "Route library import failed.", "error");
+  } finally {
+    event.target.value = "";
+  }
+}
+
 function syncLiveNavigationControls() {
   const missionName = document.querySelector("#live-nav-mission-name");
   const loopCount = document.querySelector("#live-nav-loop-count");
@@ -7035,6 +7065,9 @@ document.querySelector("#live-nav-redo").addEventListener("click", redoLiveNavig
 document.querySelector("#live-nav-library-save").addEventListener("click", saveLiveNavigationPlanToLibrary);
 document.querySelector("#live-nav-library-open").addEventListener("click", openLiveNavigationPlanFromLibrary);
 document.querySelector("#live-nav-library-delete").addEventListener("click", deleteLiveNavigationPlanFromLibrary);
+document.querySelector("#live-nav-library-export").addEventListener("click", exportLiveNavigationPlanLibrary);
+document.querySelector("#live-nav-library-import").addEventListener("click", () => document.querySelector("#live-nav-library-file").click());
+document.querySelector("#live-nav-library-file").addEventListener("change", importLiveNavigationPlanLibrary);
 document.querySelector("#live-nav-planner-range").addEventListener("change", (event) => {
   if (liveNavigationState.plannerRangeM !== (Number(event.target.value) || 40)) captureLiveNavigationHistory();
   liveNavigationState.plannerRangeM = Number(event.target.value) || 40;

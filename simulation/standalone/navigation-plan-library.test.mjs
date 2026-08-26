@@ -43,6 +43,17 @@ test("route library rejects invalid JSON and oversized collections", () => {
   assert.throws(() => parseNavigationPlanLibraryJson(JSON.stringify({ schemaVersion: 1, plans: oversized })), /up to/);
 });
 
+test("route library export stays bounded for portable desktop transfer", () => {
+  const entries = Array.from({ length: MAX_NAVIGATION_PLAN_LIBRARY_ENTRIES + 3 }, (_, index) => ({
+    name: `route-${index}`,
+    plan: plan(`route-${index}`, index),
+  }));
+  const restored = parseNavigationPlanLibraryJson(navigationPlanLibraryJson(entries));
+  assert.equal(restored.length, MAX_NAVIGATION_PLAN_LIBRARY_ENTRIES);
+  assert.equal(restored[0].name, "route-0");
+  assert.equal(restored.at(-1).name, `route-${MAX_NAVIGATION_PLAN_LIBRARY_ENTRIES - 1}`);
+});
+
 test("route library deletes only the selected name", () => {
   const entries = [
     { name: "Alpha", savedAt: 1, plan: plan("Alpha") },
@@ -51,4 +62,3 @@ test("route library deletes only the selected name", () => {
   const remaining = removeNavigationPlanLibraryEntry(entries, "alpha");
   assert.deepEqual(remaining.map((entry) => entry.name), ["Beta"]);
 });
-

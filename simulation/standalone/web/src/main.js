@@ -996,6 +996,7 @@ function applyLiveView(view) {
   document.querySelector("#live-view-sessions").hidden = liveViewState.selected !== LIVE_VIEW_SESSIONS;
   const activeLivePage = document.querySelector(`#live-view-${liveViewState.selected}`);
   activeLivePage?.scrollTo?.(0, 0);
+  updateLivePreviewVisibility();
   if (liveViewState.selected === LIVE_VIEW_DATA) requestAnimationFrame(renderLiveComparisonChart);
   if (liveViewState.selected === LIVE_VIEW_SENSORS) updateLiveComparisonUi();
   if (liveViewState.selected === LIVE_VIEW_CALIBRATION) renderLiveCalibrationUi();
@@ -1010,6 +1011,14 @@ function applyLiveView(view) {
   });
   renderAutonomyHud();
   return true;
+}
+
+function updateLivePreviewVisibility() {
+  const activeLivePage = document.querySelector(`#live-view-${liveViewState.selected}`);
+  const compactViewport = window.matchMedia?.("(max-width: 1000px)")?.matches ?? false;
+  document.body.dataset.livePreviewCollapsed = String(
+    compactViewport && (activeLivePage?.scrollTop ?? 0) > 24,
+  );
 }
 
 Object.entries(workspaceButtons).forEach(([workspace, button]) => {
@@ -1144,9 +1153,14 @@ window.addEventListener("keydown", (event) => {
   }
 });
 
-document.querySelectorAll("[data-live-view]").forEach((button) => {
+document.querySelectorAll("button[data-live-view]").forEach((button) => {
   button.addEventListener("click", () => applyLiveView(button.dataset.liveView));
 });
+
+document.querySelectorAll(".live-view-page").forEach((page) => {
+  page.addEventListener("scroll", updateLivePreviewVisibility, { passive: true });
+});
+window.addEventListener("resize", updateLivePreviewVisibility);
 
 document.querySelectorAll("[data-experience]").forEach((button) => {
   button.addEventListener("click", () => applyExperience(button.dataset.experience));

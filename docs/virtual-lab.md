@@ -22,7 +22,9 @@ its guidance focused on measured orientation, Inspect/Float behavior, and the
 available leg selection. The browser and packaged app are built from the same
 frontend so these UI changes do not diverge between them. Switching LIVE tools
 also returns the selected page to its title so each view opens with the same
-predictable layout.
+predictable layout. At compact widths, the Sensors, Calibration, and Gaits
+previews occupy a reserved block below the title and collapse while scrolling
+so they never cover telemetry or navigation cards.
 
 ### Native route planning
 

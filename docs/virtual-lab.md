@@ -40,6 +40,9 @@ as `DOCK`, `GATE`, or `CHARGE` instead of relying on numeric markers alone.
 The collapsed **AUTONOMY ACTIVITY** panel keeps a bounded newest-first record
 of route starts, pauses, safety stops, manual handoffs, and ArduPilot
 acknowledgements for operator review.
+**EXPORT LOG** saves that bounded timeline with the current local mission context;
+the same record is included in the diagnostic JSON bundle, while connection,
+arm, authority, and active execution state remain excluded from local persistence.
 The current draft, route name, map range, obstacle policy, and geofence settings
 are also autosaved locally and restored on the next launch. This convenience
 record never includes connection, arm, authority, or vehicle-execution state.

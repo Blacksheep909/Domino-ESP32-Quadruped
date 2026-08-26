@@ -33,3 +33,13 @@ export function clearLiveNavigationActivity(state) {
 export function liveNavigationActivitySnapshot(state) {
   return [...(state?.events || [])];
 }
+
+export function liveNavigationActivityBundle(state, context = {}, now = Date.now()) {
+  return {
+    schemaVersion: 1,
+    generatedAt: new Date(now).toISOString(),
+    application: "Domino Virtual Lab",
+    context,
+    events: liveNavigationActivitySnapshot(state),
+  };
+}

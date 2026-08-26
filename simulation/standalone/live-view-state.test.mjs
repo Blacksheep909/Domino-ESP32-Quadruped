@@ -47,6 +47,16 @@ test("switching LIVE tools returns the selected page to its title", () => {
   assert.match(main, /activeLivePage\?\.scrollTo\?\.\(0, 0\);/);
 });
 
+test("compact LIVE previews collapse while scrolling instead of covering page content", () => {
+  const main = readFileSync(new URL("./web/src/main.js", import.meta.url), "utf8");
+  const styles = readFileSync(new URL("./web/src/styles.css", import.meta.url), "utf8");
+  assert.match(main, /function updateLivePreviewVisibility\(\)/);
+  assert.match(main, /livePreviewCollapsed/);
+  assert.match(main, /querySelectorAll\("button\[data-live-view\]"\)/);
+  assert.match(styles, /@media \(max-width: 1000px\)[\s\S]*data-live-preview-collapsed="true"[\s\S]*#scene/);
+  assert.match(styles, /#live-view-sensors \.live-sensor-grid[\s\S]*padding-top: 240px/);
+});
+
 test("LIVE keeps measured battery state and E-stop in the persistent header", () => {
   const html = readFileSync(new URL("./web/index.html", import.meta.url), "utf8");
   const main = readFileSync(new URL("./web/src/main.js", import.meta.url), "utf8");

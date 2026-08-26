@@ -110,6 +110,11 @@ Preview playback can be paused, resumed, stepped one second at a time, or
 slowed/speeded between 0.5x and 4x without affecting the saved route. Editing
 the plan stops an active preview before the new geometry is applied.
 
+On compact displays, the shared 3D preview is placed below the full LIVE title
+banner with reserved space for the first cards. It hides while the page is
+scrolled, then returns when the selected tool is reopened at its title, so the
+preview cannot cover telemetry or navigation controls.
+
 **START DOMINO ROUTE** is the app-owned route runner. A compatible adapter must
 explicitly advertise `nativeNavigation` plus guarded `manualControl`; the
 runner then uses the existing short-lived control lease and bounded forward/

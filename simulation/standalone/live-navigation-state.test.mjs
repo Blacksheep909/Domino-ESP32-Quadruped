@@ -5,6 +5,7 @@ import {
   addNavigationWaypoint,
   coordinateToLocalOffset,
   createLiveNavigationState,
+  duplicateNavigationWaypoint,
   liveNavigationSnapshot,
   localOffsetToCoordinate,
   moveNavigationWaypoint,
@@ -232,4 +233,23 @@ test("route planner can reverse a route while preserving waypoint data", () => {
   assert.equal(state.missionDraft[1].label, "Start");
   assert.equal(state.missionDraft[1].speedMps, 0.4);
   assert.equal(reverseNavigationWaypoints(createLiveNavigationState()), false);
+});
+
+test("route planner duplicates a waypoint without sharing its local position object", () => {
+  const state = createLiveNavigationState();
+  addNavigationWaypoint(state, {
+    local: { northM: 3, eastM: -2 },
+    label: "Loading gate",
+    radiusM: 2,
+    speedMps: 0.6,
+    holdS: 4,
+  });
+  assert.equal(duplicateNavigationWaypoint(state, 0), true);
+  assert.equal(state.missionDraft.length, 2);
+  assert.equal(state.missionDraft[1].label, "Loading gate copy");
+  assert.deepEqual(state.missionDraft[1].local, { northM: 3, eastM: -2 });
+  assert.equal(state.missionDraft[1].holdS, 4);
+  state.missionDraft[1].local.eastM = 9;
+  assert.equal(state.missionDraft[0].local.eastM, -2);
+  assert.equal(duplicateNavigationWaypoint(state, 4), false);
 });

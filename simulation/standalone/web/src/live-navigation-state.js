@@ -338,6 +338,20 @@ export function addNavigationWaypoint(state, waypoint) {
   return true;
 }
 
+export function duplicateNavigationWaypoint(state, index) {
+  if (!state || !Array.isArray(state.missionDraft) || state.missionDraft.length >= 100) return false;
+  const sourceIndex = Number(index);
+  if (!Number.isInteger(sourceIndex) || sourceIndex < 0 || sourceIndex >= state.missionDraft.length) return false;
+  const source = state.missionDraft[sourceIndex];
+  const copy = {
+    ...source,
+    ...(source.local ? { local: { ...source.local } } : {}),
+    label: `${source.label || `WP ${sourceIndex + 1}`} copy`.slice(0, 64),
+  };
+  state.missionDraft.splice(sourceIndex + 1, 0, copy);
+  return true;
+}
+
 export function removeNavigationWaypoint(state, index) {
   if (!state || !Number.isInteger(Number(index)) || !state.missionDraft[Number(index)]) return false;
   state.missionDraft.splice(Number(index), 1);

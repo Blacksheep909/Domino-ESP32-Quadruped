@@ -14,6 +14,7 @@ import {
   navigationMissionJson,
   parseNavigationMissionJson,
   navigationMissionPreview,
+  navigationMissionRecommendedRange,
   removeNavigationWaypoint,
   sanitizeLiveNavigation,
   missionWaypointHasCoordinate,
@@ -147,6 +148,21 @@ test("route planner previews a local route without vehicle execution", () => {
   assert.equal(finished.position.eastM, 4);
   assert.equal(navigationMissionPreview([{ local: { northM: 1, eastM: 1 } }], null, 0).ready, true);
   assert.equal(navigationMissionPreview([{ lat: -36.85, lon: 174.76 }], null, 0).ready, false);
+});
+
+test("route planner recommends a readable map range for the draft", () => {
+  assert.equal(navigationMissionRecommendedRange([
+    { local: { northM: 2, eastM: -3 } },
+  ]), 40);
+  assert.equal(navigationMissionRecommendedRange([
+    { local: { northM: 18, eastM: 0 } },
+  ]), 80);
+  assert.equal(navigationMissionRecommendedRange([
+    { local: { northM: 90, eastM: 0 } },
+  ]), 160);
+  assert.equal(navigationMissionRecommendedRange([
+    { lat: -36.85, lon: 174.76 },
+  ]), null);
 });
 
 test("route planner drags a waypoint within the active local frame", () => {

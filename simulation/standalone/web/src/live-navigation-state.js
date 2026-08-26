@@ -580,6 +580,19 @@ export function navigationMissionPreview(mission = [], origin = null, elapsedSec
   };
 }
 
+export function navigationMissionRecommendedRange(mission = [], origin = null, ranges = [40, 80, 160]) {
+  const positions = (Array.isArray(mission) ? mission : []).map((waypoint) => missionWaypointLocalPosition(waypoint, origin));
+  if (!positions.length || positions.some((position) => !position)) return null;
+  const choices = ranges
+    .map((range) => Number(range))
+    .filter((range) => Number.isFinite(range) && range > 0)
+    .sort((first, second) => first - second);
+  if (!choices.length) return null;
+  const maximumExtentM = Math.max(...positions.map((position) => Math.max(Math.abs(position.northM), Math.abs(position.eastM))));
+  const requiredRangeM = Math.max(20, maximumExtentM * 2.4);
+  return choices.find((range) => range >= requiredRangeM) || choices.at(-1);
+}
+
 export function navigationMissionGeofenceStatus(mission = [], origin = null, radiusM = 0, enabled = false) {
   const waypoints = Array.isArray(mission) ? mission : [];
   const radius = Number(radiusM);

@@ -169,22 +169,26 @@ test("firmware keeps all identically oriented hip servos in the same direction",
   assert.match(calibrationSource, /hipChannel\(channel\) \? 30\.0f : 45\.0f/);
 });
 
-test("firmware roll and pitch preserve stance position and change leg height instead", () => {
+test("firmware body tilt keeps CAD foot stance while rotating leg-frame targets", () => {
   const standaloneRoot = path.dirname(fileURLToPath(import.meta.url));
   const repoRoot = path.resolve(standaloneRoot, "..", "..");
   const mainSource = readFileSync(path.join(repoRoot, "src", "main.cpp"), "utf8");
 
   assert.match(
     mainSource,
-    /bodyKinematicsSimple\(static_cast<LegIndex>\(i\),[\s\S]*?bodyZ,\s*0\.0f,\s*0\.0f,\s*yawDeg/,
+    /void moveLegsFromBodyPose\([\s\S]*?bodyKinematicsSimple\(static_cast<LegIndex>\(i\),[\s\S]*?bodyZ,\s*rollDeg,\s*pitchDeg,\s*yawDeg,[\s\S]*?&zLeg\);/,
   );
   assert.match(
     mainSource,
-    /zLeg \+= side \* sinf\(rollDeg \* kDegToRad\) \* FOOT_OUT_OFFSET_Y;/,
+    /const float R20 = -sp;[\s\S]*?const float R21 = cp \* sr;[\s\S]*?const float R22 = cp \* cr;/,
   );
   assert.match(
     mainSource,
-    /zLeg \+= foreAft \* sinf\(pitchDeg \* kDegToRad\) \* BODY_HALF_LENGTH_X;/,
+    /const float footWorldX = footBaseX \+ CAD_NEUTRAL_FOOT_X_FROM_HIP;[\s\S]*?const float footWorldZ = HIP_HEIGHT_Z \+ CAD_NEUTRAL_FOOT_Z_FROM_HIP;/,
+  );
+  assert.match(
+    mainSource,
+    /const float legX_local = R00 \* legX_world[\s\S]*?const float legZ_localUp = R02 \* legX_world[\s\S]*?\*outZ =/,
   );
 });
 

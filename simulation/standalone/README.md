@@ -98,6 +98,11 @@ guard is enabled, with explicit waiting and bypassed states when they are not
 available.
 Each waypoint can also be duplicated from its action row to preserve its local
 or GPS position and movement settings while shaping a route.
+Each waypoint action row separates **DRIVE** from **GUIDE**: DRIVE runs only to
+that selected point through Domino's guarded native controller, while GUIDE
+explicitly sends the point to ArduPilot as a Guided target. DRIVE uses the same
+lease, deadman, sensor, obstacle, and geofence checks as a full Domino route,
+so choosing one point does not silently hand the whole plan to the autopilot.
 The Sensors view also includes a single-front-camera panel for the desktop
 workflow: enter an HTTP/MJPEG stream URL, connect or disconnect it, save a
 snapshot, or open the feed fullscreen. Optional robot camera telemetry updates

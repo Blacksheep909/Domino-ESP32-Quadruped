@@ -317,6 +317,8 @@ let liveNavigationPreviewFrame = null;
 const liveNativeNavigationState = createNativeNavigationRunnerState();
 let liveNativeNavigationStartRequested = false;
 let liveNativeNavigationStartRequestedMode = "route";
+let liveNativeNavigationStartRequestedTargetIndex = null;
+let liveNativeNavigationTargetIndex = null;
 const liveNavigationHistory = { past: [], future: [] };
 const LIVE_NAVIGATION_HISTORY_LIMIT = 50;
 let liveNavigationFieldHistorySnapshot = null;
@@ -3201,6 +3203,8 @@ function connectControlBridge() {
     liveNavigationState.pendingAction = "";
     resetNativeNavigationRunner(liveNativeNavigationState);
     liveNativeNavigationStartRequested = false;
+    liveNativeNavigationStartRequestedTargetIndex = null;
+    liveNativeNavigationTargetIndex = null;
     liveNavigationState.lastCommandStatus = "The PC link disconnected. Navigation commands remain blocked.";
     clearTimeout(liveNavigationPendingTimeout);
     liveNavigationPendingTimeout = null;
@@ -3233,6 +3237,8 @@ function connectControlBridge() {
         revokeLiveManualControl(liveManualState, "The robot adapter disappeared. Browser authority was revoked.");
         resetNativeNavigationRunner(liveNativeNavigationState);
         liveNativeNavigationStartRequested = false;
+        liveNativeNavigationStartRequestedTargetIndex = null;
+        liveNativeNavigationTargetIndex = null;
         liveNavigationState.pendingRequestId = "";
         liveNavigationState.pendingAction = "";
         liveNavigationState.lastCommandStatus = "The navigation adapter disappeared. Autonomous commands remain blocked.";
@@ -3424,12 +3430,15 @@ function acceptLiveManualAuthorityAck(message) {
   renderLiveManualUi();
   if (message.action === "request-authority" && message.accepted && liveNativeNavigationStartRequested) {
     const requestedMode = liveNativeNavigationStartRequestedMode;
+    const requestedTargetIndex = liveNativeNavigationStartRequestedTargetIndex;
     liveNativeNavigationStartRequested = false;
     liveNativeNavigationStartRequestedMode = "route";
-    startLiveNativeNavigation(requestedMode);
+    liveNativeNavigationStartRequestedTargetIndex = null;
+    startLiveNativeNavigation(requestedMode, requestedTargetIndex);
   } else if (message.action === "request-authority" && !message.accepted) {
     liveNativeNavigationStartRequested = false;
     liveNativeNavigationStartRequestedMode = "route";
+    liveNativeNavigationStartRequestedTargetIndex = null;
   }
   return true;
 }
@@ -4066,6 +4075,15 @@ function liveNativeRouteGate(navigation) {
   };
 }
 
+function nativeNavigationRouteReadyFor(navigation, targetIndex = null) {
+  const gate = liveNativeRouteGate(navigation);
+  if (!Number.isInteger(targetIndex)) return gate.routeReady;
+  const waypoint = liveNavigationState.missionDraft[targetIndex];
+  if (!waypoint || !plannerPointFromWaypoint(waypoint, gate.origin)) return false;
+  const fenceStatus = navigationMissionGeofenceStatus([waypoint], gate.origin, gate.fenceRadius, gate.fenceEnabled);
+  return !gate.fenceEnabled || Boolean(navigation.home) && fenceStatus.checked && fenceStatus.outsideCount === 0;
+}
+
 function nativeNavigationOriginFor(navigation, mode = liveNativeNavigationState.mode) {
   return mode === "return-home" ? navigation.home : liveNativeRouteGate(navigation).origin;
 }
@@ -4077,6 +4095,11 @@ function nativeNavigationWaypointsFor(navigation, mode = liveNativeNavigationSta
       : [];
   }
   const gate = liveNativeRouteGate(navigation);
+  if (Number.isInteger(liveNativeNavigationTargetIndex)) {
+    const waypoint = liveNavigationState.missionDraft[liveNativeNavigationTargetIndex];
+    const local = plannerPointFromWaypoint(waypoint, gate.origin);
+    return waypoint && local ? [{ ...waypoint, local }] : [];
+  }
   return liveNavigationState.missionDraft.map((waypoint) => {
     const local = plannerPointFromWaypoint(waypoint, gate.origin);
     return local ? { ...waypoint, local } : null;
@@ -4111,6 +4134,8 @@ function nativeNavigationCommandFor(navigation) {
 
 function finishLiveNativeNavigation(message = "Domino route complete.") {
   liveNativeNavigationStartRequested = false;
+  liveNativeNavigationStartRequestedTargetIndex = null;
+  liveNativeNavigationTargetIndex = null;
   sendLiveManualFrame(true);
   if (liveManualState.deadmanActive) endLiveManualDeadman(liveManualState, message);
   if (liveManualState.authorityToken) releaseLiveManualControl(message);
@@ -4125,6 +4150,8 @@ function haltLiveNativeNavigation(reason, blocked = false) {
   if (blocked) blockNativeNavigationRunner(liveNativeNavigationState, reason);
   else stopNativeNavigationRunner(liveNativeNavigationState, reason);
   liveNativeNavigationStartRequested = false;
+  liveNativeNavigationStartRequestedTargetIndex = null;
+  liveNativeNavigationTargetIndex = null;
   liveNavigationState.lastCommandStatus = reason;
   updateLiveComparisonUi();
 }
@@ -4140,9 +4167,8 @@ function toggleLiveNativeNavigationPause() {
   }
   if (liveNativeNavigationState.phase !== "paused") return;
   const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
-  const gate = liveNativeRouteGate(navigation);
   const mode = liveNativeNavigationState.mode;
-  const readiness = nativeNavigationReadiness(navigation, gate.routeReady, mode);
+  const readiness = nativeNavigationReadiness(navigation, nativeNavigationRouteReadyFor(navigation, liveNativeNavigationTargetIndex), mode);
   if (!readiness.ready || !beginLiveManualDeadman(liveManualState, liveManualContext())) {
     liveNavigationState.lastCommandStatus = readiness.reason || "The guarded control lease is not ready to resume.";
     updateLiveComparisonUi();
@@ -4158,7 +4184,9 @@ function toggleLiveNativeNavigationPause() {
 
 function skipLiveNativeNavigationWaypoint() {
   if (!nativeNavigationRunnerIsActive(liveNativeNavigationState) || liveNativeNavigationState.mode !== "route") return;
-  const skippedWaypoint = liveNativeNavigationState.currentIndex + 1;
+  const skippedWaypoint = Number.isInteger(liveNativeNavigationTargetIndex)
+    ? liveNativeNavigationTargetIndex + 1
+    : liveNativeNavigationState.currentIndex + 1;
   sendLiveManualFrame(true);
   if (!skipNativeNavigationRunnerWaypoint(liveNativeNavigationState)) return;
   if (liveNativeNavigationState.phase === "complete") {
@@ -4171,14 +4199,14 @@ function skipLiveNativeNavigationWaypoint() {
   updateLiveComparisonUi();
 }
 
-function startLiveNativeNavigation(mode = "route") {
+function startLiveNativeNavigation(mode = "route", targetIndex = null) {
   if (nativeNavigationRunnerIsActive(liveNativeNavigationState)) {
     haltLiveNativeNavigation(mode === "return-home" ? "Domino return-home stopped by operator." : "Domino route stopped by operator.");
     return;
   }
+  const directTargetIndex = mode === "route" && Number.isInteger(targetIndex) ? targetIndex : null;
   const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
-  const gate = liveNativeRouteGate(navigation);
-  const readiness = nativeNavigationReadiness(navigation, gate.routeReady, mode);
+  const readiness = nativeNavigationReadiness(navigation, nativeNavigationRouteReadyFor(navigation, directTargetIndex), mode);
   if (!readiness.ready) {
     liveNavigationState.lastCommandStatus = readiness.reason;
     updateLiveComparisonUi();
@@ -4188,6 +4216,7 @@ function startLiveNativeNavigation(mode = "route") {
   if (!liveManualState.authorityToken) {
     liveNativeNavigationStartRequested = true;
     liveNativeNavigationStartRequestedMode = mode;
+    liveNativeNavigationStartRequestedTargetIndex = directTargetIndex;
     if (!liveManualState.safetyConfirmed) {
       document.querySelector("#live-manual-open")?.click();
       showAppToast("Confirm the physical E-stop check, then request the control lease.", "warning");
@@ -4195,6 +4224,7 @@ function startLiveNativeNavigation(mode = "route") {
     }
     if (!sendLiveManualAuthority("request-authority")) {
       liveNativeNavigationStartRequested = false;
+      liveNativeNavigationStartRequestedTargetIndex = null;
       showAppToast("The guarded control lease could not be requested.", "warning");
     }
     return;
@@ -4203,11 +4233,17 @@ function startLiveNativeNavigation(mode = "route") {
     showAppToast("The guarded control lease is no longer ready.", "warning");
     return;
   }
+  liveNativeNavigationTargetIndex = directTargetIndex;
   const waypointCount = mode === "return-home" ? 1 : liveNavigationState.missionDraft.length;
-  if (!startNativeNavigationRunner(liveNativeNavigationState, waypointCount, mode, mode === "route" ? liveNavigationState.loopCount : 1)) return;
+  if (!startNativeNavigationRunner(liveNativeNavigationState, directTargetIndex !== null ? 1 : waypointCount, mode, directTargetIndex !== null ? 1 : mode === "route" ? liveNavigationState.loopCount : 1)) {
+    liveNativeNavigationTargetIndex = null;
+    return;
+  }
   liveNavigationState.lastCommandStatus = mode === "return-home"
     ? "Domino return-home active. Manual override remains available."
-    : "Domino route active. Manual override remains available.";
+    : directTargetIndex === null
+      ? "Domino route active. Manual override remains available."
+      : `Domino direct drive active for waypoint ${String(directTargetIndex + 1).padStart(2, "0")}. Manual override remains available.`;
   updateLiveComparisonUi();
 }
 
@@ -4218,8 +4254,7 @@ function serviceLiveNativeNavigation() {
     return;
   }
   const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
-  const gate = liveNativeRouteGate(navigation);
-  const readiness = nativeNavigationReadiness(navigation, gate.routeReady, liveNativeNavigationState.mode);
+  const readiness = nativeNavigationReadiness(navigation, nativeNavigationRouteReadyFor(navigation, liveNativeNavigationTargetIndex), liveNativeNavigationState.mode);
   if (!readiness.ready) {
     haltLiveNativeNavigation(readiness.reason, true);
     return;
@@ -4235,9 +4270,15 @@ function serviceLiveNativeNavigation() {
     return;
   }
   updateLiveManualAxes(liveManualState, { mode: "careful", forward: command.forward, turn: command.turn, roll: 0, pitch: 0, yaw: 0, bodyX: 0, bodyY: 0, height: 0 });
+  const displayedWaypoint = Number.isInteger(liveNativeNavigationTargetIndex)
+    ? liveNativeNavigationTargetIndex + 1
+    : liveNativeNavigationState.currentIndex + 1;
+  const navigationLabel = liveNativeNavigationState.mode === "return-home"
+    ? "return-home"
+    : Number.isInteger(liveNativeNavigationTargetIndex) ? "direct" : "route";
   liveNavigationState.lastCommandStatus = liveNativeNavigationState.lastCommand?.state === "holding"
-    ? `Domino ${liveNativeNavigationState.mode === "return-home" ? "return-home" : "route"} holding at WP ${String(liveNativeNavigationState.currentIndex + 1).padStart(2, "0")}.`
-    : `Domino route / WP ${String(liveNativeNavigationState.currentIndex + 1).padStart(2, "0")}: ${command.reason}`;
+    ? `Domino ${navigationLabel} holding at WP ${String(displayedWaypoint).padStart(2, "0")}.`
+    : `Domino ${navigationLabel} / WP ${String(displayedWaypoint).padStart(2, "0")}: ${command.reason}`;
 }
 
 function navigationStateSignature() {
@@ -4531,11 +4572,13 @@ function renderLiveNavigationPlanner(navigation) {
     ? `${lastPoint.x.toFixed(2)},${lastPoint.y.toFixed(2)} ${firstPoint.x.toFixed(2)},${firstPoint.y.toFixed(2)}`
     : "");
   markers.replaceChildren();
-  const currentMissionIndex = nativeNavigationRunnerIsActive(liveNativeNavigationState)
-    ? liveNativeNavigationState.currentIndex
-    : previewSession && preview?.ready
-      ? preview.currentIndex
-      : Number.isFinite(navigation.mission?.current) ? navigation.mission.current : -1;
+  const currentMissionIndex = nativeNavigationRunnerIsActive(liveNativeNavigationState) && Number.isInteger(liveNativeNavigationTargetIndex)
+    ? liveNativeNavigationTargetIndex
+    : nativeNavigationRunnerIsActive(liveNativeNavigationState)
+      ? liveNativeNavigationState.currentIndex
+      : previewSession && preview?.ready
+        ? preview.currentIndex
+        : Number.isFinite(navigation.mission?.current) ? navigation.mission.current : -1;
   waypointPoints.forEach((point, index) => {
     if (!point) return;
     const waypointLocal = plannerPointFromWaypoint(liveNavigationState.missionDraft[index], origin);
@@ -4601,13 +4644,17 @@ function renderLiveNavigationPlanner(navigation) {
   referencePlan.disabled = !hasOrigin || !localOnlyCount;
   const nativeRunnerActive = nativeNavigationRunnerIsActive(liveNativeNavigationState);
   const routeHudSummary = nativeRunnerActive
-    ? `PASS ${liveNativeNavigationState.completedLoops + 1}/${liveNativeNavigationState.loopCount} · WP ${liveNativeNavigationState.currentIndex + 1}/${routeCount}`
+    ? Number.isInteger(liveNativeNavigationTargetIndex)
+      ? `DIRECT · WP ${liveNativeNavigationTargetIndex + 1}`
+      : `PASS ${liveNativeNavigationState.completedLoops + 1}/${liveNativeNavigationState.loopCount} · WP ${liveNativeNavigationState.currentIndex + 1}/${routeCount}`
     : previewSession && preview?.ready
     ? `WP ${preview.currentIndex + 1}/${routeCount} · PASS ${preview.loopIndex + 1}/${preview.loopCount}`
     : routeCount ? `${routeCount} WP / ${liveNavigationState.loopCount}X` : "0 WP / 1X";
   hudRoute.textContent = routeHudSummary;
   hudRoute.title = nativeRunnerActive
-    ? `Domino route pass ${liveNativeNavigationState.completedLoops + 1} of ${liveNativeNavigationState.loopCount}, waypoint ${liveNativeNavigationState.currentIndex + 1} of ${routeCount}`
+    ? Number.isInteger(liveNativeNavigationTargetIndex)
+      ? `Domino direct drive to waypoint ${liveNativeNavigationTargetIndex + 1} of ${routeCount}`
+      : `Domino route pass ${liveNativeNavigationState.completedLoops + 1} of ${liveNativeNavigationState.loopCount}, waypoint ${liveNativeNavigationState.currentIndex + 1} of ${routeCount}`
     : previewSession && preview?.ready
     ? `Offline preview waypoint ${preview.currentIndex + 1} of ${routeCount}, pass ${preview.loopIndex + 1} of ${preview.loopCount}`
     : `${routeCount} planned waypoint${routeCount === 1 ? "" : "s"}; ${liveNavigationState.loopCount} patrol loop${liveNavigationState.loopCount === 1 ? "" : "s"}`;
@@ -4621,7 +4668,7 @@ function renderLiveNavigationPlanner(navigation) {
   hudObstacle.textContent = navigation.lidarFresh ? formatNavigationDistance(navigation.frontM, "--.- m") : "WAITING";
   const nativeMode = nativeRunnerActive ? liveNativeNavigationState.mode : "route";
   hudMode.textContent = nativeRunnerActive
-    ? nativeMode === "return-home" ? "DOMINO RETURN HOME" : "DOMINO ROUTE"
+    ? nativeMode === "return-home" ? "DOMINO RETURN HOME" : Number.isInteger(liveNativeNavigationTargetIndex) ? "DOMINO DIRECT" : "DOMINO ROUTE"
     : previewSession ? "PREVIEW" : navigation.mode?.label?.toUpperCase() || (routeCount ? "PLANNING" : "READY TO PLAN");
   const state = nativeRunnerActive
     ? "ARMED"
@@ -4810,7 +4857,18 @@ function renderLiveLidarRadar(snapshot) {
 function renderLiveWaypointList(navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState)) {
   const list = document.querySelector("#live-nav-waypoint-list");
   if (!list) return;
-  const signature = navigationStateSignature();
+  const context = liveManualContext();
+  const directReadinessSignature = JSON.stringify({
+    adapter: nativeNavigationCapabilityAvailable(),
+    link: liveConnectionIsReady(liveConnectionState),
+    armed: navigation.autopilot?.armed === true,
+    position: navigation.positionReady,
+    telemetry: context.telemetryFresh,
+    controller: context.controllerLinkReady,
+    fence: document.querySelector("#live-nav-geofence-enabled")?.checked === true,
+    radius: document.querySelector("#live-nav-geofence-radius")?.value,
+  });
+  const signature = `${navigationStateSignature()}|direct:${directReadinessSignature}`;
   if (list.dataset.signature === signature) return;
   list.dataset.signature = signature;
   list.replaceChildren();
@@ -4831,9 +4889,14 @@ function renderLiveWaypointList(navigation = liveNavigationSnapshot(liveTelemetr
     row.tabIndex = -1;
     row.dataset.index = String(index);
     const hasCoordinate = missionWaypointHasCoordinate(waypoint);
+    const dominoDirectReady = nativeNavigationReadiness(
+      navigation,
+      nativeNavigationRouteReadyFor(navigation, index),
+      "route",
+    ).ready;
     const localSummary = waypoint.local ? `LOCAL N ${waypoint.local.northM.toFixed(1)} / E ${waypoint.local.eastM.toFixed(1)} M` : "GPS REFERENCE";
     row.innerHTML = `
-      <div class="live-waypoint-heading"><strong>WP ${String(index + 1).padStart(2, "0")}</strong><span>${escapeNavigationHtml(waypoint.label || "Waypoint")} / ${localSummary}</span><div><button type="button" data-waypoint-action="goto" ${guidedReady && hasCoordinate ? "" : "disabled"} title="Send this waypoint as a guided target">GO</button><button type="button" data-waypoint-action="up" title="Move waypoint up">↑</button><button type="button" data-waypoint-action="down" title="Move waypoint down">↓</button><button type="button" data-waypoint-action="duplicate" title="Duplicate waypoint">⧉</button><button type="button" data-waypoint-action="remove" title="Remove waypoint">×</button></div></div>
+      <div class="live-waypoint-heading"><strong>WP ${String(index + 1).padStart(2, "0")}</strong><span>${escapeNavigationHtml(waypoint.label || "Waypoint")} / ${localSummary}</span><div><button type="button" data-waypoint-action="direct" ${dominoDirectReady ? "" : "disabled"} title="Drive only to this waypoint with Domino's guarded controller">DRIVE</button><button type="button" data-waypoint-action="goto" ${guidedReady && hasCoordinate ? "" : "disabled"} title="Send this waypoint as an ArduPilot Guided target">GUIDE</button><button type="button" data-waypoint-action="up" title="Move waypoint up">↑</button><button type="button" data-waypoint-action="down" title="Move waypoint down">↓</button><button type="button" data-waypoint-action="duplicate" title="Duplicate waypoint">⧉</button><button type="button" data-waypoint-action="remove" title="Remove waypoint">×</button></div></div>
       <label><span>LAT</span><input data-waypoint-field="lat" type="number" step="0.000001" min="-90" max="90" value="${hasCoordinate ? Number(waypoint.lat).toFixed(6) : ""}" ${hasCoordinate ? "" : "disabled"}></label>
       <label><span>LON</span><input data-waypoint-field="lon" type="number" step="0.000001" min="-180" max="180" value="${hasCoordinate ? Number(waypoint.lon).toFixed(6) : ""}" ${hasCoordinate ? "" : "disabled"}></label>
       <label><span>RADIUS M</span><input data-waypoint-field="radiusM" type="number" step="0.1" min="0.1" max="100" value="${Number(waypoint.radiusM || 1.5).toFixed(1)}"></label>
@@ -4973,10 +5036,18 @@ function renderLiveNavigationUi(navigation) {
   const fenceRadius = Number(document.querySelector("#live-nav-geofence-radius").value);
   const fenceStatus = navigationMissionGeofenceStatus(liveNavigationState.missionDraft, plannerOrigin, fenceRadius, fenceEnabled);
   const routeReady = missionCoordinatesReady && (!fenceEnabled || Boolean(navigation.home) && fenceStatus.checked && fenceStatus.outsideCount === 0);
+  const directTargetIndex = Number.isInteger(liveNativeNavigationTargetIndex)
+    ? liveNativeNavigationTargetIndex
+    : Number.isInteger(liveNativeNavigationStartRequestedTargetIndex)
+      ? liveNativeNavigationStartRequestedTargetIndex
+      : null;
+  const displayedNativeRouteReady = directTargetIndex === null
+    ? routeReady
+    : nativeNavigationRouteReadyFor(navigation, directTargetIndex);
   updateNavigationMissionHeader(navigation);
   renderLiveWaypointList(navigation);
   renderLiveNavigationPlanner(navigation);
-  renderNativeNavigationPreflight(navigation, routeReady);
+  renderNativeNavigationPreflight(navigation, displayedNativeRouteReady);
   const nativeRouteReadiness = nativeNavigationReadiness(navigation, routeReady, "route");
   const nativeReturnHomeReadiness = nativeNavigationReadiness(navigation, routeReady, "return-home");
   const nativeRouteButton = document.querySelector("#live-nav-start-native-route");
@@ -7017,6 +7088,10 @@ document.querySelector("#live-nav-waypoint-list").addEventListener("click", (eve
   if (!button || !row) return;
   const index = Number(row.dataset.index);
   const action = button.dataset.waypointAction;
+  if (action === "direct") {
+    startLiveNativeNavigation("route", index);
+    return;
+  }
   if (action === "goto") {
     const waypoint = liveNavigationState.missionDraft[index];
     if (waypoint) sendLiveNavigationCommand("goto", {

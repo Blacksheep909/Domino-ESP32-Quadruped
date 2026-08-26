@@ -6795,10 +6795,13 @@ body[data-workspace="real-robot"] .toast-region {
 .live-planner-map-surface { fill: #edf1ec; }
 .live-planner-grid-major { fill: none; stroke: #d6ddd6; stroke-width: .45; }
 .live-planner-axis { fill: none; stroke: #9bb8a1; stroke-width: .7; stroke-dasharray: 2 2; }
+.live-planner-geofence { fill: rgba(54, 133, 82, .08); stroke: #4d9e6a; stroke-width: 1; stroke-dasharray: 2.5 2; vector-effect: non-scaling-stroke; pointer-events: none; }
+.live-planner-geofence.has-warning { fill: rgba(174, 70, 56, .1); stroke: #c35d4e; }
 .live-planner-route { fill: none; stroke: #3d9662; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 .live-planner-marker circle { fill: #f4f4f0; stroke: #338457; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 .live-planner-marker text { fill: #277348; font: 800 4px/1 "Cascadia Mono", Consolas, monospace; pointer-events: none; }
 .live-planner-marker.is-active circle { fill: #d8f1df; stroke: #22663f; stroke-width: 2; }
+.live-planner-marker.is-outside circle { fill: #ffe2dc; stroke: #b84d3f; }
 .live-planner-vehicle circle { fill: #2d6792; stroke: #e7f3fb; stroke-width: 1.4; vector-effect: non-scaling-stroke; }
 .live-planner-vehicle path { fill: #2d6792; stroke: #e7f3fb; stroke-width: .8; vector-effect: non-scaling-stroke; }
 .live-planner-vehicle.is-live circle { filter: drop-shadow(0 0 3px rgba(45, 103, 146, .8)); }
@@ -6830,10 +6833,13 @@ body[data-workspace="real-robot"] .toast-region {
 :root[data-theme="dark"] .live-planner-map-surface { fill: #17201b; }
 :root[data-theme="dark"] .live-planner-grid-major { stroke: #2a4032; }
 :root[data-theme="dark"] .live-planner-axis { stroke: #54765d; }
+:root[data-theme="dark"] .live-planner-geofence { fill: rgba(77, 158, 106, .1); stroke: #69c28b; }
+:root[data-theme="dark"] .live-planner-geofence.has-warning { fill: rgba(174, 70, 56, .16); stroke: #ef8d78; }
 :root[data-theme="dark"] .live-planner-route { stroke: #69c28b; }
 :root[data-theme="dark"] .live-planner-marker circle { fill: #1e2922; stroke: #71c991; }
 :root[data-theme="dark"] .live-planner-marker text { fill: #a5e3b6; }
 :root[data-theme="dark"] .live-planner-marker.is-active circle { fill: #31543b; stroke: #b0f0bf; }
+:root[data-theme="dark"] .live-planner-marker.is-outside circle { fill: #4d2421; stroke: #ef8d78; }
 :root[data-theme="dark"] .live-planner-map text { fill: #91a899; }
 :root[data-theme="dark"] .live-autonomy-hud-readouts > div { background: #292a2d; border-color: #3a3d40; }
 :root[data-theme="dark"] .live-autonomy-hud-readouts strong { color: #e1e1e4; }

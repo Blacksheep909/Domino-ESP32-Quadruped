@@ -164,6 +164,7 @@ export class LiveCompanionCore {
       gaitProfiles: false,
       persistentProfiles: false,
       manualControl: false,
+      nativeNavigation: false,
       navigation: false,
       gps: false,
       lidar: false,

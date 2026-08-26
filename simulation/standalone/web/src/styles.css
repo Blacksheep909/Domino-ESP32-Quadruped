@@ -2477,6 +2477,21 @@ dd {
 .live-mission-card > header > div button { min-height: 26px; padding: 0 8px; color: #286442; background: #e3f1e8; border: 1px solid #9bc8aa; border-radius: 4px; cursor: pointer; font: 800 8px/1 "Cascadia Mono", Consolas, monospace; }
 .live-mission-toolbar { align-items: end; padding-bottom: 12px; border-bottom: 1px solid #dedfd9; }
 .live-mission-toolbar label { min-width: 170px; flex: 1 1 190px; display: grid; gap: 6px; }
+.live-mission-toolbar .live-native-route-button { color: #1f6841; background: #dff3e5; border-color: #78b78d; }
+.live-native-route-state {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 9px;
+  color: #777a74;
+  background: #f0f1ed;
+  border: 1px solid #d1d4ce;
+  border-radius: 5px;
+  font: 800 8px/1 "Cascadia Mono", Consolas, monospace;
+  white-space: nowrap;
+}
+.live-native-route-state[data-state="online"] { color: #286442; border-color: #9bc8aa; }
+.live-native-route-state[data-state="error"] { color: #a24a3a; border-color: #d8a095; }
 .live-waypoint-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding-top: 12px; }
 .live-waypoint-row.is-selected { border-color: #4d9e6a; box-shadow: 0 0 0 1px rgba(77, 158, 106, .2), inset 3px 0 0 #4d9e6a; }
 .live-waypoint-row { min-width: 0; padding: 10px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; background: #f0f0ec; border: 1px solid #dedfd9; border-radius: 5px; }
@@ -6863,6 +6878,10 @@ body[data-workspace="real-robot"] .toast-region {
 :root[data-theme="dark"] .live-waypoint-row.is-selected { border-color: #69c28b; box-shadow: 0 0 0 1px rgba(105, 194, 139, .24), inset 3px 0 0 #69c28b; }
 :root[data-theme="dark"] .live-autonomy-hud > button { color: #ffc0b4; background: rgba(174, 70, 56, .16); border-color: rgba(214, 119, 101, .55); }
 :root[data-theme="dark"] .live-mission-toolbar #live-nav-clear-draft { color: #ffc0b4; background: rgba(174, 70, 56, .16); border-color: rgba(214, 119, 101, .55); }
+:root[data-theme="dark"] .live-mission-toolbar .live-native-route-button { color: #c5f3d0; background: rgba(66, 142, 88, .28); border-color: rgba(113, 201, 145, .7); }
+:root[data-theme="dark"] .live-native-route-state { color: #96999e; background: #292a2d; border-color: #3a3d40; }
+:root[data-theme="dark"] .live-native-route-state[data-state="online"] { color: #9ee4b0; border-color: rgba(113, 201, 145, .65); }
+:root[data-theme="dark"] .live-native-route-state[data-state="error"] { color: #ffc0b4; border-color: rgba(214, 119, 101, .6); }
 
 /* The route planner now contains the sensors-page autonomy HUD. Keep the
    older floating summary out of the way so only one HUD is visible. */

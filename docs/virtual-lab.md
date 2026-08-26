@@ -55,6 +55,19 @@ the local vehicle marker through each segment using waypoint speeds and holds,
 and never sends a vehicle command. This gives operators a quick route sanity
 check before choosing the separate vehicle upload/start actions.
 
+**START DOMINO ROUTE** is the app-owned execution path for a compatible Domino
+adapter. It uses the existing time-limited manual-control lease to stream
+bounded forward/turn axes, so the route decision remains in this program
+instead of being handed to ArduPilot. The button unlocks only when the adapter
+advertises `nativeNavigation` and `manualControl`, the robot is armed, both
+telemetry streams are fresh, GPS heading and position are valid, LiDAR is
+fresh when obstacle guard is enabled, and the route passes the home-radius
+fence. A stale sensor, fence breach, disarm, link loss, hidden tab, or lease
+expiry sends neutral and blocks the route. **OPEN MANUAL OVERRIDE** immediately
+neutralizes and releases the route lease. The current ESP32 firmware does not
+advertise `nativeNavigation` yet because its physical GPS/LiDAR adapter still
+needs to be integrated and validated.
+
 The preview controls also support **PAUSE**, **RESUME**, and one-second
 **STEP** inspection, with selectable 0.5x, 1x, 2x, and 4x playback rates.
 Stopping a preview marks it as stopped and requires an explicit restart; a
@@ -66,7 +79,7 @@ front LiDAR range, and home-radius fence into a bounded forward/turn intent,
 adds a bounded left/right clearance bias, and reports `SENSOR WAIT`,
 `OBSTACLE STOP`, or `GEOFENCE STOP` when a safe intent cannot be produced.
 This is deliberately an app-owned decision layer;
-physical execution remains disabled until a native adapter implements and
+physical execution is capability-gated until a native adapter implements and
 advertises the corresponding robot-side contract.
 
 **FIT ROUTE** selects the smallest available 40/80/160 m planning range that

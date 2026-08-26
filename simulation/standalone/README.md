@@ -95,6 +95,16 @@ uses side-range pressure to bias away from nearby left/right obstacles.
 Preview playback can be paused, resumed, stepped one second at a time, or
 slowed/speeded between 0.5x and 4x without affecting the saved route.
 
+**START DOMINO ROUTE** is the app-owned route runner. A compatible adapter must
+explicitly advertise `nativeNavigation` plus guarded `manualControl`; the
+runner then uses the existing short-lived control lease and bounded forward/
+turn axes. Fresh GPS position/heading, LiDAR obstacle data when enabled,
+arming, telemetry, controller-link, workspace, and geofence checks are
+required. Any failed check neutralizes and blocks the runner, while **OPEN
+MANUAL OVERRIDE** hands control back to the operator. The current ESP32
+firmware remains locked out of this path until its physical GPS/LiDAR adapter
+is integrated and validated.
+
 The safety dock adds a separate `live-safety-command` contract for arm, disarm,
 E-stop, and physical-latch reset. Arm requires a 1.5-second uninterrupted hold,
 fresh expected/measured telemetry, a robot-reported CRSF/ELRS drive link, and a

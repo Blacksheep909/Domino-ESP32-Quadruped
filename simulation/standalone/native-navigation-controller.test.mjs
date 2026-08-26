@@ -73,6 +73,17 @@ test("native navigation refuses to invent control without a fresh obstacle range
   assert.equal(headingErrorDeg(5, 355), 10);
 });
 
+test("native navigation refuses to invent a heading when heading telemetry is missing", () => {
+  const command = nativeNavigationCommand({
+    waypoints: route,
+    position: { northM: 0, eastM: 2 },
+    obstacle: { enabled: false },
+  });
+  assert.equal(command.state, "sensor-wait");
+  assert.equal(command.forward, 0);
+  assert.match(command.reason, /heading/);
+});
+
 test("native navigation biases away from a close side obstacle", () => {
   const command = nativeNavigationCommand({
     waypoints: route,

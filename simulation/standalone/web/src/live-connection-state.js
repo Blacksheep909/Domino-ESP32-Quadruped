@@ -32,6 +32,7 @@ function sanitizeAdapter(message, receivedAt) {
       gaitProfiles: message.capabilities?.gaitProfiles === true,
       persistentProfiles: message.capabilities?.persistentProfiles === true,
       manualControl: message.capabilities?.manualControl === true,
+      nativeNavigation: message.capabilities?.nativeNavigation === true,
       navigation: message.capabilities?.navigation === true,
       gps: message.capabilities?.gps === true,
       lidar: message.capabilities?.lidar === true,

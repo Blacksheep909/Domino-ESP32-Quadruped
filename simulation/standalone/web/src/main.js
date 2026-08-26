@@ -3879,9 +3879,13 @@ function renderLiveNavigationPlanner(navigation) {
       : "LOCAL AUTOSAVE ON";
   storageStatus.dataset.state = liveNavigationPlanStorageState === "unavailable" ? "warning" : "saved";
   referencePlan.disabled = !hasOrigin || !localOnlyCount;
-  hudRoute.textContent = routeCount ? `DRAFT / ${routeCount}` : "DRAFT / 0";
+  hudRoute.textContent = liveNavigationPreviewState.active && preview?.ready
+    ? `PREVIEW ${preview.currentIndex + 1}/${routeCount}`
+    : routeCount ? `DRAFT / ${routeCount}` : "DRAFT / 0";
   hudTotal.textContent = formatNavigationDistance(metrics.totalDistanceM, "--");
-  hudEta.textContent = formatNavigationDuration(metrics.estimatedSeconds);
+  hudEta.textContent = liveNavigationPreviewState.active && preview?.ready
+    ? formatNavigationDuration(Math.max(0, (preview.totalSeconds || 0) - preview.elapsedSeconds))
+    : formatNavigationDuration(metrics.estimatedSeconds);
   hudPosition.textContent = liveNavigationPreviewState.active
     ? "LOCAL PREVIEW"
     : navigation.hasFix ? navigationFixLabel(navigation.gps?.fixType) : hasOrigin ? "HOME SET" : "NO FIX";
@@ -6202,8 +6206,14 @@ document.querySelector("#live-nav-apply-geofence").addEventListener("click", () 
     polygon: liveNavigationState.geofence.polygon,
   });
 });
-document.querySelector("#live-nav-upload-mission").addEventListener("click", () => sendLiveNavigationCommand("upload-mission", { name: liveNavigationState.missionName, mission: liveNavigationState.missionDraft }));
-document.querySelector("#live-nav-start-mission").addEventListener("click", () => sendLiveNavigationCommand("start-mission"));
+document.querySelector("#live-nav-upload-mission").addEventListener("click", () => {
+  if (liveNavigationPreviewState.active) stopLiveNavigationPreview();
+  sendLiveNavigationCommand("upload-mission", { name: liveNavigationState.missionName, mission: liveNavigationState.missionDraft });
+});
+document.querySelector("#live-nav-start-mission").addEventListener("click", () => {
+  if (liveNavigationPreviewState.active) stopLiveNavigationPreview();
+  sendLiveNavigationCommand("start-mission");
+});
 document.querySelector("#live-nav-pause-mission").addEventListener("click", () => sendLiveNavigationCommand("pause-mission"));
 document.querySelector("#live-nav-resume-mission").addEventListener("click", () => sendLiveNavigationCommand("resume-mission"));
 document.querySelector("#live-nav-clear-mission").addEventListener("click", () => sendLiveNavigationCommand("clear-mission"));

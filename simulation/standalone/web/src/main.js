@@ -4057,6 +4057,8 @@ function renderLiveNavigationPlanner(navigation) {
     obstacle: {
       enabled: !previewSession && liveNavigationState.obstacleBehavior.enabled,
       frontM: navigation.lidarFresh ? navigation.frontM : null,
+      leftM: navigation.lidarFresh ? navigation.leftM : null,
+      rightM: navigation.lidarFresh ? navigation.rightM : null,
       stopDistanceM: liveNavigationState.obstacleBehavior.stopDistanceM,
       slowDistanceM: liveNavigationState.obstacleBehavior.slowDistanceM,
     },

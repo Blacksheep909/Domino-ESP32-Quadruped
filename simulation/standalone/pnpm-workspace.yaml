@@ -1,6 +1,10 @@
 allowBuilds:
+  electron: true
+  electron-winstaller: true
   esbuild: true
   node-hid: true
 onlyBuiltDependencies:
+  - electron
+  - electron-winstaller
   - esbuild
   - node-hid

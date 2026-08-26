@@ -21,6 +21,21 @@ independent expected-command and measured-robot streams are available. The
 comparison panel is structured to show body-pose deltas, all 12 joint errors,
 power, timing, and synchronized expected/measured graphs.
 
+The header **PROJECT** action provides a portable `.qstudio.json` bundle for
+the current Dog V2 configuration. It includes Simulation gait settings and
+profiles, LIVE gait drafts and profiles, the 12-joint calibration profile, and
+per-controller mappings. Import validates the robot identity, schema, and
+physical channel map before replacing local configuration. Arm state, E-stop,
+bench mode, connection sessions, telemetry, and recorded runs are deliberately
+never exported or restored; imported calibration remains a local draft until
+it is reviewed and explicitly saved to the robot.
+
+In the installed Windows app, **PROJECT** uses native Open and Save dialogs so
+multiple project files can live in ordinary folders on disk. Saves validate the
+bundle before the picker opens and replace the chosen file atomically; the
+portable import/export controls remain available when the same UI is run outside
+the desktop package.
+
 LIVE telemetry uses a canonical `live-telemetry` envelope relayed by the local
 WebSocket bridge. Expected and measured poses carry independent timestamps,
 16-channel servo arrays, and body roll/pitch/yaw/height. The browser validates
@@ -45,6 +60,29 @@ sides independently, and forwards telemetry, safety, manual-control,
 calibration, and gait traffic through the same session-bound contracts used by
 the UI. See [the LIVE companion protocol](../../docs/live-companion-protocol.md)
 for launch commands and the required ESP32 JSONL endpoint.
+
+The GPS / LiDAR tab also supports an ArduPilot Rover through
+`ardupilot-companion-adapter.mjs`. Select the ArduPilot companion by setting the
+local service protocol before launch; the adapter listens for MAVLink UDP,
+publishes GPS, `OBSTACLE_DISTANCE`, heartbeat, EKF, battery, mission, home, and
+failsafe state, and translates the session-bound UI actions into ArduPilot
+MAVLink commands:
+
+```powershell
+$env:DOMINO_COMPANION_PROTOCOL = "ardupilot"
+$env:DOMINO_ARDUPILOT_HOST = "127.0.0.1"
+$env:DOMINO_ARDUPILOT_PORT = "14550"
+pnpm start
+```
+
+Use **AUTO** or **WI-FI** in the connection manager. The default endpoint is
+`127.0.0.1:14550`, so the same setup works with SITL; change the host for a
+networked flight controller or MAVLink router. The adapter supports Rover mode
+selection, arm/disarm, Hold, RTL, guided targets, mission upload/start/pause/
+resume/clear, home, radius geofence parameters, obstacle-guard policy, and
+bounded parameter writes. The relay and adapter keep these actions locked until
+the selected session is fresh; position modes additionally require a 3D GPS
+position, and the physical ArduPilot response remains authoritative.
 
 The safety dock adds a separate `live-safety-command` contract for arm, disarm,
 E-stop, and physical-latch reset. Arm requires a 1.5-second uninterrupted hold,
@@ -172,6 +210,16 @@ single tree articulation. The proxy includes the four shoulder actuators and
 the eight linkage actuators, realistic mass distribution, servo stiffness,
 joint limits, and high-friction 24 mm TPU foot spheres.
 
+The browser scene is an **assisted visualization**. It applies body-height and
+attitude forces, holds the body in the horizontal plane during tilt, holds feet
+near captured contact points, and renders the requested tilt quaternion on the
+CAD body. Those aids make the simplified open-chain proxy usable, but they are
+not physical capabilities and must not be used as evidence that a pose will
+work on hardware. Hardware parity is checked separately by feeding production
+SIL servo outputs through the unassisted closed-chain CAD endpoint regression
+in `cad-endpoint.test.mjs`; that test requires every world-space foot to remain
+within the PWM-quantization tolerance for both roll directions.
+
 The mass proxy currently totals 2.966 kg. It includes two
 [CNHL Black Series 1500 mAh 4S packs](https://chinahobbyline.com/collections/uk-warehouse/products/cnhl-black-series-1500mah-14-8v-4s-100c-lipo-battery-with-xt60-plug-4-packs)
 at 183 g each, positioned independently in the front and rear electronics bays
@@ -184,8 +232,64 @@ not snapped to the floor every frame.
 
 ## Launch
 
-This repository contains the application source. It is not a hosted website.
-The current launcher targets Windows because the firmware SIL build uses the
+This repository contains the application source and a Windows desktop build; it
+is not a hosted website. The desktop program runs the UI, local service,
+firmware SIL, CAD assets, and physical companion adapter on the same computer.
+After installation, normal use is offline and does not require Node.js, pnpm,
+or a browser.
+
+### Build the Windows app
+
+From this directory:
+
+```powershell
+pnpm install
+pnpm run desktop:make
+```
+
+The build creates two launchable artifacts in `out`:
+
+- `Domino-Quadruped-Studio-<version>-x64.exe` — normal Windows installer with
+  Start Menu and optional desktop shortcuts.
+- `Domino-Quadruped-Studio-<version>-x64.zip` — portable unpacked application.
+
+For a quick unpackaged desktop run during development, use
+`pnpm run desktop:start`. Application logs and mutable runtime data are kept in
+the Windows user-data directory rather than beside the installed executable.
+
+### Updates and firmware releases
+
+The installed NSIS build uses the stable app ID
+`com.domino.quadruped.studio` and checks GitHub for releases on startup and
+every six hours. Updates download in the background and install over the
+existing installation after a restart, so repeated releases do not create a
+new app directory or a second shortcut set. Use the NSIS `.exe` for automatic
+updates; the `.zip` is a manual portable build. The current `0.2.0` installer
+predates the updater; install the generated `0.2.1` installer once over it.
+Later NSIS releases update that same installation in place and can use the
+generated block map for differential downloads. A successful firmware build or
+upload also triggers an immediate app-update check, so firmware iterations do
+not wait for the six-hour timer.
+
+After changing firmware, bump the desktop release version and push a tag:
+
+```powershell
+pnpm run release:firmware
+git add package.json
+git commit -m "release: firmware update"
+git tag v<new-version>
+git push origin HEAD v<new-version>
+```
+
+The GitHub Actions release workflow rebuilds the firmware SIL, packages the
+matching firmware source/CAD bundle, and publishes the Windows installer and
+update metadata. `pnpm run desktop:make` remains available for local installer
+testing; `pnpm run desktop:start` is the fastest path for uninstalled source
+iteration.
+
+### Run from source
+
+The source launcher targets Windows because the firmware SIL build uses the
 PlatformIO MinGW toolchain and PowerShell process management.
 
 Install dependencies after cloning:
@@ -266,6 +370,8 @@ closed-linkage collision model whose passive pin constraints match the
 four-bar CAD exactly. Until that is complete, use this application to test
 radio mapping, firmware modes, commanded poses, travel limits, gross contact
 behavior, and obvious unsafe transitions before powering the physical robot.
+The visible **RAPIER + CAD / ASSISTED** status is deliberate: only the raw CAD
+endpoint regression is treated as a fixed-foot kinematic proof.
 
 ## Stop
 

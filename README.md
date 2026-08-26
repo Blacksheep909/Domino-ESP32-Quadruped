@@ -26,6 +26,22 @@ The complete offline Virtual Lab implementation is in
 connection architecture, calibration workflow, data tools, screenshots, and
 current limitations.
 
+The installed desktop build can open and save validated Dog V2 `.qstudio.json`
+project files through native Windows dialogs, keeping configuration projects in
+normal local folders without serializing any live safety or connection state.
+
+## Downloads
+
+The preferred way to use Domino is the Windows desktop application. It bundles
+the Virtual Lab UI, local service, CAD, firmware SIL, and companion adapter so
+Simulation and LIVE work offline without a separately opened terminal.
+
+- **[Download the latest Domino Quadruped Studio Windows release](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/releases/latest)** — preferred installer and portable desktop builds.
+- **[Open the browser/source version](simulation/standalone)** — secondary development and quick-inspection option; it runs locally from the repository.
+
+The browser version remains available for development and lightweight review,
+but the desktop application is the primary distribution and update path.
+
 ## Why This Project Matters
 
 Domino is the successor to my earlier SpotMicro ESP32 Nitro work. The earlier project gave me a working base for servo-driven quadruped control, PCB packaging, and RC-controlled robot bring-up. Domino moves beyond that reference design into a more custom platform:
@@ -59,11 +75,11 @@ research environment and the physical firmware project.
 
 ![Domino Virtual Lab simulation workspace](docs/images/virtual-lab-simulation-workspace.png)
 
-The application is committed as **locally runnable source code**, not deployed
-as a GitHub Pages website. Clone the repository, install the Virtual Lab's Node
-dependencies, and run its PowerShell launcher. See the
-[Virtual Lab guide](docs/virtual-lab.md) for setup, screenshots, architecture,
-controls, and current limitations.
+The browser/source version remains available as a secondary path for local
+development and quick inspection. Clone the repository, install the Virtual
+Lab's Node dependencies, and run its PowerShell launcher. The desktop build is
+the preferred distribution. See the [Virtual Lab guide](docs/virtual-lab.md)
+for setup, screenshots, architecture, controls, and current limitations.
 
 ## Domino Virtual Lab
 
@@ -92,6 +108,12 @@ Simulation and LIVE are deliberately separate top-level workspaces:
 The LIVE digital twin can overlay robot-reported measured joint and IMU state
 against the expected command. Its six pages divide normal operation from the
 deeper engineering tools:
+
+The always-available **PROJECT** control now exports and imports a validated
+Dog V2 `.qstudio.json` bundle. This is the first project-driven desktop step:
+robot-specific gait, calibration, and controller configuration can move with
+the project while connection, E-stop, arm, bench, telemetry, and session state
+remain local and fail-closed.
 
 | Page | Purpose |
 | --- | --- |
@@ -150,7 +172,45 @@ available.
 
 ### Run the program
 
-On Windows, install Node.js and pnpm, then launch from the repository root:
+The recommended Windows build is the offline desktop application. Build the
+installer once from a clone:
+
+```powershell
+cd simulation\standalone
+pnpm install
+pnpm run desktop:make
+```
+
+Run the generated `out\Domino-Quadruped-Studio-<version>-x64.exe` to install it,
+or unpack the matching `.zip` for a portable copy. The installed program embeds the local
+web service, firmware SIL, CAD, and companion adapter, so normal Simulation and
+LIVE use does not depend on an internet connection or a separately opened
+terminal.
+
+Installed builds check GitHub for releases on startup and every six hours. When
+an update is downloaded, the app prompts to restart and installs it over the
+existing Domino Quadruped Studio installation; it does not create a second app
+copy. Use the `.exe` installer for this workflow; the `.zip` remains a manual
+portable build. The updater-enabled `0.2.1` installer is the current local build;
+install it once over the older `0.2.0` copy. Later NSIS releases update that same
+installation in place and use the generated block map for differential downloads.
+
+When firmware changes, prepare a release from `simulation\standalone`:
+
+```powershell
+pnpm run release:firmware
+git add package.json
+git commit -m "release: firmware update"
+git tag v<new-version>
+git push origin HEAD v<new-version>
+```
+
+The tag starts the Windows release workflow, which rebuilds the firmware SIL,
+bundles the updated firmware workspace, and publishes the installer artifacts
+used by the updater. Use `pnpm run desktop:start` for immediate local iteration;
+that development build intentionally does not check for published updates.
+
+For source development, launch from the repository root:
 
 ```powershell
 cd simulation\standalone
@@ -159,7 +219,7 @@ cd ..\..
 .\simulation\standalone\launch.ps1
 ```
 
-The launcher starts the local service and opens the source-built application.
+The source launcher starts the local service and opens the browser build.
 Full setup, controller notes, connection transports, safety contracts, and
 troubleshooting are in the [Virtual Lab guide](docs/virtual-lab.md).
 

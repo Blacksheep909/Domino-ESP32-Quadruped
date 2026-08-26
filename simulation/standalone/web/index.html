@@ -17,6 +17,9 @@
         <button id="workspace-simulation" type="button" role="tab" aria-selected="true" aria-controls="simulation-workspace">SIMULATION</button>
         <button id="workspace-real-robot" type="button" role="tab" aria-selected="false" aria-controls="real-workspace">LIVE</button>
       </div>
+      <button id="project-open" class="project-open" type="button" aria-haspopup="dialog" title="Open or export the Domino project bundle">
+        <span>PROJECT</span><strong id="project-name-label">DOMINO V2</strong>
+      </button>
       <div class="status">
         <button id="firmware-deploy-button" class="firmware-deploy-button real-robot-only" type="button" title="Review, build, and upload firmware to Domino">UPLOAD FW</button>
         <span id="firmware-status" class="simulation-only" data-state="offline">FIRMWARE</span>
@@ -28,12 +31,71 @@
         <span id="real-battery-status" class="real-robot-only live-header-battery" data-state="unavailable" title="Measured robot battery voltage">BAT --.- V</span>
         <span id="real-safety-status" class="real-robot-only" data-state="safe">DISARMED</span>
         <button id="live-global-estop" class="real-robot-only live-global-estop" type="button" title="Latch the robot emergency stop" disabled>E-STOP</button>
+        <button id="shortcuts-open" class="utility-button" type="button" aria-haspopup="dialog" title="Show keyboard shortcuts (?)">?</button>
+        <button id="fullscreen-toggle" class="utility-button" type="button" aria-pressed="false" title="Enter fullscreen (F)">⛶</button>
         <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false" title="Switch to dark theme">
           <span id="theme-icon" aria-hidden="true">&#9788;</span>
           <span id="theme-label" class="sr-only">Light theme</span>
         </button>
       </div>
     </header>
+
+    <aside id="app-hud" class="app-hud" aria-label="ArduPilot autonomous navigation HUD">
+      <div class="app-hud-heading">
+        <div>
+          <span id="hud-context">AUTONOMY / NAV</span>
+          <strong id="hud-mode">HOLD</strong>
+        </div>
+        <button id="hud-toggle" type="button" aria-expanded="true" title="Collapse autonomous HUD">−</button>
+      </div>
+      <div class="app-hud-body">
+        <div class="app-hud-status-row">
+          <span id="hud-state" data-state="warning" aria-live="polite">CHECKS</span>
+          <span id="hud-link">MAVLINK WAITING</span>
+        </div>
+        <div class="app-hud-readouts">
+          <div><span>GPS FIX</span><strong id="hud-height">NO FIX</strong></div>
+          <div><span>HDOP</span><strong id="hud-roll">--</strong></div>
+          <div><span>SATELLITES</span><strong id="hud-pitch">--</strong></div>
+          <div><span>SPEED</span><strong id="hud-yaw">--.- m/s</strong></div>
+          <div><span id="hud-secondary-label">MISSION</span><strong id="hud-secondary-value">DRAFT / 0</strong></div>
+          <div><span id="hud-tertiary-label">FRONT</span><strong id="hud-tertiary-value">--.- m</strong></div>
+        </div>
+        <div class="app-hud-footer">
+          <span id="hud-age">NAV AGE --</span>
+          <span id="hud-fps">-- FPS</span>
+        </div>
+      </div>
+    </aside>
+
+    <aside id="live-camera-panel" class="live-camera-panel" aria-label="Robot camera feed">
+      <header>
+        <div><span>CAMERA / FRONT</span><strong id="live-camera-state" data-state="offline">OFFLINE</strong></div>
+        <span id="live-camera-rate">-- FPS</span>
+      </header>
+      <div class="live-camera-body">
+        <div class="live-camera-feed" id="live-camera-feed">
+          <img id="live-camera-image" alt="Live forward robot camera" hidden>
+          <div id="live-camera-placeholder"><strong>NO CAMERA STREAM</strong><span>Enter an HTTP/MJPEG image stream from the robot.</span></div>
+        </div>
+        <div class="live-camera-controls">
+          <div class="live-camera-angles" aria-label="Camera orientation">
+            <div><span>YAW</span><strong id="live-camera-yaw">+0.0°</strong></div>
+            <div><span>PITCH</span><strong id="live-camera-pitch">-8.0°</strong></div>
+            <div><span>FOV</span><strong id="live-camera-fov">90°</strong></div>
+          </div>
+          <label for="live-camera-url">STREAM URL</label>
+          <div class="live-camera-url-row">
+            <input id="live-camera-url" type="url" inputmode="url" placeholder="http://robot.local:81/stream" autocomplete="off" spellcheck="false">
+            <button id="live-camera-connect" type="button">CONNECT</button>
+          </div>
+          <div class="live-camera-actions">
+            <button id="live-camera-snapshot" type="button" disabled>SNAPSHOT</button>
+            <button id="live-camera-fullscreen" type="button" disabled>FULLSCREEN</button>
+          </div>
+        </div>
+      </div>
+    </aside>
 
     <section id="channel-strip" class="simulation-only" aria-label="ELRS and CRSF channels">
       <div class="channel-strip-label">
@@ -247,6 +309,66 @@
       </form>
     </div>
 
+    <div id="project-dialog" class="project-dialog" role="dialog" aria-modal="true" aria-labelledby="project-dialog-title" hidden>
+      <section class="project-dialog-shell">
+        <header>
+          <div>
+            <span>PROJECT / DOMINO V2</span>
+            <h2 id="project-dialog-title">Project bundle</h2>
+            <p>Move robot-specific tuning between machines without exporting a live connection or safety state.</p>
+          </div>
+          <button id="project-dialog-close" type="button" aria-label="Close project bundle">&times;</button>
+        </header>
+        <label class="project-name-field">
+          <span>PROJECT NAME</span>
+          <input id="project-name" type="text" maxlength="80" value="Domino V2" autocomplete="off">
+        </label>
+        <div class="project-summary-grid" aria-label="Project bundle contents">
+          <div><span>SIM GAITS</span><strong id="project-gait-count">0</strong></div>
+          <div><span>LIVE GAITS</span><strong id="project-live-gait-count">0</strong></div>
+          <div><span>CONTROLLERS</span><strong id="project-controller-count">0</strong></div>
+          <div><span>CALIBRATION</span><strong id="project-calibration-count">12 JOINTS</strong></div>
+        </div>
+        <p id="project-storage-mode" class="project-storage-mode">Portable project file</p>
+        <div class="project-actions">
+          <button id="project-import" type="button">IMPORT PROJECT</button>
+          <button id="project-export" type="button">EXPORT .QSTUDIO</button>
+          <input id="project-import-file" type="file" accept="application/json,.json,.qstudio" hidden>
+        </div>
+        <p id="project-status" class="project-dialog-status" role="status">Project bundles include tuning, controller mappings, and calibration. Safety and connection state never leave this app.</p>
+        <div class="project-boundary">
+          <div><strong>INCLUDED</strong><span>Gait settings, saved gait profiles, LIVE gait drafts, calibration, and gamepad mappings.</span></div>
+          <div><strong>EXCLUDED</strong><span>Robot links, arm state, E-stop, bench mode, telemetry, and recorded sessions.</span></div>
+        </div>
+        <footer><button id="project-dialog-done" type="button">DONE</button></footer>
+      </section>
+    </div>
+
+    <div id="shortcuts-dialog" class="utility-dialog" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title" hidden>
+      <section class="utility-dialog-shell">
+        <header>
+          <div>
+            <span>DOMINO / QUICK REFERENCE</span>
+            <h2 id="shortcuts-title">Keyboard shortcuts</h2>
+            <p>Shortcuts are disabled while typing in a field. Press <kbd>?</kbd> any time to reopen this guide.</p>
+          </div>
+          <button id="shortcuts-close" type="button" aria-label="Close keyboard shortcuts">&times;</button>
+        </header>
+        <div class="shortcut-grid" aria-label="Available keyboard shortcuts">
+          <div><kbd>SPACE</kbd><span>Stand / sit in Simulation</span></div>
+          <div><kbd>T</kbd><span>Toggle tilt</span></div>
+          <div><kbd>G</kbd><span>Cycle stand / careful / trot</span></div>
+          <div><kbd>R</kbd><span>Reset the simulation</span></div>
+          <div><kbd>0</kbd><span>Open Simulation</span></div>
+          <div><kbd>1–7</kbd><span>Open a LIVE engineering view</span></div>
+          <div><kbd>H</kbd><span>Collapse / expand the autonomous HUD</span></div>
+          <div><kbd>F</kbd><span>Toggle fullscreen</span></div>
+          <div><kbd>?</kbd><span>Open this guide</span></div>
+        </div>
+        <footer><button id="shortcuts-done" type="button">DONE</button></footer>
+      </section>
+    </div>
+
     <main id="real-workspace" class="real-robot-only" aria-label="Live robot digital twin" hidden>
       <nav class="live-toolbar" aria-label="Live robot tools">
         <div class="live-toolbar-section">
@@ -256,7 +378,7 @@
         <div class="live-view-tabs" role="tablist" aria-label="Live engineering view">
           <button type="button" role="tab" data-live-view="compare" aria-selected="true" aria-controls="live-view-compare">COMPARE</button>
           <button type="button" role="tab" data-live-view="data" aria-selected="false" aria-controls="live-view-data">DATA</button>
-          <button type="button" role="tab" data-live-view="sensors" aria-selected="false" aria-controls="live-view-sensors">SENSORS</button>
+          <button type="button" role="tab" data-live-view="sensors" aria-selected="false" aria-controls="live-view-sensors">GPS / LIDAR</button>
           <button type="button" role="tab" data-live-view="calibration" aria-selected="false" aria-controls="live-view-calibration">CALIBRATION</button>
           <button type="button" role="tab" data-live-view="gaits" aria-selected="false" aria-controls="live-view-gaits">GAITS</button>
           <button type="button" role="tab" data-live-view="diagnostics" aria-selected="false" aria-controls="live-view-diagnostics">DIAGNOSTICS</button>
@@ -274,10 +396,6 @@
           <button id="live-float-button" class="float-button" type="button" aria-pressed="false" title="Lift the preview clear of the floor while keeping live motion visible">FLOAT</button>
         </div>
         <button id="live-manual-open" class="live-manual-open" type="button">MANUAL CONTROL</button>
-        <div class="experience-toggle" role="group" aria-label="Interface detail">
-          <button type="button" data-experience="simple" class="active" aria-pressed="true" title="Show the essential robot controls and summaries">SIMPLE</button>
-          <button type="button" data-experience="expert" aria-pressed="false" title="Show detailed joint, packet and diagnostic data">EXPERT</button>
-        </div>
       </nav>
 
       <section id="live-view-compare" class="live-view-content" aria-label="Live robot comparison">
@@ -435,7 +553,7 @@
 
       <section id="live-view-sensors" class="live-view-page" aria-labelledby="live-sensors-title" hidden>
         <header class="live-page-heading">
-          <div><span>LIVE / SENSORS</span><h1 id="live-sensors-title">Sensor alignment</h1><p>Visualize body attitude, establish the IMU reference, and commission future navigation sensors.</p></div>
+          <div><span>LIVE / GPS + LIDAR</span><h1 id="live-sensors-title">Navigation sensors</h1><p>Inspect real GNSS and LiDAR streams, configure obstacle protection, and operate ArduPilot autonomous modes.</p></div>
           <div class="live-page-status"><span id="live-sensors-link-state" data-state="offline">PC LINK OFFLINE</span><strong id="live-sensors-imu-state">IMU WAITING</strong></div>
         </header>
         <div class="live-sensor-grid">
@@ -458,9 +576,9 @@
           <section class="live-data-card live-sensor-inventory-card">
             <header><span>SENSOR BUS</span><strong>CAPABILITY MAP</strong></header>
             <div class="live-sensor-module" data-state="waiting"><i>IMU</i><div><strong>MPU6050</strong><span id="live-sensor-imu-detail">WAITING FOR TELEMETRY</span></div><b id="live-sensor-imu-badge">OFFLINE</b></div>
-            <div class="live-sensor-module" data-state="future"><i>GPS</i><div><strong>GNSS / GPS</strong><span>POSITION, SPEED, UTC AND FIX QUALITY</span></div><b>NOT INSTALLED</b></div>
-            <div class="live-sensor-module" data-state="future"><i>3D</i><div><strong>LiDAR</strong><span>RANGE CLOUD, OBSTACLES AND SENSOR EXTRINSICS</span></div><b>FUTURE ADAPTER</b></div>
-            <p>GPS and LiDAR remain explicitly unavailable until hardware and a robot-reported capability are present; the interface will not fabricate readings.</p>
+            <div class="live-sensor-module" data-sensor-module="gps" data-state="future"><i>GPS</i><div><strong>GNSS / GPS</strong><span id="live-gps-module-detail">POSITION, SPEED, UTC AND FIX QUALITY</span></div><b id="live-gps-module-badge">NOT INSTALLED</b></div>
+            <div class="live-sensor-module" data-sensor-module="lidar" data-state="future"><i>3D</i><div><strong>LiDAR</strong><span id="live-lidar-module-detail">RANGE CLOUD, OBSTACLES AND SENSOR EXTRINSICS</span></div><b id="live-lidar-module-badge">FUTURE ADAPTER</b></div>
+            <p id="live-navigation-capability-copy">GPS, LiDAR and ArduPilot data appear here only when a robot-reported capability and fresh telemetry are present; the interface never fabricates readings.</p>
           </section>
 
           <section class="live-data-card live-sensor-calibration-card">
@@ -485,6 +603,125 @@
                 <div class="live-sensor-actions"><button id="live-sensor-capture-level" type="button" disabled>CAPTURE LEVEL</button><button id="live-sensor-reset-level" type="button" disabled>RESET REFERENCE</button><button type="button" disabled title="Requires a future robot sensor-calibration capability">SAVE TO ROBOT</button></div>
               </div>
             </div>
+          </section>
+        </div>
+
+        <div class="live-navigation-grid" aria-label="GPS, LiDAR and ArduPilot navigation controls">
+          <section class="live-data-card live-gps-card">
+            <header><span>GNSS POSITION</span><strong id="live-gps-fix-badge" data-state="offline">NO FIX</strong></header>
+            <div class="live-nav-metric-grid">
+              <div><span>LATITUDE</span><strong id="live-gps-lat">--.------</strong></div>
+              <div><span>LONGITUDE</span><strong id="live-gps-lon">--.------</strong></div>
+              <div><span>SATELLITES</span><strong id="live-gps-satellites">--</strong></div>
+              <div><span>HDOP</span><strong id="live-gps-hdop">--</strong></div>
+              <div><span>GROUND SPEED</span><strong id="live-gps-speed">--.- m/s</strong></div>
+              <div><span>COURSE</span><strong id="live-gps-course">---.-°</strong></div>
+              <div><span>ALTITUDE</span><strong id="live-gps-altitude">--.- m</strong></div>
+              <div><span>AGE</span><strong id="live-gps-age">--</strong></div>
+            </div>
+            <div class="live-gps-coordinate-actions">
+              <button id="live-nav-add-current" type="button" disabled>ADD CURRENT POSITION</button>
+              <button id="live-nav-set-home-current" type="button" disabled>SET HOME HERE</button>
+            </div>
+            <div class="live-gps-track-wrap">
+              <svg id="live-gps-track" viewBox="0 0 200 200" role="img" aria-label="Recent GPS track">
+                <rect x="4" y="4" width="192" height="192" rx="6"></rect>
+                <path d="M12 100h176M100 12v176" class="live-gps-track-grid"></path>
+                <polyline id="live-gps-track-line" points=""></polyline>
+                <circle id="live-gps-track-home" r="5" visibility="hidden"></circle>
+                <circle id="live-gps-track-current" r="4" visibility="hidden"></circle>
+                <text x="12" y="18">N</text><text x="188" y="194" text-anchor="end">E</text>
+              </svg>
+              <span id="live-gps-track-status">NO 3D GPS TRACK</span>
+            </div>
+          </section>
+
+          <section class="live-data-card live-lidar-card">
+            <header><span>LiDAR OBSTACLE MAP</span><strong id="live-lidar-scan-state" data-state="offline">WAITING</strong></header>
+            <div class="live-lidar-layout">
+              <div class="live-lidar-radar-wrap">
+                <svg id="live-lidar-radar" viewBox="0 0 240 240" role="img" aria-label="LiDAR obstacle radar">
+                  <circle class="live-lidar-ring" cx="120" cy="120" r="92"></circle><circle class="live-lidar-ring" cx="120" cy="120" r="61"></circle><circle class="live-lidar-ring" cx="120" cy="120" r="30"></circle>
+                  <path class="live-lidar-crosshair" d="M120 20v200M20 120h200"></path>
+                  <g id="live-lidar-rays"></g><circle class="live-lidar-robot" cx="120" cy="120" r="7"></circle>
+                  <text x="120" y="14" text-anchor="middle">FRONT</text><text x="226" y="124">RIGHT</text><text x="120" y="236" text-anchor="middle">REAR</text><text x="14" y="124" text-anchor="end">LEFT</text>
+                </svg>
+              </div>
+              <div class="live-lidar-readout">
+                <div><span>FRONT</span><strong id="live-lidar-front">--.- m</strong></div>
+                <div><span>LEFT</span><strong id="live-lidar-left">--.- m</strong></div>
+                <div><span>RIGHT</span><strong id="live-lidar-right">--.- m</strong></div>
+                <div><span>REAR</span><strong id="live-lidar-rear">--.- m</strong></div>
+                <div><span>OBSTACLES</span><strong id="live-lidar-obstacles">--</strong></div>
+                <div><span>SCAN RATE</span><strong id="live-lidar-rate">--.- Hz</strong></div>
+              </div>
+            </div>
+            <div class="live-obstacle-policy">
+              <label><input id="live-nav-obstacle-enabled" type="checkbox" checked> ENABLE OBSTACLE GUARD</label>
+              <label><span>STOP <output id="live-nav-stop-distance-value">0.45 m</output></span><input id="live-nav-stop-distance" type="range" min="0.10" max="5" step="0.05" value="0.45"></label>
+              <label><span>SLOW <output id="live-nav-slow-distance-value">1.20 m</output></span><input id="live-nav-slow-distance" type="range" min="0.20" max="10" step="0.05" value="1.20"></label>
+              <button id="live-nav-send-obstacle-policy" type="button" disabled>APPLY TO ROBOT</button>
+            </div>
+          </section>
+
+          <section class="live-data-card live-autopilot-card">
+            <header><span>ARDUPILOT / ROVER</span><strong id="live-autopilot-state" data-state="offline">NOT DETECTED</strong></header>
+            <div class="live-autopilot-summary">
+              <div><span>MODE</span><strong id="live-nav-current-mode">--</strong></div>
+              <div><span>ARM STATE</span><strong id="live-nav-arm-state">DISARMED</strong></div>
+              <div><span>EKF</span><strong id="live-nav-ekf-state">--</strong></div>
+              <div><span>PRE-ARM</span><strong id="live-nav-prearm-state">--</strong></div>
+              <div><span>MISSION</span><strong id="live-nav-mission-progress">NO MISSION</strong></div>
+              <div><span>HEARTBEAT</span><strong id="live-nav-heartbeat-age">--</strong></div>
+            </div>
+            <div class="live-autopilot-controls">
+              <label><span>ROVER MODE</span><select id="live-nav-mode-select" aria-label="ArduPilot Rover mode"></select></label>
+              <button id="live-nav-set-mode" type="button" disabled>SET MODE</button>
+              <button id="live-nav-arm" type="button" disabled>ARM AUTOPILOT</button>
+              <button id="live-nav-disarm" type="button" disabled>DISARM AUTOPILOT</button>
+              <button id="live-nav-rtl" type="button" disabled>RETURN TO LAUNCH</button>
+              <button id="live-nav-hold" type="button" disabled>HOLD</button>
+            </div>
+            <div class="live-parameter-controls">
+              <label><span>PARAMETER</span><input id="live-nav-parameter-name" type="text" maxlength="32" placeholder="FENCE_RADIUS"></label>
+              <label><span>VALUE</span><input id="live-nav-parameter-value" type="number" step="any" placeholder="50"></label>
+              <button id="live-nav-set-parameter" type="button" disabled>SET PARAMETER</button>
+            </div>
+            <p id="live-nav-autopilot-status" class="live-navigation-status">ArduPilot navigation is unavailable until a MAVLink-capable adapter reports a heartbeat.</p>
+          </section>
+
+          <section class="live-data-card live-mission-card">
+            <header><span>AUTONOMOUS MISSION</span><div><strong id="live-nav-mission-state">DRAFT / 0 WAYPOINTS</strong><button id="live-nav-add-waypoint" type="button">+ WAYPOINT</button></div></header>
+            <div class="live-mission-toolbar">
+              <label><span>MISSION NAME</span><input id="live-nav-mission-name" type="text" maxlength="64" value="Domino patrol"></label>
+              <button id="live-nav-upload-mission" type="button" disabled>UPLOAD TO ARDUPILOT</button>
+              <button id="live-nav-start-mission" type="button" disabled>START AUTO</button>
+              <button id="live-nav-pause-mission" type="button" disabled>PAUSE / HOLD</button>
+              <button id="live-nav-resume-mission" type="button" disabled>RESUME AUTO</button>
+              <button id="live-nav-clear-mission" type="button" disabled>CLEAR ROBOT MISSION</button>
+              <button id="live-nav-export-mission" type="button">EXPORT JSON</button>
+              <button id="live-nav-import-mission" type="button">IMPORT JSON</button>
+              <input id="live-nav-import-file" type="file" accept="application/json,.json" hidden>
+            </div>
+            <div id="live-nav-waypoint-list" class="live-waypoint-list"><p class="live-empty-state">Add a current GPS position or create a waypoint to build a mission.</p></div>
+          </section>
+
+          <section class="live-data-card live-nav-safety-card">
+            <header><span>AUTONOMY SAFETY</span><strong id="live-nav-safety-state" data-state="offline">LOCKED</strong></header>
+            <div class="live-nav-safety-grid">
+              <label class="live-toggle-line"><input id="live-nav-geofence-enabled" type="checkbox"><span>ENABLE RADIUS GEOFENCE</span></label>
+              <label><span>MAX RADIUS</span><input id="live-nav-geofence-radius" type="number" min="5" max="10000" step="1" value="50"><em>m from home</em></label>
+              <button id="live-nav-apply-geofence" type="button" disabled>APPLY GEOFENCE</button>
+              <button id="live-nav-request-state" type="button" disabled>REFRESH NAV STATE</button>
+            </div>
+            <ul id="live-nav-prearm-checklist" class="live-nav-prearm-checklist">
+              <li data-check="link"><i></i><span>Navigation link</span><b>WAITING</b></li>
+              <li data-check="gps"><i></i><span>3D GPS fix</span><b>WAITING</b></li>
+              <li data-check="ekf"><i></i><span>ArduPilot EKF</span><b>WAITING</b></li>
+              <li data-check="obstacle"><i></i><span>Obstacle guard</span><b>WAITING</b></li>
+              <li data-check="fence"><i></i><span>Geofence</span><b>WAITING</b></li>
+            </ul>
+            <p id="live-nav-safety-copy">Position modes remain blocked until the link, GPS, EKF and safety policy are healthy.</p>
           </section>
         </div>
       </section>
@@ -1017,6 +1254,8 @@
       <button type="button" data-axis="+Z" aria-label="View from positive Z" title="View from +Z">Z</button>
       <button type="button" data-axis="-Z" aria-label="View from negative Z" title="View from -Z">-Z</button>
     </div>
+
+    <div id="toast-region" class="toast-region" role="status" aria-live="polite" aria-atomic="true"></div>
 
     <script type="module" src="/src/main.js"></script>
   </body>

@@ -21,10 +21,12 @@ Only the hardware boundary is replaced:
 .\simulation\sil\test.ps1
 ```
 
-The scenario checks startup stow, CRSF acquisition, debounced stand, tilt
-movement, continuous Boxer left-stick ride-height control, sinusoidal gait
-stride/lift, the SD tilt interlock, link loss, automatic failsafe stow, finite
-servo angles, and valid PCA9685 pulse widths.
+The scenario checks startup stow, CRSF acquisition, debounced stand, an isolated
+fixed-world-foot full-roll pose, continuous Boxer left-stick ride-height
+control, sinusoidal gait stride/lift, the SD tilt interlock, link loss,
+automatic failsafe stow, finite servo angles, and valid PCA9685 pulse widths.
+The roll gate requires lateral leg compensation and substantial movement on
+all four hip channels, so a height-only floor-pivot approximation fails SIL.
 
 ## Open the live monitor
 

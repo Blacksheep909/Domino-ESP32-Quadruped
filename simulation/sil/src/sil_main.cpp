@@ -350,8 +350,19 @@ bool applyScenario(uint32_t scenarioMs, int channelsUs[16]) {
       channelsUs[0] = 1900;
       channelsUs[1] = 1800;
       channelsUs[3] = 1750;
-    } else if (scenarioMs >= 4950U) {
-      const float phase = static_cast<float>(scenarioMs - 4950U) * 0.0062831853f / 1000.0f;
+    } else if (scenarioMs < 5300U) {
+      // Keep all motion axes centred through the debounced TILT transition and
+      // its 120 ms handoff interlock.
+    } else if (scenarioMs < 5600U) {
+      // Hold an isolated full positive roll long enough to verify that the
+      // fixed-foot inverse moves the shoulder joints and lateral leg targets.
+      // A Z-only approximation can still tilt the proxy, but it makes the real
+      // chassis arc around the support plane and must fail this regression.
+      channelsUs[0] = 2000;
+    } else if (scenarioMs < 5900U) {
+      channelsUs[0] = 1000;
+    } else {
+      const float phase = static_cast<float>(scenarioMs - 5900U) * 0.0062831853f / 1000.0f;
       channelsUs[0] = 1500 + static_cast<int>(430.0f * sinf(phase));
       channelsUs[1] = 1500 + static_cast<int>(250.0f * cosf(phase * 0.7f));
       channelsUs[3] = 1500 + static_cast<int>(320.0f * sinf(phase * 0.5f));
@@ -534,6 +545,9 @@ Options parseOptions(int argc, char** argv) {
 bool validateOutputs(bool sawStand, bool sawTilt, bool sawGait, bool sawCareful,
                      bool gaitTiltInterlockViolation,
                      bool motionInputInterlockViolation,
+                     bool sawPositiveFixedFootRoll,
+                     bool sawNegativeFixedFootRoll,
+                     bool fixedFootRollViolation,
                      bool gaitHeightTransitionDropout,
                      bool gaitSupportViolation,
                      bool sawGaitSwing,
@@ -576,6 +590,10 @@ bool validateOutputs(bool sawStand, bool sawTilt, bool sawGait, bool sawCareful,
   }
   if (motionInputInterlockViolation) {
     std::cerr << "FAIL: held sticks actuated the newly selected motion mode before centering\n";
+    passed = false;
+  }
+  if (!sawPositiveFixedFootRoll || !sawNegativeFixedFootRoll || fixedFootRollViolation) {
+    std::cerr << "FAIL: isolated +/- roll did not preserve the fixed-world-foot body transform\n";
     passed = false;
   }
   if (gaitHeightTransitionDropout) {
@@ -660,6 +678,9 @@ int main(int argc, char** argv) {
   bool sawCareful = false;
   bool gaitTiltInterlockViolation = false;
   bool motionInputInterlockViolation = false;
+  bool sawPositiveFixedFootRoll = false;
+  bool sawNegativeFixedFootRoll = false;
+  bool fixedFootRollViolation = false;
   bool gaitHeightTransitionStarted = false;
   bool gaitHeightTransitionDropout = false;
   bool gaitSupportViolation = false;
@@ -709,6 +730,29 @@ int main(int argc, char** argv) {
           fabsf(dominoSilBodyRollDeg()) > 0.1f ||
           fabsf(dominoSilBodyPitchDeg()) > 0.1f ||
           fabsf(dominoSilBodyYawDeg()) > 0.1f;
+    }
+    if (mode == 2 && dominoSilMotionInputArmed() &&
+        fabsf(dominoSilBodyRollDeg()) > 19.0f &&
+        fabsf(dominoSilBodyPitchDeg()) < 0.1f &&
+        fabsf(dominoSilBodyYawDeg()) < 0.1f) {
+      const bool positiveRoll = dominoSilBodyRollDeg() > 0.0f;
+      sawPositiveFixedFootRoll = sawPositiveFixedFootRoll || positiveRoll;
+      sawNegativeFixedFootRoll = sawNegativeFixedFootRoll || !positiveRoll;
+      constexpr float kNeutralLegY[4] = {38.0f, -38.0f, 38.0f, -38.0f};
+      constexpr uint8_t kHipChannels[4] = {0, 3, 14, 9};
+      constexpr float kNeutralHipDeg[4] = {129.87f, 105.44f, 119.88f, 115.42f};
+      for (int leg = 0; leg < 4; ++leg) {
+        const bool left = leg == 0 || leg == 2;
+        const bool extended = positiveRoll ? left : !left;
+        const float x = dominoSilLegCommandX(leg);
+        const float y = dominoSilLegCommandY(leg);
+        const float z = dominoSilLegCommandZ(leg);
+        fixedFootRollViolation = fixedFootRollViolation ||
+            fabsf(x + 15.75f) > 1.0f ||
+            fabsf(y - kNeutralLegY[leg]) < 70.0f ||
+            (extended ? z < 290.0f : z > 240.0f) ||
+            fabsf(simServoAngleDeg(kHipChannels[leg]) - kNeutralHipDeg[leg]) < 10.0f;
+      }
     }
     if (!interactiveControl && scenarioMs >= 7500U && scenarioMs < 9000U) {
       gaitHeightTransitionStarted = gaitHeightTransitionStarted || mode == 4;
@@ -785,6 +829,9 @@ int main(int argc, char** argv) {
       validateOutputs(sawStand, sawTilt, sawGait, sawCareful,
                                       gaitTiltInterlockViolation,
                                       motionInputInterlockViolation,
+                                      sawPositiveFixedFootRoll,
+                                      sawNegativeFixedFootRoll,
+                                      fixedFootRollViolation,
                                       gaitHeightTransitionDropout,
                                       gaitSupportViolation,
                                       sawGaitSwing,

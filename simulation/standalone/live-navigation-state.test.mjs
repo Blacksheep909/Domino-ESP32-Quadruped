@@ -16,6 +16,7 @@ import {
   navigationMissionPreview,
   navigationMissionRecommendedRange,
   removeNavigationWaypoint,
+  gpsTrackToMission,
   sanitizeLiveNavigation,
   missionWaypointHasCoordinate,
 } from "./web/src/live-navigation-state.js";
@@ -132,6 +133,26 @@ test("route planner reports waypoints outside the active home radius", () => {
   assert.equal(unreferenced.checked, false);
   assert.equal(unreferenced.outsideCount, 0);
   assert.equal(unreferenced.unresolvedCount, 0);
+});
+
+test("recorded GPS tracks become bounded coordinate missions with local offsets", () => {
+  const origin = { lat: -36.85, lon: 174.76, altM: 20 };
+  const track = Array.from({ length: 7 }, (_, index) => ({
+    lat: -36.85 + index * 0.0001,
+    lon: 174.76 + index * 0.0001,
+    altM: 20 + index,
+  }));
+  const mission = gpsTrackToMission(track, origin, 4);
+  assert.equal(mission.length, 4);
+  assert.equal(mission[0].label, "TRACK 01");
+  assert.equal(mission.at(-1).label, "TRACK 04");
+  assert.equal(mission[0].lat, track[0].lat);
+  assert.equal(mission.at(-1).lon, track.at(-1).lon);
+  assert.deepEqual(mission[0].local, { northM: 0, eastM: 0 });
+  assert.ok(mission[1].local.northM > 0);
+  assert.equal(mission[2].speedMps, 0.5);
+  assert.equal(gpsTrackToMission(track, origin, 0).length, 7);
+  assert.deepEqual(gpsTrackToMission([{ lat: 400, lon: 2 }]), []);
 });
 
 test("route planner previews a local route without vehicle execution", () => {

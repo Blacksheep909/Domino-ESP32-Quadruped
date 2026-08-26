@@ -34,6 +34,10 @@ active home position; the control stays disabled until that reference exists.
 The current draft, route name, map range, obstacle policy, and geofence settings
 are also autosaved locally and restored on the next launch. This convenience
 record never includes connection, arm, authority, or vehicle-execution state.
+The recent GPS trail can be cleared or turned into a bounded local route with
+**CREATE PLAN FROM TRACK**. The action keeps the first and last fixes,
+resamples long trails, and leaves the resulting draft behind the same review,
+geofence, and vehicle-command gates as any hand-planned route.
 
 The compact Domino Autonomy HUD stays beside the map and shows route progress,
 position quality, next-point distance, total route distance, a conservative

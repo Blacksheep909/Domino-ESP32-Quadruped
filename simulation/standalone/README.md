@@ -87,7 +87,7 @@ position, and the physical ArduPilot response remains authoritative.
 The same Sensors view also provides a Domino-owned top-down route planner. It
 supports offline local waypoints, drag-to-edit markers, JSON import/export,
 autosaved drafts, a bounded local saved-route library, project-bundle portability, undo/redo editing with Ctrl+Z/Ctrl+Shift+Z/Ctrl+Y shortcuts,
-fit-to-route framing, home-radius geofence gating, and an offline route preview
+fit-to-route framing, live GPS-track-to-plan conversion, home-radius geofence gating, and an offline route preview
 that animates the local vehicle marker without sending a command to the robot.
 The planner HUD also exposes Domino's bounded native forward/turn intent and
 stops it for missing obstacle data, close obstacles, or an active geofence, and

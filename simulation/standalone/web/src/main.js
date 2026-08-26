@@ -178,6 +178,7 @@ import {
   createLiveNavigationCommand,
   validLiveNavigationAcknowledgement,
 } from "./live-navigation-protocol.js";
+import { nativeNavigationCommand } from "./native-navigation-controller.js";
 import {
   archiveLiveSession,
   clearLiveSession,
@@ -3854,6 +3855,7 @@ function renderLiveNavigationPlanner(navigation) {
   const hudEta = document.querySelector("#live-nav-hud-eta");
   const hudPosition = document.querySelector("#live-nav-hud-position");
   const hudObstacle = document.querySelector("#live-nav-hud-obstacle");
+  const hudControl = document.querySelector("#live-nav-hud-control");
   const helpStatus = document.querySelector("#live-nav-planner-help-status");
   const storageStatus = document.querySelector("#live-nav-plan-storage-status");
   const referencePlan = document.querySelector("#live-nav-reference-plan");
@@ -3861,7 +3863,7 @@ function renderLiveNavigationPlanner(navigation) {
   const fitButton = document.querySelector("#live-nav-fit-route");
   const undoButton = document.querySelector("#live-nav-undo");
   const redoButton = document.querySelector("#live-nav-redo");
-  if (!map || !route || !markers || !vehicle || !geofence || !status || !hudMode || !hudState || !hudRoute || !hudNext || !hudTotal || !hudEta || !hudPosition || !hudObstacle || !helpStatus || !storageStatus || !referencePlan) return;
+  if (!map || !route || !markers || !vehicle || !geofence || !status || !hudMode || !hudState || !hudRoute || !hudNext || !hudTotal || !hudEta || !hudPosition || !hudObstacle || !hudControl || !helpStatus || !storageStatus || !referencePlan) return;
 
   const origin = navigationPlannerOrigin(navigation);
   const range = Math.max(10, Number(liveNavigationState.plannerRangeM) || 40);
@@ -3979,10 +3981,27 @@ function renderLiveNavigationPlanner(navigation) {
   const vehicleLocal = preview?.ready
     ? preview.position
     : navigation.gps?.position && origin ? coordinateToLocalOffset(navigation.gps.position, origin) : null;
+  const nativeControl = nativeNavigationCommand({
+    waypoints: liveNavigationState.missionDraft.map((waypoint) => plannerPointFromWaypoint(waypoint, origin)),
+    position: vehicleLocal,
+    headingDeg: navigation.gps?.courseDeg ?? 0,
+    currentIndex: currentMissionIndex >= 0 ? currentMissionIndex : 0,
+    obstacle: {
+      enabled: !liveNavigationPreviewState.active && liveNavigationState.obstacleBehavior.enabled,
+      frontM: navigation.lidarFresh ? navigation.frontM : null,
+      stopDistanceM: liveNavigationState.obstacleBehavior.stopDistanceM,
+      slowDistanceM: liveNavigationState.obstacleBehavior.slowDistanceM,
+    },
+    geofence: { enabled: fenceStatus.enabled && fenceStatus.checked, maxRadiusM: fenceRadius },
+  });
   const nextDistance = nextLocal && vehicleLocal
     ? Math.hypot(nextLocal.eastM - vehicleLocal.eastM, nextLocal.northM - vehicleLocal.northM)
     : null;
   hudNext.textContent = nextDistance === null ? (nextPoint ? `WP ${String(nextIndex + 1).padStart(2, "0")}` : "--") : `${nextDistance.toFixed(1)} m`;
+  hudControl.textContent = nativeControl.state === "navigating" || nativeControl.state === "sensor-wait"
+    ? `F ${Math.round(nativeControl.forward * 100)} / T ${nativeControl.turn >= 0 ? "+" : ""}${Math.round(nativeControl.turn * 100)}`
+    : nativeControl.state.toUpperCase().replaceAll("-", " ");
+  hudControl.title = nativeControl.reason;
 }
 
 function addPlannerWaypointFromEvent(event) {

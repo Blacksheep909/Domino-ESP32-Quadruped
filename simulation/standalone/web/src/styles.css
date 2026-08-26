@@ -2368,8 +2368,9 @@ dd {
 }
 
 .live-gps-track-wrap {
+  container-type: inline-size;
   display: grid;
-  grid-template-columns: minmax(150px, 1fr) minmax(120px, .8fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, .8fr);
   align-items: center;
   gap: 12px;
   margin-top: 12px;
@@ -2390,6 +2391,17 @@ dd {
 #live-gps-track-current { fill: #1c5f9c; stroke: #fff; stroke-width: 2; }
 #live-gps-track text { fill: #777a74; font: 800 9px "Cascadia Mono", Consolas, monospace; }
 .live-gps-track-wrap > span { color: #777a74; font: 800 9px/1.5 "Cascadia Mono", Consolas, monospace; letter-spacing: .05em; }
+.live-gps-track-footer { grid-column: 1 / -1; width: 100%; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 0; min-width: 0; }
+.live-gps-track-footer > span { min-width: 0; overflow: hidden; color: #737871; font: 800 8px/1.3 "Cascadia Mono", Consolas, monospace; letter-spacing: .04em; text-overflow: ellipsis; white-space: nowrap; }
+.live-gps-track-footer > div { display: flex; flex: 0 0 auto; gap: 6px; }
+.live-gps-track-footer button { min-height: 27px; padding: 0 8px; color: #286442; background: #e3f1e8; border: 1px solid #9bc8aa; border-radius: 4px; cursor: pointer; font: 800 7px/1 "Cascadia Mono", Consolas, monospace; }
+.live-gps-track-footer button:disabled { color: #8c9089; background: #e7e8e3; border-color: #d2d4ce; cursor: not-allowed; }
+
+@media (max-width: 620px) {
+  .live-gps-track-footer { align-items: stretch; flex-direction: column; }
+  .live-gps-track-footer > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .live-gps-track-footer button { min-width: 0; padding-inline: 5px; }
+}
 
 .live-gps-coordinate-actions button,
 .live-autopilot-controls button,
@@ -2562,12 +2574,20 @@ dd {
 :root[data-theme="dark"] #live-gps-track-grid { stroke: #343438; }
 :root[data-theme="dark"] #live-gps-track text,
 :root[data-theme="dark"] .live-gps-track-wrap > span { color: #999ca2; fill: #999ca2; }
+:root[data-theme="dark"] .live-gps-track-footer > span { color: #96999e; }
+:root[data-theme="dark"] .live-gps-track-footer button { color: #b9efc6; background: rgba(66, 142, 88, .18); border-color: rgba(113, 201, 145, .52); }
+:root[data-theme="dark"] .live-gps-track-footer button:disabled { color: #777b80; background: #292a2d; border-color: #3a3d40; }
 
 @media (max-width: 620px) {
   .live-sensor-stage { min-height: 245px; }
   .live-sensor-readout { grid-template-columns: repeat(2, 1fr); }
   .live-sensor-axis-guide, .live-sensor-actions { flex-wrap: wrap; }
   .live-sensor-actions button { flex: 1 1 130px; }
+}
+
+@container (max-width: 360px) {
+  .live-gps-track-footer { align-items: stretch; flex-direction: column; }
+  .live-gps-track-footer > div { display: grid; grid-template-columns: 1fr; }
 }
 
 .live-manual-dialog {

@@ -170,6 +170,7 @@ import {
   navigationMissionJson,
   navigationMissionPreview,
   navigationMissionRecommendedRange,
+  gpsTrackToMission,
   parseNavigationMissionJson,
   removeNavigationWaypoint,
 } from "./live-navigation-state.js";
@@ -3824,7 +3825,11 @@ function renderLiveGpsTrack(navigation) {
   const current = document.querySelector("#live-gps-track-current");
   const home = document.querySelector("#live-gps-track-home");
   const status = document.querySelector("#live-gps-track-status");
+  const trackToPlan = document.querySelector("#live-nav-track-to-plan");
+  const clearTrack = document.querySelector("#live-nav-clear-track");
   if (!polyline || !current || !home || !status) return;
+  if (trackToPlan) trackToPlan.disabled = liveNavigationState.gpsTrack.length < 2;
+  if (clearTrack) clearTrack.disabled = liveNavigationState.gpsTrack.length === 0;
   const track = liveNavigationState.gpsTrack;
   if (!track.length) {
     polyline.setAttribute("points", "");
@@ -3859,6 +3864,33 @@ function renderLiveGpsTrack(navigation) {
   }
   const homeDistance = gpsDistanceM(navigation.home, track.at(-1));
   status.textContent = `${track.length} POINT${track.length === 1 ? "" : "S"}${homeDistance === null ? "" : ` / ${formatNavigationDistance(homeDistance, "--.- m")} HOME`}`;
+}
+
+function createLivePlanFromGpsTrack() {
+  const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
+  const mission = gpsTrackToMission(liveNavigationState.gpsTrack, navigationPlannerOrigin(navigation));
+  if (mission.length < 2) {
+    showAppToast("Record at least two GPS fixes before creating a route.", "warning");
+    return;
+  }
+  captureLiveNavigationHistory();
+  if (liveNavigationPreviewState.active) stopLiveNavigationPreview();
+  liveNavigationState.missionName = "Recorded GPS route";
+  liveNavigationState.missionDraft = mission;
+  liveNavigationState.plannerRangeM = navigationMissionRecommendedRange(mission, liveNavigationState.plannerOrigin) || liveNavigationState.plannerRangeM;
+  persistLiveNavigationPlan();
+  syncLiveNavigationControls();
+  document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
+  liveNavigationState.lastCommandStatus = `Created a local route from ${mission.length} recorded GPS points. No vehicle command was sent.`;
+  updateLiveComparisonUi();
+  showAppToast(`Created a local route from ${mission.length} GPS points. Review it before sending.`, "success");
+}
+
+function clearLiveGpsTrack() {
+  if (!liveNavigationState.gpsTrack.length) return;
+  liveNavigationState.gpsTrack = [];
+  updateLiveComparisonUi();
+  showAppToast("Recorded GPS track cleared. The current route plan was not changed.", "info");
 }
 
 function navigationAdapter() {
@@ -6909,6 +6941,8 @@ document.querySelector("#live-nav-export-mission").addEventListener("click", () 
   anchor.click();
   setTimeout(() => URL.revokeObjectURL(anchor.href), 0);
 });
+document.querySelector("#live-nav-track-to-plan")?.addEventListener("click", createLivePlanFromGpsTrack);
+document.querySelector("#live-nav-clear-track")?.addEventListener("click", clearLiveGpsTrack);
 document.querySelector("#live-nav-import-mission").addEventListener("click", () => document.querySelector("#live-nav-import-file").click());
 document.querySelector("#live-nav-import-file").addEventListener("change", async (event) => {
   const file = event.target.files?.[0];

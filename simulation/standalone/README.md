@@ -91,8 +91,8 @@ fit-to-route framing, live GPS-track-to-plan conversion, home-radius geofence ga
 that animates the local vehicle marker without sending a command to the robot.
 When live fixes are available, the planner also shows the recorded GPS trail
 as a quiet blue dotted line beneath the planned route for quick path comparison.
-Its compact legend distinguishes the plan, live track, and closing leg, while
-the scale reference follows the selected map range.
+Its compact legend distinguishes the plan, live track state, and closing leg,
+while the scale reference follows the selected map range.
 Each waypoint can also be duplicated from its action row to preserve its local
 or GPS position and movement settings while shaping a route.
 Domino patrols can repeat a reviewed route 1x, 2x, 3x, or 5x; the selected

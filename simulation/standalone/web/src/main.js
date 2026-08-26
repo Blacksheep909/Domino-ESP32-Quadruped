@@ -4339,6 +4339,7 @@ function renderLiveNavigationPlanner(navigation) {
   const vehicle = document.querySelector("#live-nav-planner-vehicle");
   const geofence = document.querySelector("#live-nav-planner-geofence");
   const scaleLabel = document.querySelector("#live-nav-planner-scale-label");
+  const trackLegend = document.querySelector("#live-nav-planner-track-legend");
   const status = document.querySelector("#live-nav-planner-status");
   const hudMode = document.querySelector("#live-nav-hud-mode");
   const hudState = document.querySelector("#live-nav-hud-state");
@@ -4360,7 +4361,7 @@ function renderLiveNavigationPlanner(navigation) {
   const reverseButton = document.querySelector("#live-nav-reverse-route");
   const undoButton = document.querySelector("#live-nav-undo");
   const redoButton = document.querySelector("#live-nav-redo");
-  if (!map || !track || !route || !returnRoute || !markers || !vehicle || !geofence || !scaleLabel || !status || !hudMode || !hudState || !hudRoute || !hudNext || !hudTotal || !hudEta || !hudPosition || !hudObstacle || !hudControl || !helpStatus || !storageStatus || !referencePlan) return;
+  if (!map || !track || !route || !returnRoute || !markers || !vehicle || !geofence || !scaleLabel || !trackLegend || !status || !hudMode || !hudState || !hudRoute || !hudNext || !hudTotal || !hudEta || !hudPosition || !hudObstacle || !hudControl || !helpStatus || !storageStatus || !referencePlan) return;
   renderLiveNavigationPlanLibrary();
 
   const origin = navigationPlannerOrigin(navigation);
@@ -4409,6 +4410,18 @@ function renderLiveNavigationPlanner(navigation) {
     : [];
   track.setAttribute("points", recordedTrackPoints.map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" "));
   track.setAttribute("visibility", recordedTrackPoints.length > 1 ? "visible" : "hidden");
+  const recordedFixCount = liveNavigationState.gpsTrack.length;
+  trackLegend.dataset.state = recordedTrackPoints.length > 1 ? "online" : recordedFixCount ? "warning" : "waiting";
+  trackLegend.querySelector("b").textContent = recordedTrackPoints.length > 1
+    ? `${recordedFixCount} GPS FIXES`
+    : recordedFixCount
+      ? "GPS TRACK / NEEDS HOME"
+      : "GPS TRACK / WAITING";
+  trackLegend.title = recordedTrackPoints.length > 1
+    ? `${recordedFixCount} recorded GPS fixes are shown beneath the planned route.`
+    : recordedFixCount
+      ? "Recorded GPS fixes are waiting for a home reference before they can be drawn on the planner."
+      : "The planner will show the recorded GPS trail after at least two fresh fixes.";
   route.setAttribute("points", waypointPoints.filter(Boolean).map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" "));
   const firstPoint = waypointPoints[0];
   const lastPoint = waypointPoints.at(-1);

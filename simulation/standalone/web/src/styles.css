@@ -6786,7 +6786,7 @@ body[data-workspace="real-robot"] .toast-region {
   border-radius: 5px;
   background: #edf1ec;
   cursor: crosshair;
-  touch-action: manipulation;
+  touch-action: none;
 }
 .live-planner-actions { display: flex; align-items: center; gap: 9px; margin-top: 9px; min-width: 0; }
 .live-planner-actions button { flex: 0 0 auto; min-height: 28px; padding: 0 9px; color: #286442; background: #e3f1e8; border: 1px solid #9bc8aa; border-radius: 4px; cursor: pointer; font: 800 8px/1 "Cascadia Mono", Consolas, monospace; }

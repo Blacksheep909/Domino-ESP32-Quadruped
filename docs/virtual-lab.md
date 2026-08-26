@@ -41,7 +41,9 @@ time estimate, and front obstacle distance. The route checklist calls out
 whether the plan is empty, still local, outside the active home-radius
 geofence, or ready for GPS upload. When a home reference and radius are active,
 the planner draws that safety boundary and marks out-of-bounds waypoints before
-they can pass the route gate. Clicking a waypoint marker selects its editable
+they can pass the route gate. Clicking or keyboard-selecting a waypoint marker
+selects its editable row, and dragging a marker repositions it in the active
+local planning frame while keeping the GPS conversion synchronized.
 row. **OPEN MANUAL OVERRIDE** opens the existing guarded manual-control handoff
 at any time. Sending a plan to a vehicle remains a separate, explicit action:
 local planning works offline, while physical route execution remains closed

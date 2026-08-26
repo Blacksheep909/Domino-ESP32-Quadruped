@@ -17,10 +17,18 @@ test("native route runner starts and resets with a bounded waypoint count", () =
   const state = createNativeNavigationRunnerState();
   assert.equal(startNativeNavigationRunner(state, 2), true);
   assert.equal(nativeNavigationRunnerIsActive(state), true);
+  assert.equal(state.mode, "route");
   assert.equal(state.currentIndex, 0);
   assert.equal(resetNativeNavigationRunner(state), true);
   assert.equal(state.phase, "idle");
   assert.equal(state.waypointCount, 0);
+});
+
+test("native route runner records the guarded return-home mode", () => {
+  const state = createNativeNavigationRunnerState();
+  assert.equal(startNativeNavigationRunner(state, 1, "return-home"), true);
+  assert.equal(state.mode, "return-home");
+  assert.equal(startNativeNavigationRunner(state, 1, "unsafe-mode"), false);
 });
 
 test("native route runner advances and completes at the final waypoint", () => {

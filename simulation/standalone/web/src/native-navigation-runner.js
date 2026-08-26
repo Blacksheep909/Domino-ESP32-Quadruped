@@ -1,8 +1,10 @@
 const ROUTE_PHASES = Object.freeze(["idle", "running", "paused", "blocked", "complete", "stopped"]);
+const NAVIGATION_MODES = Object.freeze(["route", "return-home"]);
 
 export function createNativeNavigationRunnerState() {
   return {
     phase: "idle",
+    mode: "route",
     currentIndex: 0,
     waypointCount: 0,
     lastCommand: null,
@@ -10,10 +12,11 @@ export function createNativeNavigationRunnerState() {
   };
 }
 
-export function startNativeNavigationRunner(state, waypointCount) {
+export function startNativeNavigationRunner(state, waypointCount, mode = "route") {
   const count = Number(waypointCount);
-  if (!state || !Number.isSafeInteger(count) || count < 1) return false;
+  if (!state || !Number.isSafeInteger(count) || count < 1 || !NAVIGATION_MODES.includes(mode)) return false;
   state.phase = "running";
+  state.mode = mode;
   state.currentIndex = 0;
   state.waypointCount = count;
   state.lastCommand = null;
@@ -81,4 +84,4 @@ export function nativeNavigationRunnerIsActive(state) {
   return Boolean(state && (state.phase === "running" || state.phase === "paused"));
 }
 
-export { ROUTE_PHASES };
+export { NAVIGATION_MODES, ROUTE_PHASES };

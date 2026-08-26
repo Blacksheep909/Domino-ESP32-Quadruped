@@ -70,6 +70,9 @@ needs to be integrated and validated.
 
 **PAUSE DOMINO ROUTE** sends a neutral hold while retaining the route index and
 lease; **RESUME DOMINO ROUTE** rechecks every gate before motion continues.
+**RETURN HOME** is a separate Domino-owned mode: it targets the active home
+origin without changing the saved mission draft, and uses the same guarded
+lease, sensor freshness, geofence, and neutral-on-fault rules.
 
 The preview controls also support **PAUSE**, **RESUME**, and one-second
 **STEP** inspection, with selectable 0.5x, 1x, 2x, and 4x playback rates.

@@ -224,9 +224,10 @@ respect the provider's caching and usage policy. A tile failure does not disable
 local route planning.
 **STREET VIEW** is an explicit external inspection handoff: **OPEN STREET
 VIEW** launches a Google Maps URL at the same origin without requiring an API
-key. Each waypoint also exposes **VIEW** when it has a coordinate or can be
-converted through the active local origin; that action opens the panorama at
-the selected point and aims it along the adjacent route segment. Street View
+key. Selecting a waypoint in the planner updates the inspection panel with its
+route position and enables **PREVIOUS**, **NEXT**, and **OPEN PANORAMA**; the
+panorama opens at that point and aims along the adjacent route segment. Each
+waypoint also exposes **VIEW** for the same direct handoff. Street View
 navigation is not read back into the app, so route edits remain deliberate and
 happen in the Domino planner after returning from the external panorama.
 

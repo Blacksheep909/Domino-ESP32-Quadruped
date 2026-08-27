@@ -5294,8 +5294,9 @@ function reverseLiveNavigationRoute() {
 
 function handlePlannerPointerDown(event) {
   const marker = event.target?.closest?.(".live-planner-marker");
-  if (event.button !== 0) return;
-  if (!marker && event.shiftKey) {
+  const panGesture = event.button === 1 || (event.button === 0 && event.shiftKey);
+  if (event.button !== 0 && event.button !== 1) return;
+  if (!marker && panGesture) {
     plannerPanPointerId = event.pointerId;
     plannerPanStart = { x: event.clientX, y: event.clientY };
     plannerPanStartCenter = { ...liveNavigationMapView.center };

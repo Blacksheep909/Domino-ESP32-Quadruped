@@ -9558,3 +9558,138 @@ body[data-workspace="real-robot"]:is(
   border-color: transparent;
   box-shadow: none;
 }
+
+/* Final LIVE title rail -----------------------------------------------------
+   Keep every tab on the same compact rhythm. Preview tabs used to stretch
+   their title/status row into the preview lane, while the other tabs left a
+   tall status card floating at the far edge of the page. */
+@media (min-width: 901px) {
+  #real-workspace .live-view-page .live-page-heading,
+  #real-workspace #live-view-compare .live-compare-page-heading {
+    min-height: 78px;
+    padding: 10px 0 10px 16px;
+    margin-bottom: 14px;
+    gap: 18px;
+    align-items: center;
+    box-sizing: border-box;
+  }
+
+  #real-workspace .live-view-page .live-page-heading > div:first-child,
+  #real-workspace #live-view-compare .live-compare-page-heading > div:first-child {
+    min-width: 0;
+  }
+
+  #real-workspace .live-view-page .live-page-heading > div:first-child > span,
+  #real-workspace #live-view-compare .live-compare-page-heading > div:first-child > span {
+    margin-bottom: 5px;
+    font-size: 10px !important;
+    line-height: 1.1;
+  }
+
+  #real-workspace .live-view-page .live-page-heading h1,
+  #real-workspace #live-view-compare .live-compare-page-heading h1 {
+    margin: 0;
+    padding: 0;
+    font-size: clamp(25px, 2.15vw, 32px);
+    line-height: 1.08;
+  }
+
+  #real-workspace .live-view-page .live-page-heading p,
+  #real-workspace #live-view-compare .live-compare-page-heading p {
+    max-width: 820px;
+    margin: 5px 0 0;
+    font-size: 11px;
+    line-height: 1.25;
+  }
+
+  #real-workspace .live-view-page .live-page-status,
+  #real-workspace #live-view-compare .live-compare-page-heading .live-page-status {
+    width: min(236px, 26vw);
+    min-width: 0;
+    min-height: 48px;
+    align-self: center;
+    justify-self: end;
+    padding: 8px 12px;
+    gap: 5px;
+  }
+
+  /* These pages reserve the preview lane in the page itself. The title rail
+     must use that same content width so its status card cannot sit over the
+     preview or read as a separate floating banner. */
+  #live-view-sensors .live-page-heading,
+  #live-view-calibration .live-page-heading,
+  #live-view-gaits .live-page-heading {
+    width: 100%;
+    max-width: none;
+    margin-right: 0;
+  }
+
+  body[data-workspace="real-robot"]:is(
+    [data-live-view="sensors"],
+    [data-live-view="calibration"],
+    [data-live-view="gaits"]
+  ) {
+    --live-preview-top: 226px;
+  }
+
+  body[data-workspace="real-robot"][data-live-view="compare"] #real-workspace .live-comparison-panel,
+  body[data-workspace="real-robot"][data-live-view="compare"] .live-safety-dock {
+    top: calc(var(--live-content-top) + 104px);
+  }
+}
+
+/* The dark theme has a more specific legacy title rule above. Repeat the
+   compact values at the same specificity so all installed themes resolve to
+   the same geometry. */
+@media (min-width: 901px) {
+  :root[data-theme="dark"] #real-workspace .live-view-page .live-page-heading,
+  :root[data-theme="dark"] #real-workspace #live-view-compare .live-compare-page-heading {
+    min-height: 78px;
+    padding: 10px 0 10px 16px;
+    margin-bottom: 14px;
+    gap: 18px;
+    align-items: center;
+  }
+
+  :root[data-theme="dark"] #real-workspace .live-view-page .live-page-heading > div:first-child > span,
+  :root[data-theme="dark"] #real-workspace #live-view-compare .live-compare-page-heading > div:first-child > span {
+    margin-bottom: 5px;
+    font-size: 10px !important;
+    line-height: 1.1;
+  }
+
+  :root[data-theme="dark"] #real-workspace .live-view-page .live-page-heading h1,
+  :root[data-theme="dark"] #real-workspace #live-view-compare .live-compare-page-heading h1 {
+    margin: 0;
+    padding: 0;
+    font-size: clamp(25px, 2.15vw, 32px);
+    line-height: 1.08;
+  }
+
+  :root[data-theme="dark"] #real-workspace .live-view-page .live-page-heading p,
+  :root[data-theme="dark"] #real-workspace #live-view-compare .live-compare-page-heading p {
+    max-width: 820px;
+    margin: 5px 0 0;
+    font-size: 11px;
+    line-height: 1.25;
+  }
+
+  :root[data-theme="dark"] #real-workspace .live-view-page .live-page-status,
+  :root[data-theme="dark"] #real-workspace #live-view-compare .live-compare-page-heading .live-page-status {
+    width: min(236px, 26vw);
+    min-width: 0;
+    min-height: 48px;
+    align-self: center;
+    justify-self: end;
+    padding: 8px 12px;
+    gap: 5px;
+  }
+
+  :root[data-theme="dark"] #live-view-sensors .live-page-heading,
+  :root[data-theme="dark"] #live-view-calibration .live-page-heading,
+  :root[data-theme="dark"] #live-view-gaits .live-page-heading {
+    width: calc(100vw - var(--live-preview-width) - var(--live-preview-right) - var(--app-gutter) - 30px);
+    max-width: none;
+    margin-right: 0;
+  }
+}

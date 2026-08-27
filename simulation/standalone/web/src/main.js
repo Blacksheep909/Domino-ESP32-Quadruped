@@ -4941,10 +4941,11 @@ function renderLiveNavigationPlanner(navigation) {
   const streetViewIndex = document.querySelector("#live-nav-streetview-index");
   const streetViewCoordinate = document.querySelector("#live-nav-streetview-coordinate");
   const streetViewHeading = document.querySelector("#live-nav-streetview-heading-value");
-  const streetViewCopy = document.querySelector("#live-nav-streetview-copy");
+  const streetViewDescription = document.querySelector("#live-nav-streetview-description");
   const streetViewPrevious = document.querySelector("#live-nav-streetview-previous");
   const streetViewAdd = document.querySelector("#live-nav-streetview-add");
   const streetViewNext = document.querySelector("#live-nav-streetview-next");
+  const streetViewCopyLink = document.querySelector("#live-nav-streetview-copy");
   const streetViewOpen = document.querySelector("#live-nav-streetview-panel-open");
   const mapAttribution = document.querySelector("#live-nav-planner-attribution");
   const reverseButton = document.querySelector("#live-nav-reverse-route");
@@ -5000,7 +5001,7 @@ function renderLiveNavigationPlanner(navigation) {
       ? `${streetView.coordinate.lat.toFixed(6)}, ${streetView.coordinate.lon.toFixed(6)}`
       : "NO GPS REFERENCE";
     if (streetViewHeading) streetViewHeading.textContent = hasCoordinate ? `${Math.round(streetView.heading)}°` : "--°";
-    if (streetViewCopy) streetViewCopy.textContent = streetView.selectedIndex === null
+    if (streetViewDescription) streetViewDescription.textContent = streetView.selectedIndex === null
       ? hasCoordinate
         ? "Open the map origin in a new Street View tab, then return here to place or adjust route waypoints against the same reference."
         : "Set a map origin before opening Street View. Local route planning remains available without GPS."
@@ -5009,6 +5010,7 @@ function renderLiveNavigationPlanner(navigation) {
         : "This waypoint needs a map origin before it can be inspected in Street View.";
     if (streetViewPrevious) streetViewPrevious.disabled = streetView.routeCount < 2;
     if (streetViewNext) streetViewNext.disabled = streetView.routeCount < 2;
+    if (streetViewCopyLink) streetViewCopyLink.disabled = !hasCoordinate;
     if (streetViewOpen) streetViewOpen.disabled = !hasCoordinate;
     if (streetViewAdd) streetViewAdd.disabled = false;
     streetViewPanel.dataset.ready = String(hasCoordinate);
@@ -5626,11 +5628,8 @@ function plannerStreetViewTarget(navigation, origin) {
   };
 }
 
-function openPlannerStreetView(coordinate = plannerMapReferenceCoordinate(), heading = 0) {
-  if (!coordinate) {
-    showAppToast("Set a map origin or establish a GPS fix before opening Street View.", "warning");
-    return;
-  }
+function plannerStreetViewUrl(coordinate, heading = 0) {
+  if (!coordinate) return "";
   const normalizedHeading = Number.isFinite(Number(heading))
     ? ((Number(heading) % 360) + 360) % 360
     : 0;
@@ -5642,7 +5641,40 @@ function openPlannerStreetView(coordinate = plannerMapReferenceCoordinate(), hea
     pitch: "0",
     fov: "90",
   });
-  window.open(`https://www.google.com/maps/@?${params.toString()}`, "_blank", "noopener,noreferrer");
+  return `https://www.google.com/maps/@?${params.toString()}`;
+}
+
+function openPlannerStreetView(coordinate = plannerMapReferenceCoordinate(), heading = 0) {
+  if (!coordinate) {
+    showAppToast("Set a map origin or establish a GPS fix before opening Street View.", "warning");
+    return;
+  }
+  window.open(plannerStreetViewUrl(coordinate, heading), "_blank", "noopener,noreferrer");
+}
+
+async function copySelectedPlannerStreetViewLink() {
+  const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
+  const origin = navigationPlannerOrigin(navigation);
+  const target = plannerStreetViewTarget(navigation, origin);
+  const url = plannerStreetViewUrl(target.coordinate, target.heading);
+  if (!url) {
+    showAppToast("Set a map origin before copying a Street View link.", "warning");
+    return;
+  }
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+    await navigator.clipboard.writeText(url);
+    showAppToast("Street View link copied.", "success");
+    recordLiveNavigationActivityEvent(
+      "Street View",
+      target.selectedIndex === null
+        ? "Copied the map-origin panorama link."
+        : `Copied the panorama link for waypoint ${target.selectedIndex + 1}.`,
+      "info",
+    );
+  } catch {
+    showAppToast("The map link could not be copied. Use OPEN PANORAMA instead.", "warning");
+  }
 }
 
 function openSelectedPlannerStreetView() {
@@ -7949,6 +7981,7 @@ document.querySelector("#live-nav-streetview-panel-open").addEventListener("clic
 document.querySelector("#live-nav-streetview-previous").addEventListener("click", () => stepPlannerStreetViewWaypoint(-1));
 document.querySelector("#live-nav-streetview-add").addEventListener("click", addPlannerWaypointAtMapCenter);
 document.querySelector("#live-nav-streetview-next").addEventListener("click", () => stepPlannerStreetViewWaypoint(1));
+document.querySelector("#live-nav-streetview-copy").addEventListener("click", copySelectedPlannerStreetViewLink);
 document.querySelector("#live-nav-place-search-submit").addEventListener("click", searchLiveNavigationPlaces);
 document.querySelector("#live-nav-place-search").addEventListener("keydown", (event) => {
   if (event.key !== "Enter") return;

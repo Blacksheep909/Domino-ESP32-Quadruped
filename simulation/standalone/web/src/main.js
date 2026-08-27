@@ -169,10 +169,12 @@ import {
   navigationFixLabel,
   navigationMissionGeofenceStatus,
   navigationMissionMetrics,
+  navigationMissionGeoJson,
   navigationMissionJson,
   navigationMissionPreview,
   navigationMissionRecommendedRange,
   gpsTrackToMission,
+  parseNavigationGeoJson,
   reverseNavigationWaypoints,
   parseNavigationMissionJson,
   removeNavigationWaypoint,
@@ -583,6 +585,47 @@ function exportLiveNavigationPlanLibrary() {
   anchor.click();
   setTimeout(() => URL.revokeObjectURL(anchor.href), 0);
   showAppToast(`Exported ${liveNavigationPlanLibrary.length} saved route${liveNavigationPlanLibrary.length === 1 ? "" : "s"}.`, "success");
+}
+
+function exportLiveNavigationGeoJson() {
+  const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
+  const origin = navigationPlannerOrigin(navigation);
+  try {
+    const blob = new Blob([navigationMissionGeoJson(liveNavigationState, origin)], { type: "application/geo+json;charset=utf-8" });
+    const anchor = document.createElement("a");
+    anchor.href = URL.createObjectURL(blob);
+    anchor.download = `${(liveNavigationState.missionName || "domino-patrol").replace(/[^a-z0-9_-]+/gi, "-").toLowerCase()}.geojson`;
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(anchor.href), 0);
+    showAppToast("Exported the current route as GeoJSON.", "success");
+  } catch (error) {
+    showAppToast(error instanceof Error ? error.message : "GeoJSON export failed.", "warning");
+  }
+}
+
+async function importLiveNavigationGeoJson(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  try {
+    const imported = parseNavigationGeoJson(await file.text());
+    captureLiveNavigationHistory();
+    if (liveNavigationPreviewState.active) stopLiveNavigationPreview();
+    liveNavigationState.missionName = imported.name;
+    liveNavigationState.missionDraft = imported.mission;
+    liveNavigationState.loopCount = imported.loopCount || 1;
+    liveNavigationState.plannerOrigin = imported.plannerOrigin || liveNavigationState.plannerOrigin || null;
+    liveNavigationState.plannerRangeM = imported.plannerRangeM || 40;
+    persistLiveNavigationPlan();
+    syncLiveNavigationControls();
+    document.querySelector("#live-nav-waypoint-list").dataset.signature = "";
+    liveNavigationState.lastCommandStatus = `Imported ${liveNavigationState.missionDraft.length} waypoints from ${file.name}. Review the route before any vehicle action.`;
+    updateLiveComparisonUi();
+    showAppToast(`Imported ${liveNavigationState.missionDraft.length} GeoJSON waypoints.`, "success");
+  } catch (error) {
+    showAppToast(error instanceof Error ? error.message : "GeoJSON import failed.", "error");
+  } finally {
+    event.target.value = "";
+  }
 }
 
 async function importLiveNavigationPlanLibrary(event) {
@@ -7404,6 +7447,9 @@ document.querySelector("#live-nav-library-delete").addEventListener("click", del
 document.querySelector("#live-nav-library-export").addEventListener("click", exportLiveNavigationPlanLibrary);
 document.querySelector("#live-nav-library-import").addEventListener("click", () => document.querySelector("#live-nav-library-file").click());
 document.querySelector("#live-nav-library-file").addEventListener("change", importLiveNavigationPlanLibrary);
+document.querySelector("#live-nav-geojson-export").addEventListener("click", exportLiveNavigationGeoJson);
+document.querySelector("#live-nav-geojson-import").addEventListener("click", () => document.querySelector("#live-nav-geojson-file").click());
+document.querySelector("#live-nav-geojson-file").addEventListener("change", importLiveNavigationGeoJson);
 document.querySelector("#live-nav-planner-range").addEventListener("change", (event) => {
   if (liveNavigationState.plannerRangeM !== (Number(event.target.value) || 40)) captureLiveNavigationHistory();
   liveNavigationState.plannerRangeM = Number(event.target.value) || 40;

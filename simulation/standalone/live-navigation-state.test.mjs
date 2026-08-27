@@ -12,9 +12,11 @@ import {
   moveNavigationWaypointToLocal,
   nudgeNavigationWaypoint,
   navigationMissionMetrics,
+  navigationMissionGeoJson,
   navigationMissionGeofenceStatus,
   navigationMissionJson,
   parseNavigationMissionJson,
+  parseNavigationGeoJson,
   navigationMissionPreview,
   navigationMissionRecommendedRange,
   removeNavigationWaypoint,
@@ -123,6 +125,58 @@ test("route planner preserves local waypoints and converts them around a GPS ori
   assert.deepEqual(parsed.mission[0].local, { northM: 4, eastM: -2 });
   assert.equal(parsed.mission[0].lat, null);
   assert.equal(missionWaypointHasCoordinate(parsed.mission[0]), false);
+});
+
+test("route planner round-trips standard GeoJSON with Domino waypoint metadata", () => {
+  const state = createLiveNavigationState();
+  state.missionName = "Dock patrol";
+  state.loopCount = 3;
+  state.plannerOrigin = { lat: -36.85, lon: 174.76 };
+  assert.equal(addNavigationWaypoint(state, {
+    local: { northM: 4, eastM: -2 },
+    label: "DOCK",
+    radiusM: 2,
+    speedMps: 0.7,
+    holdS: 3,
+  }), true);
+  assert.equal(addNavigationWaypoint(state, {
+    lat: -36.8498,
+    lon: 174.761,
+    label: "GATE",
+    speedMps: 0.4,
+  }), true);
+
+  const geoJson = navigationMissionGeoJson(state);
+  const parsed = JSON.parse(geoJson);
+  assert.equal(parsed.type, "FeatureCollection");
+  assert.equal(parsed.features[0].geometry.type, "LineString");
+  assert.equal(parsed.features.filter((feature) => feature.properties?.dominoWaypoint).length, 2);
+  assert.equal(parsed.properties.loopCount, 3);
+  assert.equal(parsed.features[1].properties.label, "DOCK");
+
+  const imported = parseNavigationGeoJson(geoJson);
+  assert.equal(imported.name, "Dock patrol");
+  assert.equal(imported.loopCount, 3);
+  assert.equal(imported.mission.length, 2);
+  assert.equal(imported.mission[0].label, "DOCK");
+  assert.equal(imported.mission[0].radiusM, 2);
+  assert.equal(imported.mission[0].holdS, 3);
+  assert.ok(Math.abs(imported.mission[0].lat - (-36.849964)) < 0.00001);
+});
+
+test("route planner imports a bare GeoJSON line and bounds invalid route sizes", () => {
+  const imported = parseNavigationGeoJson(JSON.stringify({
+    type: "Feature",
+    geometry: {
+      type: "LineString",
+      coordinates: [[174.76, -36.85], [174.761, -36.849]],
+    },
+    properties: { name: "Survey line" },
+  }));
+  assert.equal(imported.name, "Survey line");
+  assert.equal(imported.mission.length, 2);
+  assert.equal(imported.mission[1].lon, 174.761);
+  assert.throws(() => parseNavigationGeoJson(JSON.stringify({ type: "Point", coordinates: [174.76] })), /between 1 and 100 valid points/);
 });
 
 test("route planner reports measurable distance and an honest unresolved state", () => {

@@ -245,10 +245,16 @@ test("route planner previews a local route without vehicle execution", () => {
   assert.equal(preview.ready, true);
   assert.equal(preview.currentIndex, 1);
   assert.equal(preview.position.eastM, 2);
+  assert.equal(preview.headingDeg, 90);
   assert.equal(preview.complete, false);
   const finished = navigationMissionPreview(state.missionDraft, null, 4);
   assert.equal(finished.complete, true);
   assert.equal(finished.position.eastM, 4);
+  assert.equal(finished.headingDeg, 90);
+  assert.equal(navigationMissionPreview([
+    { local: { northM: 0, eastM: 0 }, speedMps: 1 },
+    { local: { northM: 4, eastM: 0 }, speedMps: 1 },
+  ], null, 1).headingDeg, 0);
   assert.equal(navigationMissionPreview([{ local: { northM: 1, eastM: 1 } }], null, 0).ready, true);
   assert.equal(navigationMissionPreview([{ lat: -36.85, lon: 174.76 }], null, 0).ready, false);
 });

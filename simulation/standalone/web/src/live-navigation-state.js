@@ -789,6 +789,7 @@ export function navigationMissionPreview(mission = [], origin = null, elapsedSec
     return {
       ready: false,
       position: null,
+      headingDeg: null,
       currentIndex: -1,
       progress: 0,
       elapsedSeconds: 0,
@@ -801,10 +802,16 @@ export function navigationMissionPreview(mission = [], origin = null, elapsedSec
   const timeline = [];
   let totalSeconds = 0;
   let activeLoopIndex = 0;
+  const headingBetween = (from, to) => {
+    const northDelta = Number(to?.northM) - Number(from?.northM);
+    const eastDelta = Number(to?.eastM) - Number(from?.eastM);
+    if (!Number.isFinite(northDelta) || !Number.isFinite(eastDelta) || Math.hypot(northDelta, eastDelta) < 0.0001) return null;
+    return ((Math.atan2(eastDelta, northDelta) * 180 / Math.PI) + 360) % 360;
+  };
   const append = (type, index, start, end, duration) => {
     const boundedDuration = Math.max(0, Number(duration) || 0);
     if (boundedDuration <= 0) return;
-    timeline.push({ type, index, loopIndex: activeLoopIndex, start, end, from: start, to: end, duration: boundedDuration, beginsAt: totalSeconds });
+    timeline.push({ type, index, loopIndex: activeLoopIndex, start, end, from: start, to: end, headingDeg: headingBetween(start, end), duration: boundedDuration, beginsAt: totalSeconds });
     totalSeconds += boundedDuration;
   };
   for (let loopIndex = 0; loopIndex < loops; loopIndex += 1) {
@@ -827,11 +834,30 @@ export function navigationMissionPreview(mission = [], origin = null, elapsedSec
     }
   }
 
+  // Holds have no geometric direction of their own. Use the next segment,
+  // then the previous one, so the marker remains intuitive while dwelling.
+  timeline.forEach((entry, index) => {
+    if (entry.headingDeg !== null) return;
+    for (let next = index + 1; next < timeline.length; next += 1) {
+      if (timeline[next].headingDeg !== null) {
+        entry.headingDeg = timeline[next].headingDeg;
+        return;
+      }
+    }
+    for (let previous = index - 1; previous >= 0; previous -= 1) {
+      if (timeline[previous].headingDeg !== null) {
+        entry.headingDeg = timeline[previous].headingDeg;
+        return;
+      }
+    }
+  });
+
   const requestedSeconds = Math.max(0, Number(elapsedSeconds) || 0);
   if (!timeline.length) {
     return {
       ready: true,
       position: positions[0],
+      headingDeg: null,
       currentIndex: 0,
       progress: 1,
       elapsedSeconds: requestedSeconds,
@@ -845,6 +871,7 @@ export function navigationMissionPreview(mission = [], origin = null, elapsedSec
     return {
       ready: true,
       position: positions.at(-1),
+      headingDeg: timeline.at(-1)?.headingDeg ?? null,
       currentIndex: positions.length - 1,
       progress: 1,
       elapsedSeconds: totalSeconds,
@@ -862,6 +889,7 @@ export function navigationMissionPreview(mission = [], origin = null, elapsedSec
       northM: active.from.northM + (active.to.northM - active.from.northM) * progress,
       eastM: active.from.eastM + (active.to.eastM - active.from.eastM) * progress,
     },
+    headingDeg: active.headingDeg,
     currentIndex: active.index,
     progress,
     elapsedSeconds: requestedSeconds,

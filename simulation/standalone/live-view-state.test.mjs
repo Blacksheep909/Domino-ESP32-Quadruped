@@ -74,6 +74,16 @@ test("Compare title banner stays inside the primary content column", () => {
   assert.match(styles, /#live-view-compare \.live-compare-page-heading[\s\S]*width: min\(1240px,[\s\S]*var\(--live-right-panel\)/);
 });
 
+test("LIVE tabs share a compact title rail and preview baseline", () => {
+  const styles = readFileSync(new URL("./web/src/styles.css", import.meta.url), "utf8");
+  assert.match(styles, /#real-workspace \.live-view-page \.live-page-heading,[\s\S]*min-height: 78px/);
+  assert.match(styles, /#live-view-sensors \.live-page-heading,[\s\S]*#live-view-gaits \.live-page-heading[\s\S]*width: 100%/);
+  assert.match(styles, /--live-preview-top: 226px/);
+  assert.match(styles, /data-live-view="compare"\][\s\S]*top: calc\(var\(--live-content-top\) \+ 104px\)/);
+  assert.match(styles, /:root\[data-theme="dark"\] #real-workspace \.live-view-page \.live-page-heading[\s\S]*min-height: 78px/);
+  assert.match(styles, /#live-view-sensors \.live-page-heading[\s\S]*width: calc\(100vw - var\(--live-preview-width\)/);
+});
+
 test("LIVE keeps measured battery state and E-stop in the persistent header", () => {
   const html = readFileSync(new URL("./web/index.html", import.meta.url), "utf8");
   const main = readFileSync(new URL("./web/src/main.js", import.meta.url), "utf8");

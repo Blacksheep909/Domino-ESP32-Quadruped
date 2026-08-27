@@ -1093,6 +1093,30 @@ function syncLiveCameraTelemetry(camera) {
   if (camera) ingestLiveCameraTelemetry(camera);
 }
 
+function liveCameraDiagnosticSnapshot() {
+  const image = document.querySelector("#live-camera-image");
+  const now = Date.now();
+  const frameAgeMs = liveCameraState.updatedAt === null ? null : Math.max(0, now - liveCameraState.updatedAt);
+  const telemetryAgeMs = liveCameraState.telemetryAt === null ? null : Math.max(0, now - liveCameraState.telemetryAt);
+  return {
+    state: liveCameraState.error ? "error" : liveCameraState.connecting ? "connecting" : liveCameraState.connected ? "live" : "offline",
+    connected: liveCameraState.connected,
+    frame: {
+      width: image?.naturalWidth || null,
+      height: image?.naturalHeight || null,
+      ageMs: frameAgeMs,
+    },
+    telemetry: {
+      state: telemetryAgeMs === null ? "waiting" : telemetryAgeMs <= 2_500 ? "live" : "stale",
+      ageMs: telemetryAgeMs,
+      yawDeg: liveCameraState.telemetryAt === null ? null : liveCameraState.yawDeg,
+      pitchDeg: liveCameraState.telemetryAt === null ? null : liveCameraState.pitchDeg,
+      fovDeg: liveCameraState.telemetryAt === null ? null : liveCameraState.fovDeg,
+      fps: liveCameraState.telemetryAt === null ? null : liveCameraState.fps,
+    },
+  };
+}
+
 function updateFullscreenButton() {
   const button = document.querySelector("#fullscreen-toggle");
   if (!button) return;
@@ -8722,6 +8746,7 @@ document.querySelector("#live-diagnostics-export").addEventListener("click", () 
     },
     controller: liveControllerDiagnosticExport(liveControllerState),
     calibration: createLiveCalibrationProfile(liveCalibrationState.profile),
+    camera: liveCameraDiagnosticSnapshot(),
     activeSession: liveSessionSummary(liveSessionState),
   });
   bundle.autonomy = liveNavigationActivityBundle(liveNavigationActivity, {

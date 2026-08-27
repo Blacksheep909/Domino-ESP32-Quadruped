@@ -5442,6 +5442,29 @@ function handlePlannerWheel(event) {
 
 function handlePlannerMapKeydown(event) {
   if (event.target?.closest?.(".live-planner-marker")) return;
+  const key = String(event.key || "").toLowerCase();
+  if (key === "f") {
+    const fitButton = document.querySelector("#live-nav-fit-route");
+    if (!fitButton || fitButton.disabled) return;
+    fitButton.click();
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
+  if (event.key === "Home") {
+    document.querySelector("#live-nav-reset-map")?.click();
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
+  if (key === "c") {
+    const centerButton = document.querySelector("#live-nav-center-vehicle");
+    if (!centerButton || centerButton.disabled) return;
+    centerButton.click();
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
   const direction = ["+", "="].includes(event.key)
     ? -1
     : ["-", "_"].includes(event.key) ? 1 : null;

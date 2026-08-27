@@ -914,6 +914,7 @@ function renderAutonomyHud() {
 function renderLiveCameraPanel() {
   const state = document.querySelector("#live-camera-state");
   const rate = document.querySelector("#live-camera-rate");
+  const resolution = document.querySelector("#live-camera-resolution");
   const yaw = document.querySelector("#live-camera-yaw");
   const pitch = document.querySelector("#live-camera-pitch");
   const fov = document.querySelector("#live-camera-fov");
@@ -925,10 +926,14 @@ function renderLiveCameraPanel() {
   const placeholder = document.querySelector("#live-camera-placeholder");
   const telemetryState = document.querySelector("#live-camera-telemetry-state");
   const telemetryAge = document.querySelector("#live-camera-telemetry-age");
-  if (!state || !rate || !yaw || !pitch || !fov || !connect || !clear || !snapshot || !fullscreen || !image || !placeholder) return;
+  if (!state || !rate || !resolution || !yaw || !pitch || !fov || !connect || !clear || !snapshot || !fullscreen || !image || !placeholder) return;
   state.textContent = liveCameraState.error ? "STREAM ERROR" : liveCameraState.connecting ? "CONNECTING" : liveCameraState.connected ? "LIVE" : "OFFLINE";
   state.dataset.state = liveCameraState.error ? "error" : liveCameraState.connecting ? "connecting" : liveCameraState.connected ? "online" : "offline";
   rate.textContent = Number.isFinite(liveCameraState.fps) ? `${Math.round(liveCameraState.fps)} FPS` : liveCameraState.connected ? "STREAMING" : "-- FPS";
+  const frameAgeMs = liveCameraState.updatedAt === null ? null : Math.max(0, Date.now() - liveCameraState.updatedAt);
+  resolution.textContent = liveCameraState.connected && image.naturalWidth && image.naturalHeight
+    ? `${image.naturalWidth} × ${image.naturalHeight} / ${frameAgeMs === null ? "READY" : `${(frameAgeMs / 1_000).toFixed(1)} S AGO`}`
+    : liveCameraState.connecting ? "FRAME / WAITING" : liveCameraState.error ? "FRAME / ERROR" : "FRAME / WAITING";
   yaw.textContent = `${liveCameraState.yawDeg >= 0 ? "+" : ""}${liveCameraState.yawDeg.toFixed(1)}°`;
   pitch.textContent = `${liveCameraState.pitchDeg >= 0 ? "+" : ""}${liveCameraState.pitchDeg.toFixed(1)}°`;
   fov.textContent = `${Math.round(liveCameraState.fovDeg)}°`;

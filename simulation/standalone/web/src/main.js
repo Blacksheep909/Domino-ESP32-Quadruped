@@ -5149,6 +5149,7 @@ function fitLiveNavigationPlanner() {
   if (liveNavigationState.plannerRangeM === recommendedRange) return;
   captureLiveNavigationHistory();
   liveNavigationState.plannerRangeM = recommendedRange;
+  syncLiveNavigationControls();
   persistLiveNavigationPlan();
   updateLiveComparisonUi();
 }

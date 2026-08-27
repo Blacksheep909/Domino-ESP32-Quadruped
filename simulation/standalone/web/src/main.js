@@ -4904,11 +4904,13 @@ function renderLiveNavigationPlanner(navigation) {
   if (clearanceLegend) clearanceLegend.hidden = !liveNavigationMapOverlays.lidar;
   if (returnLegend) returnLegend.hidden = !liveNavigationMapOverlays.route;
   const displayedOrigin = liveNavigationPendingOrigin || origin;
-  if (mapOriginInput && displayedOrigin && document.activeElement !== mapOriginInput) {
-    mapOriginInput.value = `${displayedOrigin.lat.toFixed(6)}, ${displayedOrigin.lon.toFixed(6)}`;
+  if (mapOriginInput && document.activeElement !== mapOriginInput) {
+    mapOriginInput.value = displayedOrigin
+      ? `${displayedOrigin.lat.toFixed(6)}, ${displayedOrigin.lon.toFixed(6)}`
+      : "";
   }
   if (streetViewPanel) streetViewPanel.hidden = liveNavigationMapLayer !== "streetview";
-  if (mapAttribution) mapAttribution.hidden = liveNavigationMapLayer !== "osm";
+  if (mapAttribution) mapAttribution.hidden = liveNavigationMapLayer !== "osm" || !hasOrigin;
   renderPlannerMapTiles(tiles, origin, mapCenter, range, toMapPoint);
   const previewSession = liveNavigationPreviewState.phase !== "idle";
   const preview = previewSession
@@ -5487,17 +5489,37 @@ function plannerMapReferenceCoordinate() {
   return navigationPlannerOrigin(navigation) || navigation.home || navigation.gps?.position || null;
 }
 
-function openPlannerStreetView() {
-  const coordinate = plannerMapReferenceCoordinate();
+function plannerWaypointCoordinate(waypoint, origin) {
+  if (!waypoint) return null;
+  if (missionWaypointHasCoordinate(waypoint)) {
+    return { lat: waypoint.lat, lon: waypoint.lon, altM: waypoint.altM };
+  }
+  return origin && waypoint.local ? localOffsetToCoordinate(waypoint.local, origin) : null;
+}
+
+function plannerWaypointHeading(index, navigation, origin) {
+  const waypoint = liveNavigationState.missionDraft[index];
+  const current = plannerPointFromWaypoint(waypoint, origin);
+  if (!current) return 0;
+  const next = plannerPointFromWaypoint(liveNavigationState.missionDraft[index + 1], origin)
+    || plannerPointFromWaypoint(liveNavigationState.missionDraft[index - 1], origin);
+  if (!next) return 0;
+  return (Math.atan2(next.eastM - current.eastM, next.northM - current.northM) * 180 / Math.PI + 360) % 360;
+}
+
+function openPlannerStreetView(coordinate = plannerMapReferenceCoordinate(), heading = 0) {
   if (!coordinate) {
     showAppToast("Set a map origin or establish a GPS fix before opening Street View.", "warning");
     return;
   }
+  const normalizedHeading = Number.isFinite(Number(heading))
+    ? ((Number(heading) % 360) + 360) % 360
+    : 0;
   const params = new URLSearchParams({
     api: "1",
     map_action: "pano",
     viewpoint: `${coordinate.lat},${coordinate.lon}`,
-    heading: "0",
+    heading: String(Math.round(normalizedHeading)),
     pitch: "0",
     fov: "90",
   });
@@ -5531,6 +5553,7 @@ function renderLiveWaypointList(navigation = liveNavigationSnapshot(liveTelemetr
   const list = document.querySelector("#live-nav-waypoint-list");
   if (!list) return;
   const context = liveManualContext();
+  const plannerOrigin = navigationPlannerOrigin(navigation);
   const directReadinessSignature = JSON.stringify({
     adapter: nativeNavigationCapabilityAvailable(),
     link: liveConnectionIsReady(liveConnectionState),
@@ -5540,6 +5563,7 @@ function renderLiveWaypointList(navigation = liveNavigationSnapshot(liveTelemetr
     controller: context.controllerLinkReady,
     fence: document.querySelector("#live-nav-geofence-enabled")?.checked === true,
     radius: document.querySelector("#live-nav-geofence-radius")?.value,
+    origin: plannerOrigin ? `${plannerOrigin.lat.toFixed(6)},${plannerOrigin.lon.toFixed(6)}` : null,
   });
   const signature = `${navigationStateSignature()}|direct:${directReadinessSignature}`;
   if (list.dataset.signature === signature) return;
@@ -5562,6 +5586,7 @@ function renderLiveWaypointList(navigation = liveNavigationSnapshot(liveTelemetr
     row.tabIndex = -1;
     row.dataset.index = String(index);
     const hasCoordinate = missionWaypointHasCoordinate(waypoint);
+    const waypointCanOpenStreetView = Boolean(plannerWaypointCoordinate(waypoint, plannerOrigin));
     const dominoDirectReady = nativeNavigationReadiness(
       navigation,
       nativeNavigationRouteReadyFor(navigation, index),
@@ -5569,7 +5594,7 @@ function renderLiveWaypointList(navigation = liveNavigationSnapshot(liveTelemetr
     ).ready;
     const localSummary = waypoint.local ? `LOCAL N ${waypoint.local.northM.toFixed(1)} / E ${waypoint.local.eastM.toFixed(1)} M` : "GPS REFERENCE";
     row.innerHTML = `
-      <div class="live-waypoint-heading"><strong>WP ${String(index + 1).padStart(2, "0")}</strong><span>${escapeNavigationHtml(waypoint.label || "Waypoint")} / ${localSummary}</span><div><button type="button" data-waypoint-action="direct" ${dominoDirectReady ? "" : "disabled"} title="Drive only to this waypoint with Domino's guarded controller">DRIVE</button><button type="button" data-waypoint-action="goto" ${guidedReady && hasCoordinate ? "" : "disabled"} title="Send this waypoint as an ArduPilot Guided target">GUIDE</button><button type="button" data-waypoint-action="up" title="Move waypoint up">↑</button><button type="button" data-waypoint-action="down" title="Move waypoint down">↓</button><button type="button" data-waypoint-action="duplicate" title="Duplicate waypoint">⧉</button><button type="button" data-waypoint-action="remove" title="Remove waypoint">×</button></div></div>
+      <div class="live-waypoint-heading"><strong>WP ${String(index + 1).padStart(2, "0")}</strong><span>${escapeNavigationHtml(waypoint.label || "Waypoint")} / ${localSummary}</span><div><button type="button" data-waypoint-action="direct" ${dominoDirectReady ? "" : "disabled"} title="Drive only to this waypoint with Domino's guarded controller">DRIVE</button><button type="button" data-waypoint-action="goto" ${guidedReady && hasCoordinate ? "" : "disabled"} title="Send this waypoint as an ArduPilot Guided target">GUIDE</button><button type="button" data-waypoint-action="streetview" ${waypointCanOpenStreetView ? "" : "disabled"} title="Open Street View at this waypoint">VIEW</button><button type="button" data-waypoint-action="up" title="Move waypoint up">↑</button><button type="button" data-waypoint-action="down" title="Move waypoint down">↓</button><button type="button" data-waypoint-action="duplicate" title="Duplicate waypoint">⧉</button><button type="button" data-waypoint-action="remove" title="Remove waypoint">×</button></div></div>
       <label class="live-waypoint-label-field"><span>LABEL</span><input data-waypoint-field="label" type="text" maxlength="64" autocomplete="off" value="${escapeNavigationHtml(waypoint.label || `WP ${index + 1}`)}" placeholder="Waypoint name"></label>
       <label><span>LAT</span><input data-waypoint-field="lat" type="number" step="0.000001" min="-90" max="90" value="${hasCoordinate ? Number(waypoint.lat).toFixed(6) : ""}" ${hasCoordinate ? "" : "disabled"}></label>
       <label><span>LON</span><input data-waypoint-field="lon" type="number" step="0.000001" min="-180" max="180" value="${hasCoordinate ? Number(waypoint.lon).toFixed(6) : ""}" ${hasCoordinate ? "" : "disabled"}></label>
@@ -7687,6 +7712,20 @@ document.querySelector("#live-nav-set-map-origin").addEventListener("click", () 
   updateLiveComparisonUi();
   showAppToast("Map origin set. Open Map or Street View to inspect the area.", "success");
 });
+document.querySelector("#live-nav-clear-map-origin").addEventListener("click", () => {
+  if (!liveNavigationState.plannerOrigin && !liveNavigationPendingOrigin) {
+    showAppToast("No planner origin is set.", "info");
+    return;
+  }
+  captureLiveNavigationHistory();
+  liveNavigationPendingOrigin = null;
+  liveNavigationState.plannerOrigin = null;
+  persistLiveNavigationPlan();
+  const placeSearchStatus = document.querySelector("#live-nav-place-search-status");
+  if (placeSearchStatus) placeSearchStatus.textContent = "ORIGIN CLEARED / LOCAL ONLY";
+  updateLiveComparisonUi();
+  showAppToast("Map origin cleared. Local-only planning remains available.", "info");
+});
 document.querySelector("#live-nav-map-origin").addEventListener("input", () => {
   const placeSearchStatus = document.querySelector("#live-nav-place-search-status");
   if (liveNavigationPendingOrigin && placeSearchStatus) placeSearchStatus.textContent = "MANUAL COORDINATE / PRESS SET ORIGIN";
@@ -7966,6 +8005,19 @@ document.querySelector("#live-nav-waypoint-list").addEventListener("click", (eve
       acceptRadiusM: waypoint.radiusM,
       speedMps: waypoint.speedMps,
     });
+    return;
+  }
+  if (action === "streetview") {
+    const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
+    const origin = navigationPlannerOrigin(navigation);
+    const waypoint = liveNavigationState.missionDraft[index];
+    const coordinate = plannerWaypointCoordinate(waypoint, origin);
+    if (!coordinate) {
+      showAppToast("This waypoint needs a map origin before Street View can open.", "warning");
+      return;
+    }
+    openPlannerStreetView(coordinate, plannerWaypointHeading(index, navigation, origin));
+    recordLiveNavigationActivityEvent("Street View", `Opened waypoint ${index + 1} for external panorama inspection.`, "info");
     return;
   }
   if (action === "remove" || action === "up" || action === "down" || action === "duplicate") captureLiveNavigationHistory();

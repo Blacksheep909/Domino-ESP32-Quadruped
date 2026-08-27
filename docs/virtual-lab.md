@@ -209,6 +209,14 @@ From any LIVE view, press **M** or use **MANUAL CONTROL** in the LIVE toolbar to
 open the guarded manual-control handoff. Opening it neutralizes an active
 Domino route before the operator can request the time-limited manual lease.
 
+The Sensors view also includes a single-front-camera panel for the current
+prototype. Enter an HTTP or MJPEG image-stream URL and press **CONNECT**, or
+press Enter in the field. A failed stream is labelled **STREAM ERROR** and the
+same control becomes **RETRY**; **SNAPSHOT** and **FULLSCREEN** stay disabled
+until a frame is connected. Optional robot camera telemetry supplies yaw,
+pitch, field of view, frame rate, and stale-state status without pretending
+that a video stream exists when the robot has not provided one.
+
 ## Workspaces
 
 ### Simulation

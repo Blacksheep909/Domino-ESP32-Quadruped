@@ -186,6 +186,12 @@ is applied. This is a local planning convenience only; it does not connect to,
 arm, or move the robot, and manual latitude/longitude entry remains available
 when location permission or a device fix is unavailable.
 
+With network access, **SEARCH PLACE / ADDRESS** can look up up to five places
+through OpenStreetMap's Nominatim service. Selecting a result only fills the
+coordinate field; **SET ORIGIN** is still required before the map reference or
+route coordinates change. Search failure, no results, and offline use all fall
+back to manual coordinate entry.
+
 The **LAYER** selector keeps **LOCAL GRID** as the offline-safe default. With a
 valid map origin, **OPEN MAP** overlays OpenStreetMap tiles beneath Domino's
 planned route, GPS track, LiDAR sectors, geofence, and vehicle marker. The

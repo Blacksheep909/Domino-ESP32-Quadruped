@@ -83,7 +83,8 @@ header {
   gap: 7px;
 }
 
-.status > span {
+.status > span,
+.status > button.live-header-link-status {
   min-width: 72px;
   padding: 7px 9px;
   color: #696c67;
@@ -92,6 +93,17 @@ header {
   border-radius: 4px;
   text-align: center;
   font: 700 10px/1 "Cascadia Mono", Consolas, monospace;
+}
+
+.status > button.live-header-link-status {
+  cursor: pointer;
+  font: 700 10px/1 "Cascadia Mono", Consolas, monospace;
+}
+
+.status > button.live-header-link-status:hover,
+.status > button.live-header-link-status:focus-visible {
+  outline: none;
+  filter: brightness(1.08);
 }
 
 .status .pc-link-status {
@@ -1901,6 +1913,7 @@ dd {
 }
 
 :root[data-theme="dark"] .status > span,
+:root[data-theme="dark"] .status > button.live-header-link-status,
 :root[data-theme="dark"] .status .theme-toggle {
   color: #a7a7ac;
   background: rgba(255, 255, 255, 0.045);
@@ -2029,7 +2042,8 @@ dd {
   font-weight: 650;
 }
 
-:root[data-theme="dark"] .status > span {
+:root[data-theme="dark"] .status > span,
+:root[data-theme="dark"] .status > button.live-header-link-status {
   min-width: 70px;
   padding: 8px 11px;
   font-family: inherit;
@@ -3161,7 +3175,8 @@ body[data-workspace="real-robot"] .simulation-only {
 
 @media (max-width: 980px) {
   .brand span,
-  .status > span:nth-of-type(n + 2) { display: none; }
+  .status > span:nth-of-type(n + 2),
+  .status > button.live-header-link-status { display: none; }
   .workspace-tabs button { min-width: 100px; padding: 0 10px; }
   #real-workspace { grid-template-columns: 170px minmax(0, 1fr); }
   .real-content { padding-right: 24px; padding-left: 24px; }
@@ -8740,7 +8755,8 @@ body[data-workspace="real-robot"]:not(:is([data-live-view="compare"], [data-live
     padding-inline: 10px;
   }
 
-  .status > span {
+  .status > span,
+  .status > button.live-header-link-status {
     min-width: 62px;
     padding-inline: 7px;
   }

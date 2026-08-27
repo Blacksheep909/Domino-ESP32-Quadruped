@@ -2,7 +2,7 @@
   "name": "domino-quadruped-studio",
   "productName": "Domino Quadruped Studio",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Offline simulation, telemetry, calibration, diagnostics and firmware workspace for Domino.",
   "author": "Domino Quadruped Project",
   "license": "MIT",

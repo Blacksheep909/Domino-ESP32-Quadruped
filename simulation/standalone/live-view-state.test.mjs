@@ -57,6 +57,12 @@ test("compact LIVE previews collapse while scrolling instead of covering page co
   assert.match(styles, /#live-view-sensors \.live-sensor-grid[\s\S]*padding-top: 255px/);
 });
 
+test("LIVE camera controls follow light mode while preserving a dark feed surface", () => {
+  const styles = readFileSync(new URL("./web/src/styles.css", import.meta.url), "utf8");
+  assert.match(styles, /:root:not\(\[data-theme="dark"\]\) \.live-camera-panel[\s\S]*background: #fafaf8/);
+  assert.match(styles, /\.live-camera-feed[\s\S]*background: #050506/);
+});
+
 test("LIVE keeps measured battery state and E-stop in the persistent header", () => {
   const html = readFileSync(new URL("./web/index.html", import.meta.url), "utf8");
   const main = readFileSync(new URL("./web/src/main.js", import.meta.url), "utf8");

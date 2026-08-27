@@ -40,6 +40,8 @@ metre frame and retain that frame through import/export; once a GPS or home
 reference is available, new points also carry georeferenced coordinates. Use
 **REFERENCE LOCAL PLAN** to deliberately bind an existing offline draft to the
 active home position; the control stays disabled until that reference exists.
+**CLEAR ORIGIN** forgets the planner-only geographic reference without deleting
+the draft, so the same route can be edited again in local metres.
 Waypoint names are editable in each point card, so operators can use labels such
 as `DOCK`, `GATE`, or `CHARGE` instead of relying on numeric markers alone.
 The collapsed **AUTONOMY ACTIVITY** panel keeps a bounded newest-first record
@@ -219,9 +221,11 @@ tile grid while the operator pans or follows the dog; tile access is
 best-effort and should respect the provider's caching and usage policy.
 **STREET VIEW** is an explicit external inspection handoff: **OPEN STREET
 VIEW** launches a Google Maps URL at the same origin without requiring an API
-key. Street View navigation is not read back into the app, so route edits
-remain deliberate and happen in the Domino planner after returning from the
-external panorama.
+key. Each waypoint also exposes **VIEW** when it has a coordinate or can be
+converted through the active local origin; that action opens the panorama at
+the selected point and aims it along the adjacent route segment. Street View
+navigation is not read back into the app, so route edits remain deliberate and
+happen in the Domino planner after returning from the external panorama.
 
 **REVERSE ROUTE** reverses the waypoint order for a return pass while retaining
 each point's speed, radius, hold, label, and coordinate data. It is an in-app

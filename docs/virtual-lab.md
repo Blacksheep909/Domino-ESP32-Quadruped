@@ -182,7 +182,8 @@ selector, or focus the map and press **+ / −** to move through the bounded
 40/80/160 m ranges. Pointer zoom stays anchored near the cursor and never
 changes waypoint coordinates; every zoom path keeps the range selector
 synchronized.
-Hold **Shift** and drag an empty area of the planning map to pan the local view;
+Hold **Shift** or use the middle mouse button while dragging an empty area of the
+planning map to pan the local view;
 use **RESET MAP** to return to the local origin. Panning only changes the
 displayed map center, never the route coordinates. **CENTER DOG** moves the
 display to the current GPS/preview position, while **FOLLOW DOG** keeps that

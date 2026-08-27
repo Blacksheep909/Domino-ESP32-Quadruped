@@ -4620,15 +4620,34 @@ function plannerMapTileIndex(coordinate, zoom) {
   };
 }
 
+let plannerMapTilesSignature = "";
+let plannerMapTilesCenter = null;
+
 function renderPlannerMapTiles(tiles, origin, mapCenter, range, toMapPoint) {
-  tiles.replaceChildren();
-  if (liveNavigationMapLayer !== "osm" || !origin) return;
+  if (liveNavigationMapLayer !== "osm" || !origin) {
+    if (plannerMapTilesSignature) tiles.replaceChildren();
+    plannerMapTilesSignature = "";
+    plannerMapTilesCenter = null;
+    tiles.removeAttribute("transform");
+    return;
+  }
   const centerCoordinate = localOffsetToCoordinate(mapCenter, origin);
   if (!centerCoordinate) return;
   const zoom = range <= 40 ? 19 : range <= 80 ? 18 : 17;
   const tileCenter = plannerMapTileIndex(centerCoordinate, zoom);
   const baseX = Math.floor(tileCenter.x);
   const baseY = Math.floor(tileCenter.y);
+  const signature = `${origin.lat.toFixed(6)}:${origin.lon.toFixed(6)}:${range}:${zoom}:${baseX}:${baseY}`;
+  if (signature === plannerMapTilesSignature && plannerMapTilesCenter) {
+    const dx = (plannerMapTilesCenter.eastM - mapCenter.eastM) * 100 / range;
+    const dy = (mapCenter.northM - plannerMapTilesCenter.northM) * 100 / range;
+    tiles.setAttribute("transform", `translate(${dx.toFixed(3)} ${dy.toFixed(3)})`);
+    return;
+  }
+  tiles.replaceChildren();
+  plannerMapTilesSignature = signature;
+  plannerMapTilesCenter = { ...mapCenter };
+  tiles.removeAttribute("transform");
   for (let tileX = baseX - 2; tileX <= baseX + 2; tileX += 1) {
     for (let tileY = baseY - 2; tileY <= baseY + 2; tileY += 1) {
       const topLeft = coordinateToLocalOffset(plannerMapTileCoordinate(tileX, tileY, zoom), origin);

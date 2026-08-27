@@ -163,7 +163,8 @@ position centered during an active preview or fresh GPS fix.
 The **LAYER** selector keeps **LOCAL GRID** as the offline-safe default. With a
 valid map origin, **OPEN MAP** overlays OpenStreetMap tiles beneath Domino's
 planned route, GPS track, LiDAR sectors, geofence, and vehicle marker. The map
-shows visible OpenStreetMap attribution; tile access is best-effort and should
+shows visible OpenStreetMap attribution and caches the visible tile grid while
+the operator pans or follows the dog; tile access is best-effort and should
 respect the provider's caching and usage policy. **STREET VIEW** is an explicit
 external inspection handoff: **OPEN STREET VIEW** launches a Google Maps URL at
 the same origin without requiring an API key. Street View navigation is not

@@ -154,6 +154,22 @@ advertises the corresponding robot-side contract.
 keeps the current local draft readable with margin. It is a display convenience
 only and does not change waypoint coordinates or vehicle state.
 
+Hold **Shift** and drag an empty area of the planning map to pan the local view;
+use **RESET MAP** to return to the local origin. Panning only changes the
+displayed map center, never the route coordinates. **CENTER DOG** moves the
+display to the current GPS/preview position, while **FOLLOW DOG** keeps that
+position centered during an active preview or fresh GPS fix.
+
+The **LAYER** selector keeps **LOCAL GRID** as the offline-safe default. With a
+valid map origin, **OPEN MAP** overlays OpenStreetMap tiles beneath Domino's
+planned route, GPS track, LiDAR sectors, geofence, and vehicle marker. The map
+shows visible OpenStreetMap attribution; tile access is best-effort and should
+respect the provider's caching and usage policy. **STREET VIEW** is an explicit
+external inspection handoff: **OPEN STREET VIEW** launches a Google Maps URL at
+the same origin without requiring an API key. Street View navigation is not
+read back into the app, so route edits remain deliberate and happen in the
+Domino planner after returning from the external panorama.
+
 **REVERSE ROUTE** reverses the waypoint order for a return pass while retaining
 each point's speed, radius, hold, label, and coordinate data. It is an in-app
 edit, so it is undoable and still requires the normal route review and safety

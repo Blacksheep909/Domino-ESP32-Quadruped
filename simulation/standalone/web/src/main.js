@@ -333,6 +333,7 @@ let liveNativeNavigationTargetIndex = null;
 const liveNavigationHistory = { past: [], future: [] };
 const LIVE_NAVIGATION_HISTORY_LIMIT = 50;
 let liveNavigationFieldHistorySnapshot = null;
+let liveNavigationSelectedWaypointIndex = null;
 const liveNavigationMapView = {
   center: { northM: 0, eastM: 0 },
   followVehicle: false,
@@ -4531,11 +4532,23 @@ function plannerLocalFromPointer(event, map) {
   };
 }
 
+function syncSelectedPlannerMarker() {
+  document.querySelectorAll(".live-planner-marker").forEach((marker) => {
+    const selected = Number(marker.dataset.waypointIndex) === liveNavigationSelectedWaypointIndex;
+    marker.classList.toggle("is-selected", selected);
+    marker.setAttribute("aria-pressed", String(selected));
+  });
+}
+
 function selectPlannerWaypoint(index) {
+  liveNavigationSelectedWaypointIndex = Number.isInteger(index) && index >= 0 ? index : null;
   document.querySelectorAll(".live-waypoint-row.is-selected").forEach((row) => row.classList.remove("is-selected"));
   const row = document.querySelector(`.live-waypoint-row[data-index="${index}"]`);
-  row?.classList.add("is-selected");
-  row?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  if (row) {
+    row.classList.add("is-selected");
+    row.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+  syncSelectedPlannerMarker();
 }
 
 function handlePlannerMarkerKeydown(event) {
@@ -4937,8 +4950,8 @@ function renderLiveNavigationPlanner(navigation) {
     if (!point) return;
     const waypointLocal = plannerPointFromWaypoint(liveNavigationState.missionDraft[index], origin);
     const outsideFence = fenceStatus.enabled && fenceStatus.checked && waypointLocal && Math.hypot(waypointLocal.northM, waypointLocal.eastM) > fenceRadius;
-    const markerClass = `${index === currentMissionIndex ? "live-planner-marker is-active" : "live-planner-marker"}${outsideFence ? " is-outside" : ""}`;
-    const group = plannerSvgElement("g", { class: markerClass, transform: `translate(${point.x.toFixed(2)} ${point.y.toFixed(2)})`, "data-waypoint-index": index, role: "button", tabindex: 0, "aria-label": `Select waypoint ${index + 1}` });
+    const markerClass = `${index === currentMissionIndex ? "live-planner-marker is-active" : "live-planner-marker"}${outsideFence ? " is-outside" : ""}${index === liveNavigationSelectedWaypointIndex ? " is-selected" : ""}`;
+    const group = plannerSvgElement("g", { class: markerClass, transform: `translate(${point.x.toFixed(2)} ${point.y.toFixed(2)})`, "data-waypoint-index": index, role: "button", tabindex: 0, "aria-pressed": String(index === liveNavigationSelectedWaypointIndex), "aria-label": `Select waypoint ${index + 1}` });
     group.append(
       plannerSvgElement("circle", { r: 3.4 }),
       plannerSvgElement("text", { x: 0, y: 0.9, "text-anchor": "middle" }),
@@ -5453,7 +5466,7 @@ function renderLiveWaypointList(navigation = liveNavigationSnapshot(liveTelemetr
     navigation.autopilot?.armed === true;
   liveNavigationState.missionDraft.forEach((waypoint, index) => {
     const row = document.createElement("article");
-    row.className = "live-waypoint-row";
+    row.className = `live-waypoint-row${index === liveNavigationSelectedWaypointIndex ? " is-selected" : ""}`;
     row.tabIndex = -1;
     row.dataset.index = String(index);
     const hasCoordinate = missionWaypointHasCoordinate(waypoint);
@@ -7841,9 +7854,13 @@ document.querySelector("#live-nav-waypoint-list").addEventListener("focusout", (
 });
 document.querySelector("#live-nav-waypoint-list").addEventListener("click", (event) => {
   const button = event.target.closest("[data-waypoint-action]");
-  const row = button?.closest("[data-index]");
-  if (!button || !row) return;
+  const row = event.target.closest(".live-waypoint-row[data-index]");
+  if (!row) return;
   const index = Number(row.dataset.index);
+  if (!button) {
+    selectPlannerWaypoint(index);
+    return;
+  }
   const action = button.dataset.waypointAction;
   if (action === "direct") {
     startLiveNativeNavigation("route", index);

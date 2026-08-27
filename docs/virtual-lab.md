@@ -261,6 +261,10 @@ camera telemetry supplies yaw, pitch, field of view, frame rate, and stale-state
 status without pretending that a video stream exists when the robot has not
 provided one. Use **CLEAR** to
 disconnect the stream and forget the saved URL when changing cameras or robots.
+The Diagnostics **DOWNLOAD BUNDLE** action also includes the camera connection
+state, frame dimensions/age, and non-secret orientation telemetry so camera
+faults can be reviewed with the command-chain evidence; it intentionally omits
+the configured stream URL.
 
 ## Workspaces
 

@@ -335,6 +335,10 @@ const liveNavigationMapView = {
   center: { northM: 0, eastM: 0 },
   followVehicle: false,
 };
+const liveNavigationMapLayerStorageKey = "domino-live-navigation-map-layer-v1";
+let liveNavigationMapLayer = ["local", "osm", "streetview"].includes(localStorage.getItem(liveNavigationMapLayerStorageKey))
+  ? localStorage.getItem(liveNavigationMapLayerStorageKey)
+  : "local";
 
 function renderLiveNavigationActivity() {
   const list = document.querySelector("#live-nav-activity-list");
@@ -4427,6 +4431,10 @@ function plannerMapDisplayCenter(navigation) {
 let plannerDragIndex = null;
 let plannerDragPointerId = null;
 let plannerDragMoved = false;
+let plannerPanPointerId = null;
+let plannerPanStart = null;
+let plannerPanStartCenter = null;
+let plannerPanMoved = false;
 let plannerSuppressNextClick = false;
 
 function plannerLocalFromPointer(event, map) {
@@ -4586,8 +4594,64 @@ function plannerSvgElement(name, attributes = {}) {
   return element;
 }
 
+function plannerMapCoordinateInput(value) {
+  const match = String(value || "").trim().match(/^(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)$/);
+  if (!match) return null;
+  const lat = Number(match[1]);
+  const lon = Number(match[2]);
+  return Number.isFinite(lat) && Number.isFinite(lon) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180
+    ? { lat, lon, altM: null }
+    : null;
+}
+
+function plannerMapTileCoordinate(x, y, zoom) {
+  const scale = 2 ** zoom;
+  const lon = x / scale * 360 - 180;
+  const latitudeRadians = Math.atan(Math.sinh(Math.PI * (1 - 2 * y / scale)));
+  return { lat: latitudeRadians * 180 / Math.PI, lon };
+}
+
+function plannerMapTileIndex(coordinate, zoom) {
+  const latitudeRadians = Math.max(-Math.PI / 2 + 1e-6, Math.min(Math.PI / 2 - 1e-6, coordinate.lat * Math.PI / 180));
+  const scale = 2 ** zoom;
+  return {
+    x: (coordinate.lon + 180) / 360 * scale,
+    y: (1 - Math.asinh(Math.tan(latitudeRadians)) / Math.PI) / 2 * scale,
+  };
+}
+
+function renderPlannerMapTiles(tiles, origin, mapCenter, range, toMapPoint) {
+  tiles.replaceChildren();
+  if (liveNavigationMapLayer !== "osm" || !origin) return;
+  const centerCoordinate = localOffsetToCoordinate(mapCenter, origin);
+  if (!centerCoordinate) return;
+  const zoom = range <= 40 ? 19 : range <= 80 ? 18 : 17;
+  const tileCenter = plannerMapTileIndex(centerCoordinate, zoom);
+  const baseX = Math.floor(tileCenter.x);
+  const baseY = Math.floor(tileCenter.y);
+  for (let tileX = baseX - 2; tileX <= baseX + 2; tileX += 1) {
+    for (let tileY = baseY - 2; tileY <= baseY + 2; tileY += 1) {
+      const topLeft = coordinateToLocalOffset(plannerMapTileCoordinate(tileX, tileY, zoom), origin);
+      const bottomRight = coordinateToLocalOffset(plannerMapTileCoordinate(tileX + 1, tileY + 1, zoom), origin);
+      const first = toMapPoint(topLeft);
+      const second = toMapPoint(bottomRight);
+      if (!first || !second) continue;
+      tiles.append(plannerSvgElement("image", {
+        class: "live-planner-map-tile",
+        x: first.x.toFixed(3),
+        y: first.y.toFixed(3),
+        width: (second.x - first.x).toFixed(3),
+        height: (second.y - first.y).toFixed(3),
+        href: `https://tile.openstreetmap.org/${zoom}/${tileX}/${tileY}.png`,
+        preserveAspectRatio: "none",
+      }));
+    }
+  }
+}
+
 function renderLiveNavigationPlanner(navigation) {
   const map = document.querySelector("#live-nav-planner-map");
+  const tiles = document.querySelector("#live-nav-planner-tiles");
   const track = document.querySelector("#live-nav-planner-track");
   const route = document.querySelector("#live-nav-planner-route");
   const returnRoute = document.querySelector("#live-nav-planner-return-route");
@@ -4618,10 +4682,14 @@ function renderLiveNavigationPlanner(navigation) {
   const fitButton = document.querySelector("#live-nav-fit-route");
   const centerVehicleButton = document.querySelector("#live-nav-center-vehicle");
   const followVehicleInput = document.querySelector("#live-nav-follow-vehicle");
+  const mapLayerInput = document.querySelector("#live-nav-map-layer");
+  const mapOriginInput = document.querySelector("#live-nav-map-origin");
+  const streetViewPanel = document.querySelector("#live-nav-streetview-panel");
+  const mapAttribution = document.querySelector("#live-nav-planner-attribution");
   const reverseButton = document.querySelector("#live-nav-reverse-route");
   const undoButton = document.querySelector("#live-nav-undo");
   const redoButton = document.querySelector("#live-nav-redo");
-  if (!map || !clearance || !track || !route || !returnRoute || !markers || !vehicle || !geofence || !scaleLabel || !trackLegend || !clearanceLegend || !status || !hudMode || !hudState || !hudRoute || !hudNext || !hudTotal || !hudEta || !hudPosition || !hudObstacle || !hudControl || !helpStatus || !storageStatus || !referencePlan || !centerVehicleButton || !followVehicleInput) return;
+  if (!map || !tiles || !clearance || !track || !route || !returnRoute || !markers || !vehicle || !geofence || !scaleLabel || !trackLegend || !clearanceLegend || !status || !hudMode || !hudState || !hudRoute || !hudNext || !hudTotal || !hudEta || !hudPosition || !hudObstacle || !hudControl || !helpStatus || !storageStatus || !referencePlan || !centerVehicleButton || !followVehicleInput) return;
   renderLiveNavigationPlanLibrary();
 
   const origin = navigationPlannerOrigin(navigation);
@@ -4633,6 +4701,12 @@ function renderLiveNavigationPlanner(navigation) {
     y: 50 - ((Number(point.northM) - mapCenter.northM) / range) * 100,
   } : null;
   const hasOrigin = Boolean(origin);
+  map.dataset.layer = liveNavigationMapLayer;
+  if (mapLayerInput) mapLayerInput.value = liveNavigationMapLayer;
+  if (mapOriginInput && origin && document.activeElement !== mapOriginInput) mapOriginInput.value = `${origin.lat.toFixed(6)}, ${origin.lon.toFixed(6)}`;
+  if (streetViewPanel) streetViewPanel.hidden = liveNavigationMapLayer !== "streetview";
+  if (mapAttribution) mapAttribution.hidden = liveNavigationMapLayer !== "osm";
+  renderPlannerMapTiles(tiles, origin, mapCenter, range, toMapPoint);
   const previewSession = liveNavigationPreviewState.phase !== "idle";
   const preview = previewSession
     ? navigationMissionPreview(liveNavigationState.missionDraft, origin, liveNavigationPreviewState.elapsedSeconds, liveNavigationState.loopCount)
@@ -4945,7 +5019,20 @@ function reverseLiveNavigationRoute() {
 
 function handlePlannerPointerDown(event) {
   const marker = event.target?.closest?.(".live-planner-marker");
-  if (!marker || event.button !== 0) return;
+  if (event.button !== 0) return;
+  if (!marker && event.shiftKey) {
+    plannerPanPointerId = event.pointerId;
+    plannerPanStart = { x: event.clientX, y: event.clientY };
+    plannerPanStartCenter = { ...liveNavigationMapView.center };
+    plannerPanMoved = false;
+    liveNavigationMapView.followVehicle = false;
+    event.currentTarget.classList.add("is-panning");
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
+  if (!marker) return;
   const index = Number(marker.dataset.waypointIndex);
   const local = plannerLocalFromPointer(event, event.currentTarget);
   if (!Number.isInteger(index) || !local) return;
@@ -4961,6 +5048,22 @@ function handlePlannerPointerDown(event) {
 }
 
 function handlePlannerPointerMove(event) {
+  if (plannerPanPointerId !== null && event.pointerId === plannerPanPointerId) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const range = Math.max(10, Number(liveNavigationState.plannerRangeM) || 40);
+    if (rect.width && rect.height && plannerPanStart && plannerPanStartCenter) {
+      const dx = event.clientX - plannerPanStart.x;
+      const dy = event.clientY - plannerPanStart.y;
+      liveNavigationMapView.center = {
+        eastM: plannerPanStartCenter.eastM - dx * range / rect.width,
+        northM: plannerPanStartCenter.northM + dy * range / rect.height,
+      };
+      plannerPanMoved = plannerPanMoved || Math.hypot(dx, dy) > 2;
+      updateLiveComparisonUi();
+    }
+    event.preventDefault();
+    return;
+  }
   if (plannerDragIndex === null || event.pointerId !== plannerDragPointerId) return;
   const local = plannerLocalFromPointer(event, event.currentTarget);
   if (!local) return;
@@ -4974,6 +5077,20 @@ function handlePlannerPointerMove(event) {
 }
 
 function handlePlannerPointerUp(event) {
+  if (plannerPanPointerId !== null && event.pointerId === plannerPanPointerId) {
+    const map = event.currentTarget;
+    if (map.hasPointerCapture?.(event.pointerId)) map.releasePointerCapture(event.pointerId);
+    plannerSuppressNextClick = true;
+    plannerPanPointerId = null;
+    plannerPanStart = null;
+    plannerPanStartCenter = null;
+    plannerPanMoved = false;
+    map.classList.remove("is-panning");
+    updateLiveComparisonUi();
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
   if (plannerDragIndex === null || event.pointerId !== plannerDragPointerId) return;
   const map = event.currentTarget;
   if (map.hasPointerCapture?.(event.pointerId)) map.releasePointerCapture(event.pointerId);
@@ -4985,6 +5102,28 @@ function handlePlannerPointerUp(event) {
   plannerDragIndex = null;
   plannerDragPointerId = null;
   plannerDragMoved = false;
+}
+
+function plannerMapReferenceCoordinate() {
+  const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
+  return navigationPlannerOrigin(navigation) || navigation.home || navigation.gps?.position || null;
+}
+
+function openPlannerStreetView() {
+  const coordinate = plannerMapReferenceCoordinate();
+  if (!coordinate) {
+    showAppToast("Set a map origin or establish a GPS fix before opening Street View.", "warning");
+    return;
+  }
+  const params = new URLSearchParams({
+    api: "1",
+    map_action: "pano",
+    viewpoint: `${coordinate.lat},${coordinate.lon}`,
+    heading: "0",
+    pitch: "0",
+    fov: "90",
+  });
+  window.open(`https://www.google.com/maps/@?${params.toString()}`, "_blank", "noopener,noreferrer");
 }
 
 function renderLiveLidarRadar(snapshot) {
@@ -7132,6 +7271,27 @@ liveNavigationPlannerMap.addEventListener("pointerup", handlePlannerPointerUp);
 liveNavigationPlannerMap.addEventListener("pointercancel", handlePlannerPointerUp);
 liveNavigationPlannerMap.addEventListener("keydown", handlePlannerMarkerKeydown);
 liveNavigationPlannerMap.addEventListener("click", addPlannerWaypointFromEvent);
+document.querySelector("#live-nav-map-layer").addEventListener("change", (event) => {
+  liveNavigationMapLayer = ["local", "osm", "streetview"].includes(event.target.value) ? event.target.value : "local";
+  localStorage.setItem(liveNavigationMapLayerStorageKey, liveNavigationMapLayer);
+  updateLiveComparisonUi();
+});
+document.querySelector("#live-nav-set-map-origin").addEventListener("click", () => {
+  const coordinate = plannerMapCoordinateInput(document.querySelector("#live-nav-map-origin").value);
+  if (!coordinate) {
+    showAppToast("Enter the map origin as latitude, longitude.", "warning");
+    return;
+  }
+  captureLiveNavigationHistory();
+  liveNavigationState.plannerOrigin = coordinate;
+  liveNavigationMapView.center = { northM: 0, eastM: 0 };
+  liveNavigationMapView.followVehicle = false;
+  persistLiveNavigationPlan();
+  updateLiveComparisonUi();
+  showAppToast("Map origin set. Open Map or Street View to inspect the area.", "success");
+});
+document.querySelector("#live-nav-open-streetview").addEventListener("click", openPlannerStreetView);
+document.querySelector("#live-nav-streetview-panel-open").addEventListener("click", openPlannerStreetView);
 document.querySelector("#live-nav-preview-route").addEventListener("click", toggleLiveNavigationPreview);
 document.querySelector("#live-nav-preview-pause").addEventListener("click", toggleLiveNavigationPreviewPause);
 document.querySelector("#live-nav-preview-step").addEventListener("click", stepLiveNavigationPreview);
@@ -7147,6 +7307,12 @@ document.querySelector("#live-nav-center-vehicle").addEventListener("click", () 
   liveNavigationMapView.followVehicle = false;
   liveNavigationMapView.center = { ...vehicle };
   updateLiveComparisonUi();
+});
+document.querySelector("#live-nav-reset-map").addEventListener("click", () => {
+  liveNavigationMapView.followVehicle = false;
+  liveNavigationMapView.center = { northM: 0, eastM: 0 };
+  updateLiveComparisonUi();
+  showAppToast("Planning map reset to the local origin.", "info");
 });
 document.querySelector("#live-nav-follow-vehicle").addEventListener("change", (event) => {
   const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);

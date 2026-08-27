@@ -6518,7 +6518,7 @@ function persistLiveGaitLibrary(selectedName = "") {
 function syncLiveGaitLibrary(selectedName = "") {
   const select = document.querySelector("#live-gait-library");
   const selection = selectedName || select.value;
-  select.replaceChildren(new Option("SELECT A SAVED PROFILE", ""));
+  select.replaceChildren(new Option("SELECT PROFILE", ""));
   Object.keys(liveGaitLibrary).sort((a, b) => a.localeCompare(b)).forEach((name) => {
     const source = liveGaitLibrary[name].source === "simulation" ? "SIM" : "LIVE";
     select.add(new Option(`${name} / ${source}`, name));

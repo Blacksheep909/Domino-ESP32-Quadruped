@@ -5234,6 +5234,37 @@ function handlePlannerPointerUp(event) {
   plannerDragMoved = false;
 }
 
+function handlePlannerWheel(event) {
+  if (!Number.isFinite(event.deltaY) || event.deltaY === 0) return;
+  const ranges = [40, 80, 160];
+  const currentRange = Math.max(10, Number(liveNavigationState.plannerRangeM) || 40);
+  const currentIndex = Math.max(0, ranges.indexOf(currentRange));
+  const nextIndex = Math.max(0, Math.min(ranges.length - 1, currentIndex + (event.deltaY > 0 ? 1 : -1)));
+  if (nextIndex === currentIndex) {
+    event.preventDefault();
+    return;
+  }
+  const nextRange = ranges[nextIndex];
+  const map = event.currentTarget;
+  const rect = map.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  const x = ((event.clientX - rect.left) / rect.width) * 100;
+  const y = ((event.clientY - rect.top) / rect.height) * 100;
+  if (!liveNavigationMapView.followVehicle) {
+    const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
+    const center = plannerMapDisplayCenter(navigation);
+    liveNavigationMapView.center = {
+      eastM: center.eastM + ((x - 50) * (currentRange - nextRange)) / 100,
+      northM: center.northM + ((50 - y) * (currentRange - nextRange)) / 100,
+    };
+  }
+  captureLiveNavigationHistory();
+  liveNavigationState.plannerRangeM = nextRange;
+  persistLiveNavigationPlan();
+  updateLiveComparisonUi();
+  event.preventDefault();
+}
+
 function plannerMapReferenceCoordinate() {
   const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
   return navigationPlannerOrigin(navigation) || navigation.home || navigation.gps?.position || null;
@@ -7399,6 +7430,7 @@ liveNavigationPlannerMap.addEventListener("pointerdown", handlePlannerPointerDow
 liveNavigationPlannerMap.addEventListener("pointermove", handlePlannerPointerMove);
 liveNavigationPlannerMap.addEventListener("pointerup", handlePlannerPointerUp);
 liveNavigationPlannerMap.addEventListener("pointercancel", handlePlannerPointerUp);
+liveNavigationPlannerMap.addEventListener("wheel", handlePlannerWheel, { passive: false });
 liveNavigationPlannerMap.addEventListener("keydown", handlePlannerMarkerKeydown);
 liveNavigationPlannerMap.addEventListener("click", addPlannerWaypointFromEvent);
 document.querySelector("#live-nav-map-layer").addEventListener("change", (event) => {

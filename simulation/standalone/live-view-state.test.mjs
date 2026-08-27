@@ -63,6 +63,12 @@ test("LIVE camera controls follow light mode while preserving a dark feed surfac
   assert.match(styles, /\.live-camera-feed[\s\S]*background: #050506/);
 });
 
+test("dark LIVE title banners remain transparent like light mode", () => {
+  const styles = readFileSync(new URL("./web/src/styles.css", import.meta.url), "utf8");
+  assert.match(styles, /:root\[data-theme="dark"\] \.live-view-page \.live-page-heading[\s\S]*background: transparent[\s\S]*box-shadow: none/);
+  assert.match(styles, /:root\[data-theme="dark"\] #live-view-compare \.live-compare-page-heading[\s\S]*background: transparent[\s\S]*box-shadow: none/);
+});
+
 test("LIVE keeps measured battery state and E-stop in the persistent header", () => {
   const html = readFileSync(new URL("./web/index.html", import.meta.url), "utf8");
   const main = readFileSync(new URL("./web/src/main.js", import.meta.url), "utf8");

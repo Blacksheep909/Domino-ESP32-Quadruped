@@ -4750,6 +4750,7 @@ function renderLiveNavigationPlanner(navigation) {
   const hudTotal = document.querySelector("#live-nav-hud-total");
   const hudEta = document.querySelector("#live-nav-hud-eta");
   const hudPosition = document.querySelector("#live-nav-hud-position");
+  const hudHeading = document.querySelector("#live-nav-hud-heading");
   const hudObstacle = document.querySelector("#live-nav-hud-obstacle");
   const hudControl = document.querySelector("#live-nav-hud-control");
   const helpStatus = document.querySelector("#live-nav-planner-help-status");
@@ -4770,7 +4771,7 @@ function renderLiveNavigationPlanner(navigation) {
   const reverseButton = document.querySelector("#live-nav-reverse-route");
   const undoButton = document.querySelector("#live-nav-undo");
   const redoButton = document.querySelector("#live-nav-redo");
-  if (!map || !tiles || !clearance || !track || !route || !returnRoute || !markers || !vehicle || !geofence || !scaleLabel || !trackLegend || !clearanceLegend || !status || !hudMode || !hudState || !hudRoute || !hudNext || !hudTotal || !hudEta || !hudPosition || !hudObstacle || !hudControl || !helpStatus || !storageStatus || !referencePlan || !centerVehicleButton || !followVehicleInput) return;
+  if (!map || !tiles || !clearance || !track || !route || !returnRoute || !markers || !vehicle || !geofence || !scaleLabel || !trackLegend || !clearanceLegend || !status || !hudMode || !hudState || !hudRoute || !hudNext || !hudTotal || !hudEta || !hudPosition || !hudHeading || !hudObstacle || !hudControl || !helpStatus || !storageStatus || !referencePlan || !centerVehicleButton || !followVehicleInput) return;
   renderLiveNavigationPlanLibrary();
 
   const origin = navigationPlannerOrigin(navigation);
@@ -4926,7 +4927,17 @@ function renderLiveNavigationPlanner(navigation) {
   const currentPoint = previewPoint || (navigation.gps?.position && origin
     ? toMapPoint(coordinateToLocalOffset(navigation.gps.position, origin))
     : null);
-  vehicle.setAttribute("transform", currentPoint ? `translate(${currentPoint.x.toFixed(2)} ${currentPoint.y.toFixed(2)})` : "translate(50 50)");
+  const currentHeading = previewPoint && Number.isFinite(preview?.headingDeg)
+    ? preview.headingDeg
+    : navigation.gpsFresh && Number.isFinite(navigation.gps?.courseDeg)
+      ? navigation.gps.courseDeg
+      : null;
+  vehicle.setAttribute("transform", currentPoint
+    ? `translate(${currentPoint.x.toFixed(2)} ${currentPoint.y.toFixed(2)})${Number.isFinite(currentHeading) ? ` rotate(${currentHeading.toFixed(1)})` : ""}`
+    : "translate(50 50)");
+  vehicle.setAttribute("aria-label", Number.isFinite(currentHeading)
+    ? `Vehicle position and heading ${Math.round(currentHeading)} degrees`
+    : "Vehicle position; heading unavailable");
   vehicle.classList.toggle("is-live", Boolean(currentPoint));
   vehicle.classList.toggle("is-preview", Boolean(previewPoint));
 
@@ -4994,6 +5005,7 @@ function renderLiveNavigationPlanner(navigation) {
   hudPosition.textContent = previewSession
     ? "LOCAL PREVIEW"
     : navigation.hasFix ? navigationFixLabel(navigation.gps?.fixType) : hasOrigin ? "HOME SET" : "NO FIX";
+  hudHeading.textContent = Number.isFinite(currentHeading) ? `${Math.round(currentHeading)}°` : "WAITING";
   hudObstacle.textContent = navigation.lidarFresh ? formatNavigationDistance(navigation.frontM, "--.- m") : "WAITING";
   const nativeMode = nativeRunnerActive ? liveNativeNavigationState.mode : "route";
   hudMode.textContent = nativeRunnerActive

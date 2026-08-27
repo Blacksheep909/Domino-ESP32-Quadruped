@@ -166,6 +166,13 @@ advertises the corresponding robot-side contract.
 keeps the current local draft readable with margin. It is a display convenience
 only and does not change waypoint coordinates or vehicle state.
 
+When detailed waypoint work needs more room, **FOCUS MAP** temporarily expands
+the Sensors planning lane across the available workspace and hides the shared
+3D/camera preview until focus is closed. It is only a presentation mode: the
+autonomy HUD, route data, safety checks, and command gates remain unchanged.
+Press **ESC** or **EXIT MAP FOCUS** to return to the normal twin-preview layout;
+switching to another LIVE page also closes focus automatically.
+
 Hold **Shift** and drag an empty area of the planning map to pan the local view;
 use **RESET MAP** to return to the local origin. Panning only changes the
 displayed map center, never the route coordinates. **CENTER DOG** moves the

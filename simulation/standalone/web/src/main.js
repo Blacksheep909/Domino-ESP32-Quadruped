@@ -1150,6 +1150,9 @@ function applyLiveView(view) {
   const enteringGaits = liveViewState.selected !== LIVE_VIEW_GAITS && view === LIVE_VIEW_GAITS;
   const enteringSensors = liveViewState.selected !== LIVE_VIEW_SENSORS && view === LIVE_VIEW_SENSORS;
   if (!selectLiveView(liveViewState, view)) return false;
+  if (view !== LIVE_VIEW_SENSORS && document.body.dataset.livePlannerFocus === "true") {
+    setLiveNavigationMapFocus(false);
+  }
   persistPresentationPreferences();
   const supportsInspection = [LIVE_VIEW_COMPARE, LIVE_VIEW_SENSORS, LIVE_VIEW_GAITS].includes(liveViewState.selected);
   if (!supportsInspection && jointOverlayVisible) {
@@ -7490,6 +7493,33 @@ document.querySelector("#live-nav-reset-map").addEventListener("click", () => {
   liveNavigationMapView.center = { northM: 0, eastM: 0 };
   updateLiveComparisonUi();
   showAppToast("Planning map reset to the local origin.", "info");
+});
+function setLiveNavigationMapFocus(focused, announce = false) {
+  const active = Boolean(focused);
+  document.body.dataset.livePlannerFocus = String(active);
+  const button = document.querySelector("#live-nav-focus-map");
+  if (button) {
+    button.textContent = active ? "EXIT MAP FOCUS" : "FOCUS MAP";
+    button.setAttribute("aria-pressed", String(active));
+    button.title = active
+      ? "Return the navigation page to the normal preview layout"
+      : "Expand the route planner for waypoint editing";
+  }
+  if (active && liveViewState.selected === LIVE_VIEW_SENSORS) {
+    requestAnimationFrame(() => {
+      resize();
+      updateLiveComparisonUi();
+    });
+  }
+  if (announce) showAppToast(active ? "Map focus enabled. Press Escape to return." : "Map focus closed.", "info");
+}
+document.querySelector("#live-nav-focus-map").addEventListener("click", () => {
+  setLiveNavigationMapFocus(document.body.dataset.livePlannerFocus !== "true", true);
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || document.body.dataset.livePlannerFocus !== "true") return;
+  if (document.querySelector("[open].utility-dialog")) return;
+  setLiveNavigationMapFocus(false, true);
 });
 document.querySelector("#live-nav-follow-vehicle").addEventListener("change", (event) => {
   const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);

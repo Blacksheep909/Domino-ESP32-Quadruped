@@ -6460,10 +6460,12 @@ body[data-workspace="real-robot"][data-live-view="sensors"] .live-camera-panel {
 .live-camera-angles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .live-camera-angles > div { padding: 7px; background: #171719; border: 1px solid #2e2e31; border-radius: 4px; }
 .live-camera-angles strong { display: block; margin-top: 5px; color: #ededee; font: 800 11px/1 "Cascadia Mono", Consolas, monospace; }
-.live-camera-url-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
+.live-camera-url-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; }
 .live-camera-url-row input { min-width: 0; height: 30px; padding: 0 8px; color: #ededee; background: #151517; border: 1px solid #343438; border-radius: 4px; font: 700 8px/1 "Cascadia Mono", Consolas, monospace; }
 .live-camera-url-row button,
 .live-camera-actions button { min-height: 30px; padding: 0 9px; color: #bce8c9; background: rgba(61, 151, 95, .12); border: 1px solid rgba(121, 196, 147, .35); border-radius: 4px; font: 800 7px/1 "Cascadia Mono", Consolas, monospace; cursor: pointer; }
+.live-camera-url-row .live-camera-clear { color: #aaaab0; background: #171719; border-color: #353539; }
+.live-camera-url-row .live-camera-clear:disabled { color: #66666b; background: #171719; border-color: #2d2d30; cursor: not-allowed; }
 .live-camera-telemetry { display: flex; justify-content: space-between; gap: 8px; color: #777a75; font: 700 7px/1 "Cascadia Mono", Consolas, monospace; letter-spacing: .06em; }
 .live-camera-telemetry [data-state="online"] { color: #79c493; }
 .live-camera-telemetry [data-state="warning"] { color: #e9b86e; }

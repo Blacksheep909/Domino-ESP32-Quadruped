@@ -7402,6 +7402,43 @@ document.querySelector("#live-nav-set-map-origin").addEventListener("click", () 
   updateLiveComparisonUi();
   showAppToast("Map origin set. Open Map or Street View to inspect the area.", "success");
 });
+document.querySelector("#live-nav-use-device-location").addEventListener("click", () => {
+  const button = document.querySelector("#live-nav-use-device-location");
+  if (!navigator.geolocation || typeof navigator.geolocation.getCurrentPosition !== "function") {
+    showAppToast("This desktop environment does not provide device location. Enter latitude, longitude manually.", "warning");
+    return;
+  }
+  button.disabled = true;
+  button.textContent = "LOCATING...";
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      const latitude = Number(position.coords?.latitude);
+      const longitude = Number(position.coords?.longitude);
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        showAppToast("The device returned an invalid location. Enter latitude, longitude manually.", "warning");
+      } else {
+        const input = document.querySelector("#live-nav-map-origin");
+        if (input) input.value = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+        document.querySelector("#live-nav-set-map-origin")?.click();
+      }
+      button.disabled = false;
+      button.textContent = "USE DEVICE";
+    },
+    (error) => {
+      const reason = error?.code === 1
+        ? "Location permission was denied."
+        : error?.code === 2
+          ? "The device location is unavailable."
+          : error?.code === 3
+            ? "The device location request timed out."
+            : "The device location could not be read.";
+      showAppToast(`${reason} Enter latitude, longitude manually.`, "warning");
+      button.disabled = false;
+      button.textContent = "USE DEVICE";
+    },
+    { enableHighAccuracy: true, maximumAge: 30_000, timeout: 8_000 },
+  );
+});
 document.querySelector("#live-nav-open-streetview").addEventListener("click", openPlannerStreetView);
 document.querySelector("#live-nav-streetview-panel-open").addEventListener("click", openPlannerStreetView);
 document.querySelector("#live-nav-preview-route").addEventListener("click", toggleLiveNavigationPreview);

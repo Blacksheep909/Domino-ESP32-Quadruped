@@ -168,6 +168,11 @@ use **RESET MAP** to return to the local origin. Panning only changes the
 displayed map center, never the route coordinates. **CENTER DOG** moves the
 display to the current GPS/preview position, while **FOLLOW DOG** keeps that
 position centered during an active preview or fresh GPS fix.
+When planning away from the robot, **USE DEVICE** requests the computer's
+browser location and fills the map-origin field for review before **SET ORIGIN**
+is applied. This is a local planning convenience only; it does not connect to,
+arm, or move the robot, and manual latitude/longitude entry remains available
+when location permission or a device fix is unavailable.
 
 The **LAYER** selector keeps **LOCAL GRID** as the offline-safe default. With a
 valid map origin, **OPEN MAP** overlays OpenStreetMap tiles beneath Domino's

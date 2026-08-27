@@ -7299,6 +7299,22 @@ body[data-workspace="real-robot"][data-live-view="sensors"] .app-hud { display: 
   .live-autonomy-hud { order: 2; }
 }
 
+@media (max-width: 560px) {
+  .live-planner-map-heading { flex-wrap: wrap; }
+  .live-planner-map-heading > div:first-child,
+  .live-planner-map-settings { flex: 1 1 100%; width: 100%; }
+  .live-planner-map-settings {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .live-planner-map-settings label,
+  .live-planner-map-view-controls { min-width: 0; flex: none; }
+  .live-planner-map-settings label > span,
+  .live-planner-map-view-controls > span { text-align: left; }
+  .live-planner-map-settings select { width: 100%; }
+}
+
 @media (max-width: 1050px) {
   .live-plan-library-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .live-plan-library-controls button { width: 100%; }

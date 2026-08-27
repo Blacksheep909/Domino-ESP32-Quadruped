@@ -6996,6 +6996,43 @@ body[data-workspace="real-robot"] .toast-region {
   border-radius: 4px;
   font: 800 8px/1 "Cascadia Mono", Consolas, monospace;
 }
+.live-planner-overlay-controls {
+  min-width: 0;
+  margin-top: 9px;
+  padding-top: 8px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  border-top: 1px solid #d9ddd7;
+}
+.live-planner-overlay-controls > span {
+  margin-right: 2px;
+  color: #737871;
+  font: 800 7px/1 "Cascadia Mono", Consolas, monospace;
+  letter-spacing: .08em;
+}
+.live-planner-overlay-controls label {
+  min-height: 23px;
+  padding: 0 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #626860;
+  background: rgba(255, 255, 255, .45);
+  border: 1px solid #d0d5ce;
+  border-radius: 4px;
+  cursor: pointer;
+  font: 800 7px/1 "Cascadia Mono", Consolas, monospace;
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
+.live-planner-overlay-controls label:has(input:focus-visible) {
+  outline: 2px solid rgba(63, 146, 93, .35);
+  outline-offset: 1px;
+}
+.live-planner-overlay-controls input { margin: 0; accent-color: #3f925d; }
+.live-planner-overlay-controls label:has(input:not(:checked)) { color: #858a83; opacity: .68; }
 .live-planner-map {
   display: block;
   width: 100%;
@@ -7072,6 +7109,7 @@ body[data-workspace="real-robot"] .toast-region {
 .live-planner-scale text { fill: #68756d; font: 800 3.2px/1 "Cascadia Mono", Consolas, monospace; letter-spacing: .05em; }
 .live-planner-map-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-top: 7px; color: #6c756e; font: 800 7px/1.2 "Cascadia Mono", Consolas, monospace; letter-spacing: .04em; }
 .live-planner-map-legend span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.live-planner-map-legend span[hidden] { display: none; }
 .live-planner-map-legend b { color: inherit; font: inherit; font-weight: inherit; }
 .live-planner-map-legend #live-nav-planner-track-legend[data-state="waiting"] { opacity: .7; }
 .live-planner-map-legend #live-nav-planner-track-legend[data-state="warning"] { color: #a36e1d; }
@@ -7139,6 +7177,10 @@ body[data-workspace="real-robot"] .toast-region {
 :root[data-theme="dark"] .live-planner-map-location input { color: #96999e; }
 :root[data-theme="dark"] .live-planner-map-location input { color: #e1e1e4; background: #292a2d; border-color: #4a4d50; }
 :root[data-theme="dark"] .live-planner-map-location button { color: #b9efc6; background: rgba(66, 142, 88, .18); border-color: rgba(113, 201, 145, .52); }
+:root[data-theme="dark"] .live-planner-overlay-controls { border-top-color: #34383a; }
+:root[data-theme="dark"] .live-planner-overlay-controls > span { color: #96999e; }
+:root[data-theme="dark"] .live-planner-overlay-controls label { color: #c4c8c5; background: rgba(255, 255, 255, .04); border-color: #4a4c50; }
+:root[data-theme="dark"] .live-planner-overlay-controls label:has(input:not(:checked)) { color: #85898b; }
 :root[data-theme="dark"] .live-planner-map[data-layer="osm"] { background: #17201b; }
 :root[data-theme="dark"] .live-planner-attribution { color: #91a899; }
 :root[data-theme="dark"] .live-planner-map { background: #17201b; border-color: #3c5544; }

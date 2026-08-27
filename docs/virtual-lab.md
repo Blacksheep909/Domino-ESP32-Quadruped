@@ -95,8 +95,11 @@ rewrites route coordinates or sends a vehicle command. Both controls stay
 disabled until a usable position is available.
 
 The compact Domino Autonomy HUD stays beside the map and shows a complete,
-compact route/pass summary, position quality, next-point distance, total route
-distance, a conservative time estimate, and front obstacle distance. The route checklist calls out
+compact route/pass summary, position quality, current heading, next-point
+distance, total route distance, a conservative time estimate, and front
+obstacle distance. The map vehicle marker rotates to the fresh GPS course or
+the current offline-preview segment, and its accessible label reports the
+heading when one is available. The route checklist calls out
 whether the plan is empty, still local, outside the active home-radius
 geofence, or ready for GPS upload. When a home reference and radius are active,
 the planner draws that safety boundary and marks out-of-bounds waypoints before

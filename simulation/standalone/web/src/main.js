@@ -5363,6 +5363,20 @@ function handlePlannerWheel(event) {
   event.preventDefault();
 }
 
+function handlePlannerMapKeydown(event) {
+  if (event.target?.closest?.(".live-planner-marker")) return;
+  const direction = ["+", "="].includes(event.key)
+    ? -1
+    : ["-", "_"].includes(event.key) ? 1 : null;
+  if (direction === null) return;
+  const ranges = [40, 80, 160];
+  const current = Math.max(10, Number(liveNavigationState.plannerRangeM) || 40);
+  const currentIndex = Math.max(0, ranges.indexOf(current));
+  const nextIndex = Math.max(0, Math.min(ranges.length - 1, currentIndex + direction));
+  setLiveNavigationPlannerRange(ranges[nextIndex]);
+  event.preventDefault();
+}
+
 function plannerMapReferenceCoordinate() {
   const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
   return navigationPlannerOrigin(navigation) || navigation.home || navigation.gps?.position || null;
@@ -7529,6 +7543,7 @@ liveNavigationPlannerMap.addEventListener("pointermove", handlePlannerPointerMov
 liveNavigationPlannerMap.addEventListener("pointerup", handlePlannerPointerUp);
 liveNavigationPlannerMap.addEventListener("pointercancel", handlePlannerPointerUp);
 liveNavigationPlannerMap.addEventListener("wheel", handlePlannerWheel, { passive: false });
+liveNavigationPlannerMap.addEventListener("keydown", handlePlannerMapKeydown);
 liveNavigationPlannerMap.addEventListener("keydown", handlePlannerMarkerKeydown);
 liveNavigationPlannerMap.addEventListener("click", addPlannerWaypointFromEvent);
 document.querySelector("#live-nav-map-layer").addEventListener("change", (event) => {

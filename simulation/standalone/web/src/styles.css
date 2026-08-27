@@ -6938,8 +6938,8 @@ body[data-workspace="real-robot"] .toast-region {
    the 3D preview or the global title/status bars. */
 .live-route-planner {
   display: grid;
-  grid-template-columns: minmax(188px, 224px) minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: minmax(246px, .42fr) minmax(0, 1fr);
+  gap: 16px;
   margin-top: 14px;
   min-width: 0;
 }

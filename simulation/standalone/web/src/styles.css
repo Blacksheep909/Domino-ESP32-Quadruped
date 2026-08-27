@@ -2539,7 +2539,8 @@ dd {
 .live-waypoint-heading div { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 3px; }
 .live-waypoint-heading button { width: 23px; height: 23px; padding: 0; color: #747871; background: #e5e5e0; border: 1px solid #d3d4ce; border-radius: 3px; cursor: pointer; font: 800 8px/1 "Cascadia Mono", Consolas, monospace; }
 .live-waypoint-heading button[data-waypoint-action="direct"],
-.live-waypoint-heading button[data-waypoint-action="goto"] { width: auto; min-width: 44px; padding: 0 6px; }
+.live-waypoint-heading button[data-waypoint-action="goto"],
+.live-waypoint-heading button[data-waypoint-action="streetview"] { width: auto; min-width: 44px; padding: 0 6px; }
 .live-waypoint-heading button:last-child { color: #ad4e40; }
 .live-waypoint-row label { min-width: 0; display: grid; gap: 5px; }
 .live-waypoint-row .live-waypoint-label-field { grid-column: 1 / -1; }

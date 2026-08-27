@@ -7048,6 +7048,7 @@ body[data-workspace="real-robot"] .toast-region {
   border-radius: 5px;
   background: #edf1ec;
   cursor: crosshair;
+  overscroll-behavior: contain;
   touch-action: none;
 }
 .live-planner-map.is-panning { cursor: grabbing; }

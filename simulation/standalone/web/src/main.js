@@ -337,6 +337,8 @@ const liveNavigationMapView = {
   center: { northM: 0, eastM: 0 },
   followVehicle: false,
 };
+let liveNavigationPlaceSearchController = null;
+let liveNavigationPendingOrigin = null;
 const liveNavigationMapLayerStorageKey = "domino-live-navigation-map-layer-v1";
 let liveNavigationMapLayer = ["local", "osm", "streetview"].includes(localStorage.getItem(liveNavigationMapLayerStorageKey))
   ? localStorage.getItem(liveNavigationMapLayerStorageKey)
@@ -4822,7 +4824,10 @@ function renderLiveNavigationPlanner(navigation) {
   if (trackLegend) trackLegend.hidden = !liveNavigationMapOverlays.track;
   if (clearanceLegend) clearanceLegend.hidden = !liveNavigationMapOverlays.lidar;
   if (returnLegend) returnLegend.hidden = !liveNavigationMapOverlays.route;
-  if (mapOriginInput && origin && document.activeElement !== mapOriginInput) mapOriginInput.value = `${origin.lat.toFixed(6)}, ${origin.lon.toFixed(6)}`;
+  const displayedOrigin = liveNavigationPendingOrigin || origin;
+  if (mapOriginInput && displayedOrigin && document.activeElement !== mapOriginInput) {
+    mapOriginInput.value = `${displayedOrigin.lat.toFixed(6)}, ${displayedOrigin.lon.toFixed(6)}`;
+  }
   if (streetViewPanel) streetViewPanel.hidden = liveNavigationMapLayer !== "streetview";
   if (mapAttribution) mapAttribution.hidden = liveNavigationMapLayer !== "osm";
   renderPlannerMapTiles(tiles, origin, mapCenter, range, toMapPoint);
@@ -5133,6 +5138,90 @@ function fitLiveNavigationPlanner() {
   liveNavigationState.plannerRangeM = recommendedRange;
   persistLiveNavigationPlan();
   updateLiveComparisonUi();
+}
+
+function renderLiveNavigationPlaceResults(results = []) {
+  const select = document.querySelector("#live-nav-place-results");
+  if (!select) return;
+  select.replaceChildren();
+  if (!results.length) {
+    const empty = document.createElement("option");
+    empty.value = "";
+    empty.textContent = "NO PLACES FOUND";
+    select.append(empty);
+    select.value = "";
+    select.hidden = true;
+    select.disabled = true;
+    return;
+  }
+  const prompt = document.createElement("option");
+  prompt.value = "";
+  prompt.textContent = "SELECT A RESULT, THEN SET ORIGIN";
+  select.append(prompt);
+  results.forEach((result) => {
+    const option = document.createElement("option");
+    option.value = `${result.lat.toFixed(6)}, ${result.lon.toFixed(6)}`;
+    option.textContent = result.displayName;
+    option.title = result.displayName;
+    select.append(option);
+  });
+  select.value = "";
+  select.hidden = false;
+  select.disabled = false;
+}
+
+async function searchLiveNavigationPlaces() {
+  const input = document.querySelector("#live-nav-place-search");
+  const button = document.querySelector("#live-nav-place-search-submit");
+  const status = document.querySelector("#live-nav-place-search-status");
+  if (!input || !button || !status) return;
+  const query = input.value.trim();
+  if (query.length < 3) {
+    status.textContent = "ENTER AT LEAST 3 CHARACTERS";
+    renderLiveNavigationPlaceResults();
+    return;
+  }
+  liveNavigationPlaceSearchController?.abort();
+  const controller = new AbortController();
+  liveNavigationPlaceSearchController = controller;
+  button.disabled = true;
+  button.textContent = "SEARCHING...";
+  status.textContent = "LOOKING UP PLACES...";
+  renderLiveNavigationPlaceResults();
+  try {
+    const url = new URL("https://nominatim.openstreetmap.org/search");
+    url.searchParams.set("format", "jsonv2");
+    url.searchParams.set("limit", "5");
+    url.searchParams.set("q", query);
+    const response = await fetch(url, {
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`place search returned ${response.status}`);
+    const payload = await response.json();
+    const results = Array.isArray(payload)
+      ? payload.map((result) => ({
+        lat: Number(result?.lat),
+        lon: Number(result?.lon),
+        displayName: String(result?.display_name || "").trim(),
+      })).filter((result) => Number.isFinite(result.lat) && result.lat >= -90 && result.lat <= 90 && Number.isFinite(result.lon) && result.lon >= -180 && result.lon <= 180 && result.displayName).slice(0, 5)
+      : [];
+    renderLiveNavigationPlaceResults(results);
+    status.textContent = results.length
+      ? `${results.length} RESULT${results.length === 1 ? "" : "S"} / SELECT THEN SET ORIGIN`
+      : "NO RESULTS / ENTER COORDINATES MANUALLY";
+  } catch (error) {
+    if (error?.name === "AbortError") return;
+    renderLiveNavigationPlaceResults();
+    status.textContent = "SEARCH UNAVAILABLE / ENTER COORDINATES MANUALLY";
+    showAppToast("Place search is unavailable. Enter latitude, longitude manually.", "warning");
+  } finally {
+    if (liveNavigationPlaceSearchController === controller) {
+      liveNavigationPlaceSearchController = null;
+      button.disabled = false;
+      button.textContent = "SEARCH";
+    }
+  }
 }
 
 function reverseLiveNavigationRoute() {
@@ -7458,12 +7547,20 @@ document.querySelector("#live-nav-set-map-origin").addEventListener("click", () 
     return;
   }
   captureLiveNavigationHistory();
+  liveNavigationPendingOrigin = null;
   liveNavigationState.plannerOrigin = coordinate;
   liveNavigationMapView.center = { northM: 0, eastM: 0 };
   liveNavigationMapView.followVehicle = false;
   persistLiveNavigationPlan();
+  const placeSearchStatus = document.querySelector("#live-nav-place-search-status");
+  if (placeSearchStatus) placeSearchStatus.textContent = "ORIGIN ACTIVE / SEARCH AGAIN";
   updateLiveComparisonUi();
   showAppToast("Map origin set. Open Map or Street View to inspect the area.", "success");
+});
+document.querySelector("#live-nav-map-origin").addEventListener("input", () => {
+  const placeSearchStatus = document.querySelector("#live-nav-place-search-status");
+  if (liveNavigationPendingOrigin && placeSearchStatus) placeSearchStatus.textContent = "MANUAL COORDINATE / PRESS SET ORIGIN";
+  liveNavigationPendingOrigin = null;
 });
 document.querySelector("#live-nav-use-device-location").addEventListener("click", () => {
   const button = document.querySelector("#live-nav-use-device-location");
@@ -7504,6 +7601,21 @@ document.querySelector("#live-nav-use-device-location").addEventListener("click"
 });
 document.querySelector("#live-nav-open-streetview").addEventListener("click", openPlannerStreetView);
 document.querySelector("#live-nav-streetview-panel-open").addEventListener("click", openPlannerStreetView);
+document.querySelector("#live-nav-place-search-submit").addEventListener("click", searchLiveNavigationPlaces);
+document.querySelector("#live-nav-place-search").addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  searchLiveNavigationPlaces();
+});
+document.querySelector("#live-nav-place-results").addEventListener("change", (event) => {
+  const coordinate = plannerMapCoordinateInput(event.target.value);
+  const originInput = document.querySelector("#live-nav-map-origin");
+  const status = document.querySelector("#live-nav-place-search-status");
+  if (!coordinate || !originInput) return;
+  liveNavigationPendingOrigin = coordinate;
+  originInput.value = `${coordinate.lat.toFixed(6)}, ${coordinate.lon.toFixed(6)}`;
+  if (status) status.textContent = "RESULT SELECTED / PRESS SET ORIGIN";
+});
 document.querySelector("#live-nav-preview-route").addEventListener("click", toggleLiveNavigationPreview);
 document.querySelector("#live-nav-preview-pause").addEventListener("click", toggleLiveNavigationPreviewPause);
 document.querySelector("#live-nav-preview-step").addEventListener("click", stepLiveNavigationPreview);

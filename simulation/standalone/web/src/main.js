@@ -4518,6 +4518,48 @@ let plannerPanStartCenter = null;
 let plannerPanMoved = false;
 let plannerSuppressNextClick = false;
 
+function formatPlannerSignedMetres(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "--.- M";
+  return `${numeric >= 0 ? "+" : ""}${numeric.toFixed(1)} M`;
+}
+
+function updatePlannerCursorReadout(event, map) {
+  const cursor = document.querySelector("#live-nav-planner-cursor");
+  const localOutput = document.querySelector("#live-nav-planner-cursor-local");
+  const globalOutput = document.querySelector("#live-nav-planner-cursor-global");
+  if (!cursor || !localOutput || !globalOutput || !map) return;
+  const rect = map.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  const x = ((event.clientX - rect.left) / rect.width) * 100;
+  const y = ((event.clientY - rect.top) / rect.height) * 100;
+  if (x < 0 || x > 100 || y < 0 || y > 100) return;
+  const range = Math.max(10, Number(liveNavigationState.plannerRangeM) || 40);
+  const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
+  const center = plannerMapDisplayCenter(navigation);
+  const local = {
+    eastM: center.eastM + (x - 50) * range / 100,
+    northM: center.northM + (50 - y) * range / 100,
+  };
+  const origin = navigationPlannerOrigin(navigation);
+  const coordinate = origin ? localOffsetToCoordinate(local, origin) : null;
+  cursor.dataset.active = "true";
+  localOutput.textContent = `E ${formatPlannerSignedMetres(local.eastM)}  /  N ${formatPlannerSignedMetres(local.northM)}`;
+  globalOutput.textContent = coordinate
+    ? `GPS ${coordinate.lat.toFixed(6)}, ${coordinate.lon.toFixed(6)}`
+    : "GPS / SET ORIGIN FOR COORDINATES";
+}
+
+function clearPlannerCursorReadout() {
+  const cursor = document.querySelector("#live-nav-planner-cursor");
+  const localOutput = document.querySelector("#live-nav-planner-cursor-local");
+  const globalOutput = document.querySelector("#live-nav-planner-cursor-global");
+  if (!cursor || !localOutput || !globalOutput) return;
+  cursor.dataset.active = "false";
+  localOutput.textContent = "MOVE OVER MAP";
+  globalOutput.textContent = "GPS / SET ORIGIN FOR COORDINATES";
+}
+
 function plannerLocalFromPointer(event, map) {
   const rect = map.getBoundingClientRect();
   if (!rect.width || !rect.height) return null;
@@ -5281,6 +5323,7 @@ function handlePlannerPointerDown(event) {
 }
 
 function handlePlannerPointerMove(event) {
+  updatePlannerCursorReadout(event, event.currentTarget);
   if (plannerPanPointerId !== null && event.pointerId === plannerPanPointerId) {
     const rect = event.currentTarget.getBoundingClientRect();
     const range = Math.max(10, Number(liveNavigationState.plannerRangeM) || 40);
@@ -7556,6 +7599,7 @@ liveNavigationPlannerMap.addEventListener("pointerdown", handlePlannerPointerDow
 liveNavigationPlannerMap.addEventListener("pointermove", handlePlannerPointerMove);
 liveNavigationPlannerMap.addEventListener("pointerup", handlePlannerPointerUp);
 liveNavigationPlannerMap.addEventListener("pointercancel", handlePlannerPointerUp);
+liveNavigationPlannerMap.addEventListener("pointerleave", clearPlannerCursorReadout);
 liveNavigationPlannerMap.addEventListener("wheel", handlePlannerWheel, { passive: false });
 liveNavigationPlannerMap.addEventListener("keydown", handlePlannerMapKeydown);
 liveNavigationPlannerMap.addEventListener("keydown", handlePlannerMarkerKeydown);

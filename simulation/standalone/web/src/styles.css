@@ -3414,10 +3414,10 @@ body[data-workspace="real-robot"]:is(
   #live-view-compare .live-compare-page-heading {
     position: fixed;
     top: calc(var(--live-content-top) + 12px);
-    right: var(--app-gutter);
+    right: auto;
     left: var(--app-gutter);
-    width: auto;
-    max-width: none;
+    width: min(1240px, calc(100vw - var(--live-right-panel) - var(--app-gutter) - var(--app-gutter) - 12px));
+    max-width: 1240px;
     min-height: 0;
     margin: 0;
     padding: 10px 16px;

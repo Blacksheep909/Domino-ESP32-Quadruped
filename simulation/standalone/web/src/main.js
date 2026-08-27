@@ -339,6 +339,22 @@ const liveNavigationMapLayerStorageKey = "domino-live-navigation-map-layer-v1";
 let liveNavigationMapLayer = ["local", "osm", "streetview"].includes(localStorage.getItem(liveNavigationMapLayerStorageKey))
   ? localStorage.getItem(liveNavigationMapLayerStorageKey)
   : "local";
+const liveNavigationMapOverlayStorageKey = "domino-live-navigation-map-overlays-v1";
+const liveNavigationMapOverlays = {
+  route: true,
+  track: true,
+  lidar: true,
+  fence: true,
+  vehicle: true,
+};
+try {
+  const storedOverlays = JSON.parse(localStorage.getItem(liveNavigationMapOverlayStorageKey) || "{}");
+  Object.keys(liveNavigationMapOverlays).forEach((key) => {
+    if (typeof storedOverlays?.[key] === "boolean") liveNavigationMapOverlays[key] = storedOverlays[key];
+  });
+} catch {
+  // Overlay visibility is optional presentation state; the default map remains usable.
+}
 
 function renderLiveNavigationActivity() {
   const list = document.querySelector("#live-nav-activity-list");
@@ -4679,8 +4695,10 @@ function renderLiveNavigationPlanner(navigation) {
   const geofence = document.querySelector("#live-nav-planner-geofence");
   const clearance = document.querySelector("#live-nav-planner-clearance");
   const scaleLabel = document.querySelector("#live-nav-planner-scale-label");
+  const routeLegend = document.querySelector("#live-nav-planner-route-legend");
   const trackLegend = document.querySelector("#live-nav-planner-track-legend");
   const clearanceLegend = document.querySelector("#live-nav-planner-clearance-legend");
+  const returnLegend = document.querySelector("#live-nav-planner-return-legend");
   const status = document.querySelector("#live-nav-planner-status");
   const hudMode = document.querySelector("#live-nav-hud-mode");
   const hudState = document.querySelector("#live-nav-hud-state");
@@ -4702,6 +4720,7 @@ function renderLiveNavigationPlanner(navigation) {
   const centerVehicleButton = document.querySelector("#live-nav-center-vehicle");
   const followVehicleInput = document.querySelector("#live-nav-follow-vehicle");
   const mapLayerInput = document.querySelector("#live-nav-map-layer");
+  const overlayInputs = document.querySelectorAll("[data-live-nav-overlay]");
   const mapOriginInput = document.querySelector("#live-nav-map-origin");
   const streetViewPanel = document.querySelector("#live-nav-streetview-panel");
   const mapAttribution = document.querySelector("#live-nav-planner-attribution");
@@ -4722,6 +4741,24 @@ function renderLiveNavigationPlanner(navigation) {
   const hasOrigin = Boolean(origin);
   map.dataset.layer = liveNavigationMapLayer;
   if (mapLayerInput) mapLayerInput.value = liveNavigationMapLayer;
+  overlayInputs.forEach((input) => {
+    const key = input.dataset.liveNavOverlay;
+    if (key in liveNavigationMapOverlays) input.checked = liveNavigationMapOverlays[key];
+  });
+  const setSvgOverlayDisplay = (element, visible) => {
+    element.style.display = visible ? "" : "none";
+  };
+  setSvgOverlayDisplay(route, liveNavigationMapOverlays.route);
+  setSvgOverlayDisplay(returnRoute, liveNavigationMapOverlays.route);
+  setSvgOverlayDisplay(markers, liveNavigationMapOverlays.route);
+  setSvgOverlayDisplay(track, liveNavigationMapOverlays.track);
+  setSvgOverlayDisplay(clearance, liveNavigationMapOverlays.lidar);
+  setSvgOverlayDisplay(geofence, liveNavigationMapOverlays.fence);
+  setSvgOverlayDisplay(vehicle, liveNavigationMapOverlays.vehicle);
+  if (routeLegend) routeLegend.hidden = !liveNavigationMapOverlays.route;
+  if (trackLegend) trackLegend.hidden = !liveNavigationMapOverlays.track;
+  if (clearanceLegend) clearanceLegend.hidden = !liveNavigationMapOverlays.lidar;
+  if (returnLegend) returnLegend.hidden = !liveNavigationMapOverlays.route;
   if (mapOriginInput && origin && document.activeElement !== mapOriginInput) mapOriginInput.value = `${origin.lat.toFixed(6)}, ${origin.lon.toFixed(6)}`;
   if (streetViewPanel) streetViewPanel.hidden = liveNavigationMapLayer !== "streetview";
   if (mapAttribution) mapAttribution.hidden = liveNavigationMapLayer !== "osm";
@@ -7294,6 +7331,19 @@ document.querySelector("#live-nav-map-layer").addEventListener("change", (event)
   liveNavigationMapLayer = ["local", "osm", "streetview"].includes(event.target.value) ? event.target.value : "local";
   localStorage.setItem(liveNavigationMapLayerStorageKey, liveNavigationMapLayer);
   updateLiveComparisonUi();
+});
+document.querySelectorAll("[data-live-nav-overlay]").forEach((input) => {
+  input.addEventListener("change", (event) => {
+    const key = event.currentTarget.dataset.liveNavOverlay;
+    if (!(key in liveNavigationMapOverlays)) return;
+    liveNavigationMapOverlays[key] = event.currentTarget.checked;
+    try {
+      localStorage.setItem(liveNavigationMapOverlayStorageKey, JSON.stringify(liveNavigationMapOverlays));
+    } catch {
+      // The toggle remains active for this session when storage is unavailable.
+    }
+    updateLiveComparisonUi();
+  });
 });
 document.querySelector("#live-nav-set-map-origin").addEventListener("click", () => {
   const coordinate = plannerMapCoordinateInput(document.querySelector("#live-nav-map-origin").value);

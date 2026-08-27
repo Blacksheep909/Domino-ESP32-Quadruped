@@ -4745,7 +4745,7 @@ body[data-workspace="real-robot"]:is([data-live-view="sensors"], [data-live-view
 .live-gait-library-controls {
   padding-top: 12px;
   display: grid;
-  grid-template-columns: minmax(150px, 1.4fr) auto minmax(120px, 1fr) auto auto auto;
+  grid-template-columns: minmax(188px, 1.55fr) auto minmax(102px, .9fr) auto auto auto;
   gap: 7px;
 }
 

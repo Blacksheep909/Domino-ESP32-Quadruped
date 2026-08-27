@@ -43,9 +43,9 @@ The browser version remains available for development and lightweight review,
 but the desktop application is the primary distribution and update path.
 
 The LIVE Sensors view includes a top-down route planner, local autosave, named
-editable waypoints, offline route preview, LiDAR clearance sectors, a
-geofence gate, an exportable autonomy activity timeline, and explicit Domino `DRIVE`
-versus ArduPilot `GUIDE` actions.
+editable waypoints, precise local cursor coordinates, offline route preview,
+LiDAR clearance sectors, a geofence gate, an exportable autonomy activity
+timeline, and explicit Domino `DRIVE` versus ArduPilot `GUIDE` actions.
 
 ## Why This Project Matters
 

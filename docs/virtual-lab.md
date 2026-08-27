@@ -187,6 +187,10 @@ use **RESET MAP** to return to the local origin. Panning only changes the
 displayed map center, never the route coordinates. **CENTER DOG** moves the
 display to the current GPS/preview position, while **FOLLOW DOG** keeps that
 position centered during an active preview or fresh GPS fix.
+The **CURSOR POSITION** strip below the map reports the pointer's local east/north
+offset in metres. After an origin is set, it also reports the corresponding
+latitude and longitude, making precise route review possible even without a GPS
+fix on the robot.
 When planning away from the robot, **USE DEVICE** requests the computer's
 browser location and fills the map-origin field for review before **SET ORIGIN**
 is applied. This is a local planning convenience only; it does not connect to,

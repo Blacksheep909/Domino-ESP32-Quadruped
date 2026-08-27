@@ -6214,12 +6214,13 @@ body[data-experience="simple"] [data-expert-only] { display: none !important; }
   letter-spacing: 0.04em;
 }
 
-/* Replace the flat black title strips with the same raised header language. */
+/* Keep dark mode consistent with light mode: title banners float directly on
+   the page surface, while the smaller status card remains surfaced. */
 :root[data-theme="dark"] .live-view-page .live-page-heading {
-  background: linear-gradient(100deg, rgba(29, 37, 44, 0.88), rgba(18, 23, 27, 0.92));
-  border: 1px solid var(--live-border);
-  border-radius: 10px;
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.025);
+  background: transparent;
+  border-color: transparent;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 :root[data-theme="dark"] .live-view-page .live-page-heading h1 {
@@ -9195,11 +9196,9 @@ body[data-workspace="real-robot"][data-live-view="calibration"] .camera-gizmo {
   margin-bottom: 16px;
   box-sizing: border-box;
   overflow: hidden;
-  background:
-    linear-gradient(105deg, rgba(29, 39, 46, 0.96), rgba(18, 24, 29, 0.94) 62%, rgba(13, 18, 22, 0.98)),
-    var(--live-surface);
-  border-color: #43515c;
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
 }
 
 :root[data-theme="dark"] #real-workspace .live-view-page .live-page-heading::before {
@@ -9555,7 +9554,7 @@ body[data-workspace="real-robot"]:is(
 
 :root[data-theme="dark"] #live-view-compare .live-compare-page-heading {
   color: var(--live-text);
-  background: rgba(18, 23, 27, 0.96);
-  border-color: var(--live-border);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.025);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
 }

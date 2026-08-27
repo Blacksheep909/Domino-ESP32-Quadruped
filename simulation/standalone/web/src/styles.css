@@ -9227,6 +9227,50 @@ body[data-workspace="real-robot"][data-live-view="calibration"] .camera-gizmo {
   }
 }
 
+/* Route-planning focus ----------------------------------------------------
+   Planning is often easier with a large map than with the normal twin
+   preview lane. Focus is an explicit, reversible presentation mode: it
+   leaves route state and safety gates unchanged and closes automatically
+   when the operator changes LIVE pages. */
+body[data-workspace="real-robot"][data-live-view="sensors"][data-live-planner-focus="true"] #scene,
+body[data-workspace="real-robot"][data-live-view="sensors"][data-live-planner-focus="true"] .camera-gizmo,
+body[data-workspace="real-robot"][data-live-view="sensors"][data-live-planner-focus="true"] .camera-home-button,
+body[data-workspace="real-robot"][data-live-view="sensors"][data-live-planner-focus="true"] .live-camera-panel {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+#live-view-sensors[data-live-planner-focus="true"],
+body[data-workspace="real-robot"][data-live-view="sensors"][data-live-planner-focus="true"] #live-view-sensors {
+  overflow-x: hidden;
+}
+
+body[data-workspace="real-robot"][data-live-view="sensors"][data-live-planner-focus="true"] #live-view-sensors .live-page-heading {
+  width: 100%;
+  margin-right: 0;
+}
+
+body[data-workspace="real-robot"][data-live-view="sensors"][data-live-planner-focus="true"] #live-view-sensors .live-sensor-grid,
+body[data-workspace="real-robot"][data-live-view="sensors"][data-live-planner-focus="true"] #live-view-sensors .live-navigation-grid {
+  padding-right: 0;
+}
+
+body[data-workspace="real-robot"][data-live-view="sensors"][data-live-planner-focus="true"] #live-view-sensors .live-route-planner {
+  grid-template-columns: minmax(280px, .3fr) minmax(0, 1fr);
+  gap: 18px;
+}
+
+body[data-workspace="real-robot"][data-live-view="sensors"][data-live-planner-focus="true"] #live-view-sensors .live-planner-map {
+  min-height: min(62vw, 620px);
+  aspect-ratio: 1.7 / 1;
+}
+
+:root[data-theme="dark"] body[data-workspace="real-robot"][data-live-view="sensors"][data-live-planner-focus="true"] #live-nav-focus-map {
+  color: #d5f5dc;
+  background: rgba(66, 142, 88, .26);
+  border-color: rgba(121, 196, 147, .72);
+}
+
 body[data-workspace="real-robot"]:is(
   [data-live-view="sensors"],
   [data-live-view="gaits"]

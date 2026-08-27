@@ -7116,8 +7116,8 @@ body[data-workspace="real-robot"] .toast-region {
 .live-native-preflight { margin-top: 12px; padding-top: 10px; border-top: 1px solid #d9ddd7; }
 .live-native-preflight-title { color: #757970; font: 800 8px/1.15 "Cascadia Mono", Consolas, monospace; letter-spacing: .08em; }
 .live-native-preflight-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; margin-top: 7px; }
-.live-native-preflight-grid > span { min-width: 0; display: flex; justify-content: space-between; gap: 5px; padding: 5px 6px; color: #858981; background: #e9ebe6; border: 1px solid #d9ddd7; border-radius: 4px; font: 800 7px/1 "Cascadia Mono", Consolas, monospace; }
-.live-native-preflight-grid b { overflow: hidden; font-weight: 800; letter-spacing: .05em; text-overflow: ellipsis; }
+.live-native-preflight-grid > span { min-width: 0; display: grid; justify-items: start; align-content: center; gap: 3px; padding: 5px 6px; color: #858981; background: #e9ebe6; border: 1px solid #d9ddd7; border-radius: 4px; font: 800 8px/1.05 "Cascadia Mono", Consolas, monospace; }
+.live-native-preflight-grid b { overflow: visible; font-weight: 800; letter-spacing: .05em; white-space: nowrap; }
 .live-native-preflight-grid strong { color: #ad7621; font: inherit; white-space: nowrap; }
 .live-native-preflight-grid > span[data-state="online"] strong { color: #318051; }
 .live-native-preflight-grid > span[data-state="offline"] strong { color: #8d9095; }

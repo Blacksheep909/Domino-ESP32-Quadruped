@@ -918,13 +918,14 @@ function renderLiveCameraPanel() {
   const pitch = document.querySelector("#live-camera-pitch");
   const fov = document.querySelector("#live-camera-fov");
   const connect = document.querySelector("#live-camera-connect");
+  const clear = document.querySelector("#live-camera-clear");
   const snapshot = document.querySelector("#live-camera-snapshot");
   const fullscreen = document.querySelector("#live-camera-fullscreen");
   const image = document.querySelector("#live-camera-image");
   const placeholder = document.querySelector("#live-camera-placeholder");
   const telemetryState = document.querySelector("#live-camera-telemetry-state");
   const telemetryAge = document.querySelector("#live-camera-telemetry-age");
-  if (!state || !rate || !yaw || !pitch || !fov || !connect || !snapshot || !fullscreen || !image || !placeholder) return;
+  if (!state || !rate || !yaw || !pitch || !fov || !connect || !clear || !snapshot || !fullscreen || !image || !placeholder) return;
   state.textContent = liveCameraState.error ? "STREAM ERROR" : liveCameraState.connecting ? "CONNECTING" : liveCameraState.connected ? "LIVE" : "OFFLINE";
   state.dataset.state = liveCameraState.error ? "error" : liveCameraState.connecting ? "connecting" : liveCameraState.connected ? "online" : "offline";
   rate.textContent = Number.isFinite(liveCameraState.fps) ? `${Math.round(liveCameraState.fps)} FPS` : liveCameraState.connected ? "STREAMING" : "-- FPS";
@@ -937,6 +938,8 @@ function renderLiveCameraPanel() {
     : liveCameraState.error
       ? "Retry the configured robot camera stream"
       : "Connect to the configured robot camera stream";
+  const input = document.querySelector("#live-camera-url");
+  clear.disabled = !input?.value.trim();
   snapshot.disabled = !liveCameraState.connected;
   fullscreen.disabled = !liveCameraState.connected;
   image.hidden = !liveCameraState.connected;
@@ -971,6 +974,20 @@ function disconnectLiveCamera() {
   liveCameraState.fps = null;
   liveCameraState.updatedAt = null;
   renderLiveCameraPanel();
+}
+
+function clearLiveCameraUrl() {
+  disconnectLiveCamera();
+  const input = document.querySelector("#live-camera-url");
+  if (input) input.value = "";
+  try {
+    localStorage.removeItem(LIVE_CAMERA_URL_STORAGE_KEY);
+  } catch {
+    // Clearing remains effective for this session when storage is unavailable.
+  }
+  renderLiveCameraPanel();
+  input?.focus();
+  showAppToast("Saved camera URL cleared.", "info");
 }
 
 function connectLiveCamera() {
@@ -1275,6 +1292,8 @@ shortcutsDialog?.addEventListener("click", (event) => {
 });
 document.querySelector("#hud-toggle")?.addEventListener("click", () => setAutonomyHudCollapsed(!autonomyHudCollapsed));
 document.querySelector("#live-camera-connect")?.addEventListener("click", connectLiveCamera);
+document.querySelector("#live-camera-clear")?.addEventListener("click", clearLiveCameraUrl);
+document.querySelector("#live-camera-url")?.addEventListener("input", renderLiveCameraPanel);
 document.querySelector("#live-camera-url")?.addEventListener("keydown", (event) => {
   if (event.key !== "Enter") return;
   event.preventDefault();

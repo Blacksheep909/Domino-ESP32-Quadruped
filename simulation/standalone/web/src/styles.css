@@ -7110,12 +7110,21 @@ body[data-workspace="real-robot"] .toast-region {
 .live-planner-streetview-heading span { color: #8fab98; font: 800 7px/1.2 "Cascadia Mono", Consolas, monospace; letter-spacing: .06em; }
 .live-planner-streetview-heading strong { color: #b5e6c1; font: 800 10px/1.2 "Cascadia Mono", Consolas, monospace; letter-spacing: .08em; }
 .live-planner-streetview-heading > span { flex: 0 0 auto; text-align: right; }
+.live-planner-streetview-meta { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) max-content; gap: 8px; }
+.live-planner-streetview-meta > span { min-width: 0; display: grid; gap: 4px; }
+.live-planner-streetview-meta b { color: #789682; font: 800 7px/1.1 "Cascadia Mono", Consolas, monospace; letter-spacing: .06em; }
+.live-planner-streetview-meta strong { min-width: 0; overflow: hidden; color: #c0e4c9; font: 800 9px/1.1 "Cascadia Mono", Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
 .live-planner-streetview p { max-width: 600px; margin: 0; color: #a4b2a8; font-size: 9px; line-height: 1.45; }
-.live-planner-streetview-actions { display: flex; flex-wrap: wrap; gap: 7px; }
-.live-planner-streetview button { min-height: 30px; padding: 0 11px; color: #b9efc6; background: rgba(66, 142, 88, .22); border: 1px solid rgba(113, 201, 145, .6); border-radius: 4px; cursor: pointer; font: 800 8px/1 "Cascadia Mono", Consolas, monospace; }
+.live-planner-streetview-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.live-planner-streetview button { width: 100%; min-height: 30px; padding: 0 8px; color: #b9efc6; background: rgba(66, 142, 88, .22); border: 1px solid rgba(113, 201, 145, .6); border-radius: 4px; cursor: pointer; font: 800 8px/1 "Cascadia Mono", Consolas, monospace; }
 .live-planner-streetview button:disabled { color: #6f8175; background: rgba(255, 255, 255, .04); border-color: rgba(113, 145, 121, .28); cursor: not-allowed; }
-.live-planner-streetview button:nth-child(2) { flex: 1 1 auto; }
 .live-planner-streetview button:hover:not(:disabled), .live-planner-streetview button:focus-visible { border-color: #8dd7a0; outline: none; }
+
+@container (min-width: 520px) {
+  .live-planner-streetview-actions { display: flex; flex-wrap: wrap; }
+  .live-planner-streetview-actions button { width: auto; }
+  .live-planner-streetview-actions button:nth-child(4) { flex: 1 1 auto; }
+}
 .live-planner-map-meta { min-width: 0; margin-top: 5px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .live-planner-tile-status { min-width: 0; overflow: hidden; color: #737871; font: 800 7px/1.2 "Cascadia Mono", Consolas, monospace; letter-spacing: .04em; text-overflow: ellipsis; white-space: nowrap; }
 .live-planner-tile-status[data-state="online"] { color: #3c8456; }
@@ -7266,6 +7275,8 @@ body[data-workspace="real-robot"] .toast-region {
 :root[data-theme="dark"] .live-planner-map-meta > button { color: #b9efc6; background: rgba(66, 142, 88, .18); border-color: rgba(113, 201, 145, .52); }
 :root[data-theme="dark"] .live-planner-streetview-heading span { color: #91a899; }
 :root[data-theme="dark"] .live-planner-streetview-heading strong { color: #b9efc6; }
+:root[data-theme="dark"] .live-planner-streetview-meta b { color: #91a899; }
+:root[data-theme="dark"] .live-planner-streetview-meta strong { color: #c0e4c9; }
 :root[data-theme="dark"] .live-planner-streetview p { color: #a4b2a8; }
 :root[data-theme="dark"] .live-planner-streetview button:disabled { color: #6f8175; background: rgba(255, 255, 255, .04); border-color: rgba(113, 145, 121, .28); }
 :root[data-theme="dark"] .live-planner-map { background: #17201b; border-color: #3c5544; }
@@ -7366,6 +7377,8 @@ body[data-workspace="real-robot"][data-live-view="sensors"] .app-hud { display: 
   .live-planner-map-settings select { width: 100%; }
   .live-planner-cursor { grid-template-columns: 1fr; gap: 4px; }
   .live-planner-cursor em { text-align: left; }
+  .live-planner-streetview-meta { grid-template-columns: 1fr; }
+  .live-planner-streetview-meta > span:last-child { text-align: left; }
 }
 
 @media (max-width: 1050px) {

@@ -225,11 +225,14 @@ local route planning.
 **STREET VIEW** is an explicit external inspection handoff: **OPEN STREET
 VIEW** launches a Google Maps URL at the same origin without requiring an API
 key. Selecting a waypoint in the planner updates the inspection panel with its
-route position and enables **PREVIOUS**, **NEXT**, and **OPEN PANORAMA**; the
-panorama opens at that point and aims along the adjacent route segment. Each
-waypoint also exposes **VIEW** for the same direct handoff. Street View
-navigation is not read back into the app, so route edits remain deliberate and
-happen in the Domino planner after returning from the external panorama.
+route position, coordinate, and route heading, and enables **PREVIOUS**,
+**NEXT**, and **OPEN PANORAMA**. **ADD AT MAP CENTER** creates a new local or
+GPS-referenced waypoint at the current planning center, which makes it easy to
+build a route while inspecting nearby streets. The panorama opens at the
+selected point and aims along the adjacent route segment. Each waypoint also
+exposes **VIEW** for the same direct handoff. Street View navigation is not
+read back into the app, so route edits remain deliberate and happen in the
+Domino planner after returning from the external panorama.
 
 **REVERSE ROUTE** reverses the waypoint order for a return pass while retaining
 each point's speed, radius, hold, label, and coordinate data. It is an in-app

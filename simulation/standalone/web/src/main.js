@@ -5323,34 +5323,43 @@ function handlePlannerPointerUp(event) {
   plannerDragMoved = false;
 }
 
+function setLiveNavigationPlannerRange(requestedRange, anchor = { x: 50, y: 50 }) {
+  const ranges = [40, 80, 160];
+  const currentRange = Math.max(10, Number(liveNavigationState.plannerRangeM) || 40);
+  const currentIndex = Math.max(0, ranges.indexOf(currentRange));
+  const nextIndex = Math.max(0, Math.min(ranges.length - 1, ranges.indexOf(Number(requestedRange))));
+  if (nextIndex === currentIndex) return false;
+  const nextRange = ranges[nextIndex];
+  if (!liveNavigationMapView.followVehicle) {
+    const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
+    const center = plannerMapDisplayCenter(navigation);
+    liveNavigationMapView.center = {
+      eastM: center.eastM + ((anchor.x - 50) * (currentRange - nextRange)) / 100,
+      northM: center.northM + ((50 - anchor.y) * (currentRange - nextRange)) / 100,
+    };
+  }
+  captureLiveNavigationHistory();
+  liveNavigationState.plannerRangeM = nextRange;
+  const plannerRange = document.querySelector("#live-nav-planner-range");
+  if (plannerRange) plannerRange.value = String(nextRange);
+  persistLiveNavigationPlan();
+  updateLiveComparisonUi();
+  return true;
+}
+
 function handlePlannerWheel(event) {
   if (!Number.isFinite(event.deltaY) || event.deltaY === 0) return;
   const ranges = [40, 80, 160];
   const currentRange = Math.max(10, Number(liveNavigationState.plannerRangeM) || 40);
   const currentIndex = Math.max(0, ranges.indexOf(currentRange));
   const nextIndex = Math.max(0, Math.min(ranges.length - 1, currentIndex + (event.deltaY > 0 ? 1 : -1)));
-  if (nextIndex === currentIndex) {
-    event.preventDefault();
-    return;
-  }
-  const nextRange = ranges[nextIndex];
   const map = event.currentTarget;
   const rect = map.getBoundingClientRect();
   if (!rect.width || !rect.height) return;
-  const x = ((event.clientX - rect.left) / rect.width) * 100;
-  const y = ((event.clientY - rect.top) / rect.height) * 100;
-  if (!liveNavigationMapView.followVehicle) {
-    const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
-    const center = plannerMapDisplayCenter(navigation);
-    liveNavigationMapView.center = {
-      eastM: center.eastM + ((x - 50) * (currentRange - nextRange)) / 100,
-      northM: center.northM + ((50 - y) * (currentRange - nextRange)) / 100,
-    };
-  }
-  captureLiveNavigationHistory();
-  liveNavigationState.plannerRangeM = nextRange;
-  persistLiveNavigationPlan();
-  updateLiveComparisonUi();
+  setLiveNavigationPlannerRange(ranges[nextIndex], {
+    x: ((event.clientX - rect.left) / rect.width) * 100,
+    y: ((event.clientY - rect.top) / rect.height) * 100,
+  });
   event.preventDefault();
 }
 
@@ -7690,10 +7699,17 @@ document.querySelector("#live-nav-geojson-export").addEventListener("click", exp
 document.querySelector("#live-nav-geojson-import").addEventListener("click", () => document.querySelector("#live-nav-geojson-file").click());
 document.querySelector("#live-nav-geojson-file").addEventListener("change", importLiveNavigationGeoJson);
 document.querySelector("#live-nav-planner-range").addEventListener("change", (event) => {
-  if (liveNavigationState.plannerRangeM !== (Number(event.target.value) || 40)) captureLiveNavigationHistory();
-  liveNavigationState.plannerRangeM = Number(event.target.value) || 40;
-  persistLiveNavigationPlan();
-  updateLiveComparisonUi();
+  setLiveNavigationPlannerRange(Number(event.target.value) || 40);
+});
+document.querySelector("#live-nav-zoom-out").addEventListener("click", () => {
+  const ranges = [40, 80, 160];
+  const current = Math.max(10, Number(liveNavigationState.plannerRangeM) || 40);
+  setLiveNavigationPlannerRange(ranges[Math.min(ranges.length - 1, Math.max(0, ranges.indexOf(current) + 1))]);
+});
+document.querySelector("#live-nav-zoom-in").addEventListener("click", () => {
+  const ranges = [40, 80, 160];
+  const current = Math.max(10, Number(liveNavigationState.plannerRangeM) || 40);
+  setLiveNavigationPlannerRange(ranges[Math.max(0, ranges.indexOf(current) - 1)]);
 });
 document.querySelector("#live-nav-loop-count").addEventListener("change", (event) => {
   const loopCount = Math.max(1, Math.min(5, Math.round(Number(event.target.value) || 1)));

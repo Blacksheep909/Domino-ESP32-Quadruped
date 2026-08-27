@@ -4781,17 +4781,28 @@ function plannerMapTileIndex(coordinate, zoom) {
 
 let plannerMapTilesSignature = "";
 let plannerMapTilesCenter = null;
+let plannerMapTileRequestId = 0;
 
-function renderPlannerMapTiles(tiles, origin, mapCenter, range, toMapPoint) {
+function renderPlannerMapTiles(tiles, origin, mapCenter, range, toMapPoint, statusElement) {
+  const setStatus = (text, state) => {
+    if (!statusElement) return;
+    statusElement.textContent = text;
+    statusElement.dataset.state = state;
+  };
   if (liveNavigationMapLayer !== "osm" || !origin) {
+    plannerMapTileRequestId += 1;
     if (plannerMapTilesSignature) tiles.replaceChildren();
     plannerMapTilesSignature = "";
     plannerMapTilesCenter = null;
     tiles.removeAttribute("transform");
+    setStatus(liveNavigationMapLayer === "osm" ? "OPEN MAP / SET ORIGIN" : "LOCAL GRID / OFFLINE SAFE", liveNavigationMapLayer === "osm" ? "warning" : "offline");
     return;
   }
   const centerCoordinate = localOffsetToCoordinate(mapCenter, origin);
-  if (!centerCoordinate) return;
+  if (!centerCoordinate) {
+    setStatus("OPEN MAP / NO ORIGIN", "warning");
+    return;
+  }
   const zoom = range <= 40 ? 19 : range <= 80 ? 18 : 17;
   const tileCenter = plannerMapTileIndex(centerCoordinate, zoom);
   const baseX = Math.floor(tileCenter.x);
@@ -4804,6 +4815,25 @@ function renderPlannerMapTiles(tiles, origin, mapCenter, range, toMapPoint) {
     return;
   }
   tiles.replaceChildren();
+  const requestId = ++plannerMapTileRequestId;
+  let requested = 0;
+  let loaded = 0;
+  let failed = 0;
+  const updateStatus = () => {
+    if (requestId !== plannerMapTileRequestId) return;
+    if (requested === 0) {
+      setStatus("OPEN MAP / NO TILES", "warning");
+      return;
+    }
+    const finished = loaded + failed;
+    if (finished < requested) {
+      setStatus(`OPEN MAP / LOADING ${finished}/${requested}`, "warning");
+      return;
+    }
+    if (failed === 0) setStatus(`OPEN MAP / READY ${loaded}/${requested}`, "online");
+    else if (loaded === 0) setStatus("OPEN MAP / UNAVAILABLE", "error");
+    else setStatus(`OPEN MAP / PARTIAL ${loaded}/${requested}`, "warning");
+  };
   plannerMapTilesSignature = signature;
   plannerMapTilesCenter = { ...mapCenter };
   tiles.removeAttribute("transform");
@@ -4814,7 +4844,7 @@ function renderPlannerMapTiles(tiles, origin, mapCenter, range, toMapPoint) {
       const first = toMapPoint(topLeft);
       const second = toMapPoint(bottomRight);
       if (!first || !second) continue;
-      tiles.append(plannerSvgElement("image", {
+      const tile = plannerSvgElement("image", {
         class: "live-planner-map-tile",
         x: first.x.toFixed(3),
         y: first.y.toFixed(3),
@@ -4822,9 +4852,14 @@ function renderPlannerMapTiles(tiles, origin, mapCenter, range, toMapPoint) {
         height: (second.y - first.y).toFixed(3),
         href: `https://tile.openstreetmap.org/${zoom}/${tileX}/${tileY}.png`,
         preserveAspectRatio: "none",
-      }));
+      });
+      requested += 1;
+      tile.addEventListener("load", () => { loaded += 1; updateStatus(); });
+      tile.addEventListener("error", () => { failed += 1; updateStatus(); });
+      tiles.append(tile);
     }
   }
+  updateStatus();
 }
 
 function renderLiveNavigationPlanner(navigation) {
@@ -4866,6 +4901,7 @@ function renderLiveNavigationPlanner(navigation) {
   const mapLayerInput = document.querySelector("#live-nav-map-layer");
   const overlayInputs = document.querySelectorAll("[data-live-nav-overlay]");
   const mapOriginInput = document.querySelector("#live-nav-map-origin");
+  const mapTileStatus = document.querySelector("#live-nav-planner-tile-status");
   const streetViewPanel = document.querySelector("#live-nav-streetview-panel");
   const mapAttribution = document.querySelector("#live-nav-planner-attribution");
   const reverseButton = document.querySelector("#live-nav-reverse-route");
@@ -4911,7 +4947,7 @@ function renderLiveNavigationPlanner(navigation) {
   }
   if (streetViewPanel) streetViewPanel.hidden = liveNavigationMapLayer !== "streetview";
   if (mapAttribution) mapAttribution.hidden = liveNavigationMapLayer !== "osm" || !hasOrigin;
-  renderPlannerMapTiles(tiles, origin, mapCenter, range, toMapPoint);
+  renderPlannerMapTiles(tiles, origin, mapCenter, range, toMapPoint, mapTileStatus);
   const previewSession = liveNavigationPreviewState.phase !== "idle";
   const preview = previewSession
     ? navigationMissionPreview(liveNavigationState.missionDraft, origin, liveNavigationPreviewState.elapsedSeconds, liveNavigationState.loopCount)

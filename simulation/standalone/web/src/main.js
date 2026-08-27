@@ -1336,12 +1336,6 @@ document.querySelector("#live-camera-snapshot")?.addEventListener("click", captu
 document.querySelector("#live-camera-fullscreen")?.addEventListener("click", () => {
   document.querySelector("#live-camera-feed")?.requestFullscreen?.();
 });
-window.setInterval(() => {
-  // Keep frame/telemetry ages honest even when no new packet or image event arrives.
-  // This is especially important for a paused camera stream or a temporarily stale
-  // MAVLink camera telemetry channel.
-  if (document.querySelector("#live-camera-panel")) renderLiveCameraPanel();
-}, 1_000);
 window.addEventListener("domino-camera-telemetry", (event) => {
   if (event instanceof CustomEvent) ingestLiveCameraTelemetry(event.detail);
 });

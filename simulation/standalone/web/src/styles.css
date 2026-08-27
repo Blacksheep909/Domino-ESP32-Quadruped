@@ -6506,6 +6506,44 @@ body[data-workspace="real-robot"][data-live-view="sensors"] .live-camera-panel {
 .live-camera-actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
 .live-camera-actions button:disabled { color: #66666b; background: #171719; border-color: #2d2d30; cursor: not-allowed; }
 
+/* The feed itself stays black for camera contrast, but the surrounding
+   controls must follow the active application theme. */
+:root:not([data-theme="dark"]) .live-camera-panel {
+  color: #20211f;
+  background: #fafaf8;
+  border-color: #d2d2cd;
+  box-shadow: 0 12px 30px rgba(35, 35, 31, .16);
+}
+
+:root:not([data-theme="dark"]) .live-camera-panel > header {
+  color: #20211f;
+  background: #f0f0ec;
+  border-bottom-color: #dfdfda;
+}
+
+:root:not([data-theme="dark"]) .live-camera-panel > header span,
+:root:not([data-theme="dark"]) .live-camera-controls label,
+:root:not([data-theme="dark"]) .live-camera-angles span,
+:root:not([data-theme="dark"]) .live-camera-telemetry {
+  color: #777a75;
+}
+
+:root:not([data-theme="dark"]) .live-camera-panel > header strong { color: #28764a; }
+:root:not([data-theme="dark"]) .live-camera-panel > header strong[data-state="offline"],
+:root:not([data-theme="dark"]) .live-camera-panel > header strong[data-state="error"] { color: #a34835; }
+:root:not([data-theme="dark"]) .live-camera-angles > div { background: #f0f0ec; border-color: #d2d2cd; }
+:root:not([data-theme="dark"]) .live-camera-angles strong { color: #30332e; }
+:root:not([data-theme="dark"]) #live-camera-placeholder strong { color: #aaaab0; }
+:root:not([data-theme="dark"]) #live-camera-placeholder span { color: #6f6f75; }
+:root:not([data-theme="dark"]) .live-camera-url-row input { color: #30332e; background: #fff; border-color: #d2d2cd; }
+:root:not([data-theme="dark"]) .live-camera-url-row button,
+:root:not([data-theme="dark"]) .live-camera-actions button { color: #25633e; background: #e2f0e7; border-color: #9ec7ac; }
+:root:not([data-theme="dark"]) .live-camera-url-row .live-camera-clear { color: #696c67; background: #f0f0ec; border-color: #d2d2cd; }
+:root:not([data-theme="dark"]) .live-camera-url-row .live-camera-clear:disabled,
+:root:not([data-theme="dark"]) .live-camera-actions button:disabled { color: #898c86; background: #e8e8e4; border-color: #d2d2cd; }
+:root:not([data-theme="dark"]) .live-camera-telemetry [data-state="online"] { color: #28764a; }
+:root:not([data-theme="dark"]) .live-camera-telemetry [data-state="warning"] { color: #9a6a1e; }
+
 @media (max-width: 1180px) {
   .live-camera-body { grid-template-columns: 1fr; }
   .live-camera-feed { display: none; }

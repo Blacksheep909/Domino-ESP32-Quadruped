@@ -7005,6 +7005,11 @@ body[data-workspace="real-robot"] .toast-region {
 .live-planner-map-settings label { display: grid; gap: 5px; flex: 0 0 70px; }
 .live-planner-map-settings .live-planner-layer { flex-basis: 94px; }
 .live-planner-map-settings label > span { font-size: 7px; text-align: right; }
+.live-planner-map-view-controls { display: grid; gap: 5px; flex: 0 0 auto; }
+.live-planner-map-view-controls > span { font-size: 7px; text-align: right; }
+.live-planner-map-view-controls > div { display: flex; gap: 4px; }
+.live-planner-map-view-controls button { width: 25px; height: 25px; padding: 0; color: #286442; background: #e3f1e8; border: 1px solid #9bc8aa; border-radius: 4px; cursor: pointer; font: 800 14px/1 "Cascadia Mono", Consolas, monospace; }
+.live-planner-map-view-controls button:hover, .live-planner-map-view-controls button:focus-visible { border-color: #4d9e6a; outline: none; }
 .live-planner-map-settings select {
   height: 25px;
   color: #353833;
@@ -7200,6 +7205,7 @@ body[data-workspace="real-robot"] .toast-region {
 :root[data-theme="dark"] .live-planner-map-heading strong,
 :root[data-theme="dark"] .live-autonomy-hud-heading strong { color: #78c894; }
 :root[data-theme="dark"] .live-planner-map-settings select { color: #dddde1; background: #292a2d; border-color: #4a4c50; }
+:root[data-theme="dark"] .live-planner-map-view-controls button { color: #b9efc6; background: rgba(66, 142, 88, .18); border-color: rgba(113, 201, 145, .52); }
 :root[data-theme="dark"] .live-planner-map-location label > span,
 :root[data-theme="dark"] .live-planner-map-location input { color: #96999e; }
 :root[data-theme="dark"] .live-planner-map-location input { color: #e1e1e4; background: #292a2d; border-color: #4a4d50; }

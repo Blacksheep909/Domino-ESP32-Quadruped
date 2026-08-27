@@ -8956,14 +8956,17 @@ body[data-workspace="real-robot"]:is(
   [data-live-view="calibration"],
   [data-live-view="gaits"]
 ) {
-  --live-preview-top: 144px;
+  /* Keep a deliberate gap after the title/status lane. The preview is fixed
+     above the scrolling page, so a small buffer prevents a wrapped heading
+     from ever sharing its border with the canvas. */
+  --live-preview-top: 262px;
   --live-preview-right: clamp(20px, 2.5vw, 54px);
   --live-preview-width: 36vw;
   --live-preview-height: clamp(300px, 38vh, 420px);
 }
 
 body[data-workspace="real-robot"][data-live-view="calibration"] {
-  --live-preview-top: 253px;
+  --live-preview-top: 262px;
 }
 
 /* Sensors and Gaits use the same full-width title row as Calibration. Their
@@ -8973,7 +8976,7 @@ body[data-workspace="real-robot"]:is(
   [data-live-view="sensors"],
   [data-live-view="gaits"]
 ) {
-  --live-preview-top: 253px;
+  --live-preview-top: 262px;
 }
 
 body[data-workspace="real-robot"]:is(
@@ -9460,7 +9463,7 @@ body[data-workspace="real-robot"]:is(
     [data-live-view="calibration"],
     [data-live-view="gaits"]
   ) #scene {
-    inset: calc(var(--live-content-top, 118px) + 235px) 22px auto;
+    inset: calc(var(--live-content-top, 118px) + 250px) 22px auto;
     width: calc(100vw - 44px);
     height: 220px;
   }
@@ -9477,7 +9480,7 @@ body[data-workspace="real-robot"]:is(
   #live-view-sensors .live-sensor-grid,
   #live-view-calibration .live-calibration-layout,
   #live-view-gaits .live-gaits-layout {
-    padding-top: 240px;
+    padding-top: 255px;
   }
 
   body[data-workspace="real-robot"][data-live-preview-collapsed="true"] :is(

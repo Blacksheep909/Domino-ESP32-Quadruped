@@ -54,7 +54,7 @@ test("compact LIVE previews collapse while scrolling instead of covering page co
   assert.match(main, /livePreviewCollapsed/);
   assert.match(main, /querySelectorAll\("button\[data-live-view\]"\)/);
   assert.match(styles, /@media \(max-width: 1000px\)[\s\S]*data-live-preview-collapsed="true"[\s\S]*#scene/);
-  assert.match(styles, /#live-view-sensors \.live-sensor-grid[\s\S]*padding-top: 240px/);
+  assert.match(styles, /#live-view-sensors \.live-sensor-grid[\s\S]*padding-top: 255px/);
 });
 
 test("LIVE keeps measured battery state and E-stop in the persistent header", () => {

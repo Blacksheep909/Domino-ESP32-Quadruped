@@ -2671,6 +2671,11 @@ dd {
 .live-manual-deadman[data-active="true"] { color: #fff !important; background: #a94937 !important; border-color: #d16a55 !important; }
 .live-manual-emergency { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .live-manual-emergency button:not(:disabled) { color: #9e3827; background: #fff0ed; border-color: #d99a8e; }
+@media (min-width: 520px) {
+  .live-manual-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .live-manual-modes,
+  .live-manual-controls > p { grid-column: 1 / -1; }
+}
 :root[data-theme="dark"] #real-workspace .live-manual-open { color: #bce8c9; background: rgba(61, 151, 95, .12); border-color: rgba(80, 177, 113, .3); }
 :root[data-theme="dark"] .live-manual-dialog { color: #e4e4e7; background: #141416; border-color: #303034; }
 :root[data-theme="dark"] .live-manual-state { background: #1d1d20; }

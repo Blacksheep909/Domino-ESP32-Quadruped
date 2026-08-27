@@ -173,10 +173,11 @@ autonomy HUD, route data, safety checks, and command gates remain unchanged.
 Press **ESC** or **EXIT MAP FOCUS** to return to the normal twin-preview layout;
 switching to another LIVE page also closes focus automatically.
 
-Scroll the planning map, or use the **− / +** zoom buttons beside the range
-selector, to move through the bounded 40/80/160 m ranges. Pointer zoom stays
-anchored near the cursor and never changes waypoint coordinates; the buttons
-are keyboard accessible and keep the range selector synchronized.
+Scroll the planning map, use the **− / +** zoom buttons beside the range
+selector, or focus the map and press **+ / −** to move through the bounded
+40/80/160 m ranges. Pointer zoom stays anchored near the cursor and never
+changes waypoint coordinates; every zoom path keeps the range selector
+synchronized.
 Hold **Shift** and drag an empty area of the planning map to pan the local view;
 use **RESET MAP** to return to the local origin. Panning only changes the
 displayed map center, never the route coordinates. **CENTER DOG** moves the

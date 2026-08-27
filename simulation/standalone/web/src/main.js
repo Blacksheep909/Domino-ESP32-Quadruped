@@ -928,11 +928,22 @@ function renderLiveCameraPanel() {
   yaw.textContent = `${liveCameraState.yawDeg >= 0 ? "+" : ""}${liveCameraState.yawDeg.toFixed(1)}°`;
   pitch.textContent = `${liveCameraState.pitchDeg >= 0 ? "+" : ""}${liveCameraState.pitchDeg.toFixed(1)}°`;
   fov.textContent = `${Math.round(liveCameraState.fovDeg)}°`;
-  connect.textContent = liveCameraState.connected || liveCameraState.connecting ? "DISCONNECT" : "CONNECT";
+  connect.textContent = liveCameraState.connected || liveCameraState.connecting ? "DISCONNECT" : liveCameraState.error ? "RETRY" : "CONNECT";
+  connect.title = liveCameraState.connected || liveCameraState.connecting
+    ? "Disconnect the configured robot camera stream"
+    : liveCameraState.error
+      ? "Retry the configured robot camera stream"
+      : "Connect to the configured robot camera stream";
   snapshot.disabled = !liveCameraState.connected;
   fullscreen.disabled = !liveCameraState.connected;
   image.hidden = !liveCameraState.connected;
   placeholder.hidden = liveCameraState.connected;
+  const placeholderTitle = placeholder.querySelector("strong");
+  const placeholderCopy = placeholder.querySelector("span");
+  if (placeholderTitle) placeholderTitle.textContent = liveCameraState.error ? "STREAM UNAVAILABLE" : "NO CAMERA STREAM";
+  if (placeholderCopy) placeholderCopy.textContent = liveCameraState.error
+    ? "Check the URL and robot network, then press RETRY."
+    : "Enter an HTTP/MJPEG image stream from the robot.";
   const telemetryAgeMs = liveCameraState.telemetryAt === null ? null : Math.max(0, Date.now() - liveCameraState.telemetryAt);
   const telemetryLive = telemetryAgeMs !== null && telemetryAgeMs <= 2_500;
   if (telemetryState) {
@@ -1258,6 +1269,11 @@ shortcutsDialog?.addEventListener("click", (event) => {
 });
 document.querySelector("#hud-toggle")?.addEventListener("click", () => setAutonomyHudCollapsed(!autonomyHudCollapsed));
 document.querySelector("#live-camera-connect")?.addEventListener("click", connectLiveCamera);
+document.querySelector("#live-camera-url")?.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  connectLiveCamera();
+});
 document.querySelector("#live-camera-snapshot")?.addEventListener("click", captureLiveCameraSnapshot);
 document.querySelector("#live-camera-fullscreen")?.addEventListener("click", () => {
   document.querySelector("#live-camera-feed")?.requestFullscreen?.();

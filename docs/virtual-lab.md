@@ -173,6 +173,10 @@ autonomy HUD, route data, safety checks, and command gates remain unchanged.
 Press **ESC** or **EXIT MAP FOCUS** to return to the normal twin-preview layout;
 switching to another LIVE page also closes focus automatically.
 
+Click a waypoint marker or its editor row to keep the active waypoint visible
+in both places; the selected marker uses a brighter ring while its editor row
+is highlighted.
+
 Scroll the planning map, use the **− / +** zoom buttons beside the range
 selector, or focus the map and press **+ / −** to move through the bounded
 40/80/160 m ranges. Pointer zoom stays anchored near the cursor and never

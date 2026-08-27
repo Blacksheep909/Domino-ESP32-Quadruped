@@ -4783,11 +4783,12 @@ let plannerMapTilesSignature = "";
 let plannerMapTilesCenter = null;
 let plannerMapTileRequestId = 0;
 
-function renderPlannerMapTiles(tiles, origin, mapCenter, range, toMapPoint, statusElement) {
-  const setStatus = (text, state) => {
+function renderPlannerMapTiles(tiles, origin, mapCenter, range, toMapPoint, statusElement, retryButton) {
+  const setStatus = (text, state, canRetry = false) => {
     if (!statusElement) return;
     statusElement.textContent = text;
     statusElement.dataset.state = state;
+    if (retryButton) retryButton.hidden = !canRetry;
   };
   if (liveNavigationMapLayer !== "osm" || !origin) {
     plannerMapTileRequestId += 1;
@@ -4822,7 +4823,7 @@ function renderPlannerMapTiles(tiles, origin, mapCenter, range, toMapPoint, stat
   const updateStatus = () => {
     if (requestId !== plannerMapTileRequestId) return;
     if (requested === 0) {
-      setStatus("OPEN MAP / NO TILES", "warning");
+      setStatus("OPEN MAP / NO TILES", "warning", true);
       return;
     }
     const finished = loaded + failed;
@@ -4831,8 +4832,8 @@ function renderPlannerMapTiles(tiles, origin, mapCenter, range, toMapPoint, stat
       return;
     }
     if (failed === 0) setStatus(`OPEN MAP / READY ${loaded}/${requested}`, "online");
-    else if (loaded === 0) setStatus("OPEN MAP / UNAVAILABLE", "error");
-    else setStatus(`OPEN MAP / PARTIAL ${loaded}/${requested}`, "warning");
+    else if (loaded === 0) setStatus("OPEN MAP / UNAVAILABLE", "error", true);
+    else setStatus(`OPEN MAP / PARTIAL ${loaded}/${requested}`, "warning", true);
   };
   plannerMapTilesSignature = signature;
   plannerMapTilesCenter = { ...mapCenter };
@@ -4902,6 +4903,7 @@ function renderLiveNavigationPlanner(navigation) {
   const overlayInputs = document.querySelectorAll("[data-live-nav-overlay]");
   const mapOriginInput = document.querySelector("#live-nav-map-origin");
   const mapTileStatus = document.querySelector("#live-nav-planner-tile-status");
+  const retryTilesButton = document.querySelector("#live-nav-planner-retry-tiles");
   const streetViewPanel = document.querySelector("#live-nav-streetview-panel");
   const mapAttribution = document.querySelector("#live-nav-planner-attribution");
   const reverseButton = document.querySelector("#live-nav-reverse-route");
@@ -4947,7 +4949,7 @@ function renderLiveNavigationPlanner(navigation) {
   }
   if (streetViewPanel) streetViewPanel.hidden = liveNavigationMapLayer !== "streetview";
   if (mapAttribution) mapAttribution.hidden = liveNavigationMapLayer !== "osm" || !hasOrigin;
-  renderPlannerMapTiles(tiles, origin, mapCenter, range, toMapPoint, mapTileStatus);
+  renderPlannerMapTiles(tiles, origin, mapCenter, range, toMapPoint, mapTileStatus, retryTilesButton);
   const previewSession = liveNavigationPreviewState.phase !== "idle";
   const preview = previewSession
     ? navigationMissionPreview(liveNavigationState.missionDraft, origin, liveNavigationPreviewState.elapsedSeconds, liveNavigationState.loopCount)
@@ -7717,6 +7719,13 @@ document.querySelector("#live-nav-map-layer").addEventListener("change", (event)
   liveNavigationMapLayer = ["local", "osm", "streetview"].includes(event.target.value) ? event.target.value : "local";
   localStorage.setItem(liveNavigationMapLayerStorageKey, liveNavigationMapLayer);
   updateLiveComparisonUi();
+});
+document.querySelector("#live-nav-planner-retry-tiles").addEventListener("click", () => {
+  if (liveNavigationMapLayer !== "osm" || !plannerMapReferenceCoordinate()) return;
+  plannerMapTilesSignature = "";
+  plannerMapTilesCenter = null;
+  updateLiveComparisonUi();
+  showAppToast("Refreshing OpenStreetMap tiles.", "info");
 });
 document.querySelectorAll("[data-live-nav-overlay]").forEach((input) => {
   input.addEventListener("change", (event) => {

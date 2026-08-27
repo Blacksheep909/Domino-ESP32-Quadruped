@@ -7113,6 +7113,8 @@ body[data-workspace="real-robot"] .toast-region {
 .live-planner-tile-status[data-state="online"] { color: #3c8456; }
 .live-planner-tile-status[data-state="warning"] { color: #ad7621; }
 .live-planner-tile-status[data-state="error"] { color: #ae4638; }
+.live-planner-map-meta > button { flex: 0 0 auto; min-height: 22px; padding: 0 7px; color: #286442; background: #e3f1e8; border: 1px solid #9bc8aa; border-radius: 4px; cursor: pointer; font: 800 7px/1 "Cascadia Mono", Consolas, monospace; }
+.live-planner-map-meta > button:hover, .live-planner-map-meta > button:focus-visible { border-color: #4d9e6a; outline: none; }
 .live-planner-attribution { margin-top: 0; color: #737871; font-size: 8px; line-height: 1.2; text-align: right; }
 .live-planner-cursor { min-width: 0; margin-top: 7px; padding: 7px 9px; display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content; align-items: center; gap: 8px; border: 1px solid #d5d9d3; border-radius: 4px; background: rgba(244, 246, 241, .72); }
 .live-planner-cursor > span { color: #737871; font: 800 7px/1 "Cascadia Mono", Consolas, monospace; letter-spacing: .06em; white-space: nowrap; }
@@ -7253,6 +7255,7 @@ body[data-workspace="real-robot"] .toast-region {
 :root[data-theme="dark"] .live-planner-tile-status[data-state="online"] { color: #78c894; }
 :root[data-theme="dark"] .live-planner-tile-status[data-state="warning"] { color: #e7b45c; }
 :root[data-theme="dark"] .live-planner-tile-status[data-state="error"] { color: #ef8d78; }
+:root[data-theme="dark"] .live-planner-map-meta > button { color: #b9efc6; background: rgba(66, 142, 88, .18); border-color: rgba(113, 201, 145, .52); }
 :root[data-theme="dark"] .live-planner-map { background: #17201b; border-color: #3c5544; }
 :root[data-theme="dark"] .live-planner-map-surface { fill: #17201b; }
 :root[data-theme="dark"] .live-planner-grid-major { stroke: #2a4032; }

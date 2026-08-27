@@ -3296,8 +3296,8 @@ body[data-workspace="real-robot"] .simulation-only {
 }
 
 /* Final readability floor: no LIVE label should render as a 7–8px hairline.
-   Keep the existing hierarchy, but cap inherited browser-sized primitives so
-   labels and controls do not inflate past their compact telemetry boxes. */
+   Use a fixed compact floor here; using `1em` made inherited 16px text win
+   inside telemetry grids and forced many labels to 13px, which caused clipping. */
 :root[data-theme="dark"] #real-workspace :is(.live-view-page, .live-view-content) :is(
   span,
   strong,
@@ -3313,7 +3313,7 @@ body[data-workspace="real-robot"] .simulation-only {
   input,
   textarea
 ) {
-  font-size: max(10px, min(1em, 13px)) !important;
+  font-size: 10px !important;
   line-height: 1.3;
 }
 
@@ -4372,10 +4372,13 @@ body[data-workspace="real-robot"] #telemetry-panel:has(#joint-legend:not([hidden
 .live-sensor-trails circle { fill: #65db8c; filter: drop-shadow(0 0 4px rgba(93, 230, 139, .9)); }
 
 .live-sensor-readout, .live-sensor-axis-values { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 10px; }
-.live-sensor-readout > div, .live-sensor-axis-values > div { padding: 10px; display: grid; gap: 6px; background: #f0f0ec; border-radius: 5px; }
+.live-sensor-readout > div, .live-sensor-axis-values > div { min-width: 0; overflow: hidden; padding: 10px; display: grid; gap: 6px; background: #f0f0ec; border-radius: 5px; }
 .live-sensor-readout span, .live-sensor-axis-values span, .live-sensor-axis-guide span { color: #858781; font: 750 8px/1 "Cascadia Mono", Consolas, monospace; letter-spacing: .06em; }
-.live-sensor-readout strong, .live-sensor-axis-values strong { font: 750 14px/1 "Cascadia Mono", Consolas, monospace; }
+.live-sensor-readout span, .live-sensor-axis-values span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.live-sensor-readout strong, .live-sensor-axis-values strong { min-width: 0; overflow: hidden; font: 750 14px/1 "Cascadia Mono", Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
 
+.live-sensor-attitude-card,
+.live-gps-card { container-type: inline-size; }
 .live-sensor-inventory-card { display: flex; flex-direction: column; container-type: inline-size; }
 .live-sensor-module { margin-top: 11px; padding: 13px; display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 12px; border: 1px solid #dcddd8; border-radius: 6px; }
 .live-sensor-module > i { width: 42px; height: 42px; display: grid; place-items: center; color: #6c706a; background: #ecece8; border-radius: 50%; font: 800 9px/1 "Cascadia Mono", Consolas, monospace; font-style: normal; }
@@ -4406,6 +4409,15 @@ body[data-workspace="real-robot"] #telemetry-panel:has(#joint-legend:not([hidden
     justify-self: start;
     text-align: left;
   }
+}
+
+@container (max-width: 470px) {
+  .live-sensor-readout { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .live-nav-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@container (max-width: 300px) {
+  .live-sensor-readout { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 .live-sensor-guide { padding-top: 14px; display: grid; grid-template-columns: minmax(250px, .72fr) minmax(0, 1.28fr); gap: 18px; }

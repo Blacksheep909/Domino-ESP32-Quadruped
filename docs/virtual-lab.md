@@ -54,6 +54,15 @@ record never includes connection, arm, authority, or vehicle-execution state.
 Use **EXPORT LIBRARY** and **IMPORT LIBRARY** in the saved-routes drawer to move
 the bounded named-route collection between desktop installs; importing replaces
 only the saved library and never changes the active draft or vehicle state.
+For interoperability with mapping tools, **EXPORT GEOJSON** writes the current
+route as a standard GeoJSON feature collection. It includes an ordered line,
+individual waypoint features, and Domino metadata for labels, speed, arrival
+radius, dwell time, loop count, and the local map origin. Local-only drafts are
+converted through the active origin and are refused when no origin is available,
+so an export cannot silently invent geographic coordinates. **IMPORT GEOJSON**
+accepts ordered Point features or a LineString/MultiLineString, bounds the
+result to 100 waypoints, and leaves the imported route behind the normal review,
+geofence, and vehicle-command gates.
 The recent GPS trail can be cleared or turned into a bounded local route with
 **CREATE PLAN FROM TRACK**. The action keeps the first and last fixes,
 resamples long trails, and leaves the resulting draft behind the same review,

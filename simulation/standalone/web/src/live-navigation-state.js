@@ -470,6 +470,162 @@ export function parseNavigationMissionJson(text) {
   };
 }
 
+function geoJsonCoordinate(value) {
+  if (!Array.isArray(value) || value.length < 2) return null;
+  const lon = finite(value[0]);
+  const lat = finite(value[1]);
+  if (lat === null || lon === null || lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
+  return {
+    lat,
+    lon,
+    altM: finite(value[2]),
+  };
+}
+
+function geoJsonFeature(geometry, properties = {}) {
+  if (!geometry || typeof geometry !== "object") return null;
+  if (geometry.type === "Point") {
+    const coordinateValue = geoJsonCoordinate(geometry.coordinates);
+    return coordinateValue ? { coordinate: coordinateValue, properties } : null;
+  }
+  if (geometry.type === "LineString") {
+    const coordinates = Array.isArray(geometry.coordinates)
+      ? geometry.coordinates.map(geoJsonCoordinate).filter(Boolean)
+      : [];
+    return coordinates.length ? { line: coordinates, properties } : null;
+  }
+  if (geometry.type === "MultiLineString") {
+    const lines = Array.isArray(geometry.coordinates)
+      ? geometry.coordinates
+        .map((line) => Array.isArray(line) ? line.map(geoJsonCoordinate).filter(Boolean) : [])
+        .filter((line) => line.length)
+      : [];
+    return lines.length ? { line: lines.flat(), properties } : null;
+  }
+  return null;
+}
+
+function geoJsonRouteFeatures(parsed) {
+  const candidates = [];
+  const visit = (value) => {
+    if (!value || typeof value !== "object") return;
+    if (value.type === "FeatureCollection") {
+      (Array.isArray(value.features) ? value.features : []).slice(0, 200).forEach(visit);
+      return;
+    }
+    if (value.type === "Feature") {
+      const feature = geoJsonFeature(value.geometry, value.properties || {});
+      if (feature) candidates.push(feature);
+      return;
+    }
+    const feature = geoJsonFeature(value, parsed?.properties || {});
+    if (feature) candidates.push(feature);
+  };
+  visit(parsed);
+  return candidates;
+}
+
+/**
+ * Export a route in standard GeoJSON while retaining Domino-only waypoint
+ * settings in feature properties. Local-only points require a valid origin so
+ * they can be converted into geographic coordinates before export.
+ */
+export function navigationMissionGeoJson(state, origin = null) {
+  const reference = coordinate(origin) || coordinate(state?.plannerOrigin);
+  const features = [];
+  const coordinates = [];
+  (Array.isArray(state?.missionDraft) ? state.missionDraft : []).forEach((waypoint, index) => {
+    const point = missionWaypointHasCoordinate(waypoint)
+      ? coordinate(waypoint)
+      : reference && waypoint?.local
+        ? localOffsetToCoordinate(waypoint.local, reference)
+        : null;
+    if (!point) throw new Error(`Waypoint ${index + 1} needs a geographic coordinate or map origin.`);
+    const coordinateArray = [point.lon, point.lat];
+    if (Number.isFinite(point.altM)) coordinateArray.push(point.altM);
+    coordinates.push(coordinateArray);
+    features.push({
+      type: "Feature",
+      properties: {
+        dominoWaypoint: true,
+        sequence: index,
+        label: boundedText(waypoint.label, `WP ${index + 1}`),
+        radiusM: waypoint.radiusM,
+        speedMps: waypoint.speedMps,
+        holdS: waypoint.holdS,
+        local: waypoint.local || null,
+      },
+      geometry: { type: "Point", coordinates: coordinateArray },
+    });
+  });
+  if (coordinates.length >= 2) {
+    features.unshift({
+      type: "Feature",
+      properties: { dominoRoute: true, name: boundedText(state?.missionName, "Domino patrol") },
+      geometry: { type: "LineString", coordinates },
+    });
+  }
+  return JSON.stringify({
+    type: "FeatureCollection",
+    properties: {
+      dominoSchema: "route-v1",
+      name: boundedText(state?.missionName, "Domino patrol"),
+      loopCount: Math.max(1, Math.min(5, Math.round(Number(state?.loopCount) || 1))),
+      plannerOrigin: reference,
+      plannerRangeM: state?.plannerRangeM || 40,
+    },
+    features,
+  }, null, 2) + "\n";
+}
+
+/**
+ * Accept a standard GeoJSON Point/LineString/MultiLineString route. Point
+ * features take precedence so waypoint labels and Domino settings survive a
+ * round trip; a bare line remains a useful ordered route import.
+ */
+export function parseNavigationGeoJson(text) {
+  const parsed = JSON.parse(text);
+  if (!parsed || typeof parsed !== "object") throw new Error("GeoJSON route must be an object.");
+  const features = geoJsonRouteFeatures(parsed);
+  const pointFeatures = features
+    .map((feature, index) => ({ ...feature, index }))
+    .filter((feature) => feature.coordinate)
+    .sort((first, second) => {
+      const a = finite(first.properties?.sequence ?? first.properties?.order);
+      const b = finite(second.properties?.sequence ?? second.properties?.order);
+      if (a === null || b === null) return first.index - second.index;
+      return a - b || first.index - second.index;
+    });
+  const lineFeature = features.find((feature) => feature.line?.length);
+  const rootProperties = parsed.properties && typeof parsed.properties === "object" ? parsed.properties : {};
+  const routeProperties = Object.keys(rootProperties).length
+    ? rootProperties
+    : lineFeature?.properties || pointFeatures[0]?.properties || {};
+  const source = pointFeatures.length
+    ? pointFeatures.map((feature) => ({ coordinate: feature.coordinate, properties: feature.properties }))
+    : (lineFeature?.line || []).map((coordinateValue) => ({ coordinate: coordinateValue, properties: lineFeature.properties }));
+  if (!source.length || source.length > 100) throw new Error("GeoJSON route must contain between 1 and 100 valid points.");
+  const mission = source.map(({ coordinate: point, properties }, index) => normalizeMissionWaypoint({
+    lat: point.lat,
+    lon: point.lon,
+    altM: point.altM ?? properties?.altM ?? 0,
+    radiusM: properties?.radiusM,
+    speedMps: properties?.speedMps,
+    holdS: properties?.holdS,
+    label: properties?.label || properties?.name,
+  }, index));
+  if (mission.some((waypoint) => !waypoint)) throw new Error("GeoJSON route contains an invalid waypoint.");
+  return {
+    name: boundedText(routeProperties.name, "Imported GeoJSON route"),
+    mission,
+    loopCount: Math.max(1, Math.min(5, Math.round(Number(routeProperties.loopCount) || 1))),
+    plannerOrigin: coordinate(routeProperties.plannerOrigin),
+    plannerRangeM: [40, 80, 160].includes(Number(routeProperties.plannerRangeM)) ? Number(routeProperties.plannerRangeM) : 40,
+    geofence: null,
+    obstacleBehavior: null,
+  };
+}
+
 export function missionWaypointHasCoordinate(waypoint) {
   const lat = waypoint?.lat;
   const lon = waypoint?.lon;

@@ -4905,6 +4905,12 @@ function renderLiveNavigationPlanner(navigation) {
   const mapTileStatus = document.querySelector("#live-nav-planner-tile-status");
   const retryTilesButton = document.querySelector("#live-nav-planner-retry-tiles");
   const streetViewPanel = document.querySelector("#live-nav-streetview-panel");
+  const streetViewTarget = document.querySelector("#live-nav-streetview-target");
+  const streetViewIndex = document.querySelector("#live-nav-streetview-index");
+  const streetViewCopy = document.querySelector("#live-nav-streetview-copy");
+  const streetViewPrevious = document.querySelector("#live-nav-streetview-previous");
+  const streetViewNext = document.querySelector("#live-nav-streetview-next");
+  const streetViewOpen = document.querySelector("#live-nav-streetview-panel-open");
   const mapAttribution = document.querySelector("#live-nav-planner-attribution");
   const reverseButton = document.querySelector("#live-nav-reverse-route");
   const undoButton = document.querySelector("#live-nav-undo");
@@ -4948,6 +4954,25 @@ function renderLiveNavigationPlanner(navigation) {
       : "";
   }
   if (streetViewPanel) streetViewPanel.hidden = liveNavigationMapLayer !== "streetview";
+  if (streetViewPanel) {
+    const streetView = plannerStreetViewTarget(navigation, origin);
+    const hasCoordinate = Boolean(streetView.coordinate);
+    if (streetViewTarget) streetViewTarget.textContent = streetView.selectedIndex === null ? "MAP ORIGIN" : `WAYPOINT ${String(streetView.selectedIndex + 1).padStart(2, "0")}`;
+    if (streetViewIndex) streetViewIndex.textContent = streetView.selectedIndex === null
+      ? hasCoordinate ? "ORIGIN REFERENCE" : "SET ORIGIN TO INSPECT"
+      : `WAYPOINT ${streetView.selectedIndex + 1} OF ${streetView.routeCount}`;
+    if (streetViewCopy) streetViewCopy.textContent = streetView.selectedIndex === null
+      ? hasCoordinate
+        ? "Open the map origin in a new Street View tab, then return here to place or adjust route waypoints against the same reference."
+        : "Set a map origin before opening Street View. Local route planning remains available without GPS."
+      : hasCoordinate
+        ? "Inspect this waypoint in a new Street View tab, then return here to adjust the route or move to another waypoint."
+        : "This waypoint needs a map origin before it can be inspected in Street View.";
+    if (streetViewPrevious) streetViewPrevious.disabled = streetView.routeCount < 2;
+    if (streetViewNext) streetViewNext.disabled = streetView.routeCount < 2;
+    if (streetViewOpen) streetViewOpen.disabled = !hasCoordinate;
+    streetViewPanel.dataset.ready = String(hasCoordinate);
+  }
   if (mapAttribution) mapAttribution.hidden = liveNavigationMapLayer !== "osm" || !hasOrigin;
   renderPlannerMapTiles(tiles, origin, mapCenter, range, toMapPoint, mapTileStatus, retryTilesButton);
   const previewSession = liveNavigationPreviewState.phase !== "idle";
@@ -5545,6 +5570,22 @@ function plannerWaypointHeading(index, navigation, origin) {
   return (Math.atan2(next.eastM - current.eastM, next.northM - current.northM) * 180 / Math.PI + 360) % 360;
 }
 
+function plannerStreetViewTarget(navigation, origin) {
+  const routeCount = liveNavigationState.missionDraft.length;
+  const selectedIndex = Number.isInteger(liveNavigationSelectedWaypointIndex)
+    && liveNavigationSelectedWaypointIndex >= 0
+    && liveNavigationSelectedWaypointIndex < routeCount
+    ? liveNavigationSelectedWaypointIndex
+    : null;
+  const waypoint = selectedIndex === null ? null : liveNavigationState.missionDraft[selectedIndex];
+  return {
+    routeCount,
+    selectedIndex,
+    coordinate: waypoint ? plannerWaypointCoordinate(waypoint, origin) : origin,
+    heading: waypoint ? plannerWaypointHeading(selectedIndex, navigation, origin) : 0,
+  };
+}
+
 function openPlannerStreetView(coordinate = plannerMapReferenceCoordinate(), heading = 0) {
   if (!coordinate) {
     showAppToast("Set a map origin or establish a GPS fix before opening Street View.", "warning");
@@ -5562,6 +5603,35 @@ function openPlannerStreetView(coordinate = plannerMapReferenceCoordinate(), hea
     fov: "90",
   });
   window.open(`https://www.google.com/maps/@?${params.toString()}`, "_blank", "noopener,noreferrer");
+}
+
+function openSelectedPlannerStreetView() {
+  const navigation = liveNavigationSnapshot(liveTelemetryState.navigation, liveNavigationState);
+  const origin = navigationPlannerOrigin(navigation);
+  const target = plannerStreetViewTarget(navigation, origin);
+  if (!target.coordinate) {
+    showAppToast("Set a map origin before opening Street View.", "warning");
+    return;
+  }
+  openPlannerStreetView(target.coordinate, target.heading);
+  recordLiveNavigationActivityEvent(
+    "Street View",
+    target.selectedIndex === null
+      ? "Opened the map origin for external panorama inspection."
+      : `Opened waypoint ${target.selectedIndex + 1} for external panorama inspection.`,
+    "info",
+  );
+}
+
+function stepPlannerStreetViewWaypoint(offset) {
+  const routeCount = liveNavigationState.missionDraft.length;
+  if (routeCount < 2) return;
+  const currentIndex = Number.isInteger(liveNavigationSelectedWaypointIndex)
+    ? liveNavigationSelectedWaypointIndex
+    : offset > 0 ? -1 : 0;
+  const nextIndex = (currentIndex + offset + routeCount) % routeCount;
+  selectPlannerWaypoint(nextIndex);
+  updateLiveComparisonUi();
 }
 
 function renderLiveLidarRadar(snapshot) {
@@ -7814,7 +7884,9 @@ document.querySelector("#live-nav-use-device-location").addEventListener("click"
   );
 });
 document.querySelector("#live-nav-open-streetview").addEventListener("click", openPlannerStreetView);
-document.querySelector("#live-nav-streetview-panel-open").addEventListener("click", openPlannerStreetView);
+document.querySelector("#live-nav-streetview-panel-open").addEventListener("click", openSelectedPlannerStreetView);
+document.querySelector("#live-nav-streetview-previous").addEventListener("click", () => stepPlannerStreetViewWaypoint(-1));
+document.querySelector("#live-nav-streetview-next").addEventListener("click", () => stepPlannerStreetViewWaypoint(1));
 document.querySelector("#live-nav-place-search-submit").addEventListener("click", searchLiveNavigationPlaces);
 document.querySelector("#live-nav-place-search").addEventListener("keydown", (event) => {
   if (event.key !== "Enter") return;

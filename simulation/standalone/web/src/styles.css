@@ -7103,11 +7103,19 @@ body[data-workspace="real-robot"] .toast-region {
 .live-planner-place-search button { min-height: 28px; align-self: end; padding: 0 11px; color: #286442; background: #e3f1e8; border: 1px solid #9bc8aa; border-radius: 4px; cursor: pointer; font: 800 8px/1 "Cascadia Mono", Consolas, monospace; }
 .live-planner-place-search button:disabled { color: #8c9089; background: #e7e8e3; border-color: #d2d4ce; cursor: wait; }
 .live-planner-place-search > span { grid-column: 1 / -1; min-width: 0; overflow: hidden; color: #737871; font: 700 7px/1.3 "Cascadia Mono", Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
-.live-planner-streetview { min-height: 170px; aspect-ratio: 1.8 / 1; margin-top: 10px; padding: 20px; display: grid; place-content: center; justify-items: center; gap: 10px; text-align: center; border: 1px solid #3c5544; border-radius: 5px; background: radial-gradient(circle at 50% 35%, rgba(77, 158, 106, .16), transparent 46%), #17201b; }
+.live-planner-streetview { min-height: 170px; aspect-ratio: 1.8 / 1; margin-top: 10px; padding: 16px 18px; display: grid; align-content: center; gap: 12px; border: 1px solid #3c5544; border-radius: 5px; background: radial-gradient(circle at 50% 35%, rgba(77, 158, 106, .16), transparent 46%), #17201b; }
 .live-planner-streetview[hidden] { display: none; }
-.live-planner-streetview strong { color: #b5e6c1; font: 800 10px/1.2 "Cascadia Mono", Consolas, monospace; letter-spacing: .08em; }
-.live-planner-streetview p { max-width: 520px; margin: 0; color: #a4b2a8; font-size: 9px; line-height: 1.45; }
+.live-planner-streetview-heading { min-width: 0; display: flex; align-items: end; justify-content: space-between; gap: 12px; }
+.live-planner-streetview-heading > div { min-width: 0; display: grid; gap: 5px; }
+.live-planner-streetview-heading span { color: #8fab98; font: 800 7px/1.2 "Cascadia Mono", Consolas, monospace; letter-spacing: .06em; }
+.live-planner-streetview-heading strong { color: #b5e6c1; font: 800 10px/1.2 "Cascadia Mono", Consolas, monospace; letter-spacing: .08em; }
+.live-planner-streetview-heading > span { flex: 0 0 auto; text-align: right; }
+.live-planner-streetview p { max-width: 600px; margin: 0; color: #a4b2a8; font-size: 9px; line-height: 1.45; }
+.live-planner-streetview-actions { display: flex; flex-wrap: wrap; gap: 7px; }
 .live-planner-streetview button { min-height: 30px; padding: 0 11px; color: #b9efc6; background: rgba(66, 142, 88, .22); border: 1px solid rgba(113, 201, 145, .6); border-radius: 4px; cursor: pointer; font: 800 8px/1 "Cascadia Mono", Consolas, monospace; }
+.live-planner-streetview button:disabled { color: #6f8175; background: rgba(255, 255, 255, .04); border-color: rgba(113, 145, 121, .28); cursor: not-allowed; }
+.live-planner-streetview button:nth-child(2) { flex: 1 1 auto; }
+.live-planner-streetview button:hover:not(:disabled), .live-planner-streetview button:focus-visible { border-color: #8dd7a0; outline: none; }
 .live-planner-map-meta { min-width: 0; margin-top: 5px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .live-planner-tile-status { min-width: 0; overflow: hidden; color: #737871; font: 800 7px/1.2 "Cascadia Mono", Consolas, monospace; letter-spacing: .04em; text-overflow: ellipsis; white-space: nowrap; }
 .live-planner-tile-status[data-state="online"] { color: #3c8456; }
@@ -7256,6 +7264,10 @@ body[data-workspace="real-robot"] .toast-region {
 :root[data-theme="dark"] .live-planner-tile-status[data-state="warning"] { color: #e7b45c; }
 :root[data-theme="dark"] .live-planner-tile-status[data-state="error"] { color: #ef8d78; }
 :root[data-theme="dark"] .live-planner-map-meta > button { color: #b9efc6; background: rgba(66, 142, 88, .18); border-color: rgba(113, 201, 145, .52); }
+:root[data-theme="dark"] .live-planner-streetview-heading span { color: #91a899; }
+:root[data-theme="dark"] .live-planner-streetview-heading strong { color: #b9efc6; }
+:root[data-theme="dark"] .live-planner-streetview p { color: #a4b2a8; }
+:root[data-theme="dark"] .live-planner-streetview button:disabled { color: #6f8175; background: rgba(255, 255, 255, .04); border-color: rgba(113, 145, 121, .28); }
 :root[data-theme="dark"] .live-planner-map { background: #17201b; border-color: #3c5544; }
 :root[data-theme="dark"] .live-planner-map-surface { fill: #17201b; }
 :root[data-theme="dark"] .live-planner-grid-major { stroke: #2a4032; }

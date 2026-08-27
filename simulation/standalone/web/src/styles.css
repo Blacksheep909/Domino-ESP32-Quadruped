@@ -6439,6 +6439,7 @@ body[data-workspace="real-robot"][data-live-view="sensors"] .live-camera-panel {
 }
 
 .live-camera-panel > header > div { display: grid; gap: 4px; }
+.live-camera-header-meta { min-width: 0; justify-items: end; text-align: right; }
 .live-camera-panel > header span,
 .live-camera-controls label,
 .live-camera-angles span {

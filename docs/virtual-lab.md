@@ -244,9 +244,11 @@ The Sensors view also includes a single-front-camera panel for the current
 prototype. Enter an HTTP or MJPEG image-stream URL and press **CONNECT**, or
 press Enter in the field. A failed stream is labelled **STREAM ERROR** and the
 same control becomes **RETRY**; **SNAPSHOT** and **FULLSCREEN** stay disabled
-until a frame is connected. Optional robot camera telemetry supplies yaw,
-pitch, field of view, frame rate, and stale-state status without pretending
-that a video stream exists when the robot has not provided one. Use **CLEAR** to
+until a frame is connected. The camera header reports the received frame
+resolution and age to make stalled streams easier to diagnose. Optional robot
+camera telemetry supplies yaw, pitch, field of view, frame rate, and stale-state
+status without pretending that a video stream exists when the robot has not
+provided one. Use **CLEAR** to
 disconnect the stream and forget the saved URL when changing cameras or robots.
 
 ## Workspaces

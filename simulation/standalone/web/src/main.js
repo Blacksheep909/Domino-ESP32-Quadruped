@@ -1413,6 +1413,10 @@ document.querySelector("#live-connection-open").addEventListener("click", () => 
   renderLiveConnectionUi();
   if (!liveConnectionDialog.open) liveConnectionDialog.showModal();
 });
+document.querySelector("#real-engineering-status").addEventListener("click", () => {
+  renderLiveConnectionUi();
+  if (!liveConnectionDialog.open) liveConnectionDialog.showModal();
+});
 document.querySelector("#live-connection-close").addEventListener("click", () => liveConnectionDialog.close());
 document.querySelectorAll("[data-live-transport]").forEach((button) => {
   button.addEventListener("click", () => {
@@ -7582,6 +7586,7 @@ function updateLiveComparisonUi() {
     : engineeringConnected
       ? `Session ${liveConnectionState.sessionId.slice(0, 12)} / telemetry ${formatPacketAge(snapshot.lastRobotPacketAgeMs)} old`
       : "PC link connected but telemetry is stale";
+  engineeringBadge.setAttribute("aria-label", engineeringConnected ? "Manage active PC link" : "Open robot connection manager");
 
   const controllerSnapshot = liveControllerSnapshot(liveControllerState);
   const driveConnected = engineeringConnected && controllerSnapshot.linkReady;

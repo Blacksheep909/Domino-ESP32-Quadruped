@@ -9638,58 +9638,118 @@ body[data-workspace="real-robot"]:is(
   }
 }
 
-/* The dark theme has a more specific legacy title rule above. Repeat the
-   compact values at the same specificity so all installed themes resolve to
-   the same geometry. */
-@media (min-width: 901px) {
+/* Desktop LIVE workspace rhythm --------------------------------------------
+   Treat the title, editor and preview as one layout. Earlier layers sized the
+   title independently from the preview lane, which left the status card
+   stranded in the middle of wide windows and made every tab start at a
+   slightly different vertical position. */
+@media (min-width: 1001px) {
+  body[data-workspace="real-robot"] {
+    --live-page-pad: var(--app-gutter);
+    --live-title-height: 66px;
+    --live-title-gap: 12px;
+    --live-preview-right: var(--app-gutter);
+    --live-preview-width: clamp(420px, 38vw, 720px);
+    --live-preview-top: calc(
+      var(--live-content-top, 118px) + var(--live-page-pad) +
+      var(--live-title-height) + var(--live-title-gap)
+    );
+  }
+
+  #real-workspace .live-view-page {
+    padding: var(--live-page-pad) var(--app-gutter) 36px;
+    overflow-x: hidden;
+  }
+
+  #real-workspace .live-view-page .live-page-heading,
+  #real-workspace #live-view-compare .live-compare-page-heading,
   :root[data-theme="dark"] #real-workspace .live-view-page .live-page-heading,
   :root[data-theme="dark"] #real-workspace #live-view-compare .live-compare-page-heading {
-    min-height: 78px;
-    padding: 10px 0 10px 16px;
-    margin-bottom: 14px;
-    gap: 18px;
+    display: flex;
+    min-height: var(--live-title-height);
+    padding: 6px 0 6px 12px;
+    margin-bottom: var(--live-title-gap);
+    gap: clamp(16px, 2vw, 32px);
     align-items: center;
   }
 
-  :root[data-theme="dark"] #real-workspace .live-view-page .live-page-heading > div:first-child > span,
-  :root[data-theme="dark"] #real-workspace #live-view-compare .live-compare-page-heading > div:first-child > span {
-    margin-bottom: 5px;
-    font-size: 10px !important;
-    line-height: 1.1;
-  }
-
+  #real-workspace .live-view-page .live-page-heading h1,
+  #real-workspace #live-view-compare .live-compare-page-heading h1,
   :root[data-theme="dark"] #real-workspace .live-view-page .live-page-heading h1,
   :root[data-theme="dark"] #real-workspace #live-view-compare .live-compare-page-heading h1 {
-    margin: 0;
-    padding: 0;
-    font-size: clamp(25px, 2.15vw, 32px);
-    line-height: 1.08;
+    font-size: clamp(24px, 1.9vw, 29px);
+    line-height: 1.02;
   }
 
+  #real-workspace .live-view-page .live-page-heading p,
+  #real-workspace #live-view-compare .live-compare-page-heading p,
   :root[data-theme="dark"] #real-workspace .live-view-page .live-page-heading p,
   :root[data-theme="dark"] #real-workspace #live-view-compare .live-compare-page-heading p {
-    max-width: 820px;
-    margin: 5px 0 0;
-    font-size: 11px;
-    line-height: 1.25;
+    margin-top: 4px;
+    font-size: 10px;
+    line-height: 1.2;
   }
 
+  #real-workspace .live-view-page .live-page-status,
+  #real-workspace #live-view-compare .live-compare-page-heading .live-page-status,
   :root[data-theme="dark"] #real-workspace .live-view-page .live-page-status,
   :root[data-theme="dark"] #real-workspace #live-view-compare .live-compare-page-heading .live-page-status {
-    width: min(236px, 26vw);
-    min-width: 0;
-    min-height: 48px;
+    width: 190px;
+    flex: 0 0 190px;
+    height: auto;
+    min-width: 190px;
+    min-height: 40px;
     align-self: center;
-    justify-self: end;
-    padding: 8px 12px;
-    gap: 5px;
+    justify-self: auto;
+    display: grid;
+    align-items: normal;
+    justify-content: normal;
+    padding: 7px 11px;
+    gap: 4px;
+    border-radius: 6px;
   }
 
+  #real-workspace .live-view-page .live-page-status strong,
+  #real-workspace #live-view-compare .live-page-status strong {
+    font-size: 10px;
+  }
+
+  /* Preview pages use the full window for the heading, then share a single,
+     explicit gutter between the editor and the 3D viewport. */
+  #live-view-sensors .live-page-heading,
+  #live-view-calibration .live-page-heading,
+  #live-view-gaits .live-page-heading,
   :root[data-theme="dark"] #live-view-sensors .live-page-heading,
   :root[data-theme="dark"] #live-view-calibration .live-page-heading,
   :root[data-theme="dark"] #live-view-gaits .live-page-heading {
-    width: calc(100vw - var(--live-preview-width) - var(--live-preview-right) - var(--app-gutter) - 30px);
+    width: calc(100vw - var(--app-gutter) - var(--app-gutter));
     max-width: none;
     margin-right: 0;
+  }
+
+  .live-calibration-page,
+  .live-gaits-page {
+    padding-right: calc(var(--live-preview-width) + var(--app-gutter) + var(--panel-gap));
+  }
+
+  #live-view-sensors .live-sensor-grid,
+  #live-view-sensors .live-navigation-grid {
+    padding-right: calc(var(--live-preview-width) + var(--panel-gap));
+  }
+
+  #live-view-sensors .live-sensor-grid,
+  #live-view-calibration .live-calibration-layout,
+  #live-view-gaits .live-gaits-layout,
+  #live-view-sensors .live-navigation-grid {
+    gap: var(--panel-gap);
+  }
+
+  #live-view-calibration .live-calibration-layout {
+    grid-template-columns: 160px minmax(0, 1fr);
+  }
+
+  body[data-workspace="real-robot"][data-live-view="compare"] #live-view-compare .live-safety-dock,
+  body[data-workspace="real-robot"][data-live-view="compare"] #real-workspace .live-comparison-panel {
+    top: var(--live-preview-top);
   }
 }

@@ -4866,7 +4866,7 @@ function renderLiveNavigationPlanner(navigation) {
     : localOnlyCount && !hasOrigin
       ? "LOCAL / ORIGIN NEEDED"
       : localOnlyCount
-        ? "LOCAL / REFERENCE NEEDED"
+        ? "REFERENCE NEEDED"
         : fenceStatus.outsideCount > 0
           ? `${fenceStatus.outsideCount} POINT${fenceStatus.outsideCount === 1 ? "" : "S"} OUTSIDE FENCE`
         : "GPS ROUTE READY";

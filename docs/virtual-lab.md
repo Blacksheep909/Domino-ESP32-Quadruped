@@ -232,7 +232,9 @@ build a route while inspecting nearby streets. The panorama opens at the
 selected point and aims along the adjacent route segment. Each waypoint also
 exposes **VIEW** for the same direct handoff. Street View navigation is not
 read back into the app, so route edits remain deliberate and happen in the
-Domino planner after returning from the external panorama.
+Domino planner after returning from the external panorama. **COPY VIEW LINK**
+copies the same heading-aware URL for sharing or opening in another map tool;
+it does not change the route or establish a vehicle connection.
 
 **REVERSE ROUTE** reverses the waypoint order for a return pass while retaining
 each point's speed, radius, hold, label, and coordinate data. It is an in-app

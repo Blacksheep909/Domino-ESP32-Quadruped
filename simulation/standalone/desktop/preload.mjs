@@ -8,6 +8,17 @@ const desktopProjectFiles = Object.freeze({
   ),
 });
 
+const desktopWindow = Object.freeze({
+  isFullscreen: () => ipcRenderer.invoke("domino:window:is-fullscreen"),
+  toggleFullscreen: () => ipcRenderer.invoke("domino:window:toggle-fullscreen"),
+  onFullscreenChange: (callback) => {
+    const listener = (_event, fullscreen) => callback(Boolean(fullscreen));
+    ipcRenderer.on("domino:window:fullscreen-changed", listener);
+    return () => ipcRenderer.removeListener("domino:window:fullscreen-changed", listener);
+  },
+});
+
 contextBridge.exposeInMainWorld("dominoDesktop", Object.freeze({
   projectFiles: desktopProjectFiles,
+  window: desktopWindow,
 }));

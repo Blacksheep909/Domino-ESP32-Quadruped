@@ -2,6 +2,7 @@
 
 #include <ArduinoJson.h>
 #include <Preferences.h>
+#include <esp_system.h>
 #include <math.h>
 #include <string.h>
 
@@ -54,6 +55,7 @@
 #include "gait_profile.h"
 #include "imu.h"
 #include "leg_controller.h"
+#include "loop_diagnostics.h"
 #include "power_monitor.h"
 #include "power_fault_guard.h"
 
@@ -61,6 +63,7 @@ namespace {
 constexpr char kProtocol[] = "domino-robot-link-v1";
 constexpr uint32_t kTelemetryIntervalMs = 100;
 constexpr uint32_t kHelloIntervalMs = 2000;
+constexpr uint32_t kReceiverPassthroughBaud = 115200;
 constexpr uint32_t kWatchdogMs = 400;
 constexpr uint32_t kLinkStatsFreshMs = 1000;
 constexpr float kCalibrationMaxSpeedDegPerSec = 5.0f;
@@ -117,7 +120,15 @@ bool haveHeartbeatSequence = false;
 uint32_t loopRateWindowStartedMs = 0;
 uint32_t loopRateIterations = 0;
 float measuredLoopRateHz = 0.0f;
+uint32_t previousLoopMs = 0;
+uint32_t maximumLoopGapMs = 0;
+uint32_t telemetryTxSkipped = 0;
+uint32_t bootId = 0;
+uint8_t controlBodyMode = 0;
+bool controlAwaitingStickCenter = false;
 bool benchMode = false;
+bool receiverPassthroughPending = false;
+bool receiverPassthroughActive = false;
 String usbInputLine;
 #if DOMINO_LIVE_WIFI_ENABLED
 String wifiInputLine;
@@ -489,7 +500,7 @@ uint16_t txPowerMw(uint8_t code) {
   return code < sizeof(powers) / sizeof(powers[0]) ? powers[code] : 0;
 }
 
-void writeDocument(JsonDocument &document) {
+void writeDocument(JsonDocument &document, bool bestEffort = false) {
   // ArduinoJson's Stream writer calls write() for each byte. On ESP32 that
   // turns a ~1.3 KB telemetry document into hundreds of UART queue operations
   // and can stall the physical control loop. Serialize once, then send one
@@ -499,7 +510,13 @@ void writeDocument(JsonDocument &document) {
   const size_t length = serializeJson(document, output, kDocumentBufferBytes - 1);
   if (length == 0 || length >= kDocumentBufferBytes - 1) return;
   output[length] = '\n';
-  Serial.write(reinterpret_cast<const uint8_t *>(output), length + 1);
+  // Periodic USB telemetry must not wait for UART transmit-ring space.
+  // Skip a whole line if the TX ring is full; never emit a partial JSON line.
+  if (!bestEffort || Serial.availableForWrite() >= static_cast<int>(length + 1)) {
+    Serial.write(reinterpret_cast<const uint8_t *>(output), length + 1);
+  } else {
+    ++telemetryTxSkipped;
+  }
 #if DOMINO_LIVE_WIFI_ENABLED
   if (wifiClient && wifiClient.connected()) {
     wifiClient.write(reinterpret_cast<const uint8_t *>(output), length + 1);
@@ -519,6 +536,7 @@ void addCapabilities(JsonObject capabilities) {
   capabilities["persistentProfiles"] = true;
   capabilities["persistentGaitProfiles"] = true;
   capabilities["manualControl"] = true;
+  capabilities["receiverPassthrough"] = true;
 }
 
 bool boundedManualAxis(JsonVariantConst source, float *value) {
@@ -554,19 +572,19 @@ bool transportAuthenticated(JsonObjectConst command, LiveTransport source) {
   return constantTimeLinkKeyMatches(command["linkKey"] | static_cast<const char *>(nullptr));
 }
 
-void sendHello() {
+void sendHello(bool bestEffort = false) {
   JsonDocument document;
   document["protocol"] = kProtocol;
   document["type"] = "robot-hello";
   document["robotId"] = "domino-esp32-quadruped";
   document["robotName"] = "Domino";
-  document["firmwareVersion"] = "0.8.4";
+  document["firmwareVersion"] = "0.8.15";
   document["robotState"] = stateName();
   if (state == LiveRobotState::Fault && faultReason[0]) document["faultReason"] = faultReason;
   document["wirelessAuth"] = "psk-v1";
   addCapabilities(document["capabilities"].to<JsonObject>());
   addGaitProfile(document["gaitProfile"].to<JsonObject>(), gaitProfile());
-  writeDocument(document);
+  writeDocument(document, bestEffort);
 }
 
 void addBody(JsonObject body, const LiveRobotPoseSnapshot &pose) {
@@ -599,6 +617,14 @@ void sendTelemetry(uint32_t now) {
   JsonArray servoAngles = expected["servoAngleDeg"].to<JsonArray>();
   const float *angles = commandedServoAnglesDeg();
   for (uint8_t channel = 0; channel < 16; ++channel) servoAngles.add(angles[channel]);
+  // Electrical offsets align real servo horns with the CAD neutral. Drawing
+  // those offsets as CAD motion distorts the LIVE skeleton. Send both bases
+  // from the same command so browser drafts cannot redefine the active trim.
+  JsonArray modelAngles = expected["modelServoAngleDeg"].to<JsonArray>();
+  const float *model = commandedModelServoAnglesDeg();
+  for (uint8_t channel = 0; channel < 16; ++channel) {
+    modelAngles.add(roundf(model[channel] * 100.0f) / 100.0f);
+  }
   // Angles and body pose drive the 10 Hz digital twin. Pulse routing and foot
   // targets change much less often, so publish them once per second and let
   // the companion retain the last detailed snapshot. This keeps the control
@@ -607,6 +633,7 @@ void sendTelemetry(uint32_t now) {
       now - lastDetailedTelemetryMs >= 1000;
   if (includeDetails) {
     lastDetailedTelemetryMs = now;
+    expected["detailsTimestampMs"] = now;
     JsonArray servoPulseUs = expected["servoPulseUs"].to<JsonArray>();
     JsonArray servoPhysicalChannel = expected["servoPhysicalChannel"].to<JsonArray>();
     const uint16_t *pulses = commandedServoPulseUs();
@@ -624,7 +651,7 @@ void sendTelemetry(uint32_t now) {
   }
   addBody(expected["body"].to<JsonObject>(), expectedPose);
 
-  if (gImuState.online && gImuState.has_sample) {
+  if (imuSampleFresh(now)) {
     const float gx = gImuState.ay_g_filt;
     const float gy = gImuState.az_g_filt;
     const float gz = -gImuState.ax_g_filt;
@@ -642,7 +669,9 @@ void sendTelemetry(uint32_t now) {
   diagnostics["robotState"] = stateName();
   if (state == LiveRobotState::Fault && faultReason[0]) diagnostics["faultReason"] = faultReason;
   diagnostics["outputsEnabled"] = servoOutputsEnabled();
-  diagnostics["imuOnline"] = gImuState.online && gImuState.has_sample;
+  diagnostics["imuOnline"] = imuSampleFresh(now);
+  if (gImuState.has_sample) diagnostics["imuSampleAgeMs"] = imuSampleAgeMs(now);
+  diagnostics["imuConsecutiveErrors"] = imuConsecutiveErrorCount();
   diagnostics["imuAxG"] = gImuState.ax_g_filt;
   diagnostics["imuAyG"] = gImuState.ay_g_filt;
   diagnostics["imuAzG"] = gImuState.az_g_filt;
@@ -658,6 +687,57 @@ void sendTelemetry(uint32_t now) {
   diagnostics["powerMonitorOnline"] = power.online;
   diagnostics["powerSampleValid"] = power.valid;
   diagnostics["uptimeMs"] = now;
+  diagnostics["bootId"] = bootId;
+  diagnostics["resetReason"] = static_cast<int>(esp_reset_reason());
+  diagnostics["maximumLoopGapMs"] = maximumLoopGapMs;
+  const LoopDiagnosticsSnapshot loopStages = loopDiagnosticsSnapshot();
+  diagnostics["priorResetStage"] = loopStages.priorResetStage;
+  diagnostics["lastSlowStage"] = loopStages.lastSlowStage;
+  diagnostics["lastSlowStageUs"] = loopStages.lastSlowStageUs;
+  diagnostics["lastSlowStageAtMs"] = loopStages.lastSlowStageAtMs;
+  diagnostics["slowStageCount"] = loopStages.slowStageCount;
+  diagnostics["maxCrsfStageUs"] = loopStages.maxCrsfUs;
+  diagnostics["maxCrsfStageAtMs"] = loopStages.maxCrsfAtMs;
+  diagnostics["maxImuStageUs"] = loopStages.maxImuUs;
+  diagnostics["maxImuStageAtMs"] = loopStages.maxImuAtMs;
+  diagnostics["maxLiveStageUs"] = loopStages.maxLiveUs;
+  diagnostics["maxControlStageUs"] = loopStages.maxControlUs;
+  diagnostics["maxServoWriteUs"] = loopStages.maxServoWriteUs;
+  // Compact numeric records keep all 16 RTC blackbox events inside the
+  // non-blocking USB telemetry budget. Format: sequence, boot, ms, kind,
+  // stage, value, auxiliary value.
+  JsonArray blackboxEvents = diagnostics["blackboxEvents"].to<JsonArray>();
+  const BlackboxSnapshot blackbox = loopBlackboxSnapshot();
+  for (uint8_t index = 0; index < blackbox.count; ++index) {
+    const BlackboxEvent &event = blackbox.events[index];
+    JsonArray record = blackboxEvents.add<JsonArray>();
+    record.add(event.sequence);
+    record.add(event.bootSequence);
+    record.add(event.atMs);
+    record.add(event.kind);
+    record.add(event.stage);
+    record.add(event.value);
+    record.add(event.aux);
+  }
+  diagnostics["imuI2cErrors"] = imuI2cErrorCount();
+  diagnostics["imuLastErrorAtMs"] = imuLastErrorAtMs();
+  diagnostics["imuLastRequestBytes"] = imuLastRequestBytes();
+  diagnostics["imuLastRequestUs"] = imuLastRequestUs();
+  diagnostics["imuLastFailedRequestBytes"] = imuLastFailedRequestBytes();
+  diagnostics["imuLastFailedRequestUs"] = imuLastFailedRequestUs();
+  diagnostics["imuMaxRequestUs"] = imuMaxRequestUs();
+  diagnostics["telemetryTxSkipped"] = telemetryTxSkipped;
+  diagnostics["bodyMode"] = controlBodyMode;
+  diagnostics["motionInputAwaitingCenter"] = controlAwaitingStickCenter;
+  diagnostics["radioControlEnabled"] = liveRobotEndpointAllowsRadioControl();
+  diagnostics["crsfAcceptedFrames"] = crsfAcceptedFrameCount();
+  diagnostics["crsfCrcErrors"] = crsfCrcErrorCount();
+  diagnostics["crsfUartOverflows"] = crsfUartOverflowCount();
+  diagnostics["crsfBudgetHits"] = crsfReceiveBudgetHitCount();
+  diagnostics["crsfLastBudgetHitAtMs"] = crsfLastBudgetHitAtMs();
+  diagnostics["crsfPendingBytes"] = crsfPendingBytes();
+  diagnostics["crsfMaxPendingBytes"] = crsfMaxPendingBytes();
+  diagnostics["crsfLastPassBytes"] = crsfLastPassBytes();
   diagnostics["esp32LoopHz"] = measuredLoopRateHz;
   diagnostics["controllerHz"] = crsfPacketRateHz();
   if (crsfHasReceivedFrame() && now >= lastCrsfMs) {
@@ -681,7 +761,7 @@ void sendTelemetry(uint32_t now) {
   controller["activeAntenna"] = link.valid ? link.activeAntenna + 1 : 0;
   JsonArray channels = controller["channelsUs"].to<JsonArray>();
   for (uint8_t channel = 0; channel < 16; ++channel) channels.add(ch_us[channel]);
-  writeDocument(document);
+  writeDocument(document, true);
 }
 
 void acknowledge(const char *kind, const char *action, const char *requestId,
@@ -744,6 +824,26 @@ void disableOutputs(Adafruit_PWMServoDriver &driver, LiveRobotState nextState) {
   setServoOutputsEnabled(driver, false);
   manualGuard.revoke();
   state = nextState;
+}
+
+void handleReceiverPassthrough(JsonObjectConst command, JsonObjectConst payload,
+                               LiveTransport source, Adafruit_PWMServoDriver &driver) {
+  const char *action = command["action"] | "";
+  const char *requestId = command["requestId"] | "";
+  if (strcmp(action, "enter") || source != LiveTransport::Usb ||
+      strcmp(payload["confirm"] | "", "RECEIVER_FLASH")) {
+    acknowledge("receiver-passthrough", action, requestId, false,
+                "USB entry with RECEIVER_FLASH confirmation is required.");
+    return;
+  }
+  if (state != LiveRobotState::Disarmed || benchMode) {
+    acknowledge("receiver-passthrough", action, requestId, false,
+                "Disarm the robot and exit calibration mode first.");
+    return;
+  }
+  disableOutputs(driver, LiveRobotState::Disarmed);
+  acknowledge("receiver-passthrough", action, requestId, true);
+  receiverPassthroughPending = true;
 }
 
 void updatePowerFault(Adafruit_PWMServoDriver &driver, uint32_t now) {
@@ -852,6 +952,12 @@ void handleCalibration(JsonObjectConst command, JsonObjectConst payload,
     acknowledgeCalibration(action, requestId, false, "Calibration requires disarmed state.");
     return;
   }
+  if (!strcmp(action, "request-profile")) {
+    // Read the active NVS-backed profile without entering bench mode or
+    // enabling any servo output. Browser drafts can differ from this profile.
+    acknowledgeCalibration(action, requestId, true, nullptr, false, true);
+    return;
+  }
   if (!strcmp(action, "enter")) {
     radioControlEnabled = false;
     benchMode = true;
@@ -899,6 +1005,13 @@ void handleCalibration(JsonObjectConst command, JsonObjectConst payload,
     ServoCalibrationProfile profile{};
     if (!parseCalibrationProfile(payload["profile"].as<JsonObjectConst>(), &profile)) {
       acknowledgeCalibration(action, requestId, false, "Profile must contain exactly 12 unique, bounded Domino joints.");
+    } else if (payload["baseSavedAt"].isNull() ||
+               payload["baseSavedAt"].as<uint64_t>() != servoCalibrationProfile().savedAt ||
+               profile.savedAt <= servoCalibrationProfile().savedAt) {
+      // A Studio version with an old browser draft must read the active robot
+      // profile first. An upload never authorizes replacing its saved centers.
+      acknowledgeCalibration(action, requestId, false,
+                             "Robot calibration changed. Reload its active profile before saving.");
     } else {
       // A channel-map replacement is applied only with every PCA9685 output
       // fully off. Re-entering bench mode is required before any further jog.
@@ -1073,13 +1186,18 @@ void handleCommand(const String &line, LiveTransport source,
   else if (!strcmp(kind, "manual-control")) handleManualControl(command, now);
   else if (!strcmp(kind, "calibration")) handleCalibration(command, payload, driver, now);
   else if (!strcmp(kind, "gait")) handleGait(command, payload);
+  else if (!strcmp(kind, "receiver-passthrough"))
+    handleReceiverPassthrough(command, payload, source, driver);
   else if (command["requestId"].is<const char*>())
     acknowledge(kind, command["action"] | "", command["requestId"], false, "Capability is not implemented by this firmware.");
 }
 
 void readTransport(Stream &stream, String &line, LiveTransport source,
                    Adafruit_PWMServoDriver &driver, uint32_t now) {
-  while (stream.available()) {
+  // Profile commands span multiple loops. Bound RX work so an incoming burst
+  // cannot monopolize the same loop that reads the radio and moves the legs.
+  size_t remaining = 512;
+  while (remaining-- > 0 && stream.available()) {
     const char next = static_cast<char>(stream.read());
     if (next == '\n') {
       if (line.length()) handleCommand(line, source, driver, now);
@@ -1177,6 +1295,7 @@ void updateCalibrationJog(Adafruit_PWMServoDriver &driver, uint32_t now) {
 }  // namespace
 
 void liveRobotEndpointBegin(Adafruit_PWMServoDriver &driver) {
+  bootId = esp_random();
   radioControlEnabled = true;
   setServoOutputsEnabled(driver, false);
   if (!loadCalibrationProfile()) setServoCalibrationProfile(defaultServoCalibrationProfile());
@@ -1209,6 +1328,11 @@ void liveRobotEndpointBegin(Adafruit_PWMServoDriver &driver) {
 }
 
 void liveRobotEndpointLoop(uint32_t now, Adafruit_PWMServoDriver &driver) {
+  if (previousLoopMs != 0) {
+    const uint32_t gap = now - previousLoopMs;
+    if (gap > maximumLoopGapMs) maximumLoopGapMs = gap;
+  }
+  previousLoopMs = now;
   loopRateIterations += 1;
   const uint32_t loopWindowElapsedMs = now - loopRateWindowStartedMs;
   if (loopWindowElapsedMs >= 1000) {
@@ -1218,6 +1342,17 @@ void liveRobotEndpointLoop(uint32_t now, Adafruit_PWMServoDriver &driver) {
     loopRateWindowStartedMs = now;
   }
   readTransport(Serial, usbInputLine, LiveTransport::Usb, driver, now);
+  if (receiverPassthroughPending) {
+    // Finish the JSON acknowledgement before raw binary traffic takes over.
+    Serial.flush();
+    Serial2.end();
+    Serial2.setRxBufferSize(4096);
+    Serial2.begin(kReceiverPassthroughBaud, SERIAL_8N1, RX_PIN, TX_PIN);
+    Serial.updateBaudRate(kReceiverPassthroughBaud);
+    receiverPassthroughPending = false;
+    receiverPassthroughActive = true;
+    return;
+  }
   updateWirelessTransports(driver, now);
   updateCalibrationJog(driver, now);
   updateManualControl(now);
@@ -1233,11 +1368,27 @@ void liveRobotEndpointLoop(uint32_t now, Adafruit_PWMServoDriver &driver) {
   }
   if (now - lastHelloMs >= kHelloIntervalMs) {
     lastHelloMs = now;
-    sendHello();
+    sendHello(true);
   }
 }
 
+bool liveRobotEndpointReceiverPassthroughActive() { return receiverPassthroughActive; }
+
+void liveRobotEndpointReceiverPassthroughLoop() {
+  // Stay outside CRSF decoding, telemetry, logging, IMU and gait control. The
+  // receiver's ESP8285 bootloader sees the PC's raw serial stream unchanged.
+  while (Serial.available() > 0 && Serial2.availableForWrite() > 0)
+    Serial2.write(static_cast<uint8_t>(Serial.read()));
+  while (Serial2.available() > 0 && Serial.availableForWrite() > 0)
+    Serial.write(static_cast<uint8_t>(Serial2.read()));
+}
+
 void liveRobotEndpointSetExpectedPose(const LiveRobotPoseSnapshot &pose) { expectedPose = pose; }
+
+void liveRobotEndpointSetControlState(uint8_t bodyMode, bool awaitingStickCenter) {
+  controlBodyMode = bodyMode;
+  controlAwaitingStickCenter = awaitingStickCenter;
+}
 
 void liveRobotEndpointSetExpectedFootTarget(uint8_t legIndex, float xMm, float yMm, float zMm) {
   if (legIndex >= 4) return;

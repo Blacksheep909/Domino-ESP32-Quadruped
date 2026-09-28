@@ -39,3 +39,17 @@ test("ArduPilot companion mode advertises MAVLink UDP and rejects serial discove
   assert.equal(result.started, false);
   assert.match(result.reason, /MAVLink UDP/i);
 });
+
+test("the installed companion can select a MAVLink listener from the UI", async () => {
+  const service = new CompanionService({
+    firmwareService: { ports: async () => [] },
+    relayUrl: "ws://127.0.0.1:8770/control",
+    adapterEntry: "C:/companion/live-companion-adapter.mjs",
+    logger: {},
+  });
+  service.start = (transport, endpoint) => ({ transport, endpoint, started: true });
+  const result = await service.discover("auto", { protocol: "ardupilot", host: "127.0.0.1", port: 14551 });
+  assert.equal(service.status().protocol, "ardupilot");
+  assert.deepEqual(result, { transport: "wifi", endpoint: "127.0.0.1:14551", started: true });
+  await assert.rejects(() => service.discover("auto", { protocol: "ardupilot", host: "127.0.0.1", port: 70000 }), /valid MAVLink/i);
+});

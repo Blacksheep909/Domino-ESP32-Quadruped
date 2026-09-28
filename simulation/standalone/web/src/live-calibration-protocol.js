@@ -1,6 +1,6 @@
 export const LIVE_CALIBRATION_JOG_LIMIT_DEG = 10;
 export const LIVE_CALIBRATION_MAX_SPEED_DEG_PER_SEC = 5;
-export const LIVE_CALIBRATION_ACTIONS = Object.freeze(["enter", "exit", "jog", "save-profile"]);
+export const LIVE_CALIBRATION_ACTIONS = Object.freeze(["request-profile", "enter", "exit", "jog", "save-profile"]);
 
 export function validCalibrationCommand(message) {
   const envelopeValid = Boolean(
@@ -9,7 +9,7 @@ export function validCalibrationCommand(message) {
     LIVE_CALIBRATION_ACTIONS.includes(message.action) &&
     typeof message.requestId === "string" &&
     message.requestId.length > 0 &&
-    message.safety?.benchModeRequired === true &&
+    message.safety?.benchModeRequired === (message.action !== "request-profile") &&
     Number(message.safety?.maxSpeedDegPerSec) > 0 &&
     Number(message.safety?.maxSpeedDegPerSec) <= LIVE_CALIBRATION_MAX_SPEED_DEG_PER_SEC &&
     Number(message.safety?.jogLimitDeg) > 0 &&
@@ -27,7 +27,9 @@ export function validCalibrationCommand(message) {
     const joints = message.profile?.joints;
     const physicalChannels = Array.isArray(joints) ? joints.map((joint) => Number(joint?.channel)) : [];
     const logicalChannels = Array.isArray(joints) ? joints.map((joint) => Number(joint?.logicalChannel)) : [];
-    return message.profile?.schemaVersion === 2 && joints.length === 12 &&
+    return Number.isSafeInteger(message.baseSavedAt) && message.baseSavedAt >= 0 &&
+      Number.isSafeInteger(message.profile?.savedAt) && message.profile.savedAt > message.baseSavedAt &&
+      message.profile?.schemaVersion === 2 && Array.isArray(joints) && joints.length === 12 &&
       physicalChannels.every((channel) => Number.isInteger(channel) && channel >= 0 && channel < 16) &&
       logicalChannels.every((channel) => Number.isInteger(channel) && channel >= 0 && channel < 16) &&
       new Set(physicalChannels).size === 12 && new Set(logicalChannels).size === 12;

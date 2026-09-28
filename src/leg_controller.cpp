@@ -5,6 +5,9 @@
 
 #include "ik.h"
 #include "servo_calibration.h"
+#ifndef DOMINO_SIL
+#include "loop_diagnostics.h"
+#endif
 
 namespace {
 constexpr float kServoCenterDeg = 135.0f;
@@ -95,6 +98,7 @@ constexpr CadGeometry kLeftCad{
 float gCadUpperSeedDeg[kLegCount] = {};
 float gCadLowerSeedDeg[kLegCount] = {};
 float gCommandedServoAnglesDeg[kPcaChannelCount] = {};
+float gCommandedModelServoAnglesDeg[kPcaChannelCount] = {};
 uint16_t gCommandedServoPulseUs[kPcaChannelCount] = {};
 bool gServoOutputsEnabled = false;
 uint32_t gServoSafetyClipCount = 0;
@@ -393,6 +397,9 @@ bool solveCadEndpoint(const LegConfig &leg,
   while (rootAngle > kPi) rootAngle -= 2.0f * kPi;
   while (rootAngle < -kPi) rootAngle += 2.0f * kPi;
   *shoulderDeltaDeg = constrain(
+      // Canonical hip coordinates are outward-positive on each side. Keep
+      // this convention stable for saved calibration; the active direction
+      // maps it to the physical shaft (left hips inverted on the real dog).
       -rootAngle * kRadToDeg / side,
       -kMaxHipMechanicalDeltaDeg,
       kMaxHipMechanicalDeltaDeg);
@@ -424,12 +431,17 @@ void write270(Adafruit_PWMServoDriver &driver, uint8_t logicalChannel, float ang
   const uint16_t pulseUs = angleToPulse(safeAngle);
   if (logicalChannel < kPcaChannelCount) {
     gCommandedServoAnglesDeg[logicalChannel] = safeAngle;
+    gCommandedModelServoAnglesDeg[logicalChannel] =
+        servoCalibrationModelAngle(gServoCalibration, logicalChannel, safeAngle);
     gCommandedServoPulseUs[logicalChannel] = pulseUs;
   }
 #ifdef DOMINO_SIL
   driver.writeMicroseconds(physicalChannel, pulseUs);
 #else
-  if (gServoOutputsEnabled) driver.writeMicroseconds(physicalChannel, pulseUs);
+  if (gServoOutputsEnabled) {
+    ScopedLoopStage stage(LoopStage::ServoWrite);
+    driver.writeMicroseconds(physicalChannel, pulseUs);
+  }
 #endif
 }
 
@@ -439,7 +451,8 @@ void write270(Adafruit_PWMServoDriver &driver, uint8_t logicalChannel, float ang
 // BL: hip=14, upper=7,  lower=8
 // BR: hip=9,  upper=10, lower=11
 
-// Right legs use +1 directions; left legs share the same hip direction, but mirror upper/lower.
+// Canonical servo basis: outward-positive hips and mirrored planar drives.
+// Active calibration maps these coordinates to each installed shaft direction.
 const LegConfig FR_leg{
     "FR",                // name
     3,                   // hipChannel
@@ -480,7 +493,7 @@ const LegConfig FL_leg{
     FL_HIP_TRIM_DEG,     // hipTrimDeg
     FL_UPPER_TRIM_DEG,   // upperTrimDeg
     FL_LOWER_TRIM_DEG,   // lowerTrimDeg
-    +1,                  // hipDir (all hips oriented the same way in hardware)
+    +1,                  // hipDir (canonical; physical direction is calibrated)
     -1,                  // upperDir
     -1,                  // lowerDir
     +1,                  // lateralDir (left side)
@@ -496,7 +509,7 @@ const LegConfig BL_leg{
     BL_HIP_TRIM_DEG,     // hipTrimDeg
     BL_UPPER_TRIM_DEG,   // upperTrimDeg
     BL_LOWER_TRIM_DEG,   // lowerTrimDeg
-    +1,                  // hipDir (all hips oriented the same way in hardware)
+    +1,                  // hipDir (canonical; physical direction is calibrated)
     -1,                  // upperDir
     -1,                  // lowerDir
     +1,                  // lateralDir (left side)
@@ -526,6 +539,7 @@ void moveLeg(const LegConfig &leg, Adafruit_PWMServoDriver &driver, float x, flo
     float theta2 = 0.0f;
     float theta3 = 0.0f;
     IK(x, y * static_cast<float>(leg.lateralDir), z, &theta1, &theta2, &theta3);
+    // Match the CAD solver's outward-positive canonical hip coordinate.
     shoulderDelta = theta1;
     upperDelta = kUpperCadDriveGain * (theta2 - kNeutralTheta2Deg);
     lowerDelta = kLowerCadDriveGain * (theta3 - kNeutralTheta3Deg);
@@ -534,8 +548,19 @@ void moveLeg(const LegConfig &leg, Adafruit_PWMServoDriver &driver, float x, flo
   const float hipAngle =
       kServoCenterDeg + leg.hipTrimDeg +
       static_cast<float>(leg.hipDir) * shoulderDelta;
-  const float calibratedTheta2 = kNeutralTheta2Deg + upperDelta;
-  const float calibratedTheta3 = kNeutralTheta3Deg + lowerDelta;
+  // Physical-drive trial: the owner's roll/pitch/yaw observations fit an
+  // upper/lower response that is exchanged and reversed about neutral.
+  // Apply its inverse to the *deltas* only. Every neutral pulse, including
+  // the owner's saved hip calibration, stays exactly where it was.
+#if defined(DOMINO_PLANAR_DRIVE_CROSS_REVERSED) && DOMINO_PLANAR_DRIVE_CROSS_REVERSED
+  const float upperDriveDelta = -lowerDelta;
+  const float lowerDriveDelta = -upperDelta;
+#else
+  const float upperDriveDelta = upperDelta;
+  const float lowerDriveDelta = lowerDelta;
+#endif
+  const float calibratedTheta2 = kNeutralTheta2Deg + upperDriveDelta;
+  const float calibratedTheta3 = kNeutralTheta3Deg + lowerDriveDelta;
   const float upperAngle =
       kServoCenterDeg + leg.upperTrimDeg + static_cast<float>(leg.upperDir) * calibratedTheta2;
   const float lowerAngle =
@@ -544,6 +569,26 @@ void moveLeg(const LegConfig &leg, Adafruit_PWMServoDriver &driver, float x, flo
   write270(driver, leg.hipChannel, hipAngle);
   write270(driver, leg.upperChannel, upperAngle);
   write270(driver, leg.lowerChannel, lowerAngle);
+#if defined(DOMINO_PLANAR_DRIVE_CROSS_REVERSED) && DOMINO_PLANAR_DRIVE_CROSS_REVERSED
+  // LIVE model angles describe the estimated *physical linkage* after the
+  // cross-reversed response, while commanded angles/pulses retain the actual
+  // electrical outputs. Derive this after calibration and safety clamps so
+  // telemetry does not hide a clipped command.
+  const float modelUpperDriveDelta =
+      (gCommandedModelServoAnglesDeg[leg.upperChannel] -
+       servoCalibrationNeutralDeg(leg.upperChannel)) /
+      static_cast<float>(leg.upperDir);
+  const float modelLowerDriveDelta =
+      (gCommandedModelServoAnglesDeg[leg.lowerChannel] -
+       servoCalibrationNeutralDeg(leg.lowerChannel)) /
+      static_cast<float>(leg.lowerDir);
+  gCommandedModelServoAnglesDeg[leg.upperChannel] =
+      servoCalibrationNeutralDeg(leg.upperChannel) -
+      static_cast<float>(leg.upperDir) * modelLowerDriveDelta;
+  gCommandedModelServoAnglesDeg[leg.lowerChannel] =
+      servoCalibrationNeutralDeg(leg.lowerChannel) -
+      static_cast<float>(leg.lowerDir) * modelUpperDriveDelta;
+#endif
 }
 
 // Wrappers per leg
@@ -573,6 +618,7 @@ void setServoOutputsEnabled(Adafruit_PWMServoDriver &driver, bool enabled) {
 
 bool servoOutputsEnabled() { return gServoOutputsEnabled; }
 const float* commandedServoAnglesDeg() { return gCommandedServoAnglesDeg; }
+const float* commandedModelServoAnglesDeg() { return gCommandedModelServoAnglesDeg; }
 const uint16_t* commandedServoPulseUs() { return gCommandedServoPulseUs; }
 uint32_t servoSafetyClipCount() { return gServoSafetyClipCount; }
 
@@ -587,6 +633,8 @@ bool commandCalibrationServoAngle(Adafruit_PWMServoDriver &driver,
   const float safeAngle = applyServoSafetyLimit(logicalChannel, angleDeg);
   const uint16_t pulseUs = angleToPulse(safeAngle);
   gCommandedServoAnglesDeg[logicalChannel] = safeAngle;
+  gCommandedModelServoAnglesDeg[logicalChannel] =
+      servoCalibrationModelAngle(gServoCalibration, logicalChannel, safeAngle);
   gCommandedServoPulseUs[logicalChannel] = pulseUs;
   driver.writeMicroseconds(physicalChannel, pulseUs);
   return true;

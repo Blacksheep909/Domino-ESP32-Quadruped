@@ -85,7 +85,8 @@ function normalizeRobotTelemetryClock(message, receivedAt) {
     return receivedAt - Math.max(0, robotTimeMs - timestamp);
   };
   const normalizePose = (pose) => pose && typeof pose === "object"
-    ? { ...pose, timestampMs: toHostTime(pose.timestampMs) }
+    ? { ...pose, timestampMs: toHostTime(pose.timestampMs),
+        ...(Number.isFinite(pose.detailsTimestampMs) ? { detailsTimestampMs: toHostTime(pose.detailsTimestampMs) } : {}) }
     : pose;
   return {
     ...message,
@@ -353,9 +354,10 @@ export class LiveCompanionCore {
     }
 
     if (message.type === "live-calibration-command" && validCalibrationCommand(message)) {
-      const allowed = this.robotState === "disarmed" && (message.action === "enter" || this.benchMode);
+      const allowed = this.robotState === "disarmed" &&
+        (["request-profile", "enter"].includes(message.action) || this.benchMode);
       if (!allowed) {
-        relay.push(this.calibrationAck(message, false, "Calibration requires disarmed robot state and acknowledged bench mode."));
+        relay.push(this.calibrationAck(message, false, "Calibration requires disarmed robot state; writes also require acknowledged bench mode."));
       } else {
         this.remember(message, "calibration", now);
         robot.push(this.robotCommand("calibration", message, now));

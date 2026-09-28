@@ -1,3 +1,5 @@
+import { deriveLiveBatteryState } from "./live-battery-state.js";
+
 export const LIVE_DIAGNOSTIC_MAX_EVENTS = 250;
 export const LIVE_DIAGNOSTIC_RATE_WINDOW_MS = 5_000;
 
@@ -26,7 +28,7 @@ function conditionEvent(state, key, active, severity, message, timestampMs) {
   if (!active && previous) addEvent(state, "info", `${message} cleared`, timestampMs);
 }
 
-function sanitizeDiagnostics(diagnostics) {
+export function sanitizeDiagnostics(diagnostics) {
   if (!diagnostics || typeof diagnostics !== "object") return null;
   return {
     controllerHz: finite(diagnostics.controllerHz),
@@ -36,6 +38,52 @@ function sanitizeDiagnostics(diagnostics) {
     esp32LoopHz: finite(diagnostics.esp32LoopHz),
     commandLatencyMs: finite(diagnostics.commandLatencyMs),
     uptimeMs: finite(diagnostics.uptimeMs),
+    bootId: finite(diagnostics.bootId),
+    resetReason: finite(diagnostics.resetReason),
+    maximumLoopGapMs: finite(diagnostics.maximumLoopGapMs),
+    priorResetStage: finite(diagnostics.priorResetStage),
+    lastSlowStage: finite(diagnostics.lastSlowStage),
+    lastSlowStageUs: finite(diagnostics.lastSlowStageUs),
+    lastSlowStageAtMs: finite(diagnostics.lastSlowStageAtMs),
+    slowStageCount: finite(diagnostics.slowStageCount),
+    maxCrsfStageUs: finite(diagnostics.maxCrsfStageUs),
+    maxCrsfStageAtMs: finite(diagnostics.maxCrsfStageAtMs),
+    maxImuStageUs: finite(diagnostics.maxImuStageUs),
+    maxImuStageAtMs: finite(diagnostics.maxImuStageAtMs),
+    maxLiveStageUs: finite(diagnostics.maxLiveStageUs),
+    maxControlStageUs: finite(diagnostics.maxControlStageUs),
+    maxServoWriteUs: finite(diagnostics.maxServoWriteUs),
+    blackboxEvents: Array.isArray(diagnostics.blackboxEvents)
+      ? diagnostics.blackboxEvents.slice(-16).filter((event) =>
+          Array.isArray(event) && event.length === 7 &&
+          event.every((value) => Number.isInteger(value) && value >= 0))
+        .map((event) => [...event])
+      : [],
+    imuI2cErrors: finite(diagnostics.imuI2cErrors),
+    imuLastErrorAtMs: finite(diagnostics.imuLastErrorAtMs),
+    imuLastRequestBytes: finite(diagnostics.imuLastRequestBytes),
+    imuLastRequestUs: finite(diagnostics.imuLastRequestUs),
+    imuLastFailedRequestBytes: finite(diagnostics.imuLastFailedRequestBytes),
+    imuLastFailedRequestUs: finite(diagnostics.imuLastFailedRequestUs),
+    imuMaxRequestUs: finite(diagnostics.imuMaxRequestUs),
+    imuConsecutiveErrors: finite(diagnostics.imuConsecutiveErrors),
+    imuSampleAgeMs: finite(diagnostics.imuSampleAgeMs),
+    telemetryTxSkipped: finite(diagnostics.telemetryTxSkipped),
+    bodyMode: finite(diagnostics.bodyMode),
+    outputsEnabled: bool(diagnostics.outputsEnabled),
+    radioControlEnabled: bool(diagnostics.radioControlEnabled),
+    motionInputAwaitingCenter: bool(diagnostics.motionInputAwaitingCenter),
+    crsfAcceptedFrames: finite(diagnostics.crsfAcceptedFrames),
+    crsfCrcErrors: finite(diagnostics.crsfCrcErrors),
+    crsfUartOverflows: finite(diagnostics.crsfUartOverflows),
+    crsfBudgetHits: finite(diagnostics.crsfBudgetHits),
+    crsfLastBudgetHitAtMs: finite(diagnostics.crsfLastBudgetHitAtMs),
+    crsfPendingBytes: finite(diagnostics.crsfPendingBytes),
+    crsfMaxPendingBytes: finite(diagnostics.crsfMaxPendingBytes),
+    crsfLastPassBytes: finite(diagnostics.crsfLastPassBytes),
+    manualOverrideActive: bool(diagnostics.manualOverrideActive),
+    manualFrameAgeMs: finite(diagnostics.manualFrameAgeMs),
+    faultReason: typeof diagnostics.faultReason === "string" ? diagnostics.faultReason.slice(0, 120) : null,
     robotState: typeof diagnostics.robotState === "string"
       ? diagnostics.robotState.slice(0, 32).toLowerCase()
       : null,
@@ -45,7 +93,7 @@ function sanitizeDiagnostics(diagnostics) {
     driveLinkQualityPercent: finite(diagnostics.driveLinkQualityPercent),
     gaitTargetValid: bool(diagnostics.gaitTargetValid),
     ikValid: bool(diagnostics.ikValid),
-    jointLimitClips: finite(diagnostics.jointLimitClips),
+    jointLimitClips: finite(diagnostics.jointLimitClips ?? diagnostics.servoLimitClipCount),
     servoOutputChannels: finite(diagnostics.servoOutputChannels),
     imuOnline: bool(diagnostics.imuOnline),
     imuAxG: finite(diagnostics.imuAxG),
@@ -90,12 +138,34 @@ export function observeLiveDiagnosticPacket(state, packet, accepted, receivedAt 
     state.droppedPackets += dropped;
     addEvent(state, "warning", `Detected ${dropped} missing telemetry packet${dropped === 1 ? "" : "s"}.`, receivedAt, "transport");
   }
+  const previous = state.telemetry;
   state.lastSequence = sequence;
   state.acceptedPackets += 1;
   state.lastPacketAt = receivedAt;
   state.packetTimes.push(receivedAt);
   state.packetTimes = state.packetTimes.filter((time) => receivedAt - time <= LIVE_DIAGNOSTIC_RATE_WINDOW_MS);
   state.telemetry = sanitizeDiagnostics(packet.diagnostics);
+  const current = state.telemetry;
+  if (previous && current && previous.bootId !== null && current.bootId !== null &&
+      current.bootId !== previous.bootId) {
+    addEvent(state, "fault", `ESP32 restarted: reset reason ${current.resetReason ?? "unknown"}; prior active stage ${loopStageName(current.priorResetStage)}.`, receivedAt, "firmware");
+  } else if (previous && current && current.maximumLoopGapMs !== null &&
+      current.maximumLoopGapMs > (previous.maximumLoopGapMs ?? 0) && current.maximumLoopGapMs >= 250) {
+    addEvent(state, "warning", `ESP32 loop gap reached ${current.maximumLoopGapMs} ms; longest CRSF/IMU/LIVE/control/servo stages are ${[
+      current.maxCrsfStageUs, current.maxImuStageUs, current.maxLiveStageUs,
+      current.maxControlStageUs, current.maxServoWriteUs,
+    ].map((value) => value === null ? "?" : Math.round(value / 1000)).join("/")} ms.`, receivedAt, "firmware");
+  }
+  if (previous && current && current.imuI2cErrors !== null &&
+      current.imuI2cErrors > (previous.imuI2cErrors ?? 0)) {
+    addEvent(state, "warning", `IMU I²C read errors increased to ${current.imuI2cErrors}.`, receivedAt, "firmware");
+  }
+  if (previous && current && current.crsfBudgetHits !== null &&
+      current.crsfBudgetHits > (previous.crsfBudgetHits ?? 0)) {
+    addEvent(state, "warning", `CRSF receive reached its work limit; ${current.crsfPendingBytes ?? "?"} bytes remain queued.`, receivedAt, "firmware");
+  }
+  conditionEvent(state, "imu-stale", current?.imuOnline === false && current?.imuSampleAgeMs !== null,
+    "warning", "IMU sample became stale.", receivedAt);
   state.lastPacket = {
     type: packet.type,
     sequence,
@@ -128,12 +198,18 @@ export function observeLiveDiagnosticPacket(state, packet, accepted, receivedAt 
   conditionEvent(
     state,
     "low-voltage",
-    Number(state.lastPacket.voltageV) > 0 && state.lastPacket.voltageV < 14,
+    deriveLiveBatteryState(state.lastPacket.voltageV, undefined, {
+      armed: state.telemetry?.robotState === "armed",
+    }).packDetected && state.lastPacket.voltageV < 14,
     "warning",
     "Battery voltage is below the 14.0 V diagnostic threshold.",
     receivedAt,
   );
   return true;
+}
+
+export function loopStageName(value) {
+  return ["none/unknown", "CRSF receive", "IMU I²C", "LIVE transport", "control update", "servo I²C write"][value] || "unknown";
 }
 
 function stage(id, label, status, detail, rateHz = null) {

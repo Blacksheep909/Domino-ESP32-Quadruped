@@ -2670,12 +2670,39 @@ dd {
 }
 .live-manual-dialog::backdrop { background: rgba(10, 11, 10, 0.66); backdrop-filter: blur(3px); }
 .live-manual-shell { display: grid; gap: 14px; padding: 18px; }
-.live-manual-shell > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.live-manual-shell > header {
+  position: relative;
+  inset: auto;
+  width: auto;
+  height: auto;
+  min-height: 0;
+  padding: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  z-index: auto;
+}
 .live-manual-shell > header span, .live-manual-state span, .live-manual-controls label > span, .live-manual-emergency span {
   color: #777a74; font: 750 8px/1.35 "Cascadia Mono", Consolas, monospace; letter-spacing: .07em;
 }
 .live-manual-shell h2 { margin: 5px 0 0; font-size: 22px; }
 .live-manual-shell button { min-height: 34px; color: #3d403b; background: #fff; border: 1px solid #d2d4cd; border-radius: 5px; font-size: 9px; }
+.live-manual-shell #live-manual-close {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  font: 400 22px/1 "Segoe UI", Arial, sans-serif;
+}
 .live-manual-shell button:not(:disabled) { cursor: pointer; }
 .live-manual-shell button:disabled { opacity: .42; cursor: not-allowed; }
 .live-manual-state { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; padding: 12px; background: #e9ebe5; border-radius: 7px; }
@@ -4212,6 +4239,10 @@ body[data-workspace="real-robot"] #telemetry-panel:has(#joint-legend:not([hidden
 .live-data-graph button:not(:disabled) { color: #25633e; cursor: pointer; }
 .live-data-dashboard { padding-top: 12px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .live-data-graph { min-width: 0; overflow: hidden; background: #f0f0ec; border: 1px solid #dcddd8; border-radius: 6px; }
+.live-data-graph.is-dragging { opacity: .48; }
+.live-data-graph.is-drop-target { outline: 2px solid #399e63; outline-offset: 2px; }
+.live-data-graph-drag-ghost { position: fixed; top: 0; left: 0; z-index: 10000; max-width: 300px; padding: 9px 12px; color: #f5fff7; background: #275c3d; border: 1px solid #82c99a; border-radius: 5px; box-shadow: 0 7px 24px rgba(0,0,0,.2); font: 750 10px/1.2 "Cascadia Mono", Consolas, monospace; pointer-events: none; }
+.live-data-graph-drag-ghost[hidden] { display: none; }
 .live-data-graph > header {
   position: static;
   inset: auto;
@@ -4220,7 +4251,7 @@ body[data-workspace="real-robot"] #telemetry-panel:has(#joint-legend:not([hidden
   min-height: 46px;
   padding: 8px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   color: inherit;
@@ -4231,6 +4262,8 @@ body[data-workspace="real-robot"] #telemetry-panel:has(#joint-legend:not([hidden
   backdrop-filter: none;
 }
 .live-data-graph > header > select { width: 100%; min-width: 0; }
+.live-data-graph > header > .live-data-graph-grip { width: 28px; padding: 0; cursor: grab; touch-action: none; font-size: 17px; line-height: 1; }
+.live-data-graph > header > .live-data-graph-grip:active { cursor: grabbing; }
 .live-data-graph > header > div { display: flex; gap: 4px; }
 .live-data-graph > header > div select { width: 58px; }
 .live-data-graph button:disabled { opacity: .36; }
@@ -7793,8 +7826,13 @@ body[data-workspace="real-robot"][data-live-view="sensors"] .app-hud { display: 
 }
 
 .live-connection-dialog {
+  position: fixed;
+  inset: 0;
+  margin: auto;
   width: min(980px, calc(100vw - 34px));
   max-width: none;
+  max-height: calc(100vh - 34px);
+  overflow: auto;
   padding: 0;
   border: 1px solid rgba(26, 29, 31, 0.2);
   border-radius: 16px;
@@ -7818,7 +7856,15 @@ body[data-workspace="real-robot"][data-live-view="sensors"] .app-hud { display: 
 }
 
 .live-connection-workspace > header {
+  position: static;
+  inset: auto;
+  height: auto;
+  color: inherit;
+  background: transparent;
   border-bottom: 1px solid rgba(26, 29, 31, 0.12);
+  box-shadow: none;
+  backdrop-filter: none;
+  z-index: auto;
 }
 
 .live-connection-workspace > header span,
@@ -7926,6 +7972,14 @@ body[data-workspace="real-robot"][data-live-view="sensors"] .app-hud { display: 
   gap: 6px;
   margin-bottom: 9px;
 }
+.live-connection-protocol,
+.live-mavlink-endpoint label { display: grid; gap: 6px; color: #69716a; font: 800 9px/1.2 "Cascadia Mono", Consolas, monospace; }
+.live-connection-protocol { margin-bottom: 10px; }
+.live-connection-protocol select,
+.live-mavlink-endpoint input { min-width: 0; height: 36px; padding: 0 10px; color: #303b33; background: #f8faf7; border: 1px solid #bfc9bf; border-radius: 6px; font: 700 12px/1 "Cascadia Mono", Consolas, monospace; }
+.live-mavlink-endpoint { margin-bottom: 12px; display: grid; grid-template-columns: minmax(0, 1fr) 110px; gap: 8px; }
+.live-mavlink-endpoint[hidden] { display: none; }
+.live-mavlink-endpoint p { grid-column: 1 / -1; margin: 0; color: #6e756f; font-size: 10px; line-height: 1.4; }
 
 .live-transport-options button,
 .live-connection-workspace footer button,
@@ -8107,7 +8161,7 @@ body[data-workspace="real-robot"][data-live-view="sensors"] .app-hud { display: 
 :root[data-theme="dark"] .live-connection-safety-note { background: rgba(67, 158, 100, 0.1); }
 
 @media (max-width: 760px) {
-  .live-connection-dialog { width: 100vw; height: 100vh; border: 0; border-radius: 0; }
+  .live-connection-dialog { width: 100vw; height: 100vh; max-height: none; border: 0; border-radius: 0; }
   .live-connection-body { grid-template-columns: 1fr; }
   .live-connection-discovery { border-right: 0; border-bottom: 1px solid rgba(26, 29, 31, 0.12); }
   .live-connection-workspace > footer { align-items: stretch; flex-direction: column; }
@@ -8234,22 +8288,130 @@ body[data-workspace="real-robot"][data-live-view="sensors"] .app-hud { display: 
 }
 
 .firmware-deploy-dialog {
+  --firmware-bg: #fff;
+  --firmware-header-bg: #f2f3ef;
+  --firmware-header-color: #272a25;
+  --firmware-panel-bg: #fff;
+  --firmware-heading-bg: #f1f2ee;
+  --firmware-footer-bg: #f3f4f0;
+  --firmware-code-bg: #fafbf8;
+  --firmware-console-bg: #fff;
+  --firmware-field-bg: #fff;
+  --firmware-icon-bg: #f5f6f2;
+  --firmware-control-bg: #fff;
+  --firmware-secondary-bg: #f1f2ee;
+  --firmware-hover-bg: #f0f2ed;
+  --firmware-selected-bg: #e8f2eb;
+  --firmware-track-bg: #e2e4de;
+  --firmware-text: #454841;
+  --firmware-text-strong: #292b26;
+  --firmware-text-header-muted: #666962;
+  --firmware-text-muted: #71746e;
+  --firmware-text-subtle: #666962;
+  --firmware-text-faint: #6f726b;
+  --firmware-text-file: #555851;
+  --firmware-text-code: #343731;
+  --firmware-text-terminal: #41443d;
+  --firmware-accent: #34794d;
+  --firmware-accent-bright: #397f51;
+  --firmware-selected-text: #245b38;
+  --firmware-state-neutral: #62655e;
+  --firmware-state-neutral-border: rgba(98, 101, 94, .45);
+  --firmware-state-positive: #2f7448;
+  --firmware-state-positive-border: rgba(61, 142, 85, .52);
+  --firmware-state-warning: #806515;
+  --firmware-state-warning-border: rgba(151, 119, 23, .52);
+  --firmware-state-error: #ad4338;
+  --firmware-state-error-border: rgba(188, 65, 52, .52);
+  --firmware-button-muted: #555851;
+  --firmware-icon-color: #555851;
+  --firmware-console-control-color: #71746e;
+  --firmware-border: #d5d7d1;
+  --firmware-header-border: #d5d7d1;
+  --firmware-control-border: #d0d2cc;
+  --firmware-icon-border: #d1d3cd;
+  --firmware-pill-border: #d1d3cd;
+  --firmware-meta-border: #dfe1db;
+  --firmware-footer-border: #d0d2cc;
+  --firmware-console-control-border: #d1d3cd;
+  --firmware-console-border: #d5d7d1;
+  --firmware-disabled-text: #666960;
+  --firmware-disabled-bg: #e4e5e0;
+  --firmware-backdrop: rgba(20, 23, 19, .36);
+  --firmware-shadow: 0 28px 90px rgba(25, 28, 23, .25);
   width: min(1460px, calc(100vw - 32px));
   height: min(900px, calc(100vh - 32px));
   max-width: none;
   max-height: none;
   padding: 0;
   overflow: hidden;
-  color: #ececeb;
-  border: 1px solid #3a3a3d;
+  color-scheme: light;
+  color: var(--firmware-text-strong);
+  border: 1px solid #c9cbc5;
   border-radius: 10px;
-  background: #111113;
-  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.7);
+  background: var(--firmware-bg);
+  box-shadow: var(--firmware-shadow);
 }
 
 .firmware-deploy-dialog::backdrop {
-  background: rgba(0, 0, 0, 0.76);
+  background: var(--firmware-backdrop);
   backdrop-filter: blur(8px);
+}
+
+:root[data-theme="dark"] .firmware-deploy-dialog {
+  --firmware-bg: #111113;
+  --firmware-header-bg: #0b0b0c;
+  --firmware-header-color: #f4f4f4;
+  --firmware-panel-bg: #151517;
+  --firmware-heading-bg: #18181a;
+  --firmware-footer-bg: #0a0a0b;
+  --firmware-code-bg: #101012;
+  --firmware-console-bg: #050506;
+  --firmware-field-bg: #0f0f11;
+  --firmware-icon-bg: #19191b;
+  --firmware-control-bg: #171719;
+  --firmware-secondary-bg: #202023;
+  --firmware-hover-bg: #202023;
+  --firmware-selected-bg: #29292d;
+  --firmware-track-bg: #262629;
+  --firmware-text: #c0c0c4;
+  --firmware-text-strong: #dedee1;
+  --firmware-text-header-muted: #919195;
+  --firmware-text-muted: #77777d;
+  --firmware-text-subtle: #85858b;
+  --firmware-text-faint: #66666c;
+  --firmware-text-file: #a4a4a9;
+  --firmware-text-code: #d1d1d4;
+  --firmware-text-terminal: #aeb0b2;
+  --firmware-accent: #6fc88a;
+  --firmware-accent-bright: #5ec27b;
+  --firmware-selected-text: #fff;
+  --firmware-state-neutral: #a8a8ad;
+  --firmware-state-neutral-border: rgba(153, 153, 162, .52);
+  --firmware-state-positive: #83dda0;
+  --firmware-state-positive-border: rgba(80, 183, 108, .52);
+  --firmware-state-warning: #ffe46c;
+  --firmware-state-warning-border: rgba(224, 188, 62, .52);
+  --firmware-state-error: #ff8a7a;
+  --firmware-state-error-border: rgba(220, 83, 67, .58);
+  --firmware-button-muted: #b8b8bd;
+  --firmware-icon-color: #aaaab0;
+  --firmware-console-control-color: #929298;
+  --firmware-border: #303033;
+  --firmware-header-border: #333336;
+  --firmware-control-border: #3c3c40;
+  --firmware-icon-border: #38383b;
+  --firmware-pill-border: #39393d;
+  --firmware-meta-border: #2c2c2f;
+  --firmware-footer-border: #39393c;
+  --firmware-console-control-border: #353539;
+  --firmware-console-border: #29292c;
+  --firmware-disabled-text: #65656a;
+  --firmware-disabled-bg: #29292c;
+  --firmware-backdrop: rgba(0, 0, 0, .76);
+  --firmware-shadow: 0 28px 90px rgba(0, 0, 0, .7);
+  color-scheme: dark;
+  border-color: #3a3a3d;
 }
 
 .firmware-workspace {
@@ -8265,9 +8427,9 @@ body[data-workspace="real-robot"][data-live-view="sensors"] .app-hud { display: 
   display: flex;
   align-items: center;
   justify-content: space-between;
-  color: #f4f4f4;
-  border-bottom: 1px solid #333336;
-  background: #0b0b0c;
+  color: var(--firmware-header-color);
+  border-bottom: 1px solid var(--firmware-header-border);
+  background: var(--firmware-header-bg);
 }
 
 .firmware-workspace-header h1 {
@@ -8279,7 +8441,7 @@ body[data-workspace="real-robot"][data-live-view="sensors"] .app-hud { display: 
 
 .firmware-workspace-header p {
   margin: 0;
-  color: #919195;
+  color: var(--firmware-text-header-muted);
   font-size: 12px;
 }
 
@@ -8287,7 +8449,7 @@ body[data-workspace="real-robot"][data-live-view="sensors"] .app-hud { display: 
 .firmware-section-heading span,
 .firmware-field > span,
 .firmware-console-heading > span {
-  color: #77777d;
+  color: var(--firmware-text-muted);
   font: 750 9px/1 "Cascadia Mono", Consolas, monospace;
 }
 
@@ -8300,28 +8462,28 @@ body[data-workspace="real-robot"][data-live-view="sensors"] .app-hud { display: 
 .firmware-state-pill {
   min-width: 82px;
   padding: 7px 10px;
-  color: #a8a8ad;
-  border: 1px solid #39393d;
+  color: var(--firmware-state-neutral);
+  border: 1px solid var(--firmware-pill-border);
   border-radius: 99px;
   text-align: center;
   font: 750 9px/1 "Cascadia Mono", Consolas, monospace;
 }
 
 .firmware-state-pill[data-state="ready"],
-.firmware-state-pill[data-state="success"] { color: #83dda0; border-color: rgba(80, 183, 108, 0.52); }
-.firmware-state-pill[data-state="running"] { color: #ffe46c; border-color: rgba(224, 188, 62, 0.52); }
+.firmware-state-pill[data-state="success"] { color: var(--firmware-state-positive); border-color: var(--firmware-state-positive-border); }
+.firmware-state-pill[data-state="running"] { color: var(--firmware-state-warning); border-color: var(--firmware-state-warning-border); }
 .firmware-state-pill[data-state="cancelling"],
-.firmware-state-pill[data-state="cancelled"] { color: #b8b8bd; border-color: rgba(153, 153, 162, 0.52); }
-.firmware-state-pill[data-state="failed"] { color: #ff8a7a; border-color: rgba(220, 83, 67, 0.58); }
+.firmware-state-pill[data-state="cancelled"] { color: var(--firmware-button-muted); border-color: var(--firmware-state-neutral-border); }
+.firmware-state-pill[data-state="failed"] { color: var(--firmware-state-error); border-color: var(--firmware-state-error-border); }
 
 .firmware-icon-button {
   width: 34px;
   height: 34px;
   padding: 0;
-  color: #aaaab0;
-  border: 1px solid #38383b;
+  color: var(--firmware-icon-color);
+  border: 1px solid var(--firmware-icon-border);
   border-radius: 7px;
-  background: #19191b;
+  background: var(--firmware-icon-bg);
   font-size: 22px;
 }
 
@@ -8336,11 +8498,11 @@ body[data-workspace="real-robot"][data-live-view="sensors"] .app-hud { display: 
 .firmware-action-panel {
   min-width: 0;
   min-height: 0;
-  background: #151517;
+  background: var(--firmware-panel-bg);
 }
 
 .firmware-package-panel,
-.firmware-review-panel { border-right: 1px solid #303033; }
+.firmware-review-panel { border-right: 1px solid var(--firmware-border); }
 
 .firmware-section-heading {
   min-height: 58px;
@@ -8349,24 +8511,24 @@ body[data-workspace="real-robot"][data-live-view="sensors"] .app-hud { display: 
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border-bottom: 1px solid #303033;
-  background: #18181a;
+  border-bottom: 1px solid var(--firmware-border);
+  background: var(--firmware-heading-bg);
 }
 
 .firmware-section-heading div { min-width: 0; display: grid; gap: 6px; }
-.firmware-section-heading strong { overflow: hidden; color: #dedee1; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
-.firmware-section-heading output { flex: 0 0 auto; color: #85858b; font: 700 9px/1 "Cascadia Mono", Consolas, monospace; }
+.firmware-section-heading strong { overflow: hidden; color: var(--firmware-text-strong); text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.firmware-section-heading output { flex: 0 0 auto; color: var(--firmware-text-subtle); font: 700 9px/1 "Cascadia Mono", Consolas, monospace; }
 
 .firmware-package-meta {
   padding: 10px 14px;
   display: grid;
   gap: 5px;
-  color: #a2a2a7;
-  border-bottom: 1px solid #2c2c2f;
+  color: var(--firmware-text);
+  border-bottom: 1px solid var(--firmware-meta-border);
   font-size: 10px;
 }
 
-.firmware-package-meta code { color: #6fc88a; font-size: 9px; }
+.firmware-package-meta code { color: var(--firmware-accent); font-size: 9px; }
 
 .firmware-file-list {
   height: calc(100% - 113px);
@@ -8382,7 +8544,7 @@ body[data-workspace="real-robot"][data-live-view="sensors"] .app-hud { display: 
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
-  color: #a4a4a9;
+  color: var(--firmware-text-file);
   border: 0;
   border-radius: 5px;
   background: transparent;
@@ -8391,17 +8553,17 @@ body[data-workspace="real-robot"][data-live-view="sensors"] .app-hud { display: 
 }
 
 .firmware-file-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.firmware-file-item small { color: #66666c; font-size: 8px; }
-.firmware-file-item:hover { color: #efeff1; background: #202023; }
-.firmware-file-item.active { color: #fff; background: #29292d; box-shadow: inset 2px 0 #5bc379; }
+.firmware-file-item small { color: var(--firmware-text-faint); font-size: 8px; }
+.firmware-file-item:hover { color: var(--firmware-text-strong); background: var(--firmware-hover-bg); }
+.firmware-file-item.active { color: var(--firmware-selected-text); background: var(--firmware-selected-bg); box-shadow: inset 2px 0 #4e9b68; }
 
 .firmware-review-panel { display: grid; grid-template-rows: auto minmax(0, 1fr); }
 #firmware-source-viewer {
   margin: 0;
   padding: 16px 18px 34px;
   overflow: auto;
-  color: #d1d1d4;
-  background: #101012;
+  color: var(--firmware-text-code);
+  background: var(--firmware-code-bg);
   font: 12px/1.65 "Cascadia Mono", Consolas, monospace;
   tab-size: 2;
 }
@@ -8419,17 +8581,17 @@ body[data-workspace="real-robot"][data-live-view="sensors"] .app-hud { display: 
   backdrop-filter: none;
   z-index: auto;
 }
-.firmware-action-panel section { padding: 16px; border-bottom: 1px solid #303033; }
+.firmware-action-panel section { padding: 16px; border-bottom: 1px solid var(--firmware-border); }
 .firmware-step-heading { margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
-.firmware-step-heading > span { color: #5ec27b; font: 750 10px/1 "Cascadia Mono", Consolas, monospace; }
+.firmware-step-heading > span { color: var(--firmware-accent-bright); font: 750 10px/1 "Cascadia Mono", Consolas, monospace; }
 .firmware-step-heading div { display: grid; gap: 3px; }
 .firmware-step-heading strong { font-size: 13px; }
-.firmware-step-heading small { color: #74747a; font-size: 10px; }
+.firmware-step-heading small { color: var(--firmware-text-subtle); font-size: 10px; }
 
 .firmware-readiness-list { margin: 0 0 14px; display: grid; gap: 8px; }
 .firmware-readiness-list div { display: flex; justify-content: space-between; gap: 12px; }
-.firmware-readiness-list dt { color: #77777c; font-size: 10px; }
-.firmware-readiness-list dd { margin: 0; color: #c6c6c9; text-align: right; font: 700 9px/1.3 "Cascadia Mono", Consolas, monospace; }
+.firmware-readiness-list dt { color: var(--firmware-text-muted); font-size: 10px; }
+.firmware-readiness-list dd { margin: 0; color: var(--firmware-text); text-align: right; font: 700 9px/1.3 "Cascadia Mono", Consolas, monospace; }
 
 .firmware-primary-action,
 .firmware-secondary-action,
@@ -8441,26 +8603,26 @@ body[data-workspace="real-robot"][data-live-view="sensors"] .app-hud { display: 
 }
 
 .firmware-primary-action { color: #0b180f; border: 0; background: #79dc96; }
-.firmware-secondary-action { margin-top: 7px; color: #b8b8bd; border: 1px solid #414146; background: #202023; }
+.firmware-secondary-action { margin-top: 7px; color: var(--firmware-button-muted); border: 1px solid var(--firmware-control-border); background: var(--firmware-secondary-bg); }
 .firmware-upload-action { margin-top: 12px; color: #12100a; border: 0; background: #ffe56c; }
 .firmware-upload-action:disabled,
-.firmware-primary-action:disabled { color: #65656a; background: #29292c; cursor: not-allowed; }
+.firmware-primary-action:disabled { color: var(--firmware-disabled-text); background: var(--firmware-disabled-bg); cursor: not-allowed; }
 
 .firmware-field { display: grid; gap: 7px; }
 .firmware-field select {
   width: 100%;
   height: 36px;
   padding: 0 9px;
-  color: #d8d8db;
-  border: 1px solid #3c3c40;
+  color: var(--firmware-text);
+  border: 1px solid var(--firmware-control-border);
   border-radius: 6px;
-  background: #0f0f11;
+  background: var(--firmware-field-bg);
   font: 650 10px/1 "Cascadia Mono", Consolas, monospace;
 }
 
-.firmware-boot-guide { margin: 14px 0; padding-left: 24px; color: #96969b; font-size: 10px; line-height: 1.55; }
-.firmware-boot-guide b { color: #ececee; }
-.firmware-confirmation { display: grid; grid-template-columns: 16px 1fr; gap: 9px; color: #c0c0c4; font-size: 10px; line-height: 1.45; }
+.firmware-boot-guide { margin: 14px 0; padding-left: 24px; color: var(--firmware-text-muted); font-size: 10px; line-height: 1.55; }
+.firmware-boot-guide b { color: var(--firmware-text-strong); }
+.firmware-confirmation { display: grid; grid-template-columns: 16px 1fr; gap: 9px; color: var(--firmware-text); font-size: 10px; line-height: 1.45; }
 .firmware-confirmation input { accent-color: #f0ce4f; }
 
 .firmware-console-panel {
@@ -8469,25 +8631,34 @@ body[data-workspace="real-robot"][data-live-view="sensors"] .app-hud { display: 
   display: grid;
   grid-template-rows: auto 5px auto minmax(0, 1fr);
   gap: 9px;
-  border-top: 1px solid #39393c;
-  background: #0a0a0b;
+  border-top: 1px solid var(--firmware-footer-border);
+  background: var(--firmware-footer-bg);
 }
 
 .firmware-progress-row,
 .firmware-console-heading { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .firmware-progress-row div { min-width: 0; display: flex; align-items: baseline; gap: 10px; }
-.firmware-progress-row span { color: #6fc98a; font: 750 9px/1 "Cascadia Mono", Consolas, monospace; }
-.firmware-progress-row strong { overflow: hidden; color: #bdbdc1; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
-.firmware-progress-row output { color: #e4e4e6; font: 750 10px/1 "Cascadia Mono", Consolas, monospace; }
-.firmware-progress-track { overflow: hidden; border-radius: 99px; background: #262629; }
+.firmware-progress-row span { color: var(--firmware-accent); font: 750 9px/1 "Cascadia Mono", Consolas, monospace; }
+.firmware-progress-row strong { overflow: hidden; color: var(--firmware-text); text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.firmware-progress-row output { color: var(--firmware-text-strong); font: 750 10px/1 "Cascadia Mono", Consolas, monospace; }
+.firmware-progress-track { overflow: hidden; border-radius: 99px; background: var(--firmware-track-bg); }
 #firmware-progress-fill { width: 0%; height: 100%; background: linear-gradient(90deg, #53bd72, #dce96c); transition: width 180ms ease; }
-.firmware-console-heading button { height: 24px; padding: 0 9px; color: #929298; border: 1px solid #353539; border-radius: 4px; background: #171719; font: 700 8px/1 "Cascadia Mono", Consolas, monospace; }
-#firmware-console { margin: 0; padding: 10px 12px; overflow: auto; color: #aeb0b2; border: 1px solid #29292c; border-radius: 5px; background: #050506; font: 10px/1.45 "Cascadia Mono", Consolas, monospace; white-space: pre-wrap; }
+.firmware-console-heading button { height: 24px; padding: 0 9px; color: var(--firmware-console-control-color); border: 1px solid var(--firmware-console-control-border); border-radius: 4px; background: var(--firmware-control-bg); font: 700 8px/1 "Cascadia Mono", Consolas, monospace; }
+#firmware-console { margin: 0; padding: 10px 12px; overflow: auto; color: var(--firmware-text-terminal); border: 1px solid var(--firmware-console-border); border-radius: 5px; background: var(--firmware-console-bg); font: 10px/1.45 "Cascadia Mono", Consolas, monospace; white-space: pre-wrap; }
+
+.firmware-deploy-dialog :is(button, select, input):focus-visible {
+  outline: 2px solid rgba(57, 127, 81, .55);
+  outline-offset: 2px;
+}
+
+:root[data-theme="dark"] .firmware-deploy-dialog :is(button, select, input):focus-visible {
+  outline-color: rgba(131, 221, 160, .62);
+}
 
 @media (max-width: 980px) {
   .firmware-workspace { grid-template-rows: auto minmax(0, 1fr) 210px; }
   .firmware-workspace-body { grid-template-columns: 210px minmax(320px, 1fr); }
-  .firmware-action-panel { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid #303033; }
+  .firmware-action-panel { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid var(--firmware-border); }
   .firmware-package-panel, .firmware-review-panel { min-height: 300px; }
 }
 
@@ -8496,7 +8667,7 @@ body[data-workspace="real-robot"][data-live-view="sensors"] .app-hud { display: 
   .firmware-workspace { grid-template-rows: auto minmax(0, 1fr) 190px; }
   .firmware-workspace-body { display: block; overflow: auto; }
   .firmware-package-panel { height: 260px; border-right: 0; }
-  .firmware-review-panel { height: 360px; border-right: 0; border-top: 1px solid #303033; }
+  .firmware-review-panel { height: 360px; border-right: 0; border-top: 1px solid var(--firmware-border); }
   .firmware-action-panel { display: block; }
   .firmware-workspace-header p { display: none; }
 }
@@ -9099,6 +9270,19 @@ body[data-workspace="real-robot"][data-live-view="calibration"] .camera-gizmo {
 
 #live-view-sensors .live-navigation-grid {
   margin-top: var(--panel-gap);
+}
+#live-view-sensors .live-sensor-grid {
+  margin-top: var(--panel-gap);
+}
+#live-view-sensors .live-page-status #live-nav-open-mavlink {
+  min-height: 30px;
+  padding: 0 10px;
+  color: #226340;
+  background: #e3f2e8;
+  border: 1px solid #9bc8aa;
+  border-radius: 5px;
+  cursor: pointer;
+  font: 800 9px/1 "Cascadia Mono", Consolas, monospace;
 }
 
 #live-view-calibration .calibration-step-rail button {
@@ -9751,5 +9935,268 @@ body[data-workspace="real-robot"]:is(
   body[data-workspace="real-robot"][data-live-view="compare"] #live-view-compare .live-safety-dock,
   body[data-workspace="real-robot"][data-live-view="compare"] #real-workspace .live-comparison-panel {
     top: var(--live-preview-top);
+  }
+}
+
+/* Canonical LIVE desktop geometry -----------------------------------------
+   One gutter and one explicit preview lane for every LIVE tab. Keep this
+   final so legacy page-specific sizing cannot place editors beneath the
+   fixed viewport or recenter otherwise identical pages. */
+@media (min-width: 1001px) {
+  body[data-workspace="real-robot"] {
+    --live-shell-gutter: var(--app-gutter);
+    --live-column-gap: 16px;
+    --live-preview-width: clamp(420px, 36vw, 680px);
+    --live-preview-right: var(--live-shell-gutter);
+    --live-editor-width: calc(100vw - var(--live-shell-gutter) - var(--live-preview-width) - var(--live-column-gap) - var(--live-preview-right));
+  }
+
+  #real-workspace .live-view-page { padding-inline: var(--live-shell-gutter); }
+
+  #real-workspace .live-view-page .live-page-heading,
+  #real-workspace #live-view-compare .live-compare-page-heading,
+  #live-view-data .live-data-grid,
+  #live-view-diagnostics .live-diagnostics-grid,
+  #live-view-sessions .live-sessions-grid {
+    width: 100%;
+    max-width: none;
+    margin-inline: 0;
+  }
+
+  #real-workspace .live-view-page .live-page-heading,
+  #real-workspace #live-view-compare .live-compare-page-heading { justify-content: space-between; }
+
+  #real-workspace .live-view-page .live-page-heading > :first-child,
+  #real-workspace #live-view-compare .live-compare-page-heading > :first-child { flex: 1 1 auto; }
+
+  #real-workspace .live-view-page .live-page-status,
+  #real-workspace #live-view-compare .live-compare-page-heading .live-page-status { margin-left: auto; }
+
+  #live-view-sensors .live-sensor-grid,
+  #live-view-sensors .live-navigation-grid,
+  #live-view-calibration .live-calibration-layout,
+  #live-view-gaits .live-gaits-layout {
+    box-sizing: border-box;
+    width: var(--live-editor-width);
+    max-width: var(--live-editor-width);
+    margin-inline: 0;
+    padding-right: 0;
+    gap: var(--live-column-gap);
+  }
+
+  #live-view-calibration.live-calibration-page,
+  #live-view-gaits.live-gaits-page { padding-right: var(--live-shell-gutter); }
+
+  #live-view-calibration .live-calibration-layout { grid-template-columns: 160px minmax(0, 1fr); }
+
+  #live-view-gaits .live-gaits-editor,
+  #live-view-gaits .live-gait-card,
+  #live-view-calibration .live-calibration-workspace {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  body[data-workspace="real-robot"]:is([data-live-view="sensors"], [data-live-view="calibration"], [data-live-view="gaits"]) #scene {
+    right: var(--live-preview-right);
+    width: var(--live-preview-width);
+  }
+}
+
+/* LIVE preview captions follow the active theme. These were authored as
+   permanently dark overlays, leaving a charcoal strip in light mode. */
+.calibration-preview-caption,
+.live-gait-preview-caption {
+  color: #363a36;
+  background: rgba(247, 247, 244, 0.94);
+  border-color: #c9ccc6;
+  box-shadow: 0 8px 24px rgba(34, 38, 34, 0.08);
+}
+
+.calibration-preview-caption small,
+.live-gait-preview-caption small { color: #747973; }
+
+.calibration-preview-caption button {
+  color: #55705e;
+  background: #eef3ee;
+  border-color: #b9c8bc;
+}
+
+.calibration-preview-caption button:hover,
+.calibration-preview-caption button:focus-visible {
+  color: #245d38;
+  background: #e4f1e7;
+  border-color: #79a886;
+}
+
+:root[data-theme="dark"] .calibration-preview-caption,
+:root[data-theme="dark"] .live-gait-preview-caption {
+  color: #d9d9dc;
+  background: rgba(12, 12, 13, 0.78);
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow: none;
+}
+
+:root[data-theme="dark"] .calibration-preview-caption small,
+:root[data-theme="dark"] .live-gait-preview-caption small { color: #8f8f95; }
+
+:root[data-theme="dark"] .calibration-preview-caption button {
+  color: #7f8287;
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+/* Map focus removes the preview lane, including the desktop width cap. */
+body[data-workspace="real-robot"][data-live-view="sensors"][data-live-planner-focus="true"] #live-view-sensors :is(.live-navigation-grid, .live-sensor-grid) {
+  width: 100%;
+  max-width: none;
+  padding-right: 0;
+}
+
+/* Compare is fixed relative to the viewport, so constrain both edges rather
+   than assigning a full viewport width on top of its left offset. */
+@media (min-width: 901px) {
+  #real-workspace #live-view-compare .live-compare-page-heading {
+    left: var(--app-gutter);
+    right: var(--app-gutter);
+    width: auto;
+    max-width: none;
+    box-sizing: border-box;
+  }
+}
+
+/* Light mode uses Domino green for interactive emphasis. Orange remains
+   reserved nowhere in the light UI; fault red is intentionally unchanged. */
+:root:not([data-theme="dark"]) .status .live-header-battery[data-state="warning"] {
+  color: #356247;
+  background: #edf5ef;
+  border-color: #a9c8b2;
+}
+
+:root:not([data-theme="dark"]) .channel-strip-label strong,
+:root:not([data-theme="dark"]) .gait-lab-heading > div small,
+:root:not([data-theme="dark"]) .gait-setting-info strong { color: #2e7148; }
+
+:root:not([data-theme="dark"]) .channel-fill,
+:root:not([data-theme="dark"]) .channel.switch.low .channel-fill,
+:root:not([data-theme="dark"]) .channel.switch.mid .channel-fill,
+:root:not([data-theme="dark"]) .channel.switch.high .channel-fill {
+  background: linear-gradient(90deg, #397b51 0%, #65a878 52%, #eef7f0 100%);
+  box-shadow: 0 0 5px rgba(61, 151, 95, 0.18);
+}
+
+:root:not([data-theme="dark"]) .channel.mid .channel-position,
+:root:not([data-theme="dark"]) .gait-lab-heading > div small[data-state="armed"],
+:root:not([data-theme="dark"]) .gait-setting > span small,
+:root:not([data-theme="dark"]) #joint-foot-state[data-state="air"] { color: #47765a; }
+
+:root:not([data-theme="dark"]) nav button.active,
+:root:not([data-theme="dark"]) .gait-setting-info-button.active,
+:root:not([data-theme="dark"]) .joint-drive-selector button.active {
+  color: #f8fff9;
+  background: #347b50;
+  border-color: #347b50;
+  box-shadow: inset 0 0 0 1px #28653f;
+}
+
+:root:not([data-theme="dark"]) :is(
+  .gait-lab-heading input[type="range"],
+  .gait-setting input[type="range"],
+  .joint-motion-slider,
+  .joint-drive-selector input[type="range"]
+) { accent-color: #3d965f; }
+
+:root:not([data-theme="dark"]) .gait-profile-manager input:focus,
+:root:not([data-theme="dark"]) .gait-profile-manager select:focus {
+  border-color: #72a783;
+  box-shadow: 0 0 0 2px rgba(61, 151, 95, 0.14);
+}
+
+:root:not([data-theme="dark"]) .joint-swatch.active,
+:root:not([data-theme="dark"]) .gamepad-axis-fill { background: #4e9b68; }
+
+:root:not([data-theme="dark"]) #hud-state[data-state="warning"] { color: #47765a; }
+
+/* Simulation toolbar finishing pass ---------------------------------------
+   Keep the control rail close to the channel strip and make every reserved
+   control column visibly intentional. */
+@media (min-width: 1021px) {
+  #simulation-workspace { top: 138px; }
+}
+
+:root:not([data-theme="dark"]) #simulation-workspace .gait-lab-button {
+  color: #356d49;
+  background: #f2f7f3;
+  border: 1px solid #b9cbbf;
+  border-radius: 4px;
+  box-shadow: none;
+}
+
+:root:not([data-theme="dark"]) #simulation-workspace .gait-lab-button:hover,
+:root:not([data-theme="dark"]) #simulation-workspace .gait-lab-button:focus-visible,
+:root:not([data-theme="dark"]) #simulation-workspace .gait-lab-button.open {
+  color: #245d38;
+  background: #e4f1e7;
+  border-color: #79a886;
+  outline: none;
+}
+
+:root:not([data-theme="dark"]) #height-meter-fill { background: #4e9b68; }
+
+:root:not([data-theme="dark"]) #simulation-workspace .joint-opacity-control input {
+  accent-color: #4e9b68;
+}
+
+/* The walk selector has exactly three states. Its parent column can grow,
+   but the bordered segmented control must not grow into a false fourth box. */
+@media (min-width: 1021px) {
+  #simulation-workspace .walk-control {
+    grid-template-columns: 38px 162px 58px;
+    justify-content: start;
+  }
+
+  #simulation-workspace .segmented-control {
+    width: 162px;
+  }
+
+  #simulation-workspace .segmented-control button {
+    width: 54px;
+    flex: 0 0 54px;
+  }
+}
+
+/* Titleless Compare workspace ---------------------------------------------
+   Compare does not need a second title/status banner beneath the persistent
+   LIVE toolbar. Other LIVE tools retain their page headings. */
+#real-workspace #live-view-compare .live-compare-page-heading {
+  display: none !important;
+}
+
+@media (min-width: 1001px) {
+  body[data-workspace="real-robot"][data-live-view="compare"] {
+    --live-preview-top: calc(var(--live-content-top, 118px) + var(--app-gutter));
+  }
+
+  body[data-workspace="real-robot"][data-live-view="compare"] #live-view-compare .live-safety-dock,
+  body[data-workspace="real-robot"][data-live-view="compare"] #real-workspace .live-comparison-panel {
+    top: var(--live-preview-top);
+  }
+}
+
+/* Align the right-hand 3D lane with the adjacent editor card. The heading's
+   rendered line box leaves the normal-flow editor five pixels below the
+   calculated fixed-canvas baseline. Move the entire preview assembly—not
+   just its border—so switching LIVE tools preserves one horizontal datum. */
+@media (min-width: 1001px) {
+  body[data-workspace="real-robot"]:is(
+    [data-live-view="sensors"],
+    [data-live-view="calibration"],
+    [data-live-view="gaits"]
+  ) {
+    --live-preview-top: calc(
+      var(--live-content-top, 118px) + var(--live-page-pad) +
+      var(--live-title-height) + var(--live-title-gap) + 5px
+    );
   }
 }

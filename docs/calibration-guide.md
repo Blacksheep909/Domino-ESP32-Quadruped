@@ -36,6 +36,21 @@ outputs off before validating, checksumming, rereading, and activating the new
 profile in NVS. The robot then leaves bench mode, so further movement requires
 a fresh bench-mode request.
 
+On each connection to a disarmed robot, Studio reads that robot's active NVS
+profile and fills the calibration controls from it. This includes all 12 joint
+offsets, directions, limits, and physical output assignments. The robot is the
+source for the connected session, even when a new Studio version has an empty
+browser cache. Unsaved browser edits are kept for review. When a saved browser
+copy differs from the robot, Studio keeps the previous copy under **Load previous
+browser copy** before showing the robot values.
+
+Before a profile can be sent, Studio must have read the current robot profile
+in that session. Firmware 0.8.15 and later require the read profile's `savedAt`
+revision on every write and reject a stale Studio draft. A successful save is
+read back from the robot. Normal Studio firmware upload preserves the ESP32 NVS
+partition; a full-chip erase does not. Export Robot Profile provides a portable
+JSON backup before any full-chip erase or hardware replacement.
+
 Browser calibration schema v1 files import as the default fixed wiring map and
 are rewritten as schema v2. Older binary NVS blobs do not match the v2 record
 size and safely fall back to the compiled wiring and calibration defaults.

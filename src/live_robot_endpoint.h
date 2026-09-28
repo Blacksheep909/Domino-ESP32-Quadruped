@@ -21,8 +21,13 @@ struct LiveRobotPoseSnapshot {
 
 void liveRobotEndpointBegin(Adafruit_PWMServoDriver &driver);
 void liveRobotEndpointLoop(uint32_t now, Adafruit_PWMServoDriver &driver);
+// USB maintenance mode forwards bytes to the receiver UART. It is entered only
+// by an explicit USB command while disarmed and ends on a power cycle.
+bool liveRobotEndpointReceiverPassthroughActive();
+void liveRobotEndpointReceiverPassthroughLoop();
 void liveRobotEndpointSetExpectedPose(const LiveRobotPoseSnapshot &pose);
 void liveRobotEndpointSetExpectedFootTarget(uint8_t legIndex, float xMm, float yMm, float zMm);
+void liveRobotEndpointSetControlState(uint8_t bodyMode, bool awaitingStickCenter);
 LiveRobotState liveRobotEndpointState();
 bool liveRobotEndpointAllowsLocomotion();
 // The CRSF receiver remains usable without a PC. LIVE can explicitly inhibit

@@ -1,5 +1,7 @@
 import { LIVE_SERVO_CHANNELS } from "./live-telemetry-state.js";
 import { deriveLiveBatteryState } from "./live-battery-state.js";
+import { sanitizeDiagnostics } from "./live-diagnostics-state.js";
+import { sanitizeLiveControllerTelemetry } from "./live-controller-state.js";
 
 export const LIVE_SESSION_MAX_SAMPLES = 18_000;
 export const LIVE_SESSION_MAX_ARCHIVE_ENTRIES = 20;
@@ -43,26 +45,34 @@ export function clearLiveSession(state) {
 }
 
 export function recordLiveComparisonSample(state, snapshot, capturedAt = Date.now()) {
-  if (!state || state.status !== "recording" || !snapshot?.paired) return false;
-  const sourceKey = `${snapshot.expected.timestampMs}:${snapshot.measured.timestampMs}`;
+  if (!state || state.status !== "recording" || !snapshot?.expectedFresh || !snapshot.expected) return false;
+  const measured = snapshot.paired ? snapshot.measured : null;
+  const sourceKey = `${snapshot.expected.timestampMs}:${measured?.timestampMs ?? "none"}`;
   if (sourceKey === state.lastSourceKey) return false;
-  const battery = deriveLiveBatteryState(snapshot.power?.voltageV);
+  const battery = deriveLiveBatteryState(snapshot.power?.voltageV, undefined, {
+    armed: snapshot.diagnostics?.robotState === "armed",
+  });
   const sample = {
     capturedAt,
     elapsedMs: Math.max(0, capturedAt - state.startedAt),
     expectedTimestampMs: snapshot.expected.timestampMs,
-    measuredTimestampMs: snapshot.measured.timestampMs,
-    alignmentMs: snapshot.alignmentMs,
+    expectedDetailsTimestampMs: snapshot.expected.detailsTimestampMs ?? null,
+    measuredTimestampMs: measured?.timestampMs ?? null,
+    alignmentMs: measured ? snapshot.alignmentMs : null,
     expectedBody: { ...snapshot.expected.body },
-    measuredBody: { ...snapshot.measured.body },
-    bodyError: { ...snapshot.bodyError },
-    worstJointErrorDeg: snapshot.worstJointErrorDeg,
-    jointErrorsDeg: LIVE_SERVO_CHANNELS.map((channel) => snapshot.jointErrorsDeg[channel]),
+    measuredBody: measured ? { ...measured.body } : { rollDeg: null, pitchDeg: null, yawDeg: null, heightMm: null },
+    bodyError: measured && snapshot.bodyError ? { ...snapshot.bodyError }
+      : { rollDeg: null, pitchDeg: null, yawDeg: null, heightMm: null },
+    worstJointErrorDeg: measured ? snapshot.worstJointErrorDeg : null,
+    jointErrorsDeg: LIVE_SERVO_CHANNELS.map((channel) => measured ? snapshot.jointErrorsDeg[channel] : null),
     expectedJointAnglesDeg: LIVE_SERVO_CHANNELS.map((channel) => snapshot.expected.servoAngleDeg?.[channel] ?? null),
+    expectedModelJointAnglesDeg: Array.isArray(snapshot.expected.modelServoAngleDeg)
+      ? LIVE_SERVO_CHANNELS.map((channel) => snapshot.expected.modelServoAngleDeg[channel])
+      : null,
     expectedServoPulseUs: LIVE_SERVO_CHANNELS.map((channel) => snapshot.expected.servoPulseUs?.[channel] ?? null),
     expectedServoPhysicalChannels: LIVE_SERVO_CHANNELS.map((channel) => snapshot.expected.servoPhysicalChannel?.[channel] ?? null),
-    measuredJointAnglesDeg: Array.isArray(snapshot.measured.servoAngleDeg)
-      ? LIVE_SERVO_CHANNELS.map((channel) => snapshot.measured.servoAngleDeg[channel])
+    measuredJointAnglesDeg: Array.isArray(measured?.servoAngleDeg)
+      ? LIVE_SERVO_CHANNELS.map((channel) => measured.servoAngleDeg[channel])
       : null,
     expectedFootTargetsMm: Array.isArray(snapshot.expected.footTargetMm)
       ? snapshot.expected.footTargetMm.map((target) => [...target])
@@ -70,10 +80,13 @@ export function recordLiveComparisonSample(state, snapshot, capturedAt = Date.no
     power: snapshot.power ? {
       ...snapshot.power,
       cellCount: battery.cellCount,
+      packDetected: battery.packDetected,
       averageCellVoltageV: battery.averageCellVoltageV,
       estimatedChargePercent: battery.estimatedChargePercent,
     } : null,
     link: snapshot.link ? { ...snapshot.link } : null,
+    diagnostics: sanitizeDiagnostics(snapshot.diagnostics),
+    controller: sanitizeLiveControllerTelemetry(snapshot.controller),
   };
   state.samples.push(sample);
   if (state.samples.length > state.maxSamples) {
@@ -125,12 +138,15 @@ export function archiveLiveSession(archive, state, identifier = `session-${Date.
       bodyError: { ...sample.bodyError },
       jointErrorsDeg: [...sample.jointErrorsDeg],
       expectedJointAnglesDeg: [...sample.expectedJointAnglesDeg],
+      expectedModelJointAnglesDeg: sample.expectedModelJointAnglesDeg ? [...sample.expectedModelJointAnglesDeg] : null,
       expectedServoPulseUs: [...sample.expectedServoPulseUs],
       expectedServoPhysicalChannels: [...sample.expectedServoPhysicalChannels],
       measuredJointAnglesDeg: sample.measuredJointAnglesDeg ? [...sample.measuredJointAnglesDeg] : null,
       expectedFootTargetsMm: sample.expectedFootTargetsMm?.map((target) => [...target]) || null,
       power: sample.power ? { ...sample.power } : null,
       link: sample.link ? { ...sample.link } : null,
+      diagnostics: sanitizeDiagnostics(sample.diagnostics),
+      controller: sanitizeLiveControllerTelemetry(sample.controller),
     })),
   };
   archive.unshift(entry);
@@ -138,7 +154,9 @@ export function archiveLiveSession(archive, state, identifier = `session-${Date.
   return entry;
 }
 
-const finiteBody = (body) => body && ["rollDeg", "pitchDeg", "yawDeg", "heightMm"].every((key) => Number.isFinite(body[key]));
+const finiteBody = (body, allowMissing = false) => body &&
+  ["rollDeg", "pitchDeg", "yawDeg", "heightMm"].every((key) =>
+    Number.isFinite(body[key]) || (allowMissing && body[key] === null));
 
 export function sanitizeArchivedLiveSession(candidate) {
   if (!candidate || typeof candidate !== "object" || !String(candidate.id || "").trim()) return null;
@@ -147,7 +165,7 @@ export function sanitizeArchivedLiveSession(candidate) {
   const samples = [];
   for (const sample of candidate.samples) {
     if (!sample || !Number.isFinite(sample.capturedAt) || !Number.isFinite(sample.elapsedMs) ||
-      !finiteBody(sample.expectedBody) || !finiteBody(sample.measuredBody) || !finiteBody(sample.bodyError) ||
+      !finiteBody(sample.expectedBody) || !finiteBody(sample.measuredBody, true) || !finiteBody(sample.bodyError, true) ||
       !Array.isArray(sample.jointErrorsDeg) || sample.jointErrorsDeg.length !== LIVE_SERVO_CHANNELS.length) return null;
     samples.push({
       ...sample,
@@ -161,6 +179,11 @@ export function sanitizeArchivedLiveSession(candidate) {
       expectedServoPulseUs: Array.isArray(sample.expectedServoPulseUs)
         ? sample.expectedServoPulseUs.slice(0, LIVE_SERVO_CHANNELS.length).map((value) => Number.isFinite(value) ? value : null)
         : Array(LIVE_SERVO_CHANNELS.length).fill(null),
+      expectedModelJointAnglesDeg: Array.isArray(sample.expectedModelJointAnglesDeg) &&
+          sample.expectedModelJointAnglesDeg.length === LIVE_SERVO_CHANNELS.length &&
+          sample.expectedModelJointAnglesDeg.every(Number.isFinite)
+        ? [...sample.expectedModelJointAnglesDeg]
+        : null,
       expectedServoPhysicalChannels: Array.isArray(sample.expectedServoPhysicalChannels)
         ? sample.expectedServoPhysicalChannels.slice(0, LIVE_SERVO_CHANNELS.length).map((value) => Number.isInteger(value) && value >= 0 && value < 16 ? value : null)
         : Array(LIVE_SERVO_CHANNELS.length).fill(null),
@@ -171,6 +194,10 @@ export function sanitizeArchivedLiveSession(candidate) {
         ? sample.expectedFootTargetsMm.map((target) => Array.isArray(target) ? target.map((value) => Number.isFinite(value) ? value : null) : [null, null, null])
         : null,
       power: sample.power && typeof sample.power === "object" ? { ...sample.power } : null,
+      link: sample.link && typeof sample.link === "object" ? { ...sample.link } : null,
+      diagnostics: sanitizeDiagnostics(sample.diagnostics),
+      controller: sanitizeLiveControllerTelemetry(sample.controller),
+      expectedDetailsTimestampMs: Number.isFinite(sample.expectedDetailsTimestampMs) ? sample.expectedDetailsTimestampMs : null,
     });
   }
   return { id: String(candidate.id).slice(0, 120), startedAt: candidate.startedAt, stoppedAt: candidate.stoppedAt, samples };
@@ -204,8 +231,12 @@ export function analyzeLiveSession(session) {
   const finite = (selector) => samples.map(selector).filter(Number.isFinite);
   const worstJoint = finite((sample) => sample.worstJointErrorDeg);
   const power = finite((sample) => sample.power?.powerW);
-  const voltage = finite((sample) => sample.power?.voltageV);
+  const voltage = finite((sample) => deriveLiveBatteryState(sample.power?.voltageV, undefined, {
+    armed: sample.diagnostics?.robotState === "armed",
+  }).packDetected ? sample.power.voltageV : null);
   const current = finite((sample) => sample.power?.currentA);
+  const absoluteError = (key) => average(finite((sample) =>
+    Number.isFinite(sample.bodyError?.[key]) ? Math.abs(sample.bodyError[key]) : null));
   let energyWh = 0;
   for (let index = 1; index < samples.length; index += 1) {
     const prior = samples[index - 1];
@@ -218,10 +249,10 @@ export function analyzeLiveSession(session) {
   return {
     sampleCount: samples.length,
     durationMs: Number.isFinite(session?.startedAt) && Number.isFinite(session?.stoppedAt) ? Math.max(0, session.stoppedAt - session.startedAt) : 0,
-    meanAbsPitchErrorDeg: average(finite((sample) => Math.abs(sample.bodyError?.pitchDeg))),
-    meanAbsRollErrorDeg: average(finite((sample) => Math.abs(sample.bodyError?.rollDeg))),
-    meanAbsYawErrorDeg: average(finite((sample) => Math.abs(sample.bodyError?.yawDeg))),
-    meanAbsHeightErrorMm: average(finite((sample) => Math.abs(sample.bodyError?.heightMm))),
+    meanAbsPitchErrorDeg: absoluteError("pitchDeg"),
+    meanAbsRollErrorDeg: absoluteError("rollDeg"),
+    meanAbsYawErrorDeg: absoluteError("yawDeg"),
+    meanAbsHeightErrorMm: absoluteError("heightMm"),
     peakJointErrorDeg: worstJoint.length ? Math.max(...worstJoint) : null,
     p95JointErrorDeg: percentile(worstJoint, 0.95),
     averagePowerW: average(power),
@@ -288,11 +319,24 @@ export function liveSessionCsv(state) {
     "dropped_packets_total",
     "rejected_packets_total",
     "esp32_loop_hz",
+    "expected_details_timestamp_ms",
+    "robot_uptime_ms", "robot_boot_id", "esp32_reset_reason", "maximum_loop_gap_ms", "telemetry_tx_skipped", "body_mode",
+    "prior_reset_stage", "last_slow_stage", "last_slow_stage_us", "slow_stage_count",
+    "max_crsf_stage_us", "max_imu_stage_us", "max_live_stage_us", "max_control_stage_us", "max_servo_write_us", "imu_i2c_errors",
+    "imu_last_request_bytes", "imu_last_request_us", "imu_last_failed_request_bytes", "imu_last_failed_request_us", "imu_max_request_us",
+    "last_slow_stage_at_ms", "max_crsf_stage_at_ms", "max_imu_stage_at_ms", "imu_last_error_at_ms",
+    "imu_sample_age_ms", "imu_consecutive_errors", "crsf_budget_hits", "crsf_last_budget_hit_at_ms",
+    "crsf_pending_bytes", "crsf_max_pending_bytes", "crsf_last_pass_bytes",
+    "servo_outputs_enabled", "radio_control_enabled", "awaiting_stick_center",
+    "crsf_accepted_frames", "crsf_crc_errors", "crsf_uart_overflows", "crsf_frame_age_ms",
+    "crsf_packet_rate_hz", "crsf_failsafe", "crsf_link_quality_percent",
+    ...Array.from({ length: 16 }, (_, index) => `crsf_ch${index + 1}_us`),
     "fl_foot_target_z_mm",
     "fr_foot_target_z_mm",
     "bl_foot_target_z_mm",
     "br_foot_target_z_mm",
     ...jointCommandHeaders,
+    ...LIVE_SERVO_CHANNELS.map((channel) => `ch${channel}_model_command_deg`),
     ...servoPulseHeaders,
     ...servoOutputHeaders,
     ...jointHeaders,
@@ -301,7 +345,7 @@ export function liveSessionCsv(state) {
     new Date(sample.capturedAt).toISOString(),
     Math.round(sample.elapsedMs),
     Math.round(sample.expectedTimestampMs),
-    Math.round(sample.measuredTimestampMs),
+    csvNumber(sample.measuredTimestampMs, 0),
     csvNumber(sample.alignmentMs, 2),
     csvNumber(sample.expectedBody.rollDeg),
     csvNumber(sample.measuredBody.rollDeg),
@@ -327,13 +371,50 @@ export function liveSessionCsv(state) {
     csvNumber(sample.link?.droppedPackets, 0),
     csvNumber(sample.link?.rejectedPackets, 0),
     csvNumber(sample.link?.esp32LoopHz),
+    csvNumber(sample.expectedDetailsTimestampMs, 0),
+    ...["uptimeMs", "bootId", "resetReason", "maximumLoopGapMs", "telemetryTxSkipped", "bodyMode"]
+      .map((key) => csvNumber(sample.diagnostics?.[key], 0)),
+    ...["priorResetStage", "lastSlowStage", "lastSlowStageUs", "slowStageCount",
+      "maxCrsfStageUs", "maxImuStageUs", "maxLiveStageUs", "maxControlStageUs", "maxServoWriteUs", "imuI2cErrors"]
+      .map((key) => csvNumber(sample.diagnostics?.[key], 0)),
+    ...["imuLastRequestBytes", "imuLastRequestUs", "imuLastFailedRequestBytes", "imuLastFailedRequestUs", "imuMaxRequestUs"]
+      .map((key) => csvNumber(sample.diagnostics?.[key], 0)),
+    ...["lastSlowStageAtMs", "maxCrsfStageAtMs", "maxImuStageAtMs", "imuLastErrorAtMs",
+      "imuSampleAgeMs", "imuConsecutiveErrors", "crsfBudgetHits", "crsfLastBudgetHitAtMs",
+      "crsfPendingBytes", "crsfMaxPendingBytes", "crsfLastPassBytes"]
+      .map((key) => csvNumber(sample.diagnostics?.[key], 0)),
+    ...["outputsEnabled", "radioControlEnabled", "motionInputAwaitingCenter"]
+      .map((key) => typeof sample.diagnostics?.[key] === "boolean" ? Number(sample.diagnostics[key]) : ""),
+    ...["crsfAcceptedFrames", "crsfCrcErrors", "crsfUartOverflows", "commandLatencyMs"]
+      .map((key) => csvNumber(sample.diagnostics?.[key], 0)),
+    csvNumber(sample.controller?.packetRateHz),
+    typeof sample.controller?.failsafe === "boolean" ? Number(sample.controller.failsafe) : "",
+    csvNumber(sample.controller?.linkQualityPercent),
+    ...Array.from({ length: 16 }, (_, index) => csvNumber(sample.controller?.channelsUs?.[index], 0)),
     ...Array.from({ length: 4 }, (_, leg) => csvNumber(sample.expectedFootTargetsMm?.[leg]?.[2])),
     ...sample.expectedJointAnglesDeg.map((value) => csvNumber(value)),
+    ...LIVE_SERVO_CHANNELS.map((_, index) => csvNumber(sample.expectedModelJointAnglesDeg?.[index])),
     ...sample.expectedServoPulseUs.map((value) => csvNumber(value, 0)),
     ...sample.expectedServoPhysicalChannels.map((value) => Number.isInteger(value) ? value : ""),
     ...sample.jointErrorsDeg.map((value) => csvNumber(value)),
   ]);
   return [headers.join(","), ...rows.map((row) => row.join(","))].join("\n");
+}
+
+function collectLiveBlackboxEvents(samples) {
+  const events = [];
+  const seen = new Set();
+  for (const sample of samples) {
+    for (const record of sample.diagnostics?.blackboxEvents || []) {
+      const key = record.join(":");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const [sequence, bootSequence, atMs, kind, stage, value, aux] = record;
+      events.push({ sequence, bootSequence, atMs, kind, stage, value, aux,
+        firstObservedAt: sample.capturedAt });
+    }
+  }
+  return events;
 }
 
 export function liveSessionJson(session, exportedAt = Date.now()) {
@@ -351,11 +432,27 @@ export function liveSessionJson(session, exportedAt = Date.now()) {
       samples: session.samples,
     },
     analysis: analyzeLiveSession(session),
+    blackbox: {
+      format: 1,
+      retention: "ESP32 RTC memory; survives many warm resets, not guaranteed across power loss",
+      events: collectLiveBlackboxEvents(session.samples),
+    },
     signalSemantics: {
       expected: "Robot-reported commanded state after firmware processing",
       measured: "Independent physical feedback only; unavailable values remain null",
+      voltageV: "Raw PCB voltage-divider reading; USB power may leave a residual reading below the detectable 4S pack range. Pack charge and minimum pack voltage exclude that reading while disarmed.",
       servoPulseUs: "Commanded calibrated PWM pulse, not encoder feedback",
+      expectedModelJointAnglesDeg: "Limited servo commands in the fixed CAD reference after removing the robot's active trim and direction; not measured joint positions; null on older firmware",
       servoPhysicalChannel: "Mapped PCA9685 output for each logical joint",
+      expectedDetailsTimestampMs: "Source time of retained pulse and foot-target details; null means unknown in older exports",
+      resetReason: "ESP-IDF esp_reset_reason enum for the current boot; 9 = brownout, 5/6/7 = watchdog",
+      loopStage: "0 = none/unknown, 1 = CRSF, 2 = IMU I2C, 3 = LIVE transport, 4 = control update, 5 = servo I2C write; priorResetStage is retained best effort",
+      stageTiming: "Maxima and lastSlowStageUs are microseconds since this boot; a slow stage is at least 100000 microseconds",
+      busRecovery: "Firmware 0.8.7 caps CRSF work at 384 bytes or 1000 us per pass; firmware 0.8.8 removes the 1000 us limit while retaining the 384-byte cap. Budget hits mean queued RX work remained. IMU sample age and event timestamps use ESP32 milliseconds since boot; zero event timestamps mean no event yet",
+      blackbox: "Firmware 0.8.9+ records the latest 16 RTC events. kind: 1 boot (value=reset reason, stage=prior active stage), 2 slow stage (value=duration us), 3 IMU read error (stage=1 register select or 2 data read, value=duration us; in 0.8.10+ aux=bytes returned for stage 2, otherwise aux=Wire timeout ms), 4 CRSF UART overflow (value=total, aux=new errors), 5 failsafe change (value=1 active or 0 clear, aux=CRSF frame age ms). atMs is ESP32 uptime for the event; firstObservedAt is Studio wall-clock time.",
+      imuRequest: "Firmware 0.8.10 records the last MPU6050 Wire.requestFrom result (bytes returned out of 14 and call duration in microseconds), the last failed result, and the maximum request duration this boot.",
+      bodyMode: "0 = stow, 1 = stand, 2 = tilt, 3 = balance, 4 = trot, 5 = careful walk",
+      measuredYaw: "Relative integrated gyro heading since boot; not an absolute heading or a translation measurement",
     },
   }, null, 2);
 }

@@ -104,11 +104,13 @@ export class CompanionService {
     return windowsSerialPorts();
   }
 
-  async discover(transport = "auto") {
+  async discover(transport = "auto", options = {}) {
     const requestedTransport = ["auto", "usb", "bluetooth", "wifi"].includes(transport)
       ? transport
       : "auto";
-    if (this.protocol === "ardupilot") {
+    const protocol = options.protocol ?? this.protocol;
+    if (!["domino", "ardupilot"].includes(protocol)) throw new Error("Unknown companion protocol.");
+    if (protocol === "ardupilot") {
       if (requestedTransport === "usb" || requestedTransport === "bluetooth") {
         return {
           ...this.status(),
@@ -117,9 +119,21 @@ export class CompanionService {
         };
       }
       const host = String(
-        process.env.DOMINO_ARDUPILOT_HOST || process.env.DOMINO_ROBOT_WIFI_HOST || "127.0.0.1",
+        options.host || process.env.DOMINO_ARDUPILOT_HOST || process.env.DOMINO_ROBOT_WIFI_HOST || "127.0.0.1",
       ).trim();
-      return this.start("wifi", `${host}:${process.env.DOMINO_ARDUPILOT_PORT || "14550"}`);
+      const port = Number(options.port ?? process.env.DOMINO_ARDUPILOT_PORT ?? 14550);
+      if (!/^[a-z0-9.-]{1,253}$/i.test(host) || host.includes("..") || host.startsWith("-") || !Number.isInteger(port) || port < 1 || port > 65535) {
+        throw new Error("Enter a valid MAVLink host and UDP port (1–65535).");
+      }
+      if (protocol !== this.protocol) {
+        this.stop();
+        this.protocol = protocol;
+      }
+      return this.start("wifi", `${host}:${port}`);
+    }
+    if (protocol !== this.protocol) {
+      this.stop();
+      this.protocol = protocol;
     }
     if (requestedTransport === "wifi") {
       const host = String(process.env.DOMINO_ROBOT_WIFI_HOST || "").trim();

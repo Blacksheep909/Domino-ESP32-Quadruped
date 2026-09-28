@@ -6,6 +6,7 @@ import {
   deriveLiveBatteryState,
   dismissLiveBatteryAlert,
   DOMINO_BATTERY_CELL_COUNT,
+  LIVE_BATTERY_MIN_DETECTABLE_CELL_VOLTAGE_V,
   LIVE_BATTERY_ALERT_LEVELS,
   liveBatteryCommandsBlocked,
   observeLiveBatteryAlert,
@@ -28,6 +29,24 @@ test("bounds the approximate LiPo charge estimate", () => {
 test("does not invent battery state without a valid pack sample", () => {
   assert.equal(deriveLiveBatteryState(null).averageCellVoltageV, null);
   assert.equal(deriveLiveBatteryState(Number.NaN).estimatedChargePercent, null);
+});
+
+test("does not mistake a USB-only divider reading for a depleted 4S pack", () => {
+  const battery = deriveLiveBatteryState(2.5);
+  assert.equal(LIVE_BATTERY_MIN_DETECTABLE_CELL_VOLTAGE_V, 1.5);
+  assert.equal(battery.packDetected, false);
+  assert.equal(battery.averageCellVoltageV, null);
+  assert.equal(battery.estimatedChargePercent, null);
+  assert.equal(liveBatteryCommandsBlocked(battery.estimatedChargePercent), false);
+  assert.equal(observeLiveBatteryAlert(createLiveBatteryAlertState(), battery.estimatedChargePercent), null);
+  assert.equal(deriveLiveBatteryState(6).packDetected, true);
+});
+
+test("retains a critical low-voltage indication if the robot is armed", () => {
+  const battery = deriveLiveBatteryState(2.5, 4, { armed: true });
+  assert.equal(battery.packDetected, true);
+  assert.equal(battery.estimatedChargePercent, 0);
+  assert.equal(liveBatteryCommandsBlocked(battery.estimatedChargePercent), true);
 });
 
 test("raises 10 and 5 percent warnings once per downward crossing", () => {

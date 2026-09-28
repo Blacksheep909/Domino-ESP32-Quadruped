@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import * as THREE from "three";
+import { BODY_EULER_ORDER, bodyPoseQuaternion } from "./web/src/body-pose.js";
 
 import {
   batteryPacks,
@@ -7,9 +9,36 @@ import {
   legs,
   standServoReference,
 } from "./web/src/domino-config.js";
-import { contactSurfaceError, createDominoPhysics } from "./web/src/physics.js";
+import { contactSurfaceError, createDominoPhysics, targetBodyQuaternion } from "./web/src/physics.js";
 import { logSpecs, terrainSpecs } from "./web/src/course-config.js";
 import { createVoronoiTerrain } from "./web/src/voronoi-terrain.js";
+
+test("LIVE and physics body rotations preserve the firmware CAD basis for combined poses", () => {
+  for (const degrees of [[20, 0, 0], [0, 10, 0], [0, 0, 25], [16, -7, 22], [-14, 8, -19]]) {
+    const [r, p, y] = degrees.map((value) => value * Math.PI / 180);
+    const live = bodyPoseQuaternion(...degrees);
+    const physics = targetBodyQuaternion({ body_pose_rpy_deg: degrees });
+    for (const point of [[1, 0, 0], [0, 1, 0], [0, 0, 1], [0.17, 0.10, -0.26]]) {
+      // Independent CAD-axis rotations, applied roll then pitch then yaw.
+      const [x0, y0, z0] = point;
+      const y1 = Math.cos(r) * y0 - Math.sin(r) * z0;
+      const z1 = Math.sin(r) * y0 + Math.cos(r) * z0;
+      const x2 = Math.cos(p) * x0 + Math.sin(p) * z1;
+      const z2 = -Math.sin(p) * x0 + Math.cos(p) * z1;
+      const x3 = Math.cos(y) * x2 - Math.sin(y) * y1;
+      const y3 = Math.sin(y) * x2 + Math.cos(y) * y1;
+      const expected = new THREE.Vector3(x3, z2, -y3);
+      for (const quaternion of [live, physics]) {
+        const actual = new THREE.Vector3(x0, z0, -y0).applyQuaternion(quaternion);
+        assert.ok(actual.distanceTo(expected) < 1e-12, `CAD basis mismatch at ${degrees}`);
+      }
+    }
+    const readout = new THREE.Euler().setFromQuaternion(live, BODY_EULER_ORDER);
+    [readout.x, -readout.z, readout.y].forEach((angle, index) => {
+      assert.ok(Math.abs(angle * 180 / Math.PI - degrees[index]) < 1e-10);
+    });
+  }
+});
 
 test("course obstacles fit Domino's nominal gait envelope", () => {
   const ramp = terrainSpecs.find((spec) => spec.id === "ramp");

@@ -26,6 +26,11 @@ bool validateServoCalibrationProfile(const ServoCalibrationProfile &profile);
 float applyServoCalibration(const ServoCalibrationProfile &profile,
                             uint8_t channel,
                             float uncalibratedServoDeg);
+// Convert a final electrical command back to the fixed CAD joint reference.
+// Call after limits; undoing the requested angle would hide clipped motion.
+float servoCalibrationModelAngle(const ServoCalibrationProfile &profile,
+                                 uint8_t channel,
+                                 float commandedServoDeg);
 const ServoCalibrationJoint* findServoCalibrationJoint(
     const ServoCalibrationProfile &profile, uint8_t logicalChannel);
 uint8_t servoCalibrationPhysicalChannel(const ServoCalibrationProfile &profile,

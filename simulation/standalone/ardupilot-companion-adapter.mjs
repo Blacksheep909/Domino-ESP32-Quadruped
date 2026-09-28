@@ -280,7 +280,8 @@ export class ArduPilotMavlinkBridge {
     this.endpoint = options.endpoint || `${options.host || "127.0.0.1"}:${options.port || 14550}`;
     this.host = options.host || "127.0.0.1";
     this.port = Number(options.port || 14550);
-    this.localPort = Number(options.localPort || 0);
+    this.localPort = Number(options.localPort ?? this.port);
+    this.remoteEndpoint = null;
     this.relayUrl = options.relayUrl || "ws://127.0.0.1:8770/control";
     this.logger = options.logger || console;
     this.core = options.core || new LiveCompanionCore({
@@ -318,8 +319,11 @@ export class ArduPilotMavlinkBridge {
     this.pendingMavlink = new Map();
     this.missionUpload = null;
     this.running = false;
-    this.socket.on("message", (packet) => this.handleUdpPacket(packet));
-    this.socket.on("error", (error) => this.logger.error?.(`ArduPilot MAVLink UDP: ${error.message}`));
+    this.socket.on("message", (packet, sender) => this.handleUdpPacket(packet, sender));
+    this.socket.on("error", (error) => {
+      this.logger.error?.(`ArduPilot MAVLink UDP: ${error.message}`);
+      if (this.running) this.stop();
+    });
   }
 
   announcement(now = nowMs()) {
@@ -397,7 +401,7 @@ export class ArduPilotMavlinkBridge {
       systemId: 255,
       componentId: 190,
     });
-    this.socket.send(frame, this.port, this.host);
+    this.socket.send(frame, this.remoteEndpoint?.port || this.port, this.remoteEndpoint?.address || this.host);
   }
 
   sendGroundStationHeartbeat() {
@@ -411,11 +415,17 @@ export class ArduPilotMavlinkBridge {
     this.sendMavlink(MAVLINK_MESSAGE_IDS.HEARTBEAT, payload);
   }
 
-  handleUdpPacket(packet) {
-    for (const message of this.parser.push(packet)) this.handleMavlinkMessage(message);
+  handleUdpPacket(packet, sender = null) {
+    for (const message of this.parser.push(packet)) {
+      if (sender && message.messageId === MAVLINK_MESSAGE_IDS.HEARTBEAT && message.systemId !== 255) {
+        this.remoteEndpoint = { address: sender.address, port: sender.port };
+      }
+      this.handleMavlinkMessage(message);
+    }
   }
 
   handleMavlinkMessage(message) {
+    if (message.systemId === 255 || (message.messageId === MAVLINK_MESSAGE_IDS.HEARTBEAT && readUInt8(message.payload, 4) === MAV_TYPE_GCS)) return;
     const now = nowMs();
     this.systemId = message.systemId || this.systemId;
     this.componentId = message.componentId || this.componentId;
@@ -541,17 +551,30 @@ export class ArduPilotMavlinkBridge {
   handleGpsRaw(payload, now) {
     const velocityCms = readUInt16(payload, 24, 65535);
     const courseCentiDeg = readUInt16(payload, 26, 65535);
+    const fixType = readUInt8(payload, 28);
+    const gpsTimeUs = payload.length >= 8 ? Number(payload.readBigUInt64LE(0)) : 0;
+    const utcMs = gpsTimeUs >= 946684800000000 && gpsTimeUs <= 4102444800000000 ? Math.round(gpsTimeUs / 1_000) : null;
+    const hdop = readUInt16(payload, 20, 65535);
+    const vdop = readUInt16(payload, 22, 65535);
+    const satellites = readUInt8(payload, 29, 255);
     this.gps = {
       timestampMs: now,
       source: "MAVLink GPS_RAW_INT",
-      fixType: readUInt8(payload, 28),
-      satellites: readUInt8(payload, 29),
-      hdop: readUInt16(payload, 20, 0) / 100,
-      vdop: readUInt16(payload, 22, 0) / 100,
-      position: { lat: readInt32(payload, 8) / 1e7, lon: readInt32(payload, 12) / 1e7, altM: readInt32(payload, 16) / 1_000 },
+      fixType,
+      fixReceivedAt: now,
+      satellites: satellites === 255 ? null : satellites,
+      hdop: hdop === 65535 ? null : hdop / 100,
+      vdop: vdop === 65535 ? null : vdop / 100,
+      utcMs,
+      horizontalAccuracyM: payload.length >= 38 ? readUInt32(payload, 34) / 1_000 : null,
+      verticalAccuracyM: payload.length >= 42 ? readUInt32(payload, 38) / 1_000 : null,
+      position: fixType >= 2
+        ? { lat: readInt32(payload, 8) / 1e7, lon: readInt32(payload, 12) / 1e7, altM: readInt32(payload, 16) / 1_000 }
+        : null,
       groundSpeedMps: velocityCms === 65535 ? null : velocityCms / 100,
       courseDeg: courseCentiDeg === 65535 ? null : courseCentiDeg / 100,
       altitudeM: readInt32(payload, 16) / 1_000,
+      headingDeg: this.gps?.headingDeg ?? null,
       home: this.home,
     };
     this.publishTelemetry(now);
@@ -566,8 +589,9 @@ export class ArduPilotMavlinkBridge {
       source: "MAVLink GLOBAL_POSITION_INT",
       position: { lat: readInt32(payload, 4) / 1e7, lon: readInt32(payload, 8) / 1e7, altM: readInt32(payload, 12) / 1_000 },
       groundSpeedMps: Math.hypot(vx, vy),
-      courseDeg: readUInt16(payload, 26) === 65535 ? null : readUInt16(payload, 26) / 100,
+      headingDeg: readUInt16(payload, 26) === 65535 ? null : readUInt16(payload, 26) / 100,
       altitudeM: readInt32(payload, 12) / 1_000,
+      verticalSpeedMps: -readInt16(payload, 24) / 100,
       home: this.home,
     };
     this.publishTelemetry(now);
@@ -575,23 +599,28 @@ export class ArduPilotMavlinkBridge {
 
   handleObstacleDistance(payload, now) {
     const rangesM = [];
+    const maxDistanceCm = readUInt16(payload, 154, 3_000);
+    let obstacleCount = 0;
     for (let index = 0; index < 72 && 8 + index * 2 + 2 <= payload.length; index += 1) {
       const distanceCm = readUInt16(payload, 8 + index * 2, 65535);
-      rangesM.push(distanceCm === 65535 ? null : distanceCm / 100);
+      if (distanceCm <= maxDistanceCm) obstacleCount += 1;
+      rangesM.push(distanceCm === 65535 || distanceCm > maxDistanceCm + 1
+        ? null
+        : Math.min(distanceCm, maxDistanceCm) / 100);
     }
-    const increment = readFloat(payload, 158, 0) || readUInt8(payload, 153, 5);
+    const increment = readFloat(payload, 158, 0) || readUInt8(payload, 157, 5);
     this.lidar = {
       timestampMs: now,
       online: true,
       sensorId: "MAVLink OBSTACLE_DISTANCE",
-      frame: readUInt8(payload, 166, 12) === 12 ? "base_link" : `mav-frame-${readUInt8(payload, 166)}`,
+      frame: readUInt8(payload, 166, 0) === 12 ? "base_link" : `mav-frame-${readUInt8(payload, 166, 0)}`,
       scanRateHz: this.lidar?.timestampMs ? 1_000 / Math.max(1, now - this.lidar.timestampMs) : null,
       minRangeM: readUInt16(payload, 152, 5) / 100,
-      maxRangeM: readUInt16(payload, 154, 3_000) / 100,
+      maxRangeM: maxDistanceCm / 100,
       incrementDeg: increment || 5,
       offsetDeg: readFloat(payload, 162, 0),
       rangesM,
-      obstacleCount: rangesM.filter((value) => Number.isFinite(value)).length,
+      obstacleCount,
     };
     this.publishTelemetry(now);
   }

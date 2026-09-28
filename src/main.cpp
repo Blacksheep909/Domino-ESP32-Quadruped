@@ -26,12 +26,13 @@
 //   - BL: (-BODY_HALF_LENGTH_X, +BODY_HALF_WIDTH_Y, HIP_HEIGHT_Z)
 //   - BR: (-BODY_HALF_LENGTH_X, -BODY_HALF_WIDTH_Y, HIP_HEIGHT_Z)
 //
-// Feet are placed roughly FOOT_OUT_OFFSET_Y laterally and FOOT_BACK_OFFSET_X
-// behind the hip in X, with STAND_HEIGHT_Z as the nominal ground height.
+// Stand feet use the CAD neutral location relative to each hip, with
+// STAND_HEIGHT_Z as the nominal command height.
 //
-// Important hardware detail: all hip servos are oriented the same way in
-// world space. This is reflected in leg_controller.cpp where hipDir = +1
-// for every leg; left legs mirror only the upper/lower joints.
+// All physical hip shafts face the same way. Canonical hip coordinates are
+// outward-positive on each side; the active calibration maps these coordinates
+// to shaft direction. The owner verified roll with FL and BL hips inverted.
+// Keep that mapping in calibration rather than changing the saved-profile basis.
 
 #include <Arduino.h>
 #include <Wire.h>
@@ -45,6 +46,7 @@
 #include "imu.h"
 #ifndef DOMINO_SIL
 #include "live_robot_endpoint.h"
+#include "loop_diagnostics.h"
 #endif
 
 enum LegIndex { LEG_FL = 0, LEG_FR = 1, LEG_BL = 2, LEG_BR = 3 };
@@ -59,17 +61,17 @@ float lastPoseZ = 0.0f;
 constexpr float BODY_HALF_LENGTH_X = 167.5f;  // CAD half distance front <-> back hips
 constexpr float BODY_HALF_WIDTH_Y = 62.375f;  // CAD half distance left <-> right hips
 constexpr float HIP_HEIGHT_Z = 10.5f;         // CAD hip axis above the body-centre plane
-constexpr float FOOT_BACK_OFFSET_X = -15.75f; // foot is slightly behind the hip in X
 constexpr float FOOT_OUT_OFFSET_Y = 100.0f;   // lateral distance from body center line
 constexpr float STAND_HEIGHT_Z = -280.0f;     // nominal foot Z in world frame (down)
-// The command-space neutral above comes from the original virtual leg. The
-// authored CAD foot is physically ahead of the hip and slightly closer to it.
-// Body rotations must use these real offsets, then map the result back into
-// the legacy command frame so the level-stand servo pulse remains unchanged.
+// The CAD neutral foot is ahead of the hip. The legacy -15.75 mm command X
+// maps to this CAD location through leg_controller.cpp.
 constexpr float CAD_NEUTRAL_FOOT_X_FROM_HIP = 2.541356f;
 constexpr float CAD_NEUTRAL_FOOT_Y_FROM_HIP = 38.1f;
 constexpr float CAD_NEUTRAL_FOOT_Z_FROM_HIP = -275.984374f;
+constexpr float COMMAND_NEUTRAL_FOOT_X_FROM_HIP = -15.75f;
 constexpr float COMMAND_NEUTRAL_FOOT_Y_FROM_HIP = 38.0f;
+constexpr float CAD_TO_COMMAND_X =
+    COMMAND_NEUTRAL_FOOT_X_FROM_HIP - CAD_NEUTRAL_FOOT_X_FROM_HIP;
 constexpr float kStandPoseToleranceMm = 5.0f;
 
 namespace {
@@ -96,8 +98,8 @@ constexpr float kCloserPoseZ = 160.0f;
 // sweeping them out from under the body. All four legs use the same validated
 // fold depth. The rendered CAD closure solve keeps the feet beneath the hips
 // at 160 mm while all driven joints remain inside +/-45 degrees.
-constexpr float kSitFrontX = FOOT_BACK_OFFSET_X;
-constexpr float kSitRearX = FOOT_BACK_OFFSET_X;
+constexpr float kSitFrontX = COMMAND_NEUTRAL_FOOT_X_FROM_HIP;
+constexpr float kSitRearX = COMMAND_NEUTRAL_FOOT_X_FROM_HIP;
 constexpr float kSitFrontZ = 160.0f;
 constexpr float kSitRearZ = 160.0f;
 static_assert(kSitFrontZ >= 160.0f && kSitRearZ >= 160.0f,
@@ -238,10 +240,10 @@ void commandLeg(Adafruit_PWMServoDriver &driver,
 // Used by the balance controller to compute per-leg Z corrections that
 // keep the body plane level while feet remain at fixed XY.
 constexpr float kFootPosXBody[kLegCount] = {
-    +BODY_HALF_LENGTH_X + FOOT_BACK_OFFSET_X,  // FL
-    +BODY_HALF_LENGTH_X + FOOT_BACK_OFFSET_X,  // FR
-    -BODY_HALF_LENGTH_X + FOOT_BACK_OFFSET_X,  // BL
-    -BODY_HALF_LENGTH_X + FOOT_BACK_OFFSET_X   // BR
+    +BODY_HALF_LENGTH_X + CAD_NEUTRAL_FOOT_X_FROM_HIP,  // FL
+    +BODY_HALF_LENGTH_X + CAD_NEUTRAL_FOOT_X_FROM_HIP,  // FR
+    -BODY_HALF_LENGTH_X + CAD_NEUTRAL_FOOT_X_FROM_HIP,  // BL
+    -BODY_HALF_LENGTH_X + CAD_NEUTRAL_FOOT_X_FROM_HIP   // BR
 };
 
 constexpr float kFootPosYBody[kLegCount] = {
@@ -520,6 +522,13 @@ MenuInputs readMenuInputs(uint32_t now, uint32_t* lastLinkAliveMs, bool* failsaf
       !hasReceivedFrame || (!linkAliveNow && ((now - *lastLinkAliveMs) > kLinkLossStowDelayMs));
   if (nextFailsafeState != *failsafeState) {
     *failsafeState = nextFailsafeState;
+#ifndef DOMINO_SIL
+    loopBlackboxRecord(BlackboxEventKind::Failsafe, 0,
+                       *failsafeState ? 1U : 0U,
+                       static_cast<uint16_t>(crsfHasReceivedFrame()
+                           ? (now - lastCrsfMs < UINT16_MAX ? now - lastCrsfMs : UINT16_MAX)
+                           : UINT16_MAX));
+#endif
     Serial.printf("CRSF failsafe %s (last=%lu now=%lu)\n",
                   *failsafeState ? "ACTIVE" : "CLEARED",
                   static_cast<unsigned long>(*lastLinkAliveMs),
@@ -641,9 +650,7 @@ void bodyKinematicsSimple(LegIndex leg,
   const float legY_local = R01 * legX_world + R11 * legY_world + R21 * legZ_worldUp;
   const float legZ_localUp = R02 * legX_world + R12 * legY_world + R22 * legZ_worldUp;
 
-  *outX =
-      legX_local +
-      (FOOT_BACK_OFFSET_X - CAD_NEUTRAL_FOOT_X_FROM_HIP);
+  *outX = legX_local + CAD_TO_COMMAND_X;
   *outY =
       legY_local +
       side * (COMMAND_NEUTRAL_FOOT_Y_FROM_HIP -
@@ -701,7 +708,8 @@ void moveLegsToSitBlend(Adafruit_PWMServoDriver &driver, float commonZ, float bl
     const bool leftLeg = (i == LEG_FL || i == LEG_BL);
     const float sitX = frontLeg ? kSitFrontX : kSitRearX;
     const float sitZ = frontLeg ? kSitFrontZ : kSitRearZ;
-    const float x = FOOT_BACK_OFFSET_X + t * (sitX - FOOT_BACK_OFFSET_X);
+    const float x = COMMAND_NEUTRAL_FOOT_X_FROM_HIP +
+        t * (sitX - COMMAND_NEUTRAL_FOOT_X_FROM_HIP);
     const float y = leftLeg
         ? (FOOT_OUT_OFFSET_Y - BODY_HALF_WIDTH_Y)
         : -(FOOT_OUT_OFFSET_Y - BODY_HALF_WIDTH_Y);
@@ -972,7 +980,7 @@ void applyTiltPose(Adafruit_PWMServoDriver &driver) {
   // stand locations derived from BODY_HALF_* and FOOT_* constants.
   //
   // roll: right stick X (lean left/right)
-  // pitch: right stick Y (future; currently unused in the radio mapping)
+  // pitch: right stick Y (lean forward/back)
   // yaw: left stick X (twist the body about Z)
   const float yawNorm = readMotionChannelNormalized(YAW_CH_INDEX);
   float rollNorm = readMotionChannelNormalized(ROLL_CH_INDEX);
@@ -1036,10 +1044,22 @@ void setup() {
   Serial.setRxBufferSize(4096);
 #endif
   Serial.begin(460800);
+#ifndef DOMINO_SIL
+  loopDiagnosticsInit();
+#endif
   Wire.begin();
+#ifndef DOMINO_SIL
+  // The IMU and servo driver share Wire. A sensor bus fault must not hold
+  // the control loop at the library's default transaction timeout.
+  Wire.setClock(100000);
+  Wire.setTimeOut(20);
+#endif
 
   imuInit();
 
+#ifndef DOMINO_SIL
+  Serial2.setRxBufferSize(CRSF_RX_BUFFER_BYTES);
+#endif
   Serial2.begin(CRSF_BAUD, SERIAL_8N1, RX_PIN, TX_PIN);
   initCrsfState();
 
@@ -1064,6 +1084,12 @@ void setup() {
 }
 
 void loop() {
+#ifndef DOMINO_SIL
+  if (liveRobotEndpointReceiverPassthroughActive()) {
+    liveRobotEndpointReceiverPassthroughLoop();
+    return;
+  }
+#endif
   static uint32_t lastControlMs = 0;
   static uint32_t lastLinkAliveMs = 0;
   static bool failsafeActive = true;
@@ -1071,12 +1097,39 @@ void loop() {
   static SwitchDebounceState tiltDebounce;
   static SwitchDebounceState gaitDebounce;
 
-  const uint32_t now = millis();
-  processCrsfFrames(now);
-  // Refresh IMU sample; failures simply leave the previous values.
-  (void)imuReadSample();
+  uint32_t now = millis();
+  {
 #ifndef DOMINO_SIL
-  liveRobotEndpointLoop(now, pca);
+    ScopedLoopStage stage(LoopStage::Crsf);
+#endif
+    processCrsfFrames(now);
+  }
+#ifndef DOMINO_SIL
+  static uint32_t lastUartOverflowCount = 0;
+  const uint32_t uartOverflowCount = crsfUartOverflowCount();
+  if (uartOverflowCount != lastUartOverflowCount) {
+    const uint32_t increase = uartOverflowCount - lastUartOverflowCount;
+    loopBlackboxRecord(BlackboxEventKind::UartOverflow, 0, uartOverflowCount,
+                       static_cast<uint16_t>(increase < UINT16_MAX ? increase : UINT16_MAX));
+    lastUartOverflowCount = uartOverflowCount;
+  }
+#endif
+  // Refresh IMU sample; failures simply leave the previous values.
+  {
+#ifndef DOMINO_SIL
+    ScopedLoopStage stage(LoopStage::Imu);
+#endif
+    (void)imuReadSample();
+  }
+  // A delayed UART or I2C read must not make the remainder of this pass use
+  // a timestamp captured before the delay.
+  now = millis();
+#ifndef DOMINO_SIL
+  {
+    ScopedLoopStage stage(LoopStage::Live);
+    liveRobotEndpointLoop(now, pca);
+  }
+  if (liveRobotEndpointReceiverPassthroughActive()) return;
   activeManualControl = liveRobotEndpointManualControl();
 #endif
 
@@ -1216,6 +1269,10 @@ void loop() {
     menuState.mode = BODY_BALANCE;
   }
   updateMotionInputInterlock(previousMode, menuState.mode, now);
+#ifndef DOMINO_SIL
+  liveRobotEndpointSetControlState(static_cast<uint8_t>(menuState.mode),
+                                  motionInputAwaitingCenter);
+#endif
   // Reset balance reference when entering or leaving balance mode.
   if (previousMode != BODY_BALANCE && menuState.mode == BODY_BALANCE) {
     Serial.printf("Entering BODY_BALANCE (SC=%d, imuOk=%d)\n",
@@ -1258,6 +1315,9 @@ void loop() {
                 tiltModeActive);
 
   if ((now - lastControlMs) >= kControlIntervalMs) {
+#ifndef DOMINO_SIL
+    ScopedLoopStage controlStage(LoopStage::Control);
+#endif
     lastControlMs = now;
     const float rampZ = zRamp.update();
     lastPoseZ = rampZ;
@@ -1324,7 +1384,11 @@ void loop() {
       bool useBalanceZOffsets = false;
       float balanceZOffsets[kLegCount] = {0.0f, 0.0f, 0.0f, 0.0f};
 
-      if (menuState.mode == BODY_BALANCE && gImuState.online && gImuState.has_sample) {
+      if (menuState.mode == BODY_BALANCE && !imuSampleFresh(now)) {
+        menuState.mode = BODY_STAND;
+        balanceRefValid = false;
+      }
+      if (menuState.mode == BODY_BALANCE && imuSampleFresh(now)) {
         // Map IMU accel (sensor frame) into body frame and estimate roll/pitch
         // from gravity. The IMU board is mounted with a 90-degree yaw offset,
         // so first form an intermediate body-like vector and then rotate it

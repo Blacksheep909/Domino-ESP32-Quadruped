@@ -208,6 +208,18 @@ test("an adapter error cannot start a handshake and a healthy selection recovers
   assert.equal(createLiveConnectionCommand(state, "connect", "request-2", 1_030)?.action, "connect");
 });
 
+test("a waiting MAVLink adapter clears its link fault when a vehicle heartbeat arrives", () => {
+  const state = createLiveConnectionState();
+  setLiveConnectionBridge(state, true);
+  acceptLiveAdapterAnnouncement(state, { ...announcement(), state: "error" }, 1_000);
+  assert.equal(state.phase, "fault");
+  acceptLiveAdapterAnnouncement(state, announcement(1_100), 1_100);
+  assert.equal(state.phase, "disconnected");
+  assert.equal(state.error, "");
+  assert.match(state.status, /available/);
+  assert.equal(createLiveConnectionCommand(state, "connect", "request-1", 1_110)?.action, "connect");
+});
+
 test("a faulted adapter can restart its physical link without enabling robot commands", () => {
   const state = createLiveConnectionState();
   setLiveConnectionBridge(state, true);

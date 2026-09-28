@@ -14,8 +14,10 @@ import {
   writeProjectFile,
 } from "./project-files.mjs";
 import { requestUpdateCheck, setupAutoUpdater, stopAutoUpdater } from "./updater.mjs";
+import { desktopWindowTitle } from "./app-title.mjs";
 
 const APP_NAME = "Domino Quadruped Studio";
+const APP_TITLE = desktopWindowTitle(APP_NAME, app.getVersion());
 const HOST = "127.0.0.1";
 const PREFERRED_PORT = 8770;
 const children = new Set();
@@ -60,6 +62,14 @@ function registerProjectFileHandlers() {
 }
 
 registerProjectFileHandlers();
+
+ipcMain.handle("domino:window:is-fullscreen", () => mainWindow?.isFullScreen() ?? false);
+ipcMain.handle("domino:window:toggle-fullscreen", () => {
+  if (!mainWindow) return false;
+  const fullscreen = !mainWindow.isFullScreen();
+  mainWindow.setFullScreen(fullscreen);
+  return fullscreen;
+});
 
 function portIsAvailable(port) {
   return new Promise((resolve) => {
@@ -139,6 +149,9 @@ async function createApplication() {
     DOMINO_PROJECT_ROOT: paths.projectRoot,
     DOMINO_DIST_ROOT: paths.distRoot,
     DOMINO_RUNTIME_ROOT: paths.runtimeRoot,
+    DOMINO_FIRMWARE_BUILD_ROOT: app.isPackaged
+      ? path.join(app.getPath("home"), ".domino-firmware")
+      : paths.projectRoot,
     DOMINO_CAD_ROOT: paths.cadRoot,
     DOMINO_COMPANION_ENTRY: paths.companionEntry,
     DOMINO_DISABLE_RAW_HID: app.isPackaged ? "1" : (process.env.DOMINO_DISABLE_RAW_HID || "0"),
@@ -166,7 +179,7 @@ async function createApplication() {
   const { workArea } = screen.getPrimaryDisplay();
 
   mainWindow = new BrowserWindow({
-    title: APP_NAME,
+    title: APP_TITLE,
     icon: path.join(paths.appPath, "desktop", "assets", "domino-studio-icon-smooth.png"),
     x: workArea.x,
     y: workArea.y,
@@ -176,7 +189,7 @@ async function createApplication() {
     minHeight: Math.min(640, workArea.height),
     resizable: true,
     maximizable: true,
-    fullscreen: false,
+    fullscreen: true,
     fullscreenable: true,
     kiosk: false,
     backgroundColor: "#090b0b",
@@ -200,12 +213,15 @@ async function createApplication() {
   });
   mainWindow.on("page-title-updated", (event) => {
     event.preventDefault();
-    mainWindow?.setTitle(APP_NAME);
+    mainWindow?.setTitle(APP_TITLE);
+  });
+  mainWindow.on("enter-full-screen", () => {
+    mainWindow?.webContents.send("domino:window:fullscreen-changed", true);
+  });
+  mainWindow.on("leave-full-screen", () => {
+    mainWindow?.webContents.send("domino:window:fullscreen-changed", false);
   });
   mainWindow.once("ready-to-show", () => {
-    mainWindow?.setFullScreen(false);
-    mainWindow?.unmaximize();
-    mainWindow?.setBounds(workArea);
     mainWindow?.show();
   });
   mainWindow.on("closed", () => { mainWindow = null; });

@@ -1,4 +1,7 @@
 export const DOMINO_BATTERY_CELL_COUNT = 4;
+// The divider can report a few volts from USB backfeed with no 4S pack
+// connected. This is a detection floor, not a safe discharge voltage.
+export const LIVE_BATTERY_MIN_DETECTABLE_CELL_VOLTAGE_V = 1.5;
 export const LIVE_BATTERY_ALERT_LEVELS = Object.freeze({
   LOW: "low",
   CRITICAL: "critical",
@@ -36,11 +39,16 @@ function estimatedLipoChargePercent(cellVoltageV) {
   return null;
 }
 
-export function deriveLiveBatteryState(packVoltageV, cellCount = DOMINO_BATTERY_CELL_COUNT) {
+export function deriveLiveBatteryState(packVoltageV, cellCount = DOMINO_BATTERY_CELL_COUNT, { armed = false } = {}) {
   const validCellCount = Number.isInteger(cellCount) && cellCount > 0 ? cellCount : null;
-  if (!Number.isFinite(packVoltageV) || packVoltageV <= 0 || !validCellCount) {
+  const packDetected = Boolean(
+    validCellCount && Number.isFinite(packVoltageV) && packVoltageV > 0 &&
+    (packVoltageV >= validCellCount * LIVE_BATTERY_MIN_DETECTABLE_CELL_VOLTAGE_V || armed),
+  );
+  if (!packDetected) {
     return {
       cellCount: validCellCount,
+      packDetected: false,
       averageCellVoltageV: null,
       estimatedChargePercent: null,
     };
@@ -48,6 +56,7 @@ export function deriveLiveBatteryState(packVoltageV, cellCount = DOMINO_BATTERY_
   const averageCellVoltageV = packVoltageV / validCellCount;
   return {
     cellCount: validCellCount,
+    packDetected: true,
     averageCellVoltageV,
     estimatedChargePercent: estimatedLipoChargePercent(averageCellVoltageV),
   };

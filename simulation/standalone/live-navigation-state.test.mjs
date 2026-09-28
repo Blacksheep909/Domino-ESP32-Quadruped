@@ -63,6 +63,25 @@ test("navigation state sanitizes GPS, LiDAR, and ArduPilot telemetry", () => {
   assert.equal(snapshot.mission.current, 1);
 });
 
+test("navigation keeps course separate from heading and rejects stale or unreferenced clearance", () => {
+  const receivedAt = 10_000;
+  const navigation = sanitizeLiveNavigation({
+    gps: {
+      fixType: 3, fixReceivedAt: receivedAt, position: { lat: -36.85, lon: 174.76 },
+      groundSpeedMps: 0, courseDeg: 80, headingDeg: 100,
+    },
+    lidar: { online: true, rangesM: [0, 2, null, 3], incrementDeg: 90, frame: "mav-frame-6" },
+  }, receivedAt);
+  const live = liveNavigationSnapshot(navigation, createLiveNavigationState(), receivedAt + 100);
+  assert.equal(live.headingDeg, 100);
+  assert.equal(live.gps.courseDeg, 80);
+  assert.equal(live.lidarReady, false);
+  assert.equal(live.frontM, null);
+  const stale = liveNavigationSnapshot(navigation, createLiveNavigationState(), receivedAt + 2_500);
+  assert.equal(stale.hasFix, false);
+  assert.equal(stale.lidarReady, false);
+});
+
 test("navigation state keeps bounded robot camera telemetry for the LIVE panel", () => {
   const navigation = sanitizeLiveNavigation({
     camera: {

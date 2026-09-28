@@ -10,6 +10,7 @@ import {
   standServoReference,
 } from "./domino-config.js";
 import { point2, solveLinkagePose } from "./linkage.js";
+import { BODY_EULER_ORDER, bodyPoseQuaternion } from "./body-pose.js";
 import { formatAxisValue, niceLinearScale } from "./chart-axis.js";
 import { livePreviewGroundCorrection } from "./live-preview-grounding.js";
 import {
@@ -68,6 +69,7 @@ import {
   acceptLiveTelemetryPacket,
   createLiveTelemetryState,
   liveComparisonSnapshot,
+  liveCommandDisplayFrame,
   LIVE_SERVO_CHANNELS,
 } from "./live-telemetry-state.js";
 import {
@@ -153,6 +155,7 @@ import {
   createLiveDiagnosticsState,
   liveDiagnosticBundle,
   liveDiagnosticsSnapshot,
+  loopStageName,
   observeLiveDiagnosticPacket,
 } from "./live-diagnostics-state.js";
 import {
@@ -233,19 +236,23 @@ import {
 } from "./live-session-state.js";
 import { createLiveSessionRepository } from "./live-session-storage.js";
 import {
-  calibrationPreviewServoAngles,
+  acceptRobotCalibrationProfile,
+  calibrationPreviewModelAngles,
   calibrationChannelMap,
   calibrationChannelMapIssues,
   calibrationProfileJson,
   createCalibrationBenchCommand,
   createLiveCalibrationProfile,
   createLiveCalibrationState,
+  forgetRobotCalibrationProfile,
   jogCalibrationJoint,
   LIVE_CALIBRATION_JOINTS,
   LIVE_CALIBRATION_LEGACY_STORAGE_KEY,
+  LIVE_CALIBRATION_PRE_SYNC_BACKUP_KEY,
   LIVE_CALIBRATION_STEPS,
   LIVE_CALIBRATION_STORAGE_KEY,
   parseCalibrationProfileJson,
+  robotCalibrationReady,
   restoreCalibrationDefaults,
   restoreSelectedCalibrationJoint,
   selectCalibrationJoint,
@@ -297,6 +304,15 @@ initializeFirmwareWorkspace();
 
 const canvas = document.querySelector("#scene");
 const desktopProjectFiles = globalThis.dominoDesktop?.projectFiles;
+const desktopWindow = globalThis.dominoDesktop?.window;
+let desktopWindowFullscreen = false;
+const sensorsPage = document.querySelector("#live-view-sensors");
+const navigationGrid = sensorsPage?.querySelector(".live-navigation-grid");
+const sensorGrid = sensorsPage?.querySelector(".live-sensor-grid");
+if (navigationGrid && sensorGrid) {
+  sensorGrid.before(navigationGrid);
+  navigationGrid.prepend(navigationGrid.querySelector(".live-mission-card"));
+}
 const hasNativeProjectFiles = Boolean(
   desktopProjectFiles &&
   typeof desktopProjectFiles.openProjectFile === "function" &&
@@ -740,6 +756,11 @@ try {
 }
 let calibrationPendingRequestId = "";
 let calibrationPendingAction = "";
+let calibrationPendingPurpose = "";
+let calibrationPendingProfile = null;
+let calibrationVerifyProfile = null;
+let calibrationSyncRetryAt = 0;
+let calibrationObservedSessionId = "";
 let calibrationRequestTimeout = null;
 let calibrationBenchFeedback = "";
 let calibrationBenchDesired = false;
@@ -1120,13 +1141,22 @@ function liveCameraDiagnosticSnapshot() {
 function updateFullscreenButton() {
   const button = document.querySelector("#fullscreen-toggle");
   if (!button) return;
-  const active = Boolean(document.fullscreenElement);
+  const active = Boolean(document.fullscreenElement) || desktopWindowFullscreen;
   button.setAttribute("aria-pressed", String(active));
   button.title = active ? "Exit fullscreen (F)" : "Enter fullscreen (F)";
   button.textContent = active ? "×" : "⛶";
 }
 
 async function toggleFullscreen() {
+  if (desktopWindow) {
+    try {
+      desktopWindowFullscreen = await desktopWindow.toggleFullscreen();
+      updateFullscreenButton();
+    } catch {
+      showAppToast("Fullscreen could not be changed.", "warning");
+    }
+    return;
+  }
   if (document.fullscreenElement) {
     if (typeof document.exitFullscreen !== "function") return;
     await document.exitFullscreen();
@@ -1250,6 +1280,9 @@ function applyLiveView(view) {
   document.querySelector("#live-view-gaits").hidden = liveViewState.selected !== LIVE_VIEW_GAITS;
   document.querySelector("#live-view-diagnostics").hidden = liveViewState.selected !== LIVE_VIEW_DIAGNOSTICS;
   document.querySelector("#live-view-sessions").hidden = liveViewState.selected !== LIVE_VIEW_SESSIONS;
+  if (liveViewState.selected === LIVE_VIEW_SENSORS && (enteringSensors || document.body.dataset.livePlannerFocus === undefined)) {
+    setLiveNavigationMapFocus(true);
+  }
   const activeLivePage = document.querySelector(`#live-view-${liveViewState.selected}`);
   activeLivePage?.scrollTo?.(0, 0);
   updateLivePreviewVisibility();
@@ -1349,6 +1382,16 @@ renderLiveCameraPanel();
 setInterval(renderLiveCameraPanel, 500);
 document.querySelector("#fullscreen-toggle")?.addEventListener("click", toggleFullscreen);
 document.addEventListener("fullscreenchange", updateFullscreenButton);
+if (desktopWindow) {
+  desktopWindow.onFullscreenChange((fullscreen) => {
+    desktopWindowFullscreen = fullscreen;
+    updateFullscreenButton();
+  });
+  void desktopWindow.isFullscreen().then((fullscreen) => {
+    desktopWindowFullscreen = fullscreen;
+    updateFullscreenButton();
+  }).catch(() => {});
+}
 setAutonomyHudCollapsed(autonomyHudCollapsed, false);
 updateFullscreenButton();
 
@@ -1437,6 +1480,31 @@ document.querySelectorAll("[data-experience]").forEach((button) => {
 });
 
 const liveConnectionDialog = document.querySelector("#live-connection-dialog");
+const liveCompanionProtocol = document.querySelector("#live-connection-protocol");
+function updateCompanionProtocolUi() {
+  const mavlink = liveCompanionProtocol.value === "ardupilot";
+  document.querySelector("#live-mavlink-endpoint").hidden = !mavlink;
+  document.querySelectorAll('[data-live-transport="bluetooth"], [data-live-transport="usb"]').forEach((button) => {
+    button.disabled = mavlink;
+  });
+  if (mavlink && ["usb", "bluetooth"].includes(liveConnectionState.transportFilter)) {
+    setLiveConnectionTransport(liveConnectionState, "auto");
+  }
+  document.querySelector("#live-adapter-empty").textContent = mavlink
+    ? "No ArduPilot heartbeat yet. Start SITL or direct MAVLink UDP to this computer, then search again."
+    : "No adapters found yet. Start the Domino Wi-Fi, Bluetooth, or USB companion adapter, then search again.";
+}
+liveCompanionProtocol.addEventListener("change", () => {
+  updateCompanionProtocolUi();
+  renderLiveConnectionUi();
+});
+updateCompanionProtocolUi();
+document.querySelector("#live-nav-open-mavlink").addEventListener("click", () => {
+  liveCompanionProtocol.value = "ardupilot";
+  updateCompanionProtocolUi();
+  renderLiveConnectionUi();
+  if (!liveConnectionDialog.open) liveConnectionDialog.showModal();
+});
 document.querySelector("#live-connection-open").addEventListener("click", () => {
   renderLiveConnectionUi();
   if (!liveConnectionDialog.open) liveConnectionDialog.showModal();
@@ -1454,13 +1522,27 @@ document.querySelectorAll("[data-live-transport]").forEach((button) => {
 });
 document.querySelector("#live-connection-discover").addEventListener("click", async () => {
   const transport = liveConnectionState.transportFilter;
+  const protocol = liveCompanionProtocol.value;
   try {
-    await fetch("/api/companion/discover", {
+    const response = await fetch("/api/companion/discover", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ transport }),
+      body: JSON.stringify({
+        transport,
+        protocol,
+        ...(protocol === "ardupilot" ? {
+          host: document.querySelector("#live-mavlink-host").value.trim(),
+          port: Number(document.querySelector("#live-mavlink-port").value),
+        } : {}),
+      }),
     });
-  } catch {
+    const result = await response.json();
+    if (!response.ok || result.reason) throw new Error(result.reason || result.error || "The companion service could not start.");
+  } catch (error) {
+    if (protocol === "ardupilot") {
+      showAppToast(error instanceof Error ? error.message : "MAVLink UDP could not start.", "warning");
+      return;
+    }
     // Discovery also covers separately managed Wi-Fi/Bluetooth companions, so
     // a local service failure must not suppress the normal relay search.
   }
@@ -1587,7 +1669,17 @@ document.querySelector("#live-manual-estop").addEventListener("click", () => {
 });
 
 const demoSelection = new URLSearchParams(window.location.search).get("demo");
-const demoMode = ["1", "tilt", "roll", "roll-negative", "gait", "gait-reverse"].includes(demoSelection);
+const cadResponsePreview = ["yaw-left", "yaw-left-fault", "pitch-back", "pitch-back-fault", "roll-fault"].includes(demoSelection);
+const crossReversedResponsePreview = cadResponsePreview && demoSelection.endsWith("-fault");
+const demoMode = cadResponsePreview || ["1", "tilt", "roll", "roll-negative", "gait", "gait-reverse"].includes(demoSelection);
+if (cadResponsePreview) {
+  const previewLabel = document.createElement("div");
+  const commandLabel = demoSelection.startsWith("yaw") ? "CH4 1000 / YAW LEFT"
+    : demoSelection.startsWith("pitch") ? "CH2 1000 / PITCH BACK" : "CH1 2000 / ROLL RIGHT";
+  previewLabel.textContent = `CAD LEG POSE · ${commandLabel} · ${crossReversedResponsePreview ? "SUSPECTED DRIVE RESPONSE" : "IDEAL DRIVE RESPONSE"} · BODY PHYSICS IDEAL`;
+  previewLabel.style.cssText = "position:fixed;top:74px;right:24px;z-index:30;width:auto;height:auto;max-width:340px;padding:9px 12px;background:#16191de8;color:#fff;border:1px solid #f3be56;border-radius:6px;font:600 11px/1.45 system-ui,sans-serif;pointer-events:none";
+  document.body.append(previewLabel);
+}
 const THEME_STORAGE_KEY = "domino-theme-v2";
 const MAX_RENDER_PIXEL_RATIO = 1.5;
 let currentTheme = localStorage.getItem(THEME_STORAGE_KEY);
@@ -1641,7 +1733,16 @@ controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN;
 const cameraTargetOffset = new THREE.Vector3();
 const robotCameraAnchor = new THREE.Vector3();
 const defaultCameraOffset = new THREE.Vector3(1.05, 0.40, 1.02);
+const LIVE_CAMERA_ANCHOR_Y = 0.26;
+const SIMULATION_CAMERA_ANCHOR_Y = 0.32;
 let middleButtonPanning = false;
+
+function cameraAnchorY() {
+  if (floatModeEnabled) return robotWorld.position.y;
+  return applicationState.workspace === WORKSPACE_REAL_ROBOT
+    ? LIVE_CAMERA_ANCHOR_Y
+    : SIMULATION_CAMERA_ANCHOR_Y;
+}
 
 const cameraGizmo = document.querySelector(".camera-gizmo");
 const cameraGizmoCanvas = cameraGizmo.querySelector("canvas");
@@ -1780,7 +1881,7 @@ function finishMiddleButtonPan(event) {
   middleButtonPanning = false;
   robotCameraAnchor.set(
     robotWorld.position.x,
-    floatModeEnabled ? robotWorld.position.y : 0.32,
+    cameraAnchorY(),
     robotWorld.position.z,
   );
   cameraTargetOffset.copy(controls.target).sub(robotCameraAnchor);
@@ -1859,7 +1960,26 @@ sun.shadow.camera.top = 5;
 sun.shadow.camera.bottom = -5;
 scene.add(sun);
 
-const groundMaterial = new THREE.MeshStandardMaterial({ color: 0xbdbdb8, roughness: 0.9, metalness: 0.02 });
+function makeCheckerGroundTexture(light, dark) {
+  const tile = document.createElement("canvas");
+  tile.width = tile.height = 256;
+  const context = tile.getContext("2d");
+  context.fillStyle = light;
+  context.fillRect(0, 0, 256, 256);
+  context.fillStyle = dark;
+  context.fillRect(0, 0, 128, 128);
+  context.fillRect(128, 128, 128, 128);
+  const texture = new THREE.CanvasTexture(tile);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(40, 40);
+  texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  return texture;
+}
+
+const lightGroundTexture = makeCheckerGroundTexture("#d5d7dd", "#9fa2aa");
+const darkGroundTexture = makeCheckerGroundTexture("#383b41", "#272a30");
+const groundMaterial = new THREE.MeshStandardMaterial({ map: lightGroundTexture, roughness: 0.9, metalness: 0.02 });
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), groundMaterial);
 ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
@@ -1889,7 +2009,8 @@ function applyTheme(theme, persist = true) {
   const sceneColor = dark ? 0x0b0b0c : 0xdededa;
   scene.background.set(sceneColor);
   scene.fog.color.set(sceneColor);
-  groundMaterial.color.set(dark ? 0x252527 : 0xbdbdb8);
+  groundMaterial.map = dark ? darkGroundTexture : lightGroundTexture;
+  groundMaterial.needsUpdate = true;
   renderer.toneMappingExposure = dark ? 1.08 : 1.05;
 
   const toggle = document.querySelector("#theme-toggle");
@@ -2130,7 +2251,7 @@ const visualBaseQuaternion = new THREE.Quaternion();
 let visualBaseInitialized = false;
 let visualPhysicsResetCount = -1;
 const visualFootPosition = new THREE.Vector3();
-const bodyEuler = new THREE.Euler(0, 0, 0, "YXZ");
+const bodyEuler = new THREE.Euler(0, 0, 0, BODY_EULER_ORDER);
 const PIN_TOLERANCE_MM = 0.5;
 const FOOT_SYMMETRY_TOLERANCE_MM = 1.0;
 let previousPinClosureHealthy = null;
@@ -3243,9 +3364,10 @@ function updateLinkage(runtime, shoulderDeltaDeg, upperDeltaDeg, lowerDeltaDeg) 
   runtime.commandScale = linkage.commandScale;
   runtime.linkage = linkage;
 
+  // Convert canonical outward-positive hip angles into the CAD frame.
+  // Physical shaft direction is handled by the robot's active calibration.
   legRoot.rotation.x = THREE.MathUtils.degToRad(
-    -spec.shoulderSign *
-      THREE.MathUtils.clamp(shoulderDeltaDeg, -SERVO_TRAVEL_DEG, SERVO_TRAVEL_DEG),
+    -spec.shoulderSign * THREE.MathUtils.clamp(shoulderDeltaDeg, -SERVO_TRAVEL_DEG, SERVO_TRAVEL_DEG),
   );
   planarTransform(groups.lower_driver, points.lower_drive, points.lower_closure_diagonal, lowerDrive, lowerClosureDriver, hip);
   planarTransform(groups.upper_driver, points.upper_drive, points.upper_closure_driver, upperDrive, upperClosureDriver, hip);
@@ -3413,8 +3535,14 @@ function connectControlBridge() {
     revokeLiveManualControl(liveManualState, "The local bridge disconnected. Browser authority was revoked.");
     bridgeInput = { connected: false, channels: null };
     liveCalibrationState.benchModeAcknowledged = false;
+    forgetRobotCalibrationProfile(liveCalibrationState);
     calibrationPendingRequestId = "";
     calibrationPendingAction = "";
+    calibrationPendingPurpose = "";
+    calibrationPendingProfile = null;
+    calibrationVerifyProfile = null;
+    calibrationSyncRetryAt = 0;
+    calibrationObservedSessionId = "";
     calibrationBenchFeedback = "PC link disconnected. Reconnect before requesting bench mode.";
     clearTimeout(calibrationRequestTimeout);
     calibrationRequestTimeout = null;
@@ -3455,6 +3583,9 @@ function connectControlBridge() {
       }
       if (message.type === "live-adapter-removed") {
         removeLiveAdapter(liveConnectionState, message.adapterId, message.reason);
+        forgetRobotCalibrationProfile(liveCalibrationState);
+        calibrationVerifyProfile = null;
+        calibrationSyncRetryAt = 0;
         lockLiveSafetyState(liveSafetyState, "The adapter heartbeat was lost. Robot-side outputs must fail safe.");
         liveCalibrationState.benchModeAcknowledged = false;
         liveGaitState.persistentApplySupported = false;
@@ -3520,6 +3651,7 @@ function formatPacketAge(age) {
 
 function resetLiveCommandPermissions(reason) {
   liveCalibrationState.benchModeAcknowledged = false;
+  forgetRobotCalibrationProfile(liveCalibrationState);
   liveGaitState.persistentApplySupported = false;
   if (reason) liveGaitState.status = reason;
 }
@@ -3575,10 +3707,12 @@ function updateLiveBatteryAlert(battery, packVoltageV) {
 function liveSafetyContext() {
   const snapshot = liveComparisonSnapshot(liveTelemetryState);
   const controller = liveControllerSnapshot(liveControllerState);
+  const voltageV = snapshot.power?.voltageV;
   return {
     connectionReady: liveConnectionIsReady(liveConnectionState),
     telemetryFresh: snapshot.expectedFresh && snapshot.measuredFresh,
     driveLinkAlive: controller.linkReady,
+    batteryDetected: !Number.isFinite(voltageV) || deriveLiveBatteryState(voltageV).packDetected,
   };
 }
 
@@ -3718,6 +3852,8 @@ function renderLiveSafetyUi() {
   const stateLabel = connected ? liveSafetyState.robotState : "disconnected";
   const armButton = document.querySelector("#live-safety-arm");
   armButton.disabled = !canArm || Boolean(liveSafetyState.pendingRequestId);
+  const noPack = connected && context.batteryDetected === false && liveSafetyState.robotState === "disarmed";
+  armButton.title = noPack ? "Connect a 4S battery before arming; the voltage sensor only reports a residual reading." : "Hold to arm after all safety checks pass.";
   armButton.style.setProperty("--arm-progress", String(liveSafetyState.armHoldProgress));
   armButton.querySelector("span").textContent = liveSafetyState.armHoldStartedAt
     ? `KEEP HOLDING ${Math.round(liveSafetyState.armHoldProgress * 100)}%`
@@ -3732,7 +3868,9 @@ function renderLiveSafetyUi() {
     liveSafetyState.robotState !== "estopped" || Boolean(liveSafetyState.pendingRequestId);
   document.querySelector("#live-safety-ack-fault").disabled =
     liveSafetyState.robotState !== "fault" || Boolean(liveSafetyState.pendingRequestId);
-  document.querySelector("#live-safety-status").textContent = liveSafetyState.status;
+  document.querySelector("#live-safety-status").textContent = noPack
+    ? "Battery pack not detected. USB diagnostics remain available; connect a pack before arming."
+    : liveSafetyState.status;
   const watchdog = document.querySelector("#live-safety-watchdog");
   watchdog.textContent = liveSafetyState.robotState === "armed"
     ? `${Math.round(liveSafetyState.watchdogRemainingMs)} MS`
@@ -3813,11 +3951,18 @@ function renderLiveConnectionUi() {
   const phase = document.querySelector("#live-connection-phase");
   phase.textContent = liveConnectionState.phase.toUpperCase();
   phase.dataset.state = connected ? "connected" : liveConnectionState.phase;
-  document.querySelector("#live-connection-status").textContent = liveConnectionStatus(liveConnectionState, now);
+  const connectionStatus = liveConnectionStatus(liveConnectionState, now);
+  document.querySelector("#live-connection-status").textContent = liveCompanionProtocol.value === "ardupilot"
+    && connectionStatus === "Choose a transport and search for a compatible Domino adapter."
+    ? "Enter the MAVLink host and port, then search for an ArduPilot heartbeat."
+    : connectionStatus;
 
   document.querySelectorAll("[data-live-transport]").forEach((button) => {
     button.setAttribute("aria-pressed", String(button.dataset.liveTransport === liveConnectionState.transportFilter));
-    button.disabled = Boolean(liveConnectionState.sessionId || liveConnectionState.pendingRequestId || reconnecting || restarting);
+    button.disabled = Boolean(
+      liveConnectionState.sessionId || liveConnectionState.pendingRequestId || reconnecting || restarting ||
+      (liveCompanionProtocol.value === "ardupilot" && ["usb", "bluetooth"].includes(button.dataset.liveTransport))
+    );
   });
 
   const list = document.querySelector("#live-adapter-list");
@@ -3910,6 +4055,7 @@ function sendLiveConnectionRequest(action) {
 function serviceLiveReconnect() {
   expireLiveLinkRestart(liveConnectionState);
   if (liveReconnectDue(liveConnectionState)) sendLiveConnectionRequest("connect");
+  serviceCalibrationProfileSync();
   serviceCalibrationBenchRecovery();
   if (liveConnectionState.phase === "reconnecting" || liveConnectionState.phase === "restarting") renderLiveConnectionUi();
 }
@@ -3921,6 +4067,7 @@ function acceptLiveConnectionAck(message) {
   clearTimeout(liveConnectionRequestTimeout);
   liveConnectionRequestTimeout = null;
   if (!liveConnectionIsReady(liveConnectionState)) {
+    forgetRobotCalibrationProfile(liveCalibrationState);
     lockLiveSafetyState(liveSafetyState, "No PC link is active. Robot-side outputs must fail safe.");
     revokeLiveManualControl(liveManualState, "No PC link is active. Browser authority was revoked.");
     resetNativeNavigationRunner(liveNativeNavigationState);
@@ -4239,8 +4386,8 @@ function nativeNavigationReadiness(navigation, routeReady, mode = "route") {
     [context.controllerLinkReady, "The controller link is not ready."],
     [context.workspaceActive, "The LIVE workspace must remain visible."],
     [navigation.hasFix, "Waiting for a valid GPS fix."],
-    [Number.isFinite(navigation.gps?.courseDeg), "Waiting for a fresh vehicle heading."],
-    [!obstacleEnabled || navigation.lidarFresh, "Waiting for fresh LiDAR obstacle data."],
+    [Number.isFinite(navigation.headingDeg), "Waiting for a fresh vehicle heading."],
+    [!obstacleEnabled || navigation.lidarReady, "Waiting for body-aligned LiDAR clearance data."],
     [navigation.geofence?.breached !== true, "The vehicle is outside the active geofence."],
   ];
   return { ready: checks.every(([valid]) => valid), reason: checks.find(([valid]) => !valid)?.[1] || "Domino route checks are ready." };
@@ -4259,7 +4406,7 @@ function renderNativeNavigationPreflight(navigation, routeReady) {
   const gate = liveNativeRouteGate(navigation);
   const adapterReady = nativeNavigationCapabilityAvailable();
   const obstacleEnabled = liveNavigationState.obstacleBehavior.enabled;
-  const headingReady = Number.isFinite(navigation.gps?.courseDeg);
+  const headingReady = Number.isFinite(navigation.headingDeg);
   const safetyReady = context.connectionReady && context.robotState === "armed" && context.telemetryFresh && context.controllerLinkReady && context.workspaceActive;
   const fenceReady = !gate.fenceEnabled || Boolean(navigation.home) && gate.fenceStatus.checked && gate.fenceStatus.outsideCount === 0 && navigation.geofence?.breached !== true;
   const homeReady = nativeNavigationHomeReady(navigation);
@@ -4270,7 +4417,7 @@ function renderNativeNavigationPreflight(navigation, routeReady) {
   setNativeNavigationPreflightCheck("route", preflightMode === "return-home" ? homeReady : routeReady, preflightMode === "return-home" ? (homeReady ? "HOME" : "CHECK") : routeReady ? "READY" : "CHECK");
   setNativeNavigationPreflightCheck("gps", navigation.hasFix, navigation.hasFix ? "3D FIX" : "WAITING", navigation.hasFix ? "online" : "warning");
   setNativeNavigationPreflightCheck("heading", headingReady, headingReady ? "READY" : "WAITING", headingReady ? "online" : "warning");
-  setNativeNavigationPreflightCheck("lidar", !obstacleEnabled || navigation.lidarFresh, !obstacleEnabled ? "BYPASS" : navigation.lidarFresh ? "READY" : "WAITING", !obstacleEnabled || navigation.lidarFresh ? "online" : "warning");
+  setNativeNavigationPreflightCheck("lidar", !obstacleEnabled || navigation.lidarReady, !obstacleEnabled ? "BYPASS" : navigation.lidarReady ? "READY" : "WAITING", !obstacleEnabled || navigation.lidarReady ? "online" : "warning");
   setNativeNavigationPreflightCheck("safety", safetyReady, safetyReady ? "ARMED" : context.robotState === "armed" ? "CHECK" : "DISARMED", safetyReady ? "online" : "warning");
   setNativeNavigationPreflightCheck("fence", fenceReady, !gate.fenceEnabled ? "OFF" : fenceReady ? "READY" : "CHECK", !gate.fenceEnabled || fenceReady ? "online" : "warning");
 }
@@ -4340,15 +4487,15 @@ function nativeNavigationCommandFor(navigation) {
   return nativeNavigationCommand({
     waypoints: nativeNavigationWaypointsFor(navigation, mode),
     position: vehicleLocal,
-    headingDeg: navigation.gps?.courseDeg,
+    headingDeg: navigation.headingDeg,
     currentIndex: liveNativeNavigationState.currentIndex,
     loopCount: liveNativeNavigationState.loopCount,
     completedLoops: liveNativeNavigationState.completedLoops,
     obstacle: {
       enabled: liveNavigationState.obstacleBehavior.enabled,
-      frontM: navigation.lidarFresh ? navigation.frontM : null,
-      leftM: navigation.lidarFresh ? navigation.leftM : null,
-      rightM: navigation.lidarFresh ? navigation.rightM : null,
+      frontM: navigation.lidarReady ? navigation.frontM : null,
+      leftM: navigation.lidarReady ? navigation.leftM : null,
+      rightM: navigation.lidarReady ? navigation.rightM : null,
       stopDistanceM: liveNavigationState.obstacleBehavior.stopDistanceM,
       slowDistanceM: liveNavigationState.obstacleBehavior.slowDistanceM,
     },
@@ -5077,7 +5224,7 @@ function renderLiveNavigationPlanner(navigation) {
     ["REAR", navigation.rearM, 0, 1],
     ["LEFT", navigation.leftM, -1, 0],
   ];
-  const clearanceLive = liveNavigationState.obstacleBehavior.enabled && navigation.lidarFresh;
+  const clearanceLive = liveNavigationState.obstacleBehavior.enabled && navigation.lidarReady;
   clearance.dataset.state = clearanceLive ? "online" : liveNavigationState.obstacleBehavior.enabled ? "waiting" : "bypassed";
   clearance.setAttribute("visibility", clearanceLive ? "visible" : "hidden");
   const visibleClearanceCount = clearanceSamples.filter(([, distance]) => Number.isFinite(distance)).length;
@@ -5139,8 +5286,8 @@ function renderLiveNavigationPlanner(navigation) {
     : null);
   const currentHeading = previewPoint && Number.isFinite(preview?.headingDeg)
     ? preview.headingDeg
-    : navigation.gpsFresh && Number.isFinite(navigation.gps?.courseDeg)
-      ? navigation.gps.courseDeg
+    : navigation.gpsFresh && Number.isFinite(navigation.headingDeg)
+      ? navigation.headingDeg
       : null;
   vehicle.setAttribute("transform", currentPoint
     ? `translate(${currentPoint.x.toFixed(2)} ${currentPoint.y.toFixed(2)})${Number.isFinite(currentHeading) ? ` rotate(${currentHeading.toFixed(1)})` : ""}`
@@ -5184,6 +5331,7 @@ function renderLiveNavigationPlanner(navigation) {
     ? hasOrigin ? "Home is available. Reference local points before sending the route." : "No home reference yet; this draft stays local and cannot be sent."
     : fenceStatus.outsideCount > 0
       ? `${fenceStatus.outsideCount} waypoint${fenceStatus.outsideCount === 1 ? " is" : "s are"} outside the active ${fenceRadius.toFixed(0)} m radius.`
+      : routeCount === 0 ? "Add a waypoint to build an offline route."
       : fenceStatus.enabled ? `All waypoints are inside the active ${fenceRadius.toFixed(0)} m radius.` : "All waypoints have GPS coordinates and can pass the vehicle route gate.";
   storageStatus.textContent = liveNavigationPlanStorageState === "restored"
     ? "RESTORED LOCAL DRAFT"
@@ -5216,7 +5364,7 @@ function renderLiveNavigationPlanner(navigation) {
     ? "LOCAL PREVIEW"
     : navigation.hasFix ? navigationFixLabel(navigation.gps?.fixType) : hasOrigin ? "HOME SET" : "NO FIX";
   hudHeading.textContent = Number.isFinite(currentHeading) ? `${Math.round(currentHeading)}°` : "WAITING";
-  hudObstacle.textContent = navigation.lidarFresh ? formatNavigationDistance(navigation.frontM, "--.- m") : "WAITING";
+  hudObstacle.textContent = navigation.lidarReady ? formatNavigationDistance(navigation.frontM, "--.- m") : "WAITING";
   const nativeMode = nativeRunnerActive ? liveNativeNavigationState.mode : "route";
   hudMode.textContent = nativeRunnerActive
     ? nativeMode === "return-home" ? "DOMINO RETURN HOME" : Number.isInteger(liveNativeNavigationTargetIndex) ? "DOMINO DIRECT" : "DOMINO ROUTE"
@@ -5249,15 +5397,15 @@ function renderLiveNavigationPlanner(navigation) {
   const nativeControl = nativeNavigationCommand({
     waypoints: nativeWaypoints,
     position: vehicleLocal,
-    headingDeg: navigation.gps?.courseDeg,
+    headingDeg: navigation.headingDeg,
     currentIndex: currentMissionIndex >= 0 ? currentMissionIndex : 0,
     loopCount: nativeRunnerActive ? liveNativeNavigationState.loopCount : liveNavigationState.loopCount,
     completedLoops: nativeRunnerActive ? liveNativeNavigationState.completedLoops : 0,
     obstacle: {
       enabled: !previewSession && liveNavigationState.obstacleBehavior.enabled,
-      frontM: navigation.lidarFresh ? navigation.frontM : null,
-      leftM: navigation.lidarFresh ? navigation.leftM : null,
-      rightM: navigation.lidarFresh ? navigation.rightM : null,
+      frontM: navigation.lidarReady ? navigation.frontM : null,
+      leftM: navigation.lidarReady ? navigation.leftM : null,
+      rightM: navigation.lidarReady ? navigation.rightM : null,
       stopDistanceM: liveNavigationState.obstacleBehavior.stopDistanceM,
       slowDistanceM: liveNavigationState.obstacleBehavior.slowDistanceM,
     },
@@ -5731,11 +5879,11 @@ function renderLiveLidarRadar(snapshot) {
   if (!group) return;
   group.replaceChildren();
   const lidar = snapshot.lidar;
-  if (!snapshot.lidarFresh || !lidar?.rangesM?.length) return;
+  if (!snapshot.lidarReady || !lidar?.rangesM?.length) return;
   const maxRange = Math.max(0.1, lidar.maxRangeM || 30);
   lidar.rangesM.forEach((range, index) => {
     if (!Number.isFinite(range)) return;
-    const angle = THREE.MathUtils.degToRad((lidar.offsetDeg || 0) + index * (lidar.incrementDeg || 5));
+    const angle = THREE.MathUtils.degToRad(snapshot.lidarBodyOffsetDeg + index * (lidar.incrementDeg || 5));
     const radius = 92 * Math.max(0, Math.min(1, range / maxRange));
     const x = 120 + Math.sin(angle) * radius;
     const y = 120 - Math.cos(angle) * radius;
@@ -5832,7 +5980,10 @@ function renderLiveNavigationUi(navigation) {
   const capability = navigationCapabilityAvailable();
   const telemetryCapability = navigationTelemetryAvailable();
   const commandReady = capability && liveConnectionIsReady(liveConnectionState);
-  const gpsFix = navigationFixLabel(gps?.fixType);
+  const gpsFixAgeMs = Number.isFinite(gps?.fixReceivedAt) ? Date.now() - gps.fixReceivedAt : null;
+  const gpsFix = !navigation.gpsFresh ? "WAITING"
+    : gpsFixAgeMs !== null && (gpsFixAgeMs < 0 || gpsFixAgeMs > 2_000) ? "FIX STALE"
+    : navigationFixLabel(gps?.fixType);
   const gpsHealthy = navigation.hasFix;
   const autopilotHealthy = navigation.autopilotFresh && autopilot?.heartbeat !== false;
   const modeDefinition = navigation.mode;
@@ -5883,34 +6034,48 @@ function renderLiveNavigationUi(navigation) {
   const gpsBadge = document.querySelector("#live-gps-fix-badge");
   gpsBadge.textContent = gpsFix;
   gpsBadge.dataset.state = navigation.gpsFresh ? (gpsHealthy ? "online" : "warning") : "offline";
-  document.querySelector("#live-gps-lat").textContent = formatCoordinate(gps?.position?.lat);
-  document.querySelector("#live-gps-lon").textContent = formatCoordinate(gps?.position?.lon);
-  document.querySelector("#live-gps-satellites").textContent = Number.isFinite(gps?.satellites) ? String(gps.satellites) : "--";
-  document.querySelector("#live-gps-hdop").textContent = Number.isFinite(gps?.hdop) ? gps.hdop.toFixed(1) : "--";
-  document.querySelector("#live-gps-speed").textContent = formatNavigationSpeed(gps?.groundSpeedMps);
-  document.querySelector("#live-gps-course").textContent = Number.isFinite(gps?.courseDeg) ? `${gps.courseDeg.toFixed(1)}°` : "---.-°";
-  document.querySelector("#live-gps-altitude").textContent = Number.isFinite(gps?.altitudeM) ? `${gps.altitudeM.toFixed(1)} m` : "--.- m";
+  const freshGps = navigation.gpsFresh ? gps : null;
+  document.querySelector("#live-gps-lat").textContent = formatCoordinate(freshGps?.position?.lat);
+  document.querySelector("#live-gps-lon").textContent = formatCoordinate(freshGps?.position?.lon);
+  document.querySelector("#live-gps-satellites").textContent = Number.isFinite(freshGps?.satellites) ? String(freshGps.satellites) : "--";
+  document.querySelector("#live-gps-hdop").textContent = Number.isFinite(freshGps?.hdop) ? freshGps.hdop.toFixed(1) : "--";
+  document.querySelector("#live-gps-vdop").textContent = Number.isFinite(freshGps?.vdop) ? freshGps.vdop.toFixed(1) : "--";
+  document.querySelector("#live-gps-speed").textContent = formatNavigationSpeed(freshGps?.groundSpeedMps);
+  document.querySelector("#live-gps-course").textContent = Number.isFinite(freshGps?.courseDeg) ? `${freshGps.courseDeg.toFixed(1)}°` : "---.-°";
+  document.querySelector("#live-gps-heading").textContent = Number.isFinite(navigation.headingDeg) ? `${navigation.headingDeg.toFixed(1)}°` : "---.-°";
+  document.querySelector("#live-gps-altitude").textContent = Number.isFinite(freshGps?.altitudeM) ? `${freshGps.altitudeM.toFixed(1)} m` : "--.- m";
+  document.querySelector("#live-gps-hacc").textContent = formatNavigationDistance(freshGps?.horizontalAccuracyM);
+  document.querySelector("#live-gps-vacc").textContent = formatNavigationDistance(freshGps?.verticalAccuracyM);
+  document.querySelector("#live-gps-climb").textContent = Number.isFinite(freshGps?.verticalSpeedMps) ? `${freshGps.verticalSpeedMps.toFixed(1)} m/s` : "--.- m/s";
+  document.querySelector("#live-gps-utc").textContent = Number.isFinite(freshGps?.utcMs) ? new Date(freshGps.utcMs).toISOString().slice(11, 19) : "--:--:--";
+  const homeDistance = freshGps?.position && navigation.home ? gpsDistanceM(freshGps.position, navigation.home) : null;
+  document.querySelector("#live-gps-home-distance").textContent = formatNavigationDistance(homeDistance);
+  document.querySelector("#live-gps-source").textContent = freshGps?.source || "--";
   document.querySelector("#live-gps-age").textContent = formatNavigationAge(gps?.receivedAt > 0 ? Date.now() - gps.receivedAt : null);
   renderLiveGpsTrack(navigation);
 
   const lidarBadge = document.querySelector("#live-lidar-scan-state");
-  lidarBadge.textContent = !navigation.lidarFresh ? "WAITING" : navigation.frontState === "stop" ? "STOP ZONE" : navigation.frontState === "slow" ? "SLOW ZONE" : "CLEAR";
+  lidarBadge.textContent = !navigation.lidarFresh ? "WAITING" : !navigation.lidarReady ? "FRAME / COVERAGE" : navigation.frontState === "stop" ? "STOP ZONE" : navigation.frontState === "slow" ? "SLOW ZONE" : "CLEAR";
   lidarBadge.dataset.state = !navigation.lidarFresh ? "offline" : navigation.frontState === "clear" ? "online" : "warning";
-  document.querySelector("#live-lidar-front").textContent = formatNavigationDistance(navigation.frontM);
-  document.querySelector("#live-lidar-left").textContent = formatNavigationDistance(navigation.leftM);
-  document.querySelector("#live-lidar-right").textContent = formatNavigationDistance(navigation.rightM);
-  document.querySelector("#live-lidar-rear").textContent = formatNavigationDistance(navigation.rearM);
+  document.querySelector("#live-lidar-front").textContent = navigation.lidarReady ? formatNavigationDistance(navigation.frontM) : "--.- m";
+  document.querySelector("#live-lidar-left").textContent = navigation.lidarReady ? formatNavigationDistance(navigation.leftM) : "--.- m";
+  document.querySelector("#live-lidar-right").textContent = navigation.lidarReady ? formatNavigationDistance(navigation.rightM) : "--.- m";
+  document.querySelector("#live-lidar-rear").textContent = navigation.lidarReady ? formatNavigationDistance(navigation.rearM) : "--.- m";
   document.querySelector("#live-lidar-obstacles").textContent = navigation.lidarFresh ? String(navigation.obstacleCount) : "--";
-  document.querySelector("#live-lidar-rate").textContent = Number.isFinite(lidar?.scanRateHz) ? `${lidar.scanRateHz.toFixed(1)} Hz` : "--.- Hz";
+  document.querySelector("#live-lidar-rate").textContent = navigation.lidarFresh && Number.isFinite(lidar?.scanRateHz) ? `${lidar.scanRateHz.toFixed(1)} Hz` : "--.- Hz";
+  document.querySelector("#live-lidar-age").textContent = formatNavigationAge(lidar?.receivedAt > 0 ? Date.now() - lidar.receivedAt : null);
+  document.querySelector("#live-lidar-frame").textContent = navigation.lidarFresh ? lidar?.frame || "--" : "--";
+  document.querySelector("#live-lidar-range").textContent = navigation.lidarFresh && Number.isFinite(lidar?.maxRangeM) ? `${lidar.minRangeM.toFixed(2)}–${lidar.maxRangeM.toFixed(1)} m` : "--";
+  document.querySelector("#live-lidar-sectors").textContent = navigation.lidarFresh ? `${lidar?.validCount ?? 0} / ${lidar?.rangesM?.length ?? 0}` : "--";
   renderLiveLidarRadar(navigation);
 
   const autopilotBadge = document.querySelector("#live-autopilot-state");
   autopilotBadge.textContent = !capability ? "NOT DETECTED" : !autopilotHealthy ? "HEARTBEAT LOST" : autopilot.failsafe ? "FAILSAFE" : "CONNECTED";
   autopilotBadge.dataset.state = !autopilotHealthy ? "offline" : autopilot.failsafe ? "warning" : "online";
-  document.querySelector("#live-nav-current-mode").textContent = modeDefinition?.label?.toUpperCase() || autopilot?.mode?.toUpperCase() || "--";
-  document.querySelector("#live-nav-arm-state").textContent = autopilot?.armed ? "ARMED" : "DISARMED";
-  document.querySelector("#live-nav-ekf-state").textContent = autopilot?.ekfHealthy === true ? "HEALTHY" : autopilot?.ekfHealthy === false ? "FAULT" : "--";
-  document.querySelector("#live-nav-prearm-state").textContent = autopilot?.prearmReady === true ? "READY" : autopilot?.prearmReady === false ? "BLOCKED" : "--";
+  document.querySelector("#live-nav-current-mode").textContent = autopilotHealthy ? modeDefinition?.label?.toUpperCase() || autopilot?.mode?.toUpperCase() || "--" : "--";
+  document.querySelector("#live-nav-arm-state").textContent = autopilotHealthy ? autopilot?.armed ? "ARMED" : "DISARMED" : "UNKNOWN";
+  document.querySelector("#live-nav-ekf-state").textContent = !autopilotHealthy ? "--" : autopilot?.ekfHealthy === true ? "HEALTHY" : autopilot?.ekfHealthy === false ? "FAULT" : "--";
+  document.querySelector("#live-nav-prearm-state").textContent = !autopilotHealthy ? "--" : autopilot?.prearmReady === true ? "READY" : autopilot?.prearmReady === false ? "BLOCKED" : "--";
   document.querySelector("#live-nav-heartbeat-age").textContent = formatNavigationAge(autopilot?.receivedAt > 0 ? Date.now() - autopilot.receivedAt : null);
   document.querySelector("#live-nav-autopilot-status").textContent = liveNavigationState.pendingRequestId
     ? `Waiting for the vehicle adapter to acknowledge: ${liveNavigationState.pendingAction.toUpperCase()}.`
@@ -6005,13 +6170,13 @@ function renderLiveNavigationUi(navigation) {
   document.querySelector("#live-nav-apply-geofence").disabled = !commandReady || !navigation.hasFix || Boolean(liveNavigationState.pendingRequestId);
 
   const obstacleEnabled = liveNavigationState.obstacleBehavior.enabled;
-  const obstacleHealthy = !obstacleEnabled || navigation.lidarFresh;
+  const obstacleHealthy = !obstacleEnabled || navigation.lidarReady;
   document.querySelector("#live-nav-safety-state").textContent = !commandReady ? "LOCKED" : navigation.autonomyReady && obstacleHealthy ? "READY" : "CHECKS REQUIRED";
   document.querySelector("#live-nav-safety-state").dataset.state = !commandReady ? "offline" : navigation.autonomyReady && obstacleHealthy ? "online" : "warning";
   setNavigationCheck("link", autopilotHealthy ? "ok" : "waiting", autopilotHealthy ? "READY" : "WAITING");
   setNavigationCheck("gps", navigation.hasFix ? "ok" : navigation.gpsFresh ? "warning" : "waiting", navigation.hasFix ? "READY" : navigation.gpsFresh ? "NO 3D FIX" : "WAITING");
   setNavigationCheck("ekf", autopilot?.ekfHealthy === true ? "ok" : autopilot?.ekfHealthy === false ? "fault" : "waiting", autopilot?.ekfHealthy === true ? "HEALTHY" : autopilot?.ekfHealthy === false ? "FAULT" : "WAITING");
-  setNavigationCheck("obstacle", obstacleHealthy ? "ok" : "warning", obstacleEnabled ? (navigation.lidarFresh ? "READY" : "WAITING") : "BYPASSED");
+  setNavigationCheck("obstacle", obstacleHealthy ? "ok" : "warning", obstacleEnabled ? (navigation.lidarReady ? "READY" : "WAITING") : "BYPASSED");
   setNavigationCheck("fence", !fenceEnabled || (navigation.home && fenceRadius >= 5) ? "ok" : "warning", !fenceEnabled ? "OFF" : navigation.home && fenceRadius >= 5 ? "READY" : "SET HOME");
   const routeCheckLabel = !missionReady
     ? "EMPTY"
@@ -6124,18 +6289,28 @@ const liveChartDefinitions = {
   rollDeg: bodyChartDefinition("Body roll / degrees", "rollDeg"),
   yawDeg: bodyChartDefinition("Body yaw / degrees", "yawDeg"),
   heightMm: bodyChartDefinition("Body height / millimetres", "heightMm"),
-  voltageV: measuredChartDefinition("Battery voltage / volts", (sample) => sample.power?.voltageV),
+  voltageV: measuredChartDefinition("Voltage sensor / volts", (sample) => sample.power?.voltageV),
   averageCellVoltageV: measuredChartDefinition("Average 4S cell voltage / volts", (sample) => sample.power?.averageCellVoltageV),
   estimatedChargePercent: measuredChartDefinition("Estimated LiPo charge / percent", (sample) => sample.power?.estimatedChargePercent),
   currentA: measuredChartDefinition("Battery current / amperes", (sample) => sample.power?.currentA),
   powerW: measuredChartDefinition("Calculated power / watts", (sample) => sample.power?.powerW),
   alignmentMs: measuredChartDefinition("Command-to-measurement alignment / milliseconds", (sample) => sample.alignmentMs),
   packetRateHz: measuredChartDefinition("Engineering packet rate / hertz", (sample) => sample.link?.packetRateHz),
-  packetAgeMs: measuredChartDefinition("Engineering packet age / milliseconds", (sample) => sample.link?.packetAgeMs),
+  packetAgeMs: measuredChartDefinition("Data packet age / milliseconds", (sample) => sample.link?.packetAgeMs),
   packetBytes: measuredChartDefinition("Telemetry payload size / bytes", (sample) => sample.link?.packetBytes),
   droppedPackets: measuredChartDefinition("Dropped packet total", (sample) => sample.link?.droppedPackets),
   rejectedPackets: measuredChartDefinition("Rejected packet total", (sample) => sample.link?.rejectedPackets),
   esp32LoopHz: measuredChartDefinition("ESP32 control loop / hertz", (sample) => sample.link?.esp32LoopHz),
+  maximumLoopGapMs: measuredChartDefinition("Longest ESP32 loop gap / milliseconds", (sample) => sample.diagnostics?.maximumLoopGapMs),
+  maxCrsfStageMs: measuredChartDefinition("Longest CRSF read / milliseconds", (sample) => Number.isFinite(sample.diagnostics?.maxCrsfStageUs) ? sample.diagnostics.maxCrsfStageUs / 1000 : null),
+  maxImuStageMs: measuredChartDefinition("Longest IMU read / milliseconds", (sample) => Number.isFinite(sample.diagnostics?.maxImuStageUs) ? sample.diagnostics.maxImuStageUs / 1000 : null),
+  maxLiveStageMs: measuredChartDefinition("Longest LIVE transport / milliseconds", (sample) => Number.isFinite(sample.diagnostics?.maxLiveStageUs) ? sample.diagnostics.maxLiveStageUs / 1000 : null),
+  maxControlStageMs: measuredChartDefinition("Longest control update / milliseconds", (sample) => Number.isFinite(sample.diagnostics?.maxControlStageUs) ? sample.diagnostics.maxControlStageUs / 1000 : null),
+  maxServoWriteMs: measuredChartDefinition("Longest servo write / milliseconds", (sample) => Number.isFinite(sample.diagnostics?.maxServoWriteUs) ? sample.diagnostics.maxServoWriteUs / 1000 : null),
+  imuI2cErrors: measuredChartDefinition("IMU I²C error count", (sample) => sample.diagnostics?.imuI2cErrors),
+  imuSampleAgeMs: measuredChartDefinition("IMU sample age / milliseconds", (sample) => sample.diagnostics?.imuSampleAgeMs),
+  crsfPendingBytes: measuredChartDefinition("CRSF RX queued / bytes", (sample) => sample.diagnostics?.crsfPendingBytes),
+  crsfBudgetHits: measuredChartDefinition("CRSF RX budget hits", (sample) => sample.diagnostics?.crsfBudgetHits),
 };
 const footLabels = ["FL", "FR", "BL", "BR"];
 footLabels.forEach((label, leg) => {
@@ -6195,6 +6370,60 @@ function moveLiveDataGraph(graph, offset) {
   renderLiveDataDashboardStructure();
 }
 
+function attachLiveDataGraphDrag(handle, graph) {
+  let drag = null;
+  const finish = (event) => {
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    const { target, ghost, moved } = drag;
+    target?.classList.remove("is-drop-target");
+    graph.element.card.classList.remove("is-dragging");
+    ghost.remove();
+    drag = null;
+    if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
+    if (event.type !== "pointerup" || !moved || !target) return;
+    const sourceIndex = liveDataGraphs.indexOf(graph);
+    const targetIndex = liveDataGraphs.findIndex((item) => item.element?.card === target);
+    if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return;
+    liveDataGraphs.splice(sourceIndex, 1);
+    liveDataGraphs.splice(targetIndex, 0, graph);
+    renderLiveDataDashboardStructure();
+  };
+  handle.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || drag) return;
+    event.preventDefault();
+    const ghost = document.createElement("div");
+    ghost.className = "live-data-graph-drag-ghost";
+    ghost.textContent = liveChartDefinitions[graph.signal]?.title || graph.signal;
+    ghost.hidden = true;
+    document.body.append(ghost);
+    drag = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, ghost, target: null, moved: false };
+    handle.setPointerCapture(event.pointerId);
+  });
+  handle.addEventListener("pointermove", (event) => {
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 5) return;
+    drag.moved = true;
+    graph.element.card.classList.add("is-dragging");
+    drag.ghost.hidden = false;
+    drag.ghost.style.transform = `translate(${event.clientX + 12}px, ${event.clientY + 12}px)`;
+    const hovered = document.elementFromPoint(event.clientX, event.clientY)?.closest(".live-data-graph");
+    const target = hovered === graph.element.card ? null : hovered;
+    if (target === drag.target) return;
+    drag.target?.classList.remove("is-drop-target");
+    drag.target = target;
+    drag.target?.classList.add("is-drop-target");
+  });
+  handle.addEventListener("pointerup", finish);
+  handle.addEventListener("pointercancel", finish);
+  handle.addEventListener("keydown", (event) => {
+    const offset = ["ArrowUp", "ArrowLeft"].includes(event.key) ? -1
+      : ["ArrowDown", "ArrowRight"].includes(event.key) ? 1 : 0;
+    if (!offset) return;
+    event.preventDefault();
+    moveLiveDataGraph(graph, offset);
+  });
+}
+
 function applyLiveDataGraphZoom(graph, startX, endX, canvas) {
   const range = canvas._livePlotRange;
   if (!range || Math.abs(endX - startX) < 8) return;
@@ -6212,6 +6441,12 @@ function createLiveDataGraphElement(graph) {
   const card = document.createElement("article");
   card.className = "live-data-graph";
   const header = document.createElement("header");
+  const grip = document.createElement("button");
+  grip.type = "button";
+  grip.className = "live-data-graph-grip";
+  grip.textContent = "⠿";
+  grip.title = "Drag to reorder graph; arrow keys also work";
+  grip.setAttribute("aria-label", "Drag to reorder graph; use arrow keys for keyboard reordering");
   const select = document.createElement("select");
   select.setAttribute("aria-label", "Graph signal");
   select.append(...liveDataGraphOptions());
@@ -6233,8 +6468,6 @@ function createLiveDataGraphElement(graph) {
   const button = (label, title, handler) => {
     const element = document.createElement("button"); element.type = "button"; element.textContent = label; element.title = title; element.addEventListener("click", handler); return element;
   };
-  const earlier = button("←", "Move graph earlier", () => moveLiveDataGraph(graph, -1));
-  const later = button("→", "Move graph later", () => moveLiveDataGraph(graph, 1));
   const remove = button("×", "Remove this graph", () => {
     if (liveDataGraphs.length <= 1) return;
     const index = liveDataGraphs.indexOf(graph);
@@ -6248,8 +6481,8 @@ function createLiveDataGraphElement(graph) {
   back.dataset.graphZoomBack = "";
   const reset = button("RESET", "Show the full selected window", () => { graph.zoom = null; graph.zoomHistory = []; renderLiveDataDashboardCharts(); });
   reset.dataset.graphZoomReset = "";
-  controls.append(windowSelect, earlier, later, back, reset, remove);
-  header.append(select, controls);
+  controls.append(windowSelect, back, reset, remove);
+  header.append(grip, select, controls);
   const wrap = document.createElement("div");
   wrap.className = "live-data-graph-plot";
   const canvas = document.createElement("canvas");
@@ -6285,6 +6518,7 @@ function createLiveDataGraphElement(graph) {
   wrap.append(canvas, legend, empty, brush);
   card.append(header, wrap);
   graph.element = { card, select, windowSelect, back, reset, remove, canvas, empty, legend };
+  attachLiveDataGraphDrag(grip, graph);
   return card;
 }
 
@@ -6321,7 +6555,7 @@ function drawLiveSeries(context, points, color, width, height, xAt, yAt) {
   points.forEach((point, index) => {
     const x = xAt(point.sample.elapsedMs);
     const y = yAt(point.value);
-    if (index === 0) context.moveTo(x, y);
+    if (index === 0 || point.sample.elapsedMs - points[index - 1].sample.elapsedMs > 500) context.moveTo(x, y);
     else context.lineTo(x, y);
   });
   context.strokeStyle = color;
@@ -6679,7 +6913,7 @@ function renderLiveDataTable() {
     const row = body.insertRow();
     [
       `${(sample.elapsedMs / 1_000).toFixed(2)} s`,
-      `${Math.round(sample.alignmentMs)} ms`,
+      Number.isFinite(sample.alignmentMs) ? `${Math.round(sample.alignmentMs)} ms` : "--",
       formatLiveAngle(sample.expectedBody.pitchDeg),
       formatLiveAngle(sample.measuredBody.pitchDeg),
       formatLiveAngle(sample.bodyError.pitchDeg),
@@ -6797,7 +7031,7 @@ function renderLiveCalibrationUi() {
   document.querySelector("#live-calibration-neutral-output").textContent =
     `${(definition.neutralServoDeg + joint.offsetDeg).toFixed(2)}°`;
   document.querySelector("#live-calibration-preview-caption").textContent =
-    `${definition.label.toUpperCase()} / ${formatCalibrationDegrees(joint.offsetDeg + liveCalibrationState.jogOffsetDeg)}`;
+    `${definition.label.toUpperCase()} / PHYSICAL TRIM ${formatCalibrationDegrees(joint.offsetDeg)} / TEST JOG ${formatCalibrationDegrees(liveCalibrationState.jogOffsetDeg)}`;
   document.querySelector("#live-calibration-offset").value = joint.offsetDeg.toFixed(1);
   document.querySelector("#live-calibration-trim-value").textContent =
     formatCalibrationDegrees(joint.offsetDeg);
@@ -6830,6 +7064,10 @@ function renderLiveCalibrationUi() {
     ? "MAP NEEDS ATTENTION"
     : "12 UNIQUE CHANNELS";
   document.querySelector("#live-calibration-edit-wiring").disabled = Boolean(calibrationPendingRequestId);
+  document.querySelector("#live-calibration-export-robot").disabled = Boolean(calibrationPendingRequestId) ||
+    !liveConnectionIsReady(liveConnectionState) || liveConnectionState.robotState !== "disarmed";
+  document.querySelector("#live-calibration-restore-browser-copy").hidden =
+    !localStorage.getItem(LIVE_CALIBRATION_PRE_SYNC_BACKUP_KEY);
   renderCalibrationJointMap();
   renderCalibrationReview();
 }
@@ -6957,21 +7195,23 @@ function closeCalibrationRestoreConfirmation() {
   if (dialog.open) dialog.close();
 }
 
-function downloadCalibrationJson() {
-  const blob = new Blob([calibrationProfileJson(liveCalibrationState.profile)], {
+function downloadCalibrationJson(profile = liveCalibrationState.profile, source = "browser-draft") {
+  const blob = new Blob([calibrationProfileJson(profile)], {
     type: "application/json;charset=utf-8",
   });
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
-  link.download = `domino-calibration-${new Date().toISOString().slice(0, 10)}.json`;
+  link.download = `domino-calibration-${source}-${new Date().toISOString().slice(0, 10)}.json`;
   link.click();
   setTimeout(() => URL.revokeObjectURL(link.href), 0);
 }
 
-function sendCalibrationCommand(action) {
+function sendCalibrationCommand(action, purpose = "manual") {
   const connection = liveConnectionEnvelope(liveConnectionState);
   if (socket?.readyState !== WebSocket.OPEN || !connection || !liveConnectionIsReady(liveConnectionState) ||
-      (liveBatteryControlLocked && action !== "exit")) return false;
+      (liveBatteryControlLocked && action !== "exit" && action !== "request-profile")) return false;
+  if (["enter", "save-profile"].includes(action) &&
+      !robotCalibrationReady(liveCalibrationState, connection.sessionId)) return false;
   const requestId = crypto.randomUUID();
   const command = createCalibrationBenchCommand(
     liveCalibrationState,
@@ -6982,6 +7222,8 @@ function sendCalibrationCommand(action) {
   Object.assign(command, connection);
   calibrationPendingRequestId = requestId;
   calibrationPendingAction = action;
+  calibrationPendingPurpose = purpose;
+  calibrationPendingProfile = action === "save-profile" ? command.profile : null;
   if (action === "enter") {
     calibrationBenchDesired = true;
     calibrationRecoverySessionId = connection.sessionId;
@@ -6994,14 +7236,39 @@ function sendCalibrationCommand(action) {
     if (calibrationPendingRequestId !== requestId) return;
     calibrationPendingRequestId = "";
     calibrationPendingAction = "";
-    liveCalibrationState.benchModeAcknowledged = false;
-    calibrationBenchFeedback =
-      "No reply after 3 seconds. The robot remains locked; check the USB link, then press Try again.";
-    document.querySelector("#live-calibration-review-status").textContent =
-      "The robot did not acknowledge the calibration request. Physical movement remains locked.";
+    calibrationPendingPurpose = "";
+    calibrationPendingProfile = null;
+    if (action === "request-profile") calibrationSyncRetryAt = Date.now() + 5_000;
+    if (action !== "request-profile") {
+      liveCalibrationState.benchModeAcknowledged = false;
+      calibrationBenchFeedback =
+        "No reply after 3 seconds. The robot remains locked; check the USB link, then press Try again.";
+    }
+    document.querySelector("#live-calibration-review-status").textContent = action === "request-profile"
+      ? "The robot did not return its active profile. The browser draft was not exported as robot data."
+      : "The robot did not acknowledge the calibration request. Physical movement remains locked.";
     updateLiveComparisonUi();
   }, requestTimeoutMs);
   return true;
+}
+
+function serviceCalibrationProfileSync() {
+  const connection = liveConnectionEnvelope(liveConnectionState);
+  if ((connection?.sessionId || "") !== calibrationObservedSessionId) {
+    calibrationObservedSessionId = connection?.sessionId || "";
+    calibrationSyncRetryAt = 0;
+    calibrationVerifyProfile = null;
+    forgetRobotCalibrationProfile(liveCalibrationState);
+  }
+  const adapter = liveConnectionState.adapters[liveConnectionState.selectedAdapterId];
+  if (!connection || !liveConnectionIsReady(liveConnectionState) ||
+      liveConnectionState.robotState !== "disarmed" ||
+      adapter?.capabilities?.calibration !== true ||
+      robotCalibrationReady(liveCalibrationState, connection.sessionId) ||
+      calibrationPendingRequestId || Date.now() < calibrationSyncRetryAt) return;
+  if (sendCalibrationCommand("request-profile", calibrationVerifyProfile ? "verify" : "sync")) {
+    calibrationSyncRetryAt = Date.now() + 5_000;
+  }
 }
 
 function serviceCalibrationBenchRecovery() {
@@ -7034,7 +7301,45 @@ function acceptCalibrationAcknowledgement(message) {
     message.action !== calibrationPendingAction
   ) return false;
   const accepted = message.accepted === true;
-  if (message.action === "enter") {
+  const purpose = calibrationPendingPurpose;
+  const pendingProfile = calibrationPendingProfile;
+  if (message.action === "request-profile") {
+    const status = document.querySelector("#live-calibration-review-status");
+    if (accepted && message.profile) {
+      try {
+        const activeProfile = parseCalibrationProfileJson(JSON.stringify(message.profile));
+        if (purpose === "export") downloadCalibrationJson(activeProfile, "robot-active");
+        if (purpose === "verify" && calibrationVerifyProfile &&
+            calibrationProfileJson(activeProfile) !== calibrationProfileJson(calibrationVerifyProfile)) {
+          status.textContent = "Robot readback differs from the saved calibration. Inspect the profile before moving the robot.";
+          liveCalibrationState.dirty = true;
+          forgetRobotCalibrationProfile(liveCalibrationState);
+          calibrationSyncRetryAt = Number.POSITIVE_INFINITY;
+        } else {
+          const before = calibrationProfileJson(liveCalibrationState.profile);
+          const previousSavedAt = liveCalibrationState.profile.savedAt;
+          const result = acceptRobotCalibrationProfile(
+            liveCalibrationState, activeProfile, connection.sessionId,
+          );
+          if (result.adopted) {
+            const activeJson = calibrationProfileJson(liveCalibrationState.profile);
+            if (before !== activeJson && previousSavedAt !== null) {
+              localStorage.setItem(LIVE_CALIBRATION_PRE_SYNC_BACKUP_KEY, before);
+            }
+            localStorage.setItem(LIVE_CALIBRATION_STORAGE_KEY, activeJson);
+          }
+          status.textContent = result.adopted
+            ? "Robot calibration loaded. Saved servo centers and directions are active in Studio."
+            : "Robot calibration read. Your unsaved browser edits were kept for review.";
+        }
+        calibrationVerifyProfile = null;
+      } catch {
+        status.textContent = "The robot returned an invalid calibration profile. Saving remains locked.";
+      }
+    } else {
+      status.textContent = `Robot profile readback failed${message.reason ? `: ${message.reason}` : "."}`;
+    }
+  } else if (message.action === "enter") {
     liveCalibrationState.benchModeAcknowledged = Boolean(
       accepted &&
       message.benchMode === true &&
@@ -7052,18 +7357,27 @@ function acceptCalibrationAcknowledgement(message) {
       : `Robot refused to close bench mode${message.reason ? `: ${message.reason}` : "."}`;
   } else if (message.action === "save-profile") {
     const status = document.querySelector("#live-calibration-review-status");
-    if (accepted && message.persisted === true) {
+    if (accepted && message.persisted === true && pendingProfile) {
       liveCalibrationState.benchModeAcknowledged = false;
       calibrationBenchDesired = false;
-      liveCalibrationState.profile.savedAt = Date.now();
+      liveCalibrationState.profile = createLiveCalibrationProfile(pendingProfile);
       liveCalibrationState.dirty = false;
+      calibrationVerifyProfile = pendingProfile;
+      forgetRobotCalibrationProfile(liveCalibrationState);
+      calibrationSyncRetryAt = 0;
+    } else {
+      liveCalibrationState.dirty = true;
+      forgetRobotCalibrationProfile(liveCalibrationState);
+      calibrationSyncRetryAt = 0;
     }
     status.textContent = accepted && message.persisted === true
-      ? "Robot confirmed that the calibration profile was written to persistent storage."
+      ? "Robot stored the calibration. Reading it back to verify the saved centers and directions..."
       : `Robot rejected calibration save${message.reason ? `: ${message.reason}` : "."}`;
   }
   calibrationPendingRequestId = "";
   calibrationPendingAction = "";
+  calibrationPendingPurpose = "";
+  calibrationPendingProfile = null;
   clearTimeout(calibrationRequestTimeout);
   calibrationRequestTimeout = null;
   renderLiveCalibrationUi();
@@ -7082,6 +7396,16 @@ function formatDiagnosticUptime(value) {
     Math.floor(seconds / 60) % 60,
     seconds % 60,
   ].map((part) => String(part).padStart(2, "0")).join(":");
+}
+
+function formatResetReason(value) {
+  if (!Number.isFinite(value)) return "--";
+  const names = { 1: "POWER ON", 3: "SOFTWARE", 4: "PANIC", 5: "INT WATCHDOG", 6: "TASK WATCHDOG", 7: "WATCHDOG", 9: "BROWNOUT" };
+  return `${names[value] || "OTHER"} (${value})`;
+}
+
+function formatStageMs(value) {
+  return Number.isFinite(value) ? `${(value / 1000).toFixed(1)} ms` : "-- ms";
 }
 
 function formatLiveGaitValue(entry, value) {
@@ -7482,6 +7806,32 @@ function updateLiveDiagnosticsUi(snapshot, liveSnapshot, controllerSnapshot) {
   document.querySelector("#live-diagnostics-sequence").textContent = snapshot.lastPacket
     ? String(snapshot.lastPacket.sequence)
     : "--";
+  const trace = snapshot.telemetry;
+  document.querySelector("#live-diagnostics-boot-id").textContent = Number.isFinite(trace?.bootId) ? String(trace.bootId) : "--";
+  document.querySelector("#live-diagnostics-reset-reason").textContent = formatResetReason(trace?.resetReason);
+  document.querySelector("#live-diagnostics-prior-stage").textContent = Number.isFinite(trace?.priorResetStage)
+    ? loopStageName(trace.priorResetStage).toUpperCase() : "--";
+  document.querySelector("#live-diagnostics-max-gap").textContent = Number.isFinite(trace?.maximumLoopGapMs)
+    ? `${trace.maximumLoopGapMs} ms` : "-- ms";
+  document.querySelector("#live-diagnostics-slow-stage").textContent = Number.isFinite(trace?.lastSlowStage)
+    ? `${loopStageName(trace.lastSlowStage).toUpperCase()} / ${formatStageMs(trace.lastSlowStageUs)}` : "--";
+  document.querySelector("#live-diagnostics-max-crsf").textContent = formatStageMs(trace?.maxCrsfStageUs);
+  document.querySelector("#live-diagnostics-max-imu").textContent = formatStageMs(trace?.maxImuStageUs);
+  document.querySelector("#live-diagnostics-max-live").textContent = formatStageMs(trace?.maxLiveStageUs);
+  document.querySelector("#live-diagnostics-max-control").textContent = formatStageMs(trace?.maxControlStageUs);
+  document.querySelector("#live-diagnostics-max-servo").textContent = formatStageMs(trace?.maxServoWriteUs);
+  document.querySelector("#live-diagnostics-imu-errors").textContent = Number.isFinite(trace?.imuI2cErrors)
+    ? String(trace.imuI2cErrors) : "--";
+  document.querySelector("#live-diagnostics-imu-age").textContent =
+    `${Number.isFinite(trace?.imuSampleAgeMs) ? trace.imuSampleAgeMs : "--"} ms / ${Number.isFinite(trace?.imuConsecutiveErrors) ? trace.imuConsecutiveErrors : "--"}`;
+  document.querySelector("#live-diagnostics-crsf-errors").textContent = Number.isFinite(trace?.crsfCrcErrors) &&
+      Number.isFinite(trace?.crsfUartOverflows) ? `${trace.crsfCrcErrors} / ${trace.crsfUartOverflows}` : "-- / --";
+  document.querySelector("#live-diagnostics-crsf-backlog").textContent =
+    `${Number.isFinite(trace?.crsfLastPassBytes) ? trace.crsfLastPassBytes : "--"} / ${Number.isFinite(trace?.crsfPendingBytes) ? trace.crsfPendingBytes : "--"} B`;
+  document.querySelector("#live-diagnostics-crsf-budget").textContent =
+    Number.isFinite(trace?.crsfBudgetHits) ? String(trace.crsfBudgetHits) : "--";
+  document.querySelector("#live-diagnostics-usb-skips").textContent = Number.isFinite(trace?.telemetryTxSkipped)
+    ? String(trace.telemetryTxSkipped) : "--";
   renderDiagnosticEvents(snapshot);
   document.querySelector("#live-diagnostics-last-packet").textContent = snapshot.lastPacket
     ? JSON.stringify(snapshot.lastPacket, null, 2)
@@ -7510,7 +7860,7 @@ function updateLiveSessionUi(snapshot) {
       : "START RECORDING";
   ["#live-recording-toggle", "#live-data-recording-toggle"].forEach((selector) => {
     const recordingButton = document.querySelector(selector);
-    recordingButton.disabled = !recording && !snapshot.paired;
+    recordingButton.disabled = !recording && !snapshot.expectedFresh;
     recordingButton.textContent = recordingLabel;
     recordingButton.dataset.state = recording ? "recording" : "idle";
   });
@@ -7518,38 +7868,38 @@ function updateLiveSessionUi(snapshot) {
     document.querySelector(selector).disabled = recording || summary.sampleCount === 0;
   });
   document.querySelector("#live-session-state").textContent = recording
-    ? snapshot.paired
+    ? snapshot.expectedFresh
       ? `RECORDING / ${summary.sampleCount} / ${formatSessionDuration(summary.durationMs)}`
       : `RECORDING / SIGNAL LOST / ${summary.sampleCount}`
     : summary.sampleCount > 0
       ? `STOPPED / ${summary.sampleCount} / ${formatSessionDuration(summary.durationMs)}`
-      : snapshot.paired
+      : snapshot.expectedFresh
         ? "READY TO RECORD"
         : "NO ACTIVE SESSION";
   document.querySelector("#live-data-recorder-state").textContent = recording
-    ? snapshot.paired
+    ? snapshot.expectedFresh
       ? `RECORDING / ${formatSessionDuration(summary.durationMs)}`
       : "RECORDING / WAITING FOR SIGNAL"
     : summary.sampleCount > 0
       ? `STOPPED / ${formatSessionDuration(summary.durationMs)}`
-      : snapshot.paired
+      : snapshot.expectedFresh
         ? "READY TO RECORD"
-        : "WAITING FOR BOTH STREAMS";
+        : "WAITING FOR ROBOT TELEMETRY";
   document.querySelector("#live-data-sample-count").textContent = summary.sampleCount > 0
     ? `${summary.sampleCount.toLocaleString()} SAMPLES`
-    : snapshot.paired
+    : snapshot.expectedFresh
       ? "LIVE PREVIEW"
       : "0 SAMPLES";
-  document.querySelector("#live-chart-empty").textContent = recording && !snapshot.paired
-    ? "Telemetry interrupted. Recording will resume when both streams return."
+  document.querySelector("#live-chart-empty").textContent = recording && !snapshot.expectedFresh
+    ? "Telemetry interrupted. Recording will resume when robot data returns."
     : summary.sampleCount > 0
       ? "Waiting for another synchronized sample."
       : "Connect the PC link, then start recording.";
   liveDataGraphs.forEach((graph) => {
     if (!graph.element) return;
-    graph.element.empty.textContent = recording && !snapshot.paired
+    graph.element.empty.textContent = recording && !snapshot.expectedFresh
       ? "Telemetry interrupted. Recording will resume automatically."
-      : snapshot.paired ? "Collecting live telemetry..." : "Pair the robot to begin the live preview.";
+      : snapshot.expectedFresh ? "Collecting live telemetry..." : "Pair the robot to begin the live preview.";
   });
   document.querySelector("#live-data-clear").disabled = recording || (summary.sampleCount === 0 && livePreviewState.samples.length === 0);
   renderLiveDataTable();
@@ -7567,6 +7917,9 @@ function updateLiveComparisonUi() {
   const sessionConnected = liveConnectionIsReady(liveConnectionState);
   const connectionAdapter = liveConnectionState.adapters[liveConnectionState.selectedAdapterId];
   const calibrationSupported = sessionConnected && connectionAdapter?.capabilities.calibration === true;
+  const calibrationProfileReady = robotCalibrationReady(
+    liveCalibrationState, liveConnectionState.sessionId,
+  );
   const engineeringConnected = sessionConnected && snapshot.lastRobotPacketAgeMs !== null &&
     snapshot.lastRobotPacketAgeMs <= 1_000;
   const engineeringOutput = document.querySelector("#live-engineering-link");
@@ -7579,16 +7932,18 @@ function updateLiveComparisonUi() {
   calibrationLinkOutput.textContent = liveCalibrationState.benchModeAcknowledged
     ? "BENCH MODE READY"
     : engineeringConnected
-      ? "LINKED / BENCH LOCKED"
+      ? calibrationProfileReady ? "ROBOT PROFILE LOADED" : "READING ROBOT PROFILE"
       : "ROBOT NOT READY";
   calibrationLinkOutput.dataset.state = liveCalibrationState.benchModeAcknowledged ? "online" : "offline";
   if (liveViewState.selected === LIVE_VIEW_GAITS) renderLiveGaitUi();
   document.querySelector("#live-calibration-apply-robot").disabled =
-    !engineeringConnected || !calibrationSupported || !liveCalibrationState.benchModeAcknowledged || Boolean(calibrationPendingRequestId);
+    !engineeringConnected || !calibrationSupported || !calibrationProfileReady ||
+    !liveCalibrationState.benchModeAcknowledged || Boolean(calibrationPendingRequestId);
   const benchRequest = document.querySelector("#live-calibration-request-bench");
   benchRequest.disabled =
     !engineeringConnected ||
     !calibrationSupported ||
+    !calibrationProfileReady ||
     !liveCalibrationState.safetyConfirmed ||
     liveCalibrationState.benchModeAcknowledged ||
     Boolean(calibrationPendingRequestId);
@@ -7675,8 +8030,6 @@ function updateLiveComparisonUi() {
   const safetyBadge = document.querySelector("#real-safety-status");
   safetyBadge.textContent = robotState.toUpperCase();
   safetyBadge.dataset.state = robotState === "disarmed" || robotState === "disconnected" ? "safe" : "offline";
-  renderLiveSafetyUi();
-
   setLiveStreamState("#live-expected-state", snapshot.expectedFresh);
   setLiveStreamState("#live-measured-state", snapshot.measuredFresh);
   document.querySelector("#live-time-alignment").textContent = snapshot.alignmentMs === null
@@ -7722,26 +8075,32 @@ function updateLiveComparisonUi() {
   const measuredVoltage = Number.isFinite(snapshot.power?.voltageV);
   const measuredCurrent = Number.isFinite(snapshot.power?.currentA);
   const measuredPower = Number.isFinite(snapshot.power?.powerW);
-  const battery = deriveLiveBatteryState(snapshot.power?.voltageV);
+  const battery = deriveLiveBatteryState(snapshot.power?.voltageV, undefined, {
+    armed: liveSafetyState.robotState === "armed",
+  });
   const batteryAlertActive = applicationState.workspace === WORKSPACE_REAL_ROBOT &&
     liveConnectionIsReady(liveConnectionState) && measuredVoltage;
   updateLiveBatteryAlert(
     batteryAlertActive ? battery : null,
     batteryAlertActive ? snapshot.power.voltageV : null,
   );
+  renderLiveSafetyUi();
   if (snapshot.power && measuredVoltage) {
+    snapshot.power.packDetected = battery.packDetected;
     snapshot.power.averageCellVoltageV = battery.averageCellVoltageV;
     snapshot.power.estimatedChargePercent = battery.estimatedChargePercent;
     snapshot.power.cellCount = battery.cellCount;
   }
-  document.querySelector("#live-voltage").textContent = measuredVoltage
+  document.querySelector("#live-voltage").textContent = battery.packDetected
     ? `${snapshot.power.voltageV.toFixed(2)} V`
-    : "--.- V";
+    : measuredVoltage ? "NO PACK" : "--.- V";
   document.querySelector("#live-data-voltage").textContent = measuredVoltage
     ? `${snapshot.power.voltageV.toFixed(2)} V`
     : "N/A";
   document.querySelector("#live-data-voltage").title = measuredVoltage
-    ? "Measured battery voltage from the Domino PCB voltage-divider sensor"
+    ? battery.packDetected
+      ? "Measured battery voltage from the Domino PCB voltage-divider sensor"
+      : "Raw PCB sensor voltage is below the detectable 4S pack range; USB power can leave a residual reading. No battery charge is inferred."
     : "No fresh PCB voltage-sensor sample is available.";
   document.querySelector("#live-cell-voltage").textContent = Number.isFinite(battery.averageCellVoltageV)
     ? `${battery.averageCellVoltageV.toFixed(3)} V`
@@ -7751,7 +8110,7 @@ function updateLiveComparisonUi() {
     : "N/A";
   document.querySelector("#live-data-cell-voltage").title = Number.isFinite(battery.averageCellVoltageV)
     ? "Average cell voltage calculated from total pack voltage divided by four; individual cells are not measured"
-    : "No fresh pack-voltage sample is available.";
+    : measuredVoltage ? "No detectable 4S pack voltage; individual cells are not measured." : "No fresh pack-voltage sample is available.";
   const chargeText = Number.isFinite(battery.estimatedChargePercent)
     ? `${Math.round(battery.estimatedChargePercent)}%`
     : "--%";
@@ -7761,18 +8120,20 @@ function updateLiveComparisonUi() {
     : "N/A";
   const chargeTitle = Number.isFinite(battery.estimatedChargePercent)
     ? "Estimated 4S LiPo state of charge from average cell voltage; servo load, temperature and pack age affect accuracy"
-    : "No fresh pack-voltage sample is available.";
+    : measuredVoltage ? "No detectable 4S pack voltage; charge cannot be estimated from this sensor reading." : "No fresh pack-voltage sample is available.";
   document.querySelector("#live-charge-percent").title = chargeTitle;
   document.querySelector("#live-data-charge-percent").title = chargeTitle;
   const headerBattery = document.querySelector("#real-battery-status");
-  headerBattery.textContent = measuredVoltage
+  headerBattery.textContent = battery.packDetected
     ? `BAT ${snapshot.power.voltageV.toFixed(1)} V / ${Number.isFinite(battery.estimatedChargePercent) ? `${Math.round(battery.estimatedChargePercent)}%` : "--%"}`
-    : "BAT --.- V";
-  headerBattery.dataset.state = !measuredVoltage
+    : measuredVoltage ? "BAT NOT DETECTED" : "BAT --.- V";
+  headerBattery.dataset.state = !battery.packDetected
     ? "unavailable"
     : snapshot.power.voltageV < 14.0 ? "warning" : "ok";
-  headerBattery.title = !measuredVoltage
-    ? "No fresh measured battery telemetry"
+  headerBattery.title = !battery.packDetected
+    ? measuredVoltage
+      ? `Raw voltage sensor: ${snapshot.power.voltageV.toFixed(2)} V. Below the detectable 4S pack range; USB power can cause a residual reading.`
+      : "No fresh measured battery telemetry"
     : snapshot.power.voltageV < 14.0
       ? `Measured battery voltage ${snapshot.power.voltageV.toFixed(2)} V is below the 14.0 V warning threshold`
       : `Measured robot battery voltage ${snapshot.power.voltageV.toFixed(2)} V; average cell ${battery.averageCellVoltageV.toFixed(3)} V; estimated charge ${Math.round(battery.estimatedChargePercent)}%`;
@@ -7819,7 +8180,7 @@ function toggleLiveRecording() {
         renderLiveSessionArchive();
       });
     }
-  } else if (snapshot.paired) {
+  } else if (snapshot.expectedFresh) {
     startLiveSession(liveSessionState);
   }
   updateLiveComparisonUi();
@@ -8584,7 +8945,14 @@ document.querySelector("#live-calibration-save-browser").addEventListener("click
     "Browser copy saved. Export JSON as the portable backup for this physical robot.";
   renderLiveCalibrationUi();
 });
-document.querySelector("#live-calibration-export").addEventListener("click", downloadCalibrationJson);
+document.querySelector("#live-calibration-export").addEventListener("click", () => downloadCalibrationJson());
+document.querySelector("#live-calibration-export-robot").addEventListener("click", () => {
+  const status = document.querySelector("#live-calibration-review-status");
+  status.textContent = sendCalibrationCommand("request-profile", "export")
+    ? "Reading the active profile from the robot..."
+    : "Connect and disarm the robot before exporting its active profile.";
+  renderLiveCalibrationUi();
+});
 document.querySelector("#live-calibration-apply-robot").addEventListener("click", () => {
   if (!liveCalibrationState.benchModeAcknowledged) return;
   openRobotCalibrationConfirmation();
@@ -8611,6 +8979,21 @@ document.querySelector("#live-calibration-robot-confirm-send").addEventListener(
 });
 document.querySelector("#live-calibration-import").addEventListener("click", () => {
   document.querySelector("#live-calibration-import-file").click();
+});
+document.querySelector("#live-calibration-restore-browser-copy").addEventListener("click", () => {
+  const stored = localStorage.getItem(LIVE_CALIBRATION_PRE_SYNC_BACKUP_KEY);
+  if (!stored) return;
+  try {
+    liveCalibrationState.profile = parseCalibrationProfileJson(stored);
+    liveCalibrationState.dirty = true;
+    liveCalibrationState.jogOffsetDeg = 0;
+    document.querySelector("#live-calibration-review-status").textContent =
+      "Previous browser copy loaded for review. The robot calibration has not changed.";
+  } catch {
+    document.querySelector("#live-calibration-review-status").textContent =
+      "The previous browser copy is invalid. The robot calibration has not changed.";
+  }
+  renderLiveCalibrationUi();
 });
 document.querySelector("#live-calibration-import-file").addEventListener("change", async (event) => {
   const [file] = event.target.files || [];
@@ -8991,7 +9374,7 @@ function resetCameraView() {
   cameraTargetOffset.set(0, 0, 0);
   robotCameraAnchor.set(
     robotWorld.position.x,
-    floatModeEnabled ? robotWorld.position.y : 0.32,
+    cameraAnchorY(),
     robotWorld.position.z,
   );
   controls.target.copy(robotCameraAnchor);
@@ -9677,30 +10060,34 @@ function updateInput() {
   if (demoMode) {
     boxerHeartbeat = { connected: false, name: "", updatedAt: 0 };
     const tiltDiagnostic = demoSelection === "tilt";
-    const rollDiagnostic = demoSelection === "roll" || demoSelection === "roll-negative";
+    const rollDiagnostic = demoSelection === "roll" || demoSelection === "roll-negative" || demoSelection === "roll-fault";
     const gaitDiagnostic = demoSelection === "gait" || demoSelection === "gait-reverse";
     const diagnosticModeReady = gaitDiagnostic
       ? firmwareState?.mode === "GAIT" && firmwareState?.motion_input_armed !== false
-      : tiltDiagnostic || rollDiagnostic
+      : tiltDiagnostic || rollDiagnostic || cadResponsePreview
         ? firmwareState?.mode === "TILT" && firmwareState?.motion_input_armed !== false
         : true;
     document.querySelector("#gamepad-name").textContent =
-      gaitDiagnostic ? "GAIT DIAGNOSTIC" :
+      cadResponsePreview ? "CAD DRIVE RESPONSE PREVIEW" :
+        gaitDiagnostic ? "GAIT DIAGNOSTIC" :
         rollDiagnostic ? "ROLL DIAGNOSTIC" :
           tiltDiagnostic ? "TILT DIAGNOSTIC" : "AUTOMATIC DEMO";
     standRequested = true;
-    tiltRequested = tiltDiagnostic || rollDiagnostic;
+    tiltRequested = tiltDiagnostic || rollDiagnostic || cadResponsePreview;
     walkModeRequested = gaitDiagnostic ? 2 : 0;
     forwardInput = diagnosticModeReady && gaitDiagnostic
       ? demoSelection === "gait-reverse" ? -0.55 : 0.55
-      : diagnosticModeReady && tiltDiagnostic ? -0.25 : 0;
-    turnInput = diagnosticModeReady && tiltDiagnostic ? 0.30 : 0;
+      : diagnosticModeReady && demoSelection.startsWith("pitch-back") ? -1
+        : diagnosticModeReady && tiltDiagnostic ? -0.25 : 0;
+    turnInput = diagnosticModeReady && demoSelection.startsWith("yaw-left") ? -1
+      : diagnosticModeReady && tiltDiagnostic ? 0.30 : 0;
     rollInput = diagnosticModeReady && rollDiagnostic
       ? demoSelection === "roll-negative" ? -1 : 1
       : diagnosticModeReady && tiltDiagnostic ? 0.35 : 0;
     clientInputSnapshot = {
       source: "diagnostic",
-      name: gaitDiagnostic ? "GAIT DIAGNOSTIC" :
+      name: cadResponsePreview ? "CAD DRIVE RESPONSE PREVIEW" :
+        gaitDiagnostic ? "GAIT DIAGNOSTIC" :
         rollDiagnostic ? "ROLL DIAGNOSTIC" :
           tiltDiagnostic ? "TILT DIAGNOSTIC" : "STAND DIAGNOSTIC",
       axes: [],
@@ -9929,7 +10316,8 @@ function updateRobot(delta) {
     }
   });
 
-  applyServoAnglesToRuntimes(linkageRuntimes, visualServoAngles);
+  applyServoAnglesToRuntimes(linkageRuntimes, visualServoAngles, crossReversedResponsePreview);
+  canvas.dataset.driveResponsePreview = crossReversedResponsePreview ? "cross-reversed" : "ideal";
 
   if (telemetryDatasetDue) {
     canvas.dataset.robotX = robotWorld.position.x.toFixed(4);
@@ -9937,7 +10325,7 @@ function updateRobot(delta) {
   }
 }
 
-function applyServoAnglesToRuntimes(runtimes, servoAngles) {
+function applyServoAnglesToRuntimes(runtimes, servoAngles, crossReversedResponse = false) {
   const servoReference = neutralServoAngles;
 
   runtimes.forEach((runtime) => {
@@ -9952,7 +10340,14 @@ function applyServoAnglesToRuntimes(runtimes, servoAngles) {
       (servoAngles[legChannels.lower] - servoReference[legChannels.lower]) /
       directions.lower;
 
-    updateLinkage(runtime, shoulderDelta, upperDelta, lowerDelta);
+    // Visualize the proposed physical fault around each leg's neutral pose.
+    // The SIL firmware itself still generates ordinary, uncompensated commands.
+    updateLinkage(
+      runtime,
+      shoulderDelta,
+      crossReversedResponse ? -lowerDelta : upperDelta,
+      crossReversedResponse ? -upperDelta : lowerDelta,
+    );
   });
 }
 
@@ -9972,12 +10367,7 @@ function applyLiveBodyPose(group, body) {
   const rollDeg = Number.isFinite(body.rollDeg) ? body.rollDeg : 0;
   const pitchDeg = Number.isFinite(body.pitchDeg) ? body.pitchDeg : 0;
   const yawDeg = Number.isFinite(body.yawDeg) ? body.yawDeg : 0;
-  group.quaternion.setFromEuler(new THREE.Euler(
-    THREE.MathUtils.degToRad(rollDeg),
-    THREE.MathUtils.degToRad(yawDeg),
-    THREE.MathUtils.degToRad(-pitchDeg),
-    "YXZ",
-  ));
+  bodyPoseQuaternion(rollDeg, pitchDeg, yawDeg, group.quaternion);
 }
 
 function groundLivePreviewFromFeet(group = robotWorld, runtimes = linkageRuntimes) {
@@ -10000,13 +10390,10 @@ function groundLivePreviewFromFeet(group = robotWorld, runtimes = linkageRuntime
 
 function updateLiveTwinPose(delta) {
   const snapshot = liveComparisonSnapshot(liveTelemetryState);
+  const expectedFrame = liveCommandDisplayFrame(snapshot.expected);
   if (liveViewState.selected === LIVE_VIEW_SENSORS && linkageRuntimesReady()) {
-    if (snapshot.expected) {
-      liveExpectedServoAngles = smoothLiveServoAngles(
-        liveExpectedServoAngles,
-        snapshot.expected.servoAngleDeg,
-        delta,
-      );
+    if (expectedFrame) {
+      liveExpectedServoAngles = expectedFrame.servoAngleDeg;
       applyServoAnglesToRuntimes(linkageRuntimes, liveExpectedServoAngles);
     }
     const measuredBody = snapshot.measured?.body;
@@ -10020,7 +10407,7 @@ function updateLiveTwinPose(delta) {
       yawDeg: measuredBody && liveSensorAttitudeFilterState.initialized
         ? liveSensorAttitudeFilterState.yawDeg
         : measuredBody?.yawDeg,
-      heightMm: snapshot.expected?.body?.heightMm,
+      heightMm: expectedFrame?.body.heightMm,
     };
     applyLiveBodyPose(
       robotWorld,
@@ -10028,13 +10415,13 @@ function updateLiveTwinPose(delta) {
     );
     if (!floatModeEnabled) groundLivePreviewFromFeet(robotWorld, linkageRuntimes);
     if (measuredRobotWorld) measuredRobotWorld.visible = false;
-    canvas.dataset.liveExpectedPose = snapshot.expected ? "sensor-skeleton" : "unavailable";
+    canvas.dataset.liveExpectedPose = expectedFrame ? "sensor-skeleton" : "unavailable";
     canvas.dataset.liveMeasuredPose = measuredBody ? "imu-attitude" : "unavailable";
     return;
   }
   if (liveViewState.selected === LIVE_VIEW_CALIBRATION && linkageRuntimesReady()) {
     const previewAngles = liveCalibrationState.previewEnabled
-      ? calibrationPreviewServoAngles(liveCalibrationState)
+      ? calibrationPreviewModelAngles(liveCalibrationState)
       : standServoReference;
     liveExpectedServoAngles = smoothLiveServoAngles(
       liveExpectedServoAngles,
@@ -10108,18 +10495,15 @@ function updateLiveTwinPose(delta) {
     }
     return;
   }
-  canvas.dataset.liveExpectedPose = snapshot.expected ? "fresh" : "unavailable";
-  if (snapshot.expected && linkageRuntimesReady()) {
-    liveExpectedServoAngles = smoothLiveServoAngles(
-      liveExpectedServoAngles,
-      snapshot.expected.servoAngleDeg,
-      delta,
-    );
+  const connectedFrame = liveConnectionIsReady(liveConnectionState) ? expectedFrame : null;
+  canvas.dataset.liveExpectedPose = connectedFrame ? "fresh" : "reference";
+  if (linkageRuntimesReady()) {
+    liveExpectedServoAngles = connectedFrame?.servoAngleDeg || standServoReference;
     applyServoAnglesToRuntimes(linkageRuntimes, liveExpectedServoAngles);
     applyLiveBodyPose(
       robotWorld,
       livePreviewBodyPose(
-        snapshot.expected.body,
+        connectedFrame?.body || { rollDeg: 0, pitchDeg: 0, yawDeg: 0, heightMm: 280 },
         floatModeEnabled,
         floatAnchorPosition.y * 1_000,
       ),
@@ -10129,15 +10513,11 @@ function updateLiveTwinPose(delta) {
 
   if (measuredRobotWorld) {
     measuredRobotWorld.visible = Boolean(
-      snapshot.measured && Array.isArray(snapshot.measured.servoAngleDeg) &&
+      liveConnectionIsReady(liveConnectionState) && snapshot.measured && Array.isArray(snapshot.measured.servoAngleDeg) &&
       measuredLinkageRuntimes.length === linkageRuntimes.length,
     );
     if (measuredRobotWorld.visible) {
-      liveMeasuredServoAngles = smoothLiveServoAngles(
-        liveMeasuredServoAngles,
-        snapshot.measured.servoAngleDeg,
-        delta,
-      );
+      liveMeasuredServoAngles = [...snapshot.measured.servoAngleDeg];
       applyServoAnglesToRuntimes(measuredLinkageRuntimes, liveMeasuredServoAngles);
       measuredRobotWorld.position.x = robotWorld.position.x;
       measuredRobotWorld.position.z = robotWorld.position.z;
@@ -10365,7 +10745,7 @@ function updatePhysics(delta) {
     mesh.quaternion.set(...ball.quaternion);
   });
   if (!telemetryDatasetDue) return;
-  bodyEuler.setFromQuaternion(robotWorld.quaternion, "YXZ");
+  bodyEuler.setFromQuaternion(robotWorld.quaternion, BODY_EULER_ORDER);
   const rollDeg = THREE.MathUtils.radToDeg(bodyEuler.x);
   // Three.js uses world +Z to the viewer's side, while Domino CAD +Y points
   // left, so CAD pitch has the opposite sign of the Three.js Z rotation.
@@ -10587,7 +10967,7 @@ function animate(now) {
     const floatingLivePreview = floatModeEnabled ||
       (liveViewState.selected === LIVE_VIEW_CALIBRATION && calibrationFloatEnabled);
     ground.visible = !floatingLivePreview;
-    grid.visible = !floatingLivePreview;
+    grid.visible = false;
     courseVisuals.visible = false;
     if (!updateCameraSnap(now)) controls.update();
     updateJointCalloutScale();
@@ -10612,7 +10992,7 @@ function animate(now) {
   previousControlsTarget.copy(controls.target);
   robotCameraAnchor.set(
     robotWorld.position.x,
-    floatModeEnabled ? robotWorld.position.y : 0.32,
+    cameraAnchorY(),
     robotWorld.position.z,
   );
   if (!middleButtonPanning) {
@@ -10627,7 +11007,7 @@ function animate(now) {
   if (!updateCameraSnap(now)) controls.update();
   const viewingFromBelow = camera.position.y < 0;
   ground.visible = !floatModeEnabled && !viewingFromBelow;
-  grid.visible = !floatModeEnabled && !viewingFromBelow;
+  grid.visible = false;
   courseVisuals.visible = !floatModeEnabled;
   updateJointCalloutScale();
   cameraGizmoElapsed += delta;

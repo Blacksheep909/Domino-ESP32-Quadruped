@@ -4,7 +4,9 @@ import assert from "node:assert/strict";
 import {
   acceptLiveTelemetryPacket,
   createLiveTelemetryState,
+  liveCommandDisplayFrame,
   liveComparisonSnapshot,
+  liveModelServoAngles,
   signedAngleErrorDeg,
 } from "./web/src/live-telemetry-state.js";
 
@@ -13,6 +15,55 @@ const pose = (timestampMs, angle = 0, body = {}) => ({
   servoAngleDeg: Array(16).fill(angle),
   body: { rollDeg: 0, pitchDeg: 0, yawDeg: 0, heightMm: 260, ...body },
   footTargetMm: [[-15, 38, 280], [-15, -38, 280], [-15, 38, 280], [-15, -38, 280]],
+});
+
+test("renders the robot's model commands without replacing electrical evidence", () => {
+  const state = createLiveTelemetryState();
+  const expected = { ...pose(10_000, 140), modelServoAngleDeg: Array(16).fill(135) };
+  assert.equal(acceptLiveTelemetryPacket(state, {
+    type: "live-telemetry", sequence: 1, expected,
+  }, 20_000), true);
+  expected.modelServoAngleDeg[0] = 200;
+  const current = liveComparisonSnapshot(state, 20_050).expected;
+  assert.equal(liveModelServoAngles(current)[0], 135);
+  assert.equal(current.servoAngleDeg[0], 140);
+  // A legacy or reconnecting robot must not inherit a stale model command.
+  acceptLiveTelemetryPacket(state, {
+    type: "live-telemetry", sequence: 2, expected: pose(10_100, 141),
+  }, 20_100);
+  assert.equal(state.expected.modelServoAngleDeg, null);
+  assert.equal(liveModelServoAngles(state.expected)[0], 141);
+});
+
+test("live display advances body and calibrated joints as one telemetry frame", () => {
+  const state = createLiveTelemetryState();
+  const axes = ["rollDeg", "pitchDeg", "yawDeg"];
+  for (let index = 0; index < axes.length; index += 1) {
+    const angle = 10 + index;
+    const modelAngle = 130 + index;
+    const expected = {
+      ...pose(10_000 + index * 100, 150 + index, { [axes[index]]: angle }),
+      modelServoAngleDeg: Array(16).fill(modelAngle),
+    };
+    assert.equal(acceptLiveTelemetryPacket(state, {
+      type: "live-telemetry", sequence: index + 1, expected,
+    }, 20_000 + index * 100), true);
+    const frame = liveCommandDisplayFrame(
+      liveComparisonSnapshot(state, 20_000 + index * 100).expected,
+    );
+    assert.equal(frame.body[axes[index]], angle);
+    assert.equal(frame.servoAngleDeg[0], modelAngle);
+  }
+});
+
+test("rejects an incomplete model command instead of drawing a mixed pose", () => {
+  const state = createLiveTelemetryState();
+  for (const invalid of [Array(12).fill(135), Array(16).fill(null)]) {
+    assert.equal(acceptLiveTelemetryPacket(state, {
+      type: "live-telemetry", sequence: 1,
+      expected: { ...pose(10_000), modelServoAngleDeg: invalid },
+    }, 20_000), false);
+  }
 });
 
 test("preserves calibrated pulse and mapped PCA output metadata", () => {
@@ -57,6 +108,8 @@ test("retains slow pose details across lean fast telemetry packets", () => {
   assert.equal(snapshot.expected.servoPulseUs[4], 1404);
   assert.equal(snapshot.expected.servoPhysicalChannel[4], 4);
   assert.equal(snapshot.expected.footTargetMm[0][2], 280);
+  assert.equal(snapshot.expected.detailsTimestampMs, 10_000);
+  assert.equal(snapshot.expected.timestampMs, 10_100);
 });
 
 test("accepts independently timestamped expected and measured poses", () => {
@@ -74,6 +127,27 @@ test("accepts independently timestamped expected and measured poses", () => {
   assert.equal(snapshot.worstJointErrorDeg, 2);
   assert.equal(snapshot.expected.footTargetMm[0][2], 280);
   assert.ok(Math.abs(snapshot.power.powerW - 45.6) < 1e-9);
+});
+
+test("comparison snapshots retain same-packet reboot and controller evidence", () => {
+  const state = createLiveTelemetryState();
+  const controller = { source: "boxer-elrs", frameTimestampMs: 9_995, packetRateHz: 250,
+    channelsUs: Array(16).fill(1_500), linkQualityPercent: 99, rssi1Dbm: -60, failsafe: false };
+  const diagnostics = { uptimeMs: 8_000, bootId: 4, resetReason: 9,
+    outputsEnabled: false, crsfUartOverflows: 7, servoLimitClipCount: 2 };
+  acceptLiveTelemetryPacket(state, {
+    type: "live-telemetry", sequence: 1, expected: pose(10_000),
+    measured: { timestampMs: 10_000, body: { rollDeg: 1, pitchDeg: 2 } },
+    diagnostics, controller,
+  }, 20_000);
+  controller.channelsUs[0] = 2_000;
+  diagnostics.bootId = 99;
+  const snapshot = liveComparisonSnapshot(state, 20_050);
+  assert.equal(snapshot.controller.channelsUs[0], 1_500);
+  assert.equal(snapshot.diagnostics.bootId, 4);
+  assert.equal(snapshot.diagnostics.outputsEnabled, false);
+  assert.equal(snapshot.diagnostics.crsfUartOverflows, 7);
+  assert.equal(snapshot.diagnostics.jointLimitClips, 2);
 });
 
 test("accepts PCB voltage telemetry without inventing current or watts", () => {

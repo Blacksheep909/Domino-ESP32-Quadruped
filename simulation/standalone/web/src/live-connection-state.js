@@ -176,6 +176,14 @@ export function acceptLiveAdapterAnnouncement(state, message, receivedAt = Date.
   } else if (state.sessionId && state.selectedAdapterId === adapter.adapterId && adapter.state === "error") {
     scheduleLiveReconnect(state, `${adapter.name} reported a connection fault.`, receivedAt);
   } else if (
+    state.phase === "fault" && !state.sessionId && !state.pendingRequestId &&
+    state.selectedAdapterId === adapter.adapterId && adapter.state !== "error" &&
+    state.error === `${adapter.name} reported a connection fault.`
+  ) {
+    state.phase = "disconnected";
+    state.error = "";
+    state.status = `${adapter.name} is available. Verify the identity before connecting read-only.`;
+  } else if (
     state.phase !== "restarting" && state.phase !== "fault" && !state.sessionId && !state.pendingRequestId &&
     state.selectedAdapterId === adapter.adapterId && adapter.state === "error"
   ) {

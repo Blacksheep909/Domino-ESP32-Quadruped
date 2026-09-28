@@ -87,6 +87,12 @@ bool validateCalibrationMath() {
   const float inverted = applyServoCalibration(profile, 1, neutral - 12.0f);
   const bool transformOk = fabsf(normal - (neutral - 9.0f)) < 0.01f &&
                            fabsf(inverted - (neutral + 15.0f)) < 0.01f;
+  // Invert the active offset/direction, including user travel clipping. A
+  // model angle is a limited command, never a measurement or unclipped wish.
+  const bool modelTransformOk =
+      fabsf(servoCalibrationModelAngle(profile, 1, inverted) - (neutral - 12.0f)) < 0.01f &&
+      fabsf(servoCalibrationModelAngle(profile, 1,
+          applyServoCalibration(profile, 1, neutral - 40.0f)) - (neutral - 20.0f)) < 0.01f;
   profile.joints[0].channel = 15;
   profile.joints[11].channel = 0;
   const bool remapAccepted = validateServoCalibrationProfile(profile) &&
@@ -100,6 +106,12 @@ bool validateCalibrationMath() {
   const bool runtimeRouted = profileActivated &&
                              simServoWriteCount(15) > 0 &&
                              simServoWriteCount(0) == 0;
+  ServoCalibrationProfile clippedProfile = defaultServoCalibrationProfile();
+  clippedProfile.joints[0].offsetDeg = 30.0f;
+  setServoCalibrationProfile(clippedProfile);
+  commandCalibrationServoAngle(calibrationDriver, 0, 0, 170.0f);
+  const bool hardLimitVisible = fabsf(commandedServoAnglesDeg()[0] - 156.0f) < 0.001f &&
+      fabsf(commandedModelServoAnglesDeg()[0] - 126.0f) < 0.001f;
   setServoCalibrationProfile(defaultServoCalibrationProfile());
   simResetServoOutputs();
   profile.joints[1].channel = profile.joints[0].channel;
@@ -107,11 +119,11 @@ bool validateCalibrationMath() {
   profile = defaultServoCalibrationProfile();
   profile.joints[1].logicalChannel = profile.joints[0].logicalChannel;
   const bool duplicateLogicalRejected = !validateServoCalibrationProfile(profile);
-  if (!transformOk || !remapAccepted || !runtimeRouted ||
+  if (!transformOk || !modelTransformOk || !hardLimitVisible || !remapAccepted || !runtimeRouted ||
       !duplicateRejected || !duplicateLogicalRejected) {
     std::cerr << "FAIL: calibration transform or logical-to-physical channel validation failed\n";
   }
-  return transformOk && remapAccepted && runtimeRouted &&
+  return transformOk && modelTransformOk && hardLimitVisible && remapAccepted && runtimeRouted &&
          duplicateRejected && duplicateLogicalRejected;
 }
 
@@ -320,6 +332,76 @@ std::vector<uint8_t> makeRcFrame(const int channelsUs[16]) {
   frame.insert(frame.end(), payload, payload + 22);
   frame.push_back(crc8DvbS2(&frame[2], 23));
   return frame;
+}
+
+bool validateCrsfBurstRecovery() {
+  initCrsfState();
+  int channels[16];
+  std::fill(channels, channels + 16, 1500);
+  std::vector<uint8_t> damaged = makeRcFrame(channels);
+  damaged.back() ^= 0x80;
+  Serial2.inject(damaged);
+  channels[0] = 2000;
+  // A 64-frame burst must be drained over several bounded passes without
+  // publishing an old command from the middle of the queued data.
+  for (int index = 0; index < 64; ++index) Serial2.inject(makeRcFrame(channels));
+  processCrsfFrames(100);
+  const bool firstPassBounded = crsfLastPassBytes() <= CRSF_RX_MAX_BYTES_PER_PASS &&
+      crsfReceiveBudgetHitCount() == 1 && Serial2.available() > 0 &&
+      ch_us[0] == 1500;
+  for (int pass = 1; pass <= 8 && Serial2.available() > 0; ++pass) {
+    processCrsfFrames(100 + pass * 5);
+  }
+  const bool recovered = crsfCrcErrorCount() == 1 &&
+      crsfAcceptedFrameCount() == 64 && Serial2.available() == 0 &&
+      ch_us[0] > 1500 && crsfLinkAlive(140);
+  // Fresh frames after the backlog should regain the current stick position.
+  for (int index = 0; index < 8; ++index) Serial2.inject(makeRcFrame(channels));
+  processCrsfFrames(145);
+  const uint32_t burstBudgetHits = crsfReceiveBudgetHitCount();
+  bool steadyStreamHealthy = true;
+  for (int pass = 0; pass < 40; ++pass) {
+    // Seven 26-byte frames approximate 250 Hz radio input in a 25 ms loop.
+    for (int frame = 0; frame < 7; ++frame) Serial2.inject(makeRcFrame(channels));
+    const unsigned long passNow = 170 + pass * 25;
+    processCrsfFrames(passNow);
+    steadyStreamHealthy &= crsfReceiveBudgetHitCount() == burstBudgetHits &&
+        crsfPendingBytes() == 0 && crsfLinkAlive(passNow) && ch_us[0] > 1900;
+  }
+  const bool passed = firstPassBounded && recovered && steadyStreamHealthy &&
+      !crsfLinkAlive(1145 + CRSF_TIMEOUT_MS);
+  if (!passed) std::cerr << "FAIL: CRSF burst/CRC recovery or freshness check failed\n";
+  initCrsfState();
+  return passed;
+}
+
+bool validateCalibratedHipDirection() {
+  using MoveLeg = void (*)(Adafruit_PWMServoDriver &, float, float, float);
+  const MoveLeg movers[4] = {moveLegFL, moveLegFR, moveLegBL, moveLegBR};
+  const uint8_t hips[4] = {0, 3, 14, 9};
+  const float neutralY[4] = {38, -38, 38, -38};
+  ServoCalibrationProfile profile = defaultServoCalibrationProfile();
+  for (auto &joint : profile.joints) {
+    if (joint.logicalChannel == 0 || joint.logicalChannel == 14) joint.direction = -1;
+  }
+  setServoCalibrationProfile(profile);
+  Adafruit_PWMServoDriver driver;
+  bool passed = true;
+  for (int leg = 0; leg < 4; ++leg) {
+    movers[leg](driver, -15.75f, neutralY[leg], 280.0f);
+    const float neutral = commandedServoAnglesDeg()[hips[leg]];
+    // The owner verified same-axis physical hip motion with left directions
+    // inverted. Cover both CAD IK and deliberately unreachable X (fallback).
+    for (const float x : {-15.75f, 1000.0f}) {
+      movers[leg](driver, x, neutralY[leg] - 40.0f, 280.0f);
+      passed = passed && commandedServoAnglesDeg()[hips[leg]] < neutral - 5.0f;
+      movers[leg](driver, x, neutralY[leg] + 40.0f, 280.0f);
+      passed = passed && commandedServoAnglesDeg()[hips[leg]] > neutral + 5.0f;
+    }
+  }
+  setServoCalibrationProfile(defaultServoCalibrationProfile());
+  if (!passed) std::cerr << "FAIL: calibrated CAD/fallback hip shaft directions disagree\n";
+  return passed;
 }
 
 bool applyScenario(uint32_t scenarioMs, int channelsUs[16]) {
@@ -661,6 +743,8 @@ int main(int argc, char** argv) {
   const bool manualControlPassed = validateManualControlGuard();
   const bool powerMonitorMathPassed = validatePowerMonitorMath();
   const bool powerFaultGuardPassed = validatePowerFaultGuard();
+  const bool crsfBurstPassed = validateCrsfBurstRecovery();
+  const bool fallbackHipDirectionPassed = validateCalibratedHipDirection();
   simSetTimeUs(0);
   simResetServoOutputs();
   setup();
@@ -751,7 +835,10 @@ int main(int argc, char** argv) {
             fabsf(x + 15.75f) > 1.0f ||
             fabsf(y - kNeutralLegY[leg]) < 70.0f ||
             (extended ? z < 290.0f : z > 240.0f) ||
-            fabsf(simServoAngleDeg(kHipChannels[leg]) - kNeutralHipDeg[leg]) < 10.0f;
+            // This scenario uses default canonical directions. The physical
+            // left-inverted profile is checked separately above.
+            (left ? 1.0f : -1.0f) * (positiveRoll ? 1.0f : -1.0f) *
+                (simServoAngleDeg(kHipChannels[leg]) - kNeutralHipDeg[leg]) < 10.0f;
       }
     }
     if (!interactiveControl && scenarioMs >= 7500U && scenarioMs < 9000U) {
@@ -825,7 +912,7 @@ int main(int argc, char** argv) {
   }
 
   const bool passed = calibrationMathPassed && gaitProfilesPassed && manualControlPassed &&
-      powerMonitorMathPassed && powerFaultGuardPassed &&
+      powerMonitorMathPassed && powerFaultGuardPassed && crsfBurstPassed && fallbackHipDirectionPassed &&
       validateOutputs(sawStand, sawTilt, sawGait, sawCareful,
                                       gaitTiltInterlockViolation,
                                       motionInputInterlockViolation,

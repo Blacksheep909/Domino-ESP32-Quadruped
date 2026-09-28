@@ -1,4 +1,6 @@
 import { mergeLiveNavigation, sanitizeLiveNavigation } from "./live-navigation-state.js";
+import { sanitizeDiagnostics } from "./live-diagnostics-state.js";
+import { sanitizeLiveControllerTelemetry } from "./live-controller-state.js";
 
 export const LIVE_SERVO_CHANNELS = Object.freeze([0, 1, 2, 3, 4, 7, 8, 9, 10, 11, 14, 15]);
 export const LIVE_STREAM_FRESH_MS = 1_000;
@@ -32,6 +34,14 @@ function sanitizePose(pose, receivedAt, allowPartial = false) {
   if (allowPartial && Object.hasOwn(pose, "servoAngleDeg") && !servoAngleDeg) return null;
   if (!allowPartial && !servoAngleDeg) return null;
 
+  let modelServoAngleDeg = null;
+  if (Array.isArray(pose.modelServoAngleDeg) && pose.modelServoAngleDeg.length === 16) {
+    modelServoAngleDeg = pose.modelServoAngleDeg.map(finiteNumber);
+    if (LIVE_SERVO_CHANNELS.some((channel) => modelServoAngleDeg[channel] === null)) return null;
+  } else if (Object.hasOwn(pose, "modelServoAngleDeg")) {
+    return null;
+  }
+
   let servoPulseUs = null;
   if (Array.isArray(pose.servoPulseUs) && pose.servoPulseUs.length >= 16) {
     servoPulseUs = pose.servoPulseUs.slice(0, 16).map(finiteNumber);
@@ -59,7 +69,23 @@ function sanitizePose(pose, receivedAt, allowPartial = false) {
   } else if (Object.hasOwn(pose, "footTargetMm")) {
     return null;
   }
-  return { timestampMs, receivedAt, servoAngleDeg, servoPulseUs, servoPhysicalChannel, footTargetMm, body };
+  return { timestampMs, receivedAt, servoAngleDeg, modelServoAngleDeg, servoPulseUs, servoPhysicalChannel, footTargetMm, body,
+    detailsTimestampMs: finiteNumber(pose.detailsTimestampMs) };
+}
+
+export function liveModelServoAngles(pose) {
+  // New firmware removes its active calibration from the limited commands.
+  // Legacy packets retain their previous rendering; never use browser drafts
+  // to guess which calibration the hardware actually applied.
+  return pose?.modelServoAngleDeg ?? pose?.servoAngleDeg ?? null;
+}
+
+export function liveCommandDisplayFrame(pose) {
+  const servoAngles = liveModelServoAngles(pose);
+  if (!pose?.body || !servoAngles) return null;
+  // The body and joints must advance together. Smoothing either one alone
+  // breaks the fixed-foot geometry between telemetry packets.
+  return { body: pose.body, servoAngleDeg: [...servoAngles] };
 }
 
 function sanitizePower(power, receivedAt) {
@@ -87,6 +113,8 @@ export function createLiveTelemetryState() {
     power: null,
     navigation: null,
     lastRobotPacketAt: 0,
+    diagnostics: null,
+    controller: null,
   };
 }
 
@@ -113,15 +141,20 @@ export function acceptLiveTelemetryPacket(state, packet, receivedAt = Date.now()
 
   state.sequence = sequence;
   state.lastRobotPacketAt = receivedAt;
+  state.diagnostics = sanitizeDiagnostics(packet.diagnostics);
+  state.controller = sanitizeLiveControllerTelemetry(packet.controller);
   if (expected) {
-    // Fast physical packets intentionally omit slowly changing routing and
-    // kinematic detail. Retain the latest detailed values instead of making
-    // the calibration/inspect UI blink between populated and empty states.
+    // Older firmware publishes dynamic pulse/foot details at 1 Hz. Retain
+    // them for inspection, with their source time, never as fresh 10 Hz data.
+    const hasDetails = expected.servoPulseUs !== null || expected.footTargetMm !== null;
     state.expected = {
       ...expected,
       servoPulseUs: expected.servoPulseUs ?? state.expected?.servoPulseUs ?? null,
       servoPhysicalChannel: expected.servoPhysicalChannel ?? state.expected?.servoPhysicalChannel ?? null,
       footTargetMm: expected.footTargetMm ?? state.expected?.footTargetMm ?? null,
+      detailsTimestampMs: hasDetails
+        ? expected.detailsTimestampMs ?? expected.timestampMs
+        : state.expected?.detailsTimestampMs ?? null,
     };
   }
   if (measured) state.measured = measured;
@@ -183,6 +216,8 @@ export function liveComparisonSnapshot(state, now = Date.now()) {
     measured: measuredFresh ? state.measured : null,
     power: powerFresh ? state.power : null,
     navigation: state.navigation || null,
+    diagnostics: state?.diagnostics ?? null,
+    controller: state?.controller ?? null,
     alignmentMs: paired ? state.measured.timestampMs - state.expected.timestampMs : null,
     jointErrorsDeg,
     worstJointErrorDeg: finiteJointErrors.length

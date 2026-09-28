@@ -42,18 +42,24 @@ export function sanitizeLiveGps(gps, receivedAt = Date.now()) {
   const position = coordinate(gps.position || gps);
   const home = coordinate(gps.home);
   const fixType = finite(gps.fixType ?? gps.fix_type);
+  const fixReceivedAt = finite(gps.fixReceivedAt);
   const satellites = finite(gps.satellites ?? gps.satellitesVisible ?? gps.satellites_visible);
   const hdop = finite(gps.hdop ?? gps.eph);
   const vdop = finite(gps.vdop ?? gps.epv);
   const groundSpeedMps = finite(gps.groundSpeedMps ?? gps.speedMps ?? gps.velMps);
-  const courseDeg = finite(gps.courseDeg ?? gps.headingDeg ?? gps.cogDeg);
+  const courseDeg = finite(gps.courseDeg ?? gps.cogDeg);
+  const headingDeg = finite(gps.headingDeg);
   const altitudeM = finite(gps.altitudeM ?? gps.alt);
   const verticalSpeedMps = finite(gps.verticalSpeedMps ?? gps.climbMps);
+  const utcMs = finite(gps.utcMs);
+  const horizontalAccuracyM = finite(gps.horizontalAccuracyM ?? gps.hAccM);
+  const verticalAccuracyM = finite(gps.verticalAccuracyM ?? gps.vAccM);
   if (!position && fixType === null && satellites === null && groundSpeedMps === null) return null;
   return {
     receivedAt,
     timestampMs: timestampFor(gps, receivedAt),
     fixType: fixType === null ? null : clamp(Math.round(fixType), 0, 6),
+    fixReceivedAt,
     satellites: satellites === null ? null : clamp(Math.round(satellites), 0, 255),
     hdop: hdop === null ? null : Math.max(0, hdop),
     vdop: vdop === null ? null : Math.max(0, vdop),
@@ -61,8 +67,12 @@ export function sanitizeLiveGps(gps, receivedAt = Date.now()) {
     home,
     groundSpeedMps: groundSpeedMps === null ? null : Math.max(0, groundSpeedMps),
     courseDeg: courseDeg === null ? null : ((courseDeg % 360) + 360) % 360,
+    headingDeg: headingDeg === null ? null : ((headingDeg % 360) + 360) % 360,
     altitudeM,
     verticalSpeedMps,
+    utcMs: utcMs !== null && utcMs >= 946684800000 && utcMs <= 4102444800000 ? utcMs : null,
+    horizontalAccuracyM: horizontalAccuracyM === null ? null : Math.max(0, horizontalAccuracyM),
+    verticalAccuracyM: verticalAccuracyM === null ? null : Math.max(0, verticalAccuracyM),
     source: boundedText(gps.source, "GNSS"),
     constellation: boundedText(gps.constellation, ""),
   };
@@ -79,7 +89,7 @@ function normalizeRanges(lidar) {
   return source
     .slice(0, 360)
     .map((value) => finite(value))
-    .map((value) => value === null || value <= 0 ? null : clamp(value, 0.02, 200));
+    .map((value) => value === null || value < 0 ? null : clamp(value, 0.02, 200));
 }
 
 export function sanitizeLiveLidar(lidar, receivedAt = Date.now()) {
@@ -101,7 +111,7 @@ export function sanitizeLiveLidar(lidar, receivedAt = Date.now()) {
     scanRateHz: finite(lidar.scanRateHz ?? lidar.rateHz),
     minRangeM: Math.max(0.01, minRangeM),
     maxRangeM: Math.max(minRangeM, maxRangeM),
-    incrementDeg: Math.max(0.1, incrementDeg),
+    incrementDeg: Math.sign(incrementDeg || 1) * Math.max(0.1, Math.abs(incrementDeg)),
     offsetDeg,
     rangesM,
     validCount: validRanges.length,
@@ -317,12 +327,26 @@ export function liveNavigationSnapshot(navigation, uiState = createLiveNavigatio
   const gpsFresh = fresh(gps, now, 2_000);
   const lidarFresh = fresh(lidar, now, 2_000) && lidar.online !== false;
   const autopilotFresh = fresh(autopilot, now, 2_000);
-  const hasFix = gpsFresh && gps.fixType !== null && gps.fixType >= 3 && Boolean(gps.position);
+  const fixFresh = gps?.fixReceivedAt == null || (now >= gps.fixReceivedAt && now - gps.fixReceivedAt <= 2_000);
+  const hasFix = gpsFresh && fixFresh && gps.fixType !== null && gps.fixType >= 3 && Boolean(gps.position);
+  const headingDeg = gpsFresh && Number.isFinite(gps?.headingDeg)
+    ? gps.headingDeg
+    : gpsFresh && gps?.groundSpeedMps >= 0.3 && Number.isFinite(gps?.courseDeg)
+      ? gps.courseDeg : null;
+  const lidarBodyOffsetDeg = lidar?.frame === "base_link"
+    ? lidar.offsetDeg
+    : lidar?.frame === "mav-frame-0" && Number.isFinite(headingDeg)
+      ? lidar.offsetDeg - headingDeg : null;
   const minRangeM = lidar?.maxRangeM ?? 30;
-  const frontM = sectorMinimum(lidar?.rangesM, lidar?.incrementDeg, lidar?.offsetDeg, 0, 70, minRangeM);
-  const rightM = sectorMinimum(lidar?.rangesM, lidar?.incrementDeg, lidar?.offsetDeg, 90, 70, minRangeM);
-  const rearM = sectorMinimum(lidar?.rangesM, lidar?.incrementDeg, lidar?.offsetDeg, 180, 70, minRangeM);
-  const leftM = sectorMinimum(lidar?.rangesM, lidar?.incrementDeg, lidar?.offsetDeg, -90, 70, minRangeM);
+  const frontM = lidarFresh && lidarBodyOffsetDeg !== null
+    ? sectorMinimum(lidar?.rangesM, lidar?.incrementDeg, lidarBodyOffsetDeg, 0, 70, minRangeM) : null;
+  const rightM = lidarFresh && lidarBodyOffsetDeg !== null
+    ? sectorMinimum(lidar?.rangesM, lidar?.incrementDeg, lidarBodyOffsetDeg, 90, 70, minRangeM) : null;
+  const rearM = lidarFresh && lidarBodyOffsetDeg !== null
+    ? sectorMinimum(lidar?.rangesM, lidar?.incrementDeg, lidarBodyOffsetDeg, 180, 70, minRangeM) : null;
+  const leftM = lidarFresh && lidarBodyOffsetDeg !== null
+    ? sectorMinimum(lidar?.rangesM, lidar?.incrementDeg, lidarBodyOffsetDeg, -90, 70, minRangeM) : null;
+  const lidarReady = lidarFresh && frontM !== null;
   const obstacle = uiState?.obstacleBehavior || navigation?.obstacleBehavior || {};
   const stopDistanceM = Number(obstacle.stopDistanceM) || 0.45;
   const slowDistanceM = Number(obstacle.slowDistanceM) || 1.2;
@@ -330,7 +354,7 @@ export function liveNavigationSnapshot(navigation, uiState = createLiveNavigatio
     ? "stop"
     : frontM !== null && frontM <= slowDistanceM
       ? "slow"
-      : lidarFresh ? "clear" : "unknown";
+      : lidarReady ? "clear" : "unknown";
   const positionReady = hasFix && autopilot?.ekfHealthy !== false;
   const autonomyReady = Boolean(
     autopilotFresh &&
@@ -347,6 +371,9 @@ export function liveNavigationSnapshot(navigation, uiState = createLiveNavigatio
     camera: navigation?.camera || null,
     gpsFresh,
     lidarFresh,
+    lidarReady,
+    lidarBodyOffsetDeg,
+    headingDeg,
     autopilotFresh,
     hasFix,
     positionReady,

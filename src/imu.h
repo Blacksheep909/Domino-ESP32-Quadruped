@@ -34,9 +34,20 @@ struct ImuState {
 };
 
 extern ImuState gImuState;
+constexpr uint32_t IMU_SAMPLE_FRESH_MS = 250;
 
 // Initialize the MPU6050 on the I2C bus. Safe to call once from setup().
 void imuInit();
 
 // Read a fresh sample into gImuState. Returns true on success.
 bool imuReadSample();
+uint32_t imuI2cErrorCount();
+uint32_t imuLastErrorAtMs();
+uint32_t imuConsecutiveErrorCount();
+uint8_t imuLastRequestBytes();
+uint32_t imuLastRequestUs();
+uint8_t imuLastFailedRequestBytes();
+uint32_t imuLastFailedRequestUs();
+uint32_t imuMaxRequestUs();
+uint32_t imuSampleAgeMs(uint32_t now);
+bool imuSampleFresh(uint32_t now);

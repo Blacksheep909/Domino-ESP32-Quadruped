@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 2,
+  "robot": "domino-esp32-quadruped",
+  "savedAt": 1790589914421,
+  "joints": [
+    {
+      "logicalChannel": 0,
+      "channel": 0,
+      "offsetDeg": 0,
+      "direction": -1,
+      "minimumDeg": -30,
+      "maximumDeg": 30
+    },
+    {
+      "logicalChannel": 1,
+      "channel": 1,
+      "offsetDeg": 0,
+      "direction": -1,
+      "minimumDeg": -45,
+      "maximumDeg": 45
+    },
+    {
+      "logicalChannel": 2,
+      "channel": 2,
+      "offsetDeg": 0,
+      "direction": -1,
+      "minimumDeg": -45,
+      "maximumDeg": 45
+    },
+    {
+      "logicalChannel": 3,
+      "channel": 3,
+      "offsetDeg": 12,
+      "direction": 1,
+      "minimumDeg": -30,
+      "maximumDeg": 30
+    },
+    {
+      "logicalChannel": 4,
+      "channel": 4,
+      "offsetDeg": 0,
+      "direction": 1,
+      "minimumDeg": -45,
+      "maximumDeg": 45
+    },
+    {
+      "logicalChannel": 7,
+      "channel": 7,
+      "offsetDeg": 0,
+      "direction": -1,
+      "minimumDeg": -45,
+      "maximumDeg": 45
+    },
+    {
+      "logicalChannel": 8,
+      "channel": 8,
+      "offsetDeg": 0,
+      "direction": -1,
+      "minimumDeg": -45,
+      "maximumDeg": 45
+    },
+    {
+      "logicalChannel": 9,
+      "channel": 9,
+      "offsetDeg": 12,
+      "direction": 1,
+      "minimumDeg": -30,
+      "maximumDeg": 30
+    },
+    {
+      "logicalChannel": 10,
+      "channel": 10,
+      "offsetDeg": 0,
+      "direction": 1,
+      "minimumDeg": -45,
+      "maximumDeg": 45
+    },
+    {
+      "logicalChannel": 11,
+      "channel": 11,
+      "offsetDeg": 0,
+      "direction": 1,
+      "minimumDeg": -45,
+      "maximumDeg": 45
+    },
+    {
+      "logicalChannel": 14,
+      "channel": 14,
+      "offsetDeg": 0,
+      "direction": -1,
+      "minimumDeg": -30,
+      "maximumDeg": 30
+    },
+    {
+      "logicalChannel": 15,
+      "channel": 15,
+      "offsetDeg": 0,
+      "direction": 1,
+      "minimumDeg": -45,
+      "maximumDeg": 45
+    }
+  ]
+}

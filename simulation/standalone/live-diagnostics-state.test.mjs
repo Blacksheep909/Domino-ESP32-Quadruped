@@ -77,3 +77,52 @@ test("diagnostic bundle includes context, current stages, events and packet summ
   assert.equal(bundle.diagnostics.telemetry.uptimeMs, 86_400_000);
   assert.ok(bundle.diagnostics.events.length > 0);
 });
+
+test("reports a restart separately from a recovered long loop stall", () => {
+  const state = createLiveDiagnosticsState();
+  observeLiveDiagnosticPacket(state, packet(1, {
+    bootId: 17, resetReason: 1, maximumLoopGapMs: 20,
+    maxImuStageUs: 8000, maxServoWriteUs: 2500, imuI2cErrors: 0,
+  }), true, 1_000);
+  observeLiveDiagnosticPacket(state, packet(2, {
+    bootId: 17, resetReason: 1, maximumLoopGapMs: 2712,
+    maxImuStageUs: 850000, maxServoWriteUs: 2500, imuI2cErrors: 2,
+  }), true, 4_000);
+  assert.ok(state.events.some((event) => event.message.includes("loop gap reached 2712 ms")));
+  assert.ok(state.events.some((event) => event.message.includes("IMU I²C read errors increased to 2")));
+  observeLiveDiagnosticPacket(state, packet(3, {
+    bootId: 18, resetReason: 6, priorResetStage: 5, maximumLoopGapMs: 20,
+    maxImuStageUs: 0, maxServoWriteUs: 0, imuI2cErrors: 0,
+  }), true, 5_000);
+  assert.ok(state.events.some((event) => event.message.includes("ESP32 restarted: reset reason 6; prior active stage servo I²C write")));
+  assert.equal(state.telemetry.priorResetStage, 5);
+});
+
+test("retains receive backlog and IMU freshness evidence after recovery", () => {
+  const state = createLiveDiagnosticsState();
+  observeLiveDiagnosticPacket(state, packet(1, {
+    crsfBudgetHits: 0, crsfPendingBytes: 0, imuOnline: true,
+    imuSampleAgeMs: 8,
+  }), true, 1_000);
+  observeLiveDiagnosticPacket(state, packet(2, {
+    crsfBudgetHits: 3, crsfPendingBytes: 320, crsfLastPassBytes: 384,
+    imuOnline: false, imuSampleAgeMs: 410, imuConsecutiveErrors: 2,
+  }), true, 1_100);
+  assert.equal(state.telemetry.crsfPendingBytes, 320);
+  assert.equal(state.telemetry.imuSampleAgeMs, 410);
+  assert.ok(state.events.some((event) => event.message.includes("CRSF receive reached its work limit")));
+  assert.ok(state.events.some((event) => event.message.includes("IMU sample became stale")));
+});
+
+test("does not log USB residual voltage as low battery while disarmed", () => {
+  const state = createLiveDiagnosticsState();
+  const usbPacket = packet(1, { robotState: "disarmed" });
+  usbPacket.power.voltageV = 2.5;
+  observeLiveDiagnosticPacket(state, usbPacket, true, 1_000);
+  assert.equal(state.events.some((event) => event.message.includes("Battery voltage is below")), false);
+
+  const armedPacket = packet(2, { robotState: "armed" });
+  armedPacket.power.voltageV = 2.5;
+  observeLiveDiagnosticPacket(state, armedPacket, true, 1_100);
+  assert.equal(state.events.some((event) => event.message.includes("Battery voltage is below")), true);
+});

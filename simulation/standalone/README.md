@@ -62,22 +62,15 @@ the UI. See [the LIVE companion protocol](../../docs/live-companion-protocol.md)
 for launch commands and the required ESP32 JSONL endpoint.
 
 The GPS / LiDAR tab also supports an ArduPilot Rover through
-`ardupilot-companion-adapter.mjs`. Select the ArduPilot companion by setting the
-local service protocol before launch; the adapter listens for MAVLink UDP,
+`ardupilot-companion-adapter.mjs`. Open **LIVE → GPS / LiDAR → MAVLINK SETUP**,
+select **ArduPilot / MAVLink UDP**, enter the vehicle host and UDP port, then
+choose **AUTO** or **WI-FI** and press **DISCOVER**. The default
+`127.0.0.1:14550` endpoint is for local SITL; enter the networked controller
+or MAVLink router endpoint for a physical vehicle. The adapter listens on the
+selected UDP port,
 publishes GPS, `OBSTACLE_DISTANCE`, heartbeat, EKF, battery, mission, home, and
 failsafe state, and translates the session-bound UI actions into ArduPilot
-MAVLink commands:
-
-```powershell
-$env:DOMINO_COMPANION_PROTOCOL = "ardupilot"
-$env:DOMINO_ARDUPILOT_HOST = "127.0.0.1"
-$env:DOMINO_ARDUPILOT_PORT = "14550"
-pnpm start
-```
-
-Use **AUTO** or **WI-FI** in the connection manager. The default endpoint is
-`127.0.0.1:14550`, so the same setup works with SITL; change the host for a
-networked flight controller or MAVLink router. The adapter supports Rover mode
+MAVLink commands. The adapter supports Rover mode
 selection, arm/disarm, Hold, RTL, guided targets, mission upload/start/pause/
 resume/clear, home, radius geofence parameters, obstacle-guard policy, and
 bounded parameter writes. The relay and adapter keep these actions locked until
@@ -326,10 +319,10 @@ The installed NSIS build uses the stable app ID
 every six hours. Updates download in the background and install over the
 existing installation after a restart, so repeated releases do not create a
 new app directory or a second shortcut set. Use the NSIS `.exe` for automatic
-updates; the `.zip` is a manual portable build. The updater-enabled `0.2.1`
-installer is the current local build; install it once over an older `0.2.0`
-copy. Later NSIS releases update that same installation in place and can use the
-generated block map for differential downloads. A successful firmware build or
+updates; the `.zip` is a manual portable build. The current local build is
+`0.2.26`; install its NSIS setup over an existing copy to update that
+installation in place. Later NSIS releases continue using the same installation
+and can use the generated block map for differential downloads. A successful firmware build or
 upload also triggers an immediate app-update check, so firmware iterations do
 not wait for the six-hour timer.
 

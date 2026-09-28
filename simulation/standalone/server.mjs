@@ -78,6 +78,7 @@ let appUpdateCheck = null;
 const firmwareService = new FirmwareService({
   projectRoot: repoRoot,
   runtimeRoot,
+  buildRoot: process.env.DOMINO_FIRMWARE_BUILD_ROOT || repoRoot,
   onJobFinished: (job) => {
     if (job.status === "success") appUpdateCheck?.(`firmware-${job.type}-complete`);
   },
@@ -289,7 +290,11 @@ async function handleCompanionApi(request, response, url) {
     }
     if (request.method === "POST" && url.pathname === "/api/companion/discover") {
       const body = await readJsonBody(request);
-      sendJson(response, 200, await companionService.discover(String(body.transport || "auto")));
+      sendJson(response, 200, await companionService.discover(String(body.transport || "auto"), {
+        protocol: body.protocol,
+        host: body.host,
+        port: body.port,
+      }));
       return;
     }
     if (request.method === "POST" && url.pathname === "/api/companion/stop") {

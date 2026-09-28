@@ -63,25 +63,31 @@ test("LIVE camera controls follow light mode while preserving a dark feed surfac
   assert.match(styles, /\.live-camera-feed[\s\S]*background: #050506/);
 });
 
-test("dark LIVE title banners remain transparent like light mode", () => {
+test("Compare omits its duplicate title rail and uses the compact content baseline", () => {
   const styles = readFileSync(new URL("./web/src/styles.css", import.meta.url), "utf8");
-  assert.match(styles, /:root\[data-theme="dark"\] \.live-view-page \.live-page-heading[\s\S]*background: transparent[\s\S]*box-shadow: none/);
-  assert.match(styles, /:root\[data-theme="dark"\] #live-view-compare \.live-compare-page-heading[\s\S]*background: transparent[\s\S]*box-shadow: none/);
-});
-
-test("Compare title banner stays inside the primary content column", () => {
-  const styles = readFileSync(new URL("./web/src/styles.css", import.meta.url), "utf8");
-  assert.match(styles, /#live-view-compare \.live-compare-page-heading[\s\S]*width: min\(1240px,[\s\S]*var\(--live-right-panel\)/);
-});
-
-test("LIVE tabs share a compact title rail and preview baseline", () => {
-  const styles = readFileSync(new URL("./web/src/styles.css", import.meta.url), "utf8");
-  assert.match(styles, /--live-title-height: 66px/);
-  assert.match(styles, /--live-preview-top: calc\([\s\S]*var\(--live-title-height\)[\s\S]*var\(--live-title-gap\)/);
-  assert.match(styles, /#real-workspace \.live-view-page \.live-page-heading,[\s\S]*min-height: var\(--live-title-height\)/);
-  assert.match(styles, /#live-view-sensors \.live-page-heading,[\s\S]*#live-view-gaits \.live-page-heading,[\s\S]*width: calc\(100vw - var\(--app-gutter\) - var\(--app-gutter\)\)/);
+  assert.match(styles, /Titleless Compare workspace[\s\S]*#real-workspace #live-view-compare \.live-compare-page-heading[\s\S]*display: none !important/);
+  assert.match(styles, /data-live-view="compare"\][\s\S]*--live-preview-top: calc\(var\(--live-content-top, 118px\) \+ var\(--app-gutter\)\)/);
   assert.match(styles, /data-live-view="compare"\][\s\S]*top: var\(--live-preview-top\)/);
+  assert.match(styles, /--live-editor-width: calc\([\s\S]*var\(--live-preview-width\)[\s\S]*var\(--live-column-gap\)/);
+  assert.match(styles, /#live-view-calibration \.live-calibration-layout,[\s\S]*#live-view-gaits \.live-gaits-layout[\s\S]*width: var\(--live-editor-width\)/);
+  assert.match(styles, /#live-view-data \.live-data-grid,[\s\S]*#live-view-sessions \.live-sessions-grid[\s\S]*max-width: none/);
+  assert.match(styles, /\.calibration-preview-caption,[\s\S]*background: rgba\(247, 247, 244, 0\.94\)/);
+  assert.match(styles, /:root\[data-theme="dark"\] \.calibration-preview-caption,[\s\S]*background: rgba\(12, 12, 13, 0\.78\)/);
+  assert.match(styles, /#real-workspace #live-view-compare \.live-compare-page-heading[\s\S]*right: var\(--app-gutter\)[\s\S]*width: auto/);
+  assert.match(styles, /:root:not\(\[data-theme="dark"\]\) nav button\.active,[\s\S]*background: #347b50/);
   assert.match(styles, /#real-workspace \.live-view-page[\s\S]*overflow-x: hidden/);
+});
+
+test("every LIVE 3D view uses a lower shared camera target so the full robot remains framed", () => {
+  const main = readFileSync(new URL("./web/src/main.js", import.meta.url), "utf8");
+  assert.match(main, /const LIVE_CAMERA_ANCHOR_Y = 0\.26/);
+  assert.match(main, /applicationState\.workspace === WORKSPACE_REAL_ROBOT[\s\S]*\? LIVE_CAMERA_ANCHOR_Y/);
+  assert.match(main, /robotCameraAnchor\.set\([\s\S]*cameraAnchorY\(\)/);
+});
+
+test("right-hand LIVE viewports share the editor card horizontal datum", () => {
+  const styles = readFileSync(new URL("./web/src/styles.css", import.meta.url), "utf8");
+  assert.match(styles, /data-live-view="sensors"[\s\S]*data-live-view="calibration"[\s\S]*data-live-view="gaits"[\s\S]*--live-preview-top: calc\([\s\S]*var\(--live-title-gap\) \+ 5px/);
 });
 
 test("LIVE keeps measured battery state and E-stop in the persistent header", () => {
@@ -107,6 +113,6 @@ test("Sensors exposes live IMU alignment and honest future capability modules", 
   assert.match(html, /data-live-view="sensors"/);
   assert.match(html, /id="live-sensor-plane"/);
   assert.match(html, /GUIDED IMU CALIBRATION/);
-  assert.match(html, /GNSS \/ GPS[\s\S]*NOT INSTALLED/);
-  assert.match(html, /LiDAR[\s\S]*FUTURE ADAPTER/);
+  assert.match(html, /GNSS \/ GPS[\s\S]*live-gps-module-badge">WAITING/);
+  assert.match(html, /LiDAR[\s\S]*live-lidar-module-badge">WAITING/);
 });

@@ -137,9 +137,15 @@ test("telemetry is published only after session negotiation", () => {
 
 test("robot monotonic timestamps are translated into the host clock domain", () => {
   const core = connectedCore(10_000);
-  const result = core.handleRobot(telemetry(10_020), 1_720_000_000_000);
+  const packet = telemetry(10_020);
+  packet.expected.detailsTimestampMs = 9_020;
+  packet.diagnostics = { uptimeMs: 10_020, bootId: 123, resetReason: 9 };
+  const result = core.handleRobot(packet, 1_720_000_000_000);
   assert.equal(result.relay[0].expected.timestampMs, 1_720_000_000_000);
   assert.equal(result.relay[0].controller.frameTimestampMs, 1_720_000_000_000);
+  assert.equal(result.relay[0].expected.detailsTimestampMs, 1_719_999_999_000);
+  assert.equal(result.relay[0].diagnostics.uptimeMs, 10_020);
+  assert.equal(result.relay[0].diagnostics.bootId, 123);
 });
 
 test("arming is rejected without a fresh healthy controller link", () => {
@@ -300,6 +306,28 @@ test("physical calibration safety and persistence evidence reaches the wizard", 
   assert.equal(result.relay[0].persisted, false);
 });
 
+test("active calibration readback returns robot profile without entering bench mode", () => {
+  const core = connectedCore();
+  const profile = createLiveCalibrationProfile();
+  profile.joints.find((joint) => joint.logicalChannel === 0).direction = -1;
+  const request = {
+    type: "live-calibration-command", action: "request-profile", requestId: "cal-read",
+    adapterId, sessionId: core.sessionId,
+    safety: { benchModeRequired: false, maxSpeedDegPerSec: 5, jogLimitDeg: 10 },
+  };
+  assert.equal(core.handleRelay(request, 1_050).robot[0].action, "request-profile");
+  assert.equal(core.benchMode, false);
+  const inbound = core.handleRobot({
+    protocol: DOMINO_ROBOT_LINK_PROTOCOL, type: "robot-ack", kind: "calibration",
+    action: "request-profile", requestId: "cal-read", accepted: true,
+    robotState: "disarmed", benchMode: false, profile,
+  }, 1_060);
+  assert.equal(inbound.relay[0].profile.joints[0].direction, -1);
+  assert.equal(core.benchMode, false);
+  core.robotState = "armed";
+  assert.equal(core.handleRelay({ ...request, requestId: "armed-read" }, 1_070).relay[0].accepted, false);
+});
+
 test("physical request timeouts return explicit rejection acknowledgements", () => {
   const core = connectedCore();
   core.handleRelay({
@@ -316,7 +344,8 @@ test("persistent calibration writes get a longer physical acknowledgement window
   core.benchMode = true;
   core.handleRelay({
     type: "live-calibration-command", action: "save-profile", requestId: "save-1", timestampMs: 1_050,
-    adapterId, sessionId: core.sessionId, profile: createLiveCalibrationProfile(),
+    adapterId, sessionId: core.sessionId,
+    baseSavedAt: 0, profile: createLiveCalibrationProfile({ savedAt: 1_051 }),
     selectedChannel: 0, physicalChannel: 0, jogOffsetDeg: 0, targetServoDeg: 129.87,
     safety: { benchModeRequired: true, maxSpeedDegPerSec: 5, jogLimitDeg: 10 },
   }, 1_050);

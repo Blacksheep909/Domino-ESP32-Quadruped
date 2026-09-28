@@ -197,9 +197,10 @@ Installed builds check GitHub for releases on startup and every six hours. When
 an update is downloaded, the app prompts to restart and installs it over the
 existing Domino Quadruped Studio installation; it does not create a second app
 copy. Use the `.exe` installer for this workflow; the `.zip` remains a manual
-portable build. The updater-enabled `0.2.1` installer is the current local build;
-install it once over the older `0.2.0` copy. Later NSIS releases update that same
-installation in place and use the generated block map for differential downloads.
+portable build. The current local build is `0.2.26`; install its NSIS setup over
+an existing Domino Quadruped Studio copy to update that installation in place.
+Later NSIS releases continue using the same installation and can use the
+generated block map for differential downloads.
 
 When firmware changes, prepare a release from `simulation\standalone`:
 

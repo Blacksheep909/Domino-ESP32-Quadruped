@@ -7,6 +7,7 @@ import {
 export const LIVE_CALIBRATION_SCHEMA_VERSION = 2;
 export const LIVE_CALIBRATION_STORAGE_KEY = "domino-live-calibration-v2";
 export const LIVE_CALIBRATION_LEGACY_STORAGE_KEY = "domino-live-calibration-v1";
+export const LIVE_CALIBRATION_PRE_SYNC_BACKUP_KEY = "domino-live-calibration-before-robot-sync-v1";
 export { LIVE_CALIBRATION_JOG_LIMIT_DEG, LIVE_CALIBRATION_MAX_SPEED_DEG_PER_SEC };
 
 export const LIVE_CALIBRATION_STEPS = Object.freeze([
@@ -95,7 +96,33 @@ export function createLiveCalibrationState(profile = createLiveCalibrationProfil
     benchModeAcknowledged: false,
     dirty: false,
     profile: createLiveCalibrationProfile(profile),
+    robotProfileSessionId: "",
+    robotProfileSavedAt: null,
   };
+}
+
+export function forgetRobotCalibrationProfile(state) {
+  if (!state) return;
+  state.robotProfileSessionId = "";
+  state.robotProfileSavedAt = null;
+}
+
+export function acceptRobotCalibrationProfile(state, profile, sessionId) {
+  if (!state || !sessionId) return { accepted: false, adopted: false };
+  const active = parseCalibrationProfileJson(JSON.stringify(profile));
+  const adopted = !state.dirty;
+  if (adopted) {
+    state.profile = active;
+    state.jogOffsetDeg = 0;
+  }
+  state.robotProfileSessionId = sessionId;
+  state.robotProfileSavedAt = active.savedAt ?? 0;
+  return { accepted: true, adopted };
+}
+
+export function robotCalibrationReady(state, sessionId) {
+  return Boolean(state && sessionId && state.robotProfileSessionId === sessionId &&
+    Number.isSafeInteger(state.robotProfileSavedAt) && state.robotProfileSavedAt >= 0);
 }
 
 export function selectCalibrationStep(state, step) {
@@ -182,11 +209,22 @@ export function trimCalibrationJoint(state, incrementDeg) {
 }
 
 export function calibrationPreviewServoAngles(state) {
+  // Electrical targets include the trim: the physical servo must move so its
+  // new center matches the unchanged CAD neutral pose.
   const angles = [...standServoReference];
   state?.profile?.joints?.forEach((joint) => {
     const jog = joint.logicalChannel === state.selectedChannel ? state.jogOffsetDeg : 0;
     angles[joint.logicalChannel] += joint.offsetDeg + joint.direction * jog;
   });
+  return angles;
+}
+
+export function calibrationPreviewModelAngles(state) {
+  // Saved trim and shaft direction define the physical output basis. They do
+  // not change the robot geometry or the center shown by the CAD preview.
+  const angles = [...standServoReference];
+  const definition = LIVE_CALIBRATION_JOINTS.find((joint) => joint.channel === state?.selectedChannel);
+  if (definition) angles[definition.channel] += definition.defaultDirection * state.jogOffsetDeg;
   return angles;
 }
 
@@ -256,12 +294,13 @@ export function updateCalibrationChannelMap(state, channelMap) {
 }
 
 export function createCalibrationBenchCommand(state, action, requestId, now = Date.now()) {
-  const allowedActions = ["enter", "exit", "jog", "save-profile"];
+  const allowedActions = ["request-profile", "enter", "exit", "jog", "save-profile"];
   if (!state || !allowedActions.includes(action)) return null;
+  if (action === "save-profile" && !robotCalibrationReady(state, state.robotProfileSessionId)) return null;
   const joint = state.profile.joints.find((candidate) => candidate.logicalChannel === state.selectedChannel);
   if (!joint) return null;
   const persistedProfile = action === "save-profile"
-    ? createLiveCalibrationProfile({ ...state.profile, savedAt: state.profile.savedAt ?? now })
+    ? createLiveCalibrationProfile({ ...state.profile, savedAt: Math.max(now, state.robotProfileSavedAt + 1) })
     : undefined;
   return {
     type: "live-calibration-command",
@@ -269,7 +308,7 @@ export function createCalibrationBenchCommand(state, action, requestId, now = Da
     requestId: String(requestId),
     timestampMs: now,
     safety: {
-      benchModeRequired: true,
+      benchModeRequired: action !== "request-profile",
       maxSpeedDegPerSec: LIVE_CALIBRATION_MAX_SPEED_DEG_PER_SEC,
       jogLimitDeg: LIVE_CALIBRATION_JOG_LIMIT_DEG,
     },
@@ -277,6 +316,7 @@ export function createCalibrationBenchCommand(state, action, requestId, now = Da
     physicalChannel: joint.channel,
     jogOffsetDeg: state.jogOffsetDeg,
     targetServoDeg: calibrationPreviewServoAngles(state)[state.selectedChannel],
+    ...(action === "save-profile" ? { baseSavedAt: state.robotProfileSavedAt } : {}),
     profile: persistedProfile,
   };
 }

@@ -2,6 +2,7 @@ import RAPIER from "@dimforge/rapier3d-compat";
 import * as THREE from "three";
 
 import { batteryPacks, dominoMassModel } from "./domino-config.js";
+import { bodyPoseQuaternion } from "./body-pose.js";
 import { environmentBallSpecs, logSpecs, terrainSpecs } from "./course-config.js";
 import { createVoronoiTerrain } from "./voronoi-terrain.js";
 
@@ -143,19 +144,7 @@ function clamp(value, limits) {
 export function targetBodyQuaternion(firmwareState) {
   const pose = firmwareState?.body_pose_rpy_deg;
   if (!Array.isArray(pose) || pose.length < 3) return null;
-  const roll = THREE.MathUtils.degToRad(Number(pose[0]) || 0);
-  const pitch = THREE.MathUtils.degToRad(Number(pose[1]) || 0);
-  const yaw = THREE.MathUtils.degToRad(Number(pose[2]) || 0);
-  // Firmware uses X forward, Y left, Z up. Rapier uses X forward, Y up,
-  // and Z right, so pitch maps onto -Z while yaw maps onto +Y.
-  return new THREE.Quaternion()
-    .setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw)
-    .multiply(
-      new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, -1), pitch),
-    )
-    .multiply(
-      new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), roll),
-    );
+  return bodyPoseQuaternion(pose[0], pose[1], pose[2]);
 }
 
 export function contactSurfaceError(

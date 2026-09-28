@@ -67,6 +67,9 @@ void setBodyPose(const BodyPose &pose, Adafruit_PWMServoDriver &driver);
 void setServoOutputsEnabled(Adafruit_PWMServoDriver &driver, bool enabled);
 bool servoOutputsEnabled();
 const float* commandedServoAnglesDeg();
+// Final commands expressed in the fixed CAD reference, with the active
+// hardware trim/direction removed. Still command feedback, not joint sensing.
+const float* commandedModelServoAnglesDeg();
 // Final pulse after calibration and safety limiting, indexed by logical joint.
 // Use servoCalibrationPhysicalChannel() to identify the PCA9685 output used.
 const uint16_t* commandedServoPulseUs();

@@ -88,6 +88,19 @@ float applyServoCalibration(const ServoCalibrationProfile &profile,
   return neutral + joint->offsetDeg + static_cast<float>(joint->direction) * logicalDelta;
 }
 
+float servoCalibrationModelAngle(const ServoCalibrationProfile &profile,
+                                 uint8_t channel,
+                                 float commandedServoDeg) {
+  const ServoCalibrationJoint *joint = findServoCalibrationJoint(profile, channel);
+  const int8_t defaultDirection = servoCalibrationDefaultDirection(channel);
+  if (!joint || defaultDirection == 0 || !finite(commandedServoDeg) ||
+      (joint->direction != -1 && joint->direction != 1)) return commandedServoDeg;
+  const float neutral = servoCalibrationNeutralDeg(channel);
+  const float logicalDelta = (commandedServoDeg - neutral - joint->offsetDeg) /
+      static_cast<float>(joint->direction);
+  return neutral + static_cast<float>(defaultDirection) * logicalDelta;
+}
+
 float servoCalibrationNeutralDeg(uint8_t channel) {
   return channel < DOMINO_SERVO_CHANNEL_COUNT ? kNeutralDeg[channel] : 0.0f;
 }

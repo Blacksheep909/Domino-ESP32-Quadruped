@@ -54,7 +54,7 @@ export const legs = [
     label: "FR",
     source: "dom_p_21_1",
     sourceTranslation: translatedFront,
-    shoulderSign: -1,
+    shoulderSign: -1, // Canonical CAD side; physical shaft direction is calibrated separately.
     neutralLinkageOffsetDeg: { upper: 0, lower: 0 },
     channels: { shoulder: 3, upper: 4, lower: 15 },
     directions: { shoulder: 1, upper: 1, lower: 1 },

@@ -2,12 +2,15 @@ import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import {
   appendFileSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
   readdirSync,
   statSync,
   symlinkSync,
+  unlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -15,6 +18,7 @@ import path from "node:path";
 const PACKAGE_ROOTS = ["platformio.ini", "src", "include", "lib"];
 const REVIEWABLE_EXTENSIONS = new Set([".ini", ".cpp", ".c", ".h", ".hpp", ".md", ".txt"]);
 const MAX_REVIEW_BYTES = 512 * 1024;
+const WORKSPACE_MARKER = ".domino-firmware-workspace.json";
 
 function normalizedRelative(root, filePath) {
   return path.relative(root, filePath).split(path.sep).join("/");
@@ -65,6 +69,50 @@ export function resolveReviewFile(projectRoot, requestedPath) {
   return { ...file, contents: readFileSync(absolute, "utf8") };
 }
 
+export function syncFirmwareWorkspace(projectRoot, buildRoot, firmwarePackage) {
+  const sourceRoot = path.resolve(projectRoot);
+  const destinationRoot = path.resolve(buildRoot);
+  if (sourceRoot === destinationRoot) return destinationRoot;
+  if (path.relative(sourceRoot, destinationRoot) === "" ||
+      !path.relative(sourceRoot, destinationRoot).startsWith("..") &&
+      !path.isAbsolute(path.relative(sourceRoot, destinationRoot))) {
+    throw new Error("Firmware build workspace must be outside the bundled source directory.");
+  }
+  mkdirSync(destinationRoot, { recursive: true });
+  const markerPath = path.join(destinationRoot, WORKSPACE_MARKER);
+  const prior = existsSync(markerPath) ? JSON.parse(readFileSync(markerPath, "utf8")) : null;
+  if (!prior && readdirSync(destinationRoot).length !== 0) {
+    throw new Error("Firmware build workspace contains unrecognized files.");
+  }
+  if (prior && (prior.format !== 1 || prior.sourceRoot !== sourceRoot ||
+      !Array.isArray(prior.files))) {
+    throw new Error("Firmware build workspace belongs to a different source package.");
+  }
+  const nextFiles = new Set(firmwarePackage.files.map((file) => file.path));
+  for (const oldFile of prior?.files || []) {
+    if (!nextFiles.has(oldFile) && /^(platformio\.ini|(?:src|include|lib)\/[\w./-]+)$/.test(oldFile)) {
+      const obsolete = path.resolve(destinationRoot, ...oldFile.split("/"));
+      if (path.relative(destinationRoot, obsolete).startsWith("..")) continue;
+      if (existsSync(obsolete)) unlinkSync(obsolete);
+    }
+  }
+  for (const file of firmwarePackage.files) {
+    const components = file.path.split("/");
+    const source = path.resolve(sourceRoot, ...components);
+    const destination = path.resolve(destinationRoot, ...components);
+    if (path.relative(destinationRoot, destination).startsWith("..")) {
+      throw new Error("Firmware package contains an unsafe path.");
+    }
+    mkdirSync(path.dirname(destination), { recursive: true });
+    copyFileSync(source, destination);
+  }
+  writeFileSync(markerPath, JSON.stringify({
+    format: 1, sourceRoot, packageHash: firmwarePackage.hash,
+    files: [...nextFiles],
+  }), "utf8");
+  return destinationRoot;
+}
+
 function findPlatformio() {
   const executable = process.platform === "win32" ? "platformio.exe" : "platformio";
   const candidates = [
@@ -75,8 +123,16 @@ function findPlatformio() {
   return candidates.find((candidate) => candidate === executable || existsSync(candidate)) || null;
 }
 
-export function preparePlatformioEnvironment(runtimeRoot, installedCore = path.join(homedir(), ".platformio")) {
-  const coreDir = path.join(runtimeRoot, "platformio-core");
+export function preparePlatformioEnvironment(
+  runtimeRoot,
+  installedCore = path.join(homedir(), ".platformio"),
+  coreDir = process.platform === "win32"
+    ? path.join(homedir(), ".domino-platformio")
+    : path.join(runtimeRoot, "platformio-core"),
+) {
+  // ESP32's GCC receives hundreds of framework include paths. Repeating the
+  // long Studio userData path can exceed Windows' process command-line limit
+  // when GCC launches cc1plus, reported only as "CreateProcess" failure.
   mkdirSync(coreDir, { recursive: true });
 
   // PlatformIO places its package-manager lock files beside `platforms` and
@@ -111,8 +167,9 @@ function progressFor(type, text, current) {
 }
 
 export class FirmwareService {
-  constructor({ projectRoot, runtimeRoot, onJobFinished = null }) {
+  constructor({ projectRoot, runtimeRoot, buildRoot = projectRoot, onJobFinished = null }) {
     this.projectRoot = projectRoot;
+    this.buildRoot = buildRoot;
     this.runtimeRoot = path.join(runtimeRoot, "firmware-jobs");
     this.platformioEnvironment = preparePlatformioEnvironment(runtimeRoot);
     this.platformio = findPlatformio();
@@ -201,6 +258,7 @@ export class FirmwareService {
     if (this.job?.status === "running" || this.job?.status === "cancelling") {
       throw new Error("Another firmware job is already running.");
     }
+    syncFirmwareWorkspace(this.projectRoot, this.buildRoot, firmwarePackage);
     this.cancelRequested = false;
     const id = `${Date.now()}-${type}`;
     const logPath = path.join(this.runtimeRoot, `${id}.jsonl`);
@@ -233,7 +291,7 @@ export class FirmwareService {
       appendFileSync(logPath, `${JSON.stringify(entry)}\n`, "utf8");
     };
     this.child = spawn(this.platformio, args, {
-      cwd: this.projectRoot,
+      cwd: this.buildRoot,
       windowsHide: true,
       env: this.platformioEnvironment,
     });

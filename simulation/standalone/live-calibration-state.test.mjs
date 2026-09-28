@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  acceptRobotCalibrationProfile,
+  calibrationPreviewModelAngles,
   calibrationPreviewServoAngles,
   calibrationChannelMap,
   calibrationChannelMapIssues,
@@ -9,10 +11,12 @@ import {
   createCalibrationBenchCommand,
   createLiveCalibrationProfile,
   createLiveCalibrationState,
+  forgetRobotCalibrationProfile,
   jogCalibrationJoint,
   LIVE_CALIBRATION_JOG_LIMIT_DEG,
   LIVE_CALIBRATION_JOINTS,
   parseCalibrationProfileJson,
+  robotCalibrationReady,
   restoreCalibrationDefaults,
   restoreSelectedCalibrationJoint,
   selectCalibrationJoint,
@@ -161,6 +165,33 @@ test("preview jogging is limited and only changes the selected servo", () => {
   assert.equal(preview.filter((angle, channel) => angle !== baseline[channel]).length, 1);
 });
 
+test("saved physical trim defines the new CAD center without moving the model", () => {
+  const state = createLiveCalibrationState();
+  const baselineModel = calibrationPreviewModelAngles(state);
+  const baselinePhysical = calibrationPreviewServoAngles(state);
+  updateCalibrationJoint(state, { offsetDeg: 8.5, direction: -1 });
+  assert.deepEqual(calibrationPreviewModelAngles(state), baselineModel);
+  assert.equal(
+    calibrationPreviewServoAngles(state)[state.selectedChannel],
+    baselinePhysical[state.selectedChannel] + 8.5,
+  );
+
+  jogCalibrationJoint(state, 2);
+  const definition = LIVE_CALIBRATION_JOINTS.find((joint) => joint.channel === state.selectedChannel);
+  assert.equal(
+    calibrationPreviewModelAngles(state)[state.selectedChannel],
+    baselineModel[state.selectedChannel] + definition.defaultDirection * 2,
+  );
+  assert.equal(
+    calibrationPreviewServoAngles(state)[state.selectedChannel],
+    baselinePhysical[state.selectedChannel] + 8.5 - 2,
+  );
+  assert.equal(
+    calibrationPreviewModelAngles(state).filter((angle, channel) => angle !== baselineModel[channel]).length,
+    1,
+  );
+});
+
 test("neutral trim works in 0.1 degree steps and becomes the physical neutral target", () => {
   const state = createLiveCalibrationState();
   state.jogOffsetDeg = 3;
@@ -214,14 +245,52 @@ test("bench commands carry explicit robot-side safety limits", () => {
   assert.equal(createCalibrationBenchCommand(state, "unsafe-sweep", "request-2"), null);
 });
 
+test("active calibration readback is a valid command without bench mode", () => {
+  const command = createCalibrationBenchCommand(
+    createLiveCalibrationState(), "request-profile", "read-active", 1234,
+  );
+  assert.equal(command.safety.benchModeRequired, false);
+  assert.equal(validCalibrationCommand(command), true);
+  assert.equal(validCalibrationCommand({
+    ...command, safety: { ...command.safety, benchModeRequired: true },
+  }), false);
+});
+
 test("robot persistence commands always carry a concrete save timestamp", () => {
   const state = createLiveCalibrationState();
+  assert.equal(createCalibrationBenchCommand(state, "save-profile", "unsynced", 1234), null);
+  const active = createLiveCalibrationProfile({ savedAt: 1200 });
+  active.joints.find((joint) => joint.logicalChannel === 0).direction = -1;
+  active.joints.find((joint) => joint.logicalChannel === 14).direction = -1;
+  assert.deepEqual(acceptRobotCalibrationProfile(state, active, "session-1"),
+    { accepted: true, adopted: true });
+  assert.equal(state.profile.joints.find((joint) => joint.logicalChannel === 0).direction, -1);
+  assert.equal(robotCalibrationReady(state, "session-1"), true);
   const command = createCalibrationBenchCommand(state, "save-profile", "save-timestamp", 1234);
   assert.equal(command.profile.savedAt, 1234);
+  assert.equal(command.baseSavedAt, 1200);
+  assert.equal(validCalibrationCommand(command), true);
+  assert.equal(validCalibrationCommand({ ...command, baseSavedAt: undefined }), false);
+  forgetRobotCalibrationProfile(state);
+  assert.equal(robotCalibrationReady(state, "session-1"), false);
+  assert.equal(createCalibrationBenchCommand(state, "save-profile", "stale", 1235), null);
+});
+
+test("a robot readback preserves unsaved calibration edits", () => {
+  const state = createLiveCalibrationState();
+  updateCalibrationJoint(state, { offsetDeg: 4 });
+  const active = createLiveCalibrationProfile({ savedAt: 1000 });
+  active.joints.find((joint) => joint.logicalChannel === 0).direction = -1;
+  assert.deepEqual(acceptRobotCalibrationProfile(state, active, "session-2"),
+    { accepted: true, adopted: false });
+  assert.equal(state.profile.joints[0].offsetDeg, 4);
+  assert.equal(state.profile.joints[0].direction, 1);
+  assert.equal(createCalibrationBenchCommand(state, "save-profile", "edit", 1001).baseSavedAt, 1000);
 });
 
 test("a complete calibration save envelope fits the firmware USB receive ring", () => {
   const state = createLiveCalibrationState();
+  acceptRobotCalibrationProfile(state, createLiveCalibrationProfile({ savedAt: 1000 }), "session-1");
   const command = createCalibrationBenchCommand(state, "save-profile", "save-size", 1234);
   const physicalEnvelope = {
     type: "companion-command",

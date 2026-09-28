@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -11,6 +11,7 @@ import {
   FirmwareService,
   preparePlatformioEnvironment,
   resolveReviewFile,
+  syncFirmwareWorkspace,
 } from "./firmware-service.mjs";
 
 function fixture() {
@@ -39,15 +40,16 @@ test("firmware package hash changes when deployable source changes", () => {
   assert.notEqual(after, before);
 });
 
-test("firmware jobs keep writable PlatformIO state in the app runtime", () => {
+test("firmware jobs keep writable PlatformIO state in a separate core", () => {
   const root = mkdtempSync(path.join(tmpdir(), "domino-platformio-"));
   const installedCore = path.join(root, "installed");
   const runtimeRoot = path.join(root, "runtime");
   mkdirSync(path.join(installedCore, "platforms"), { recursive: true });
   mkdirSync(path.join(installedCore, "packages"), { recursive: true });
 
-  const environment = preparePlatformioEnvironment(runtimeRoot, installedCore);
-  assert.equal(environment.PLATFORMIO_CORE_DIR, path.join(runtimeRoot, "platformio-core"));
+  const coreDir = path.join(root, "studio-core");
+  const environment = preparePlatformioEnvironment(runtimeRoot, installedCore, coreDir);
+  assert.equal(environment.PLATFORMIO_CORE_DIR, coreDir);
   assert.equal(environment.PLATFORMIO_SETTING_ENABLE_TELEMETRY, "No");
   assert.equal(
     realpathSync(path.join(environment.PLATFORMIO_CORE_DIR, "platforms")),
@@ -57,6 +59,34 @@ test("firmware jobs keep writable PlatformIO state in the app runtime", () => {
     realpathSync(path.join(environment.PLATFORMIO_CORE_DIR, "packages")),
     realpathSync(path.join(installedCore, "packages")),
   );
+});
+
+test("installed firmware builds copy reviewed source into a writable workspace", { timeout: 8_000 }, async () => {
+  const root = fixture();
+  const runtimeRoot = mkdtempSync(path.join(tmpdir(), "domino-runtime-"));
+  const buildRoot = path.join(runtimeRoot, "firmware-workspace");
+  const service = new FirmwareService({ projectRoot: root, runtimeRoot, buildRoot });
+  service.platformio = process.execPath;
+  service.startJob("build", ["-e", "require('node:fs').writeFileSync('working-dir.txt', process.cwd())"]);
+  await new Promise((resolve, reject) => {
+    const deadline = Date.now() + 6_000;
+    const timer = setInterval(() => {
+      if (service.job?.status === "success") { clearInterval(timer); resolve(); }
+      else if (service.job?.status === "failed" || Date.now() > deadline) {
+        clearInterval(timer);
+        reject(new Error(`Firmware workspace build did not succeed: ${service.job?.status}`));
+      }
+    }, 25);
+  });
+  assert.equal(readFileSync(path.join(buildRoot, "working-dir.txt"), "utf8"), buildRoot);
+  assert.equal(readFileSync(path.join(buildRoot, "src", "main.cpp"), "utf8"),
+    readFileSync(path.join(root, "src", "main.cpp"), "utf8"));
+  writeFileSync(path.join(root, "src", "old.cpp"), "void oldCode() {}\n");
+  syncFirmwareWorkspace(root, buildRoot, collectFirmwarePackage(root));
+  assert.equal(existsSync(path.join(buildRoot, "src", "old.cpp")), true);
+  unlinkSync(path.join(root, "src", "old.cpp"));
+  syncFirmwareWorkspace(root, buildRoot, collectFirmwarePackage(root));
+  assert.equal(existsSync(path.join(buildRoot, "src", "old.cpp")), false);
 });
 
 test("intentional firmware cancellation is reported as cancelled and preserves the last good build", { timeout: 8_000 }, async () => {

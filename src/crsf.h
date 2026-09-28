@@ -5,6 +5,12 @@
 constexpr int RX_PIN = 16;
 constexpr int TX_PIN = 17;
 constexpr uint32_t CRSF_BAUD = 420000;
+// The default 256-byte UART ring holds less than 20 ms at 500 Hz / 26 bytes.
+// Servo I2C work and engineering telemetry can delay the next receiver poll.
+constexpr size_t CRSF_RX_BUFFER_BYTES = 4096;
+// At 250 Hz the receiver sends about 6.5 kB/s of channel frames. This cap
+// bounds one pass while leaving enough headroom for a normal 40 Hz loop.
+constexpr size_t CRSF_RX_MAX_BYTES_PER_PASS = 384;
 constexpr float CH_FILTER_ALPHA = 0.25f;
 constexpr uint8_t CRSF_ADDR_FC = 0xC8;
 constexpr uint8_t CRSF_TYPE_RC_CHANNELS = 0x16;
@@ -30,6 +36,13 @@ void processCrsfFrames(unsigned long now);
 bool crsfLinkAlive(unsigned long now);
 bool crsfHasReceivedFrame();
 uint32_t crsfAcceptedFrameCount();
+uint32_t crsfCrcErrorCount();
+uint32_t crsfUartOverflowCount();
+uint32_t crsfReceiveBudgetHitCount();
+uint32_t crsfLastBudgetHitAtMs();
+uint16_t crsfPendingBytes();
+uint16_t crsfMaxPendingBytes();
+uint16_t crsfLastPassBytes();
 
 struct CrsfLinkStatistics {
   bool valid;

@@ -32,6 +32,7 @@ test("clears a stopped active session without clearing while recording", () => {
 });
 
 const snapshot = (expectedTimestampMs = 1_000, measuredTimestampMs = 1_012) => ({
+  expectedFresh: true,
   paired: true,
   expected: {
     timestampMs: expectedTimestampMs,
@@ -51,6 +52,79 @@ const snapshot = (expectedTimestampMs = 1_000, measuredTimestampMs = 1_012) => (
   jointErrorsDeg: Array.from({ length: 16 }, (_, index) => index / 10),
   worstJointErrorDeg: 1.5,
   power: { voltageV: 15.2, currentA: 3, powerW: 45.6 },
+});
+
+test("exports model and electrical commands separately through recording and import", () => {
+  const session = createLiveSessionState();
+  startLiveSession(session, 10_000);
+  const source = snapshot();
+  source.expected.modelServoAngleDeg = Array.from({ length: 16 }, (_, index) => 120 + index);
+  recordLiveComparisonSample(session, source, 10_100);
+  stopLiveSession(session, 10_200);
+  const archived = archiveLiveSession([], session, "model-basis");
+  source.expected.modelServoAngleDeg[0] = 250;
+  session.samples[0].expectedModelJointAnglesDeg[0] = 240;
+  const imported = parseLiveSessionJson(liveSessionJson(archived));
+  assert.equal(imported.samples[0].expectedModelJointAnglesDeg[0], 120);
+  assert.equal(imported.samples[0].expectedJointAnglesDeg[0], 130);
+  const [header, row] = liveSessionCsv(imported).split("\n").map((line) => line.split(","));
+  assert.equal(header.length, row.length);
+  assert.equal(Number(row[header.indexOf("ch15_model_command_deg")]), 135);
+  delete archived.samples[0].expectedModelJointAnglesDeg;
+  assert.equal(parseLiveSessionJson(liveSessionJson(archived)).samples[0].expectedModelJointAnglesDeg, null);
+});
+
+test("retains reset and stage timing evidence in JSON and CSV", () => {
+  const session = createLiveSessionState();
+  startLiveSession(session, 10_000);
+  const source = snapshot();
+  source.diagnostics = {
+    bootId: 42, resetReason: 6, priorResetStage: 5, maximumLoopGapMs: 2712,
+    maxImuStageUs: 850000, maxServoWriteUs: 75000, imuI2cErrors: 2,
+    imuLastRequestBytes: 14, imuLastRequestUs: 380,
+    imuLastFailedRequestBytes: 0, imuLastFailedRequestUs: 1003522,
+    imuMaxRequestUs: 1003522,
+    crsfBudgetHits: 3, crsfPendingBytes: 320, imuSampleAgeMs: 410,
+  };
+  recordLiveComparisonSample(session, source, 10_100);
+  stopLiveSession(session, 10_200);
+  const imported = parseLiveSessionJson(liveSessionJson(archiveLiveSession([], session, "cutout")));
+  assert.equal(imported.samples[0].diagnostics.priorResetStage, 5);
+  assert.equal(imported.samples[0].diagnostics.maxImuStageUs, 850000);
+  assert.equal(imported.samples[0].diagnostics.imuLastFailedRequestBytes, 0);
+  assert.equal(imported.samples[0].diagnostics.imuLastFailedRequestUs, 1003522);
+  const [header, row] = liveSessionCsv(imported).split("\n").map((line) => line.split(","));
+  assert.equal(header.length, row.length);
+  assert.equal(Number(row[header.indexOf("max_imu_stage_us")]), 850000);
+  assert.equal(Number(row[header.indexOf("imu_i2c_errors")]), 2);
+  assert.equal(Number(row[header.indexOf("imu_last_request_bytes")]), 14);
+  assert.equal(Number(row[header.indexOf("imu_last_failed_request_bytes")]), 0);
+  assert.equal(Number(row[header.indexOf("imu_last_failed_request_us")]), 1003522);
+  assert.equal(Number(row[header.indexOf("crsf_budget_hits")]), 3);
+  assert.equal(Number(row[header.indexOf("crsf_pending_bytes")]), 320);
+  assert.equal(Number(row[header.indexOf("imu_sample_age_ms")]), 410);
+});
+
+test("engineering export deduplicates onboard blackbox events and preserves them on import", () => {
+  const session = createLiveSessionState();
+  startLiveSession(session, 10_000);
+  const source = snapshot();
+  source.diagnostics = { bootId: 42, blackboxEvents: [
+    [1, 1, 0, 1, 0, 1, 0],
+    [2, 1, 1500, 3, 2, 1003500, 20],
+  ] };
+  recordLiveComparisonSample(session, source, 10_100);
+  source.expected.timestampMs += 100;
+  source.measured.timestampMs += 100;
+  recordLiveComparisonSample(session, source, 10_200);
+  stopLiveSession(session, 10_300);
+  const archived = archiveLiveSession([], session, "blackbox");
+  const exported = JSON.parse(liveSessionJson(archived));
+  assert.equal(exported.blackbox.events.length, 2);
+  assert.equal(exported.blackbox.events[1].value, 1003500);
+  const imported = parseLiveSessionJson(JSON.stringify(exported));
+  assert.deepEqual(imported.samples[0].diagnostics.blackboxEvents[1],
+    [2, 1, 1500, 3, 2, 1003500, 20]);
 });
 
 test("validates restored sessions and merges newest-first without duplicates", () => {
@@ -109,6 +183,24 @@ test("records each synchronized source pair once", () => {
   assert.equal(session.samples[0].power.estimatedChargePercent, 40);
 });
 
+test("preserves USB sensor evidence without reporting it as pack charge or minimum pack voltage", () => {
+  const session = createLiveSessionState();
+  startLiveSession(session, 10_000);
+  const usb = snapshot();
+  usb.power.voltageV = 2.5;
+  usb.diagnostics = { robotState: "disarmed" };
+  assert.equal(recordLiveComparisonSample(session, usb, 10_100), true);
+  assert.equal(session.samples[0].power.voltageV, 2.5);
+  assert.equal(session.samples[0].power.packDetected, false);
+  assert.equal(session.samples[0].power.estimatedChargePercent, null);
+  assert.equal(analyzeLiveSession(session).minimumVoltageV, null);
+
+  const pack = snapshot(1_100, 1_112);
+  pack.power.voltageV = 13.2;
+  assert.equal(recordLiveComparisonSample(session, pack, 10_200), true);
+  assert.equal(analyzeLiveSession(session).minimumVoltageV, 13.2);
+});
+
 test("does not record unpaired or stopped telemetry", () => {
   const session = createLiveSessionState();
   assert.equal(recordLiveComparisonSample(session, snapshot()), false);
@@ -116,6 +208,29 @@ test("does not record unpaired or stopped telemetry", () => {
   assert.equal(recordLiveComparisonSample(session, { paired: false }, 10_100), false);
   stopLiveSession(session, 10_200);
   assert.equal(recordLiveComparisonSample(session, snapshot(), 10_300), false);
+});
+
+test("records diagnostics and commands without an IMU measurement", () => {
+  const session = createLiveSessionState();
+  startLiveSession(session, 10_000);
+  const source = snapshot();
+  source.paired = false;
+  source.measured = null;
+  source.bodyError = null;
+  source.diagnostics = { bootId: 77, imuOnline: false, crsfUartOverflows: 0 };
+  assert.equal(recordLiveComparisonSample(session, source, 10_100), true);
+  assert.equal(recordLiveComparisonSample(session, source, 10_200), false);
+  stopLiveSession(session, 10_300);
+  const imported = parseLiveSessionJson(liveSessionJson(session));
+  assert.equal(imported.samples[0].measuredTimestampMs, null);
+  assert.equal(imported.samples[0].measuredBody.pitchDeg, null);
+  assert.equal(imported.samples[0].diagnostics.imuOnline, false);
+  assert.equal(imported.samples[0].expectedBody.pitchDeg, 1);
+  const [header, row] = liveSessionCsv(imported).split("\n").map((line) => line.split(","));
+  assert.equal(header.length, row.length);
+  assert.equal(row[header.indexOf("measured_timestamp_ms")], "");
+  assert.equal(row[header.indexOf("measured_pitch_deg")], "");
+  assert.equal(Number(row[header.indexOf("robot_boot_id")]), 77);
 });
 
 test("bounds the in-memory recording buffer", () => {
@@ -227,4 +342,60 @@ test("archives stopped sessions without sharing mutable sample objects", () => {
   assert.equal(entry.samples[0].bodyError.pitchDeg, 1);
   assert.equal(removeArchivedLiveSession(archive, "run-1"), true);
   assert.equal(archive.length, 0);
+});
+
+test("physical IMU-only sessions round-trip without inventing height or joint feedback", () => {
+  const session = createLiveSessionState();
+  startLiveSession(session, 10_000);
+  const sample = snapshot();
+  sample.measured.body.heightMm = null;
+  sample.bodyError.heightMm = null;
+  sample.bodyError.yawDeg = null;
+  sample.measured.servoAngleDeg = null;
+  sample.jointErrorsDeg.fill(null);
+  sample.worstJointErrorDeg = null;
+  recordLiveComparisonSample(session, sample, 10_100);
+  stopLiveSession(session, 10_500);
+  const imported = parseLiveSessionJson(liveSessionJson(session));
+  assert.equal(imported.samples[0].measuredBody.heightMm, null);
+  assert.equal(imported.samples[0].measuredJointAnglesDeg, null);
+  assert.equal(analyzeLiveSession(imported).meanAbsHeightErrorMm, null);
+  assert.equal(analyzeLiveSession(imported).meanAbsYawErrorDeg, null);
+});
+
+test("records reset, radio and detail timing evidence in independent JSON and CSV samples", () => {
+  const session = createLiveSessionState();
+  startLiveSession(session, 10_000);
+  const sample = snapshot(10_000, 10_000);
+  sample.expected.detailsTimestampMs = 9_300;
+  sample.diagnostics = {
+    bootId: 42, resetReason: 9, uptimeMs: 2_300, maximumLoopGapMs: 71,
+    outputsEnabled: true, bodyMode: 2, radioControlEnabled: true,
+    motionInputAwaitingCenter: false, crsfAcceptedFrames: 550,
+    crsfCrcErrors: 3, crsfUartOverflows: 2, commandLatencyMs: 5,
+  };
+  sample.controller = {
+    source: "boxer-elrs", frameTimestampMs: 9_995, packetRateHz: 250,
+    linkQualityPercent: 99, rssi1Dbm: -60, failsafe: false,
+    channelsUs: Array(16).fill(1_500),
+  };
+  recordLiveComparisonSample(session, sample, 10_100);
+  stopLiveSession(session, 10_500);
+  const archived = archiveLiveSession([], session);
+  sample.controller.channelsUs[0] = 2_000;
+  session.samples[0].controller.channelsUs[1] = 1_000;
+  session.samples[0].diagnostics.bootId = 99;
+  const imported = parseLiveSessionJson(liveSessionJson(archived));
+  assert.equal(imported.samples[0].diagnostics.bootId, 42);
+  assert.equal(imported.samples[0].controller.channelsUs[0], 1_500);
+  assert.equal(imported.samples[0].controller.channelsUs[1], 1_500);
+  assert.equal(imported.samples[0].expectedDetailsTimestampMs, 9_300);
+  const [headers, values] = liveSessionCsv(imported).split("\n").map((line) => line.split(","));
+  assert.equal(values.length, headers.length);
+  const exported = Object.fromEntries(headers.map((key, index) => [key, values[index]]));
+  assert.equal(exported.esp32_reset_reason, "9");
+  assert.equal(exported.crsf_uart_overflows, "2");
+  assert.equal(exported.awaiting_stick_center, "0");
+  assert.equal(exported.crsf_ch16_us, "1500");
+  assert.equal(exported.expected_details_timestamp_ms, "9300");
 });

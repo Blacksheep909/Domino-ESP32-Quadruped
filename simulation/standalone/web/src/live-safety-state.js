@@ -63,7 +63,8 @@ export function liveSafetyCanArm(state, context) {
     state.robotState === "disarmed" &&
     context?.connectionReady === true &&
     context?.telemetryFresh === true &&
-    context?.driveLinkAlive === true
+    context?.driveLinkAlive === true &&
+    context?.batteryDetected !== false
   );
 }
 

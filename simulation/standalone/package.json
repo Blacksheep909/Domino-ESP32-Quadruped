@@ -2,7 +2,7 @@
   "name": "domino-quadruped-studio",
   "productName": "Domino Quadruped Studio",
   "private": true,
-  "version": "0.2.2",
+  "version": "0.2.26",
   "description": "Offline simulation, telemetry, calibration, diagnostics and firmware workspace for Domino.",
   "author": "Domino Quadruped Project",
   "license": "MIT",
@@ -41,6 +41,7 @@
     },
     "files": [
       "dist/**/*",
+      "desktop/app-title.mjs",
       "desktop/main.mjs",
       "desktop/paths.mjs",
       "desktop/preload.mjs",
@@ -82,7 +83,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Domino Quadruped Studio"
+      "shortcutName": "Domino Quadruped Studio v${version}"
     },
     "publish": [
       {

@@ -2,6 +2,23 @@
 
 Domino is a prototype ESP32 quadruped robot built around a carbon-and-printed composite chassis, a custom 3-DoF leg mechanism, CRSF/ExpressLRS radio control, PCA9685 servo output, and CAD-to-simulation experiments.
 
+> Work in progress: Domino is an active engineering prototype, not a finished kit. The firmware, CAD exports, PCB package, calibration notes, and simulation files are included as a project record and technical reference. The repo does not yet contain a complete step-by-step build manual, measured BOM, wiring diagram, or validated production assembly process.
+
+![Domino quadruped robot build](docs/images/domino-master.jpg)
+
+## Why This Project Matters
+
+Domino is the successor to my earlier SpotMicro ESP32 Nitro work. The earlier project gave me a working base for servo-driven quadruped control, PCB packaging, and RC-controlled robot bring-up. Domino moves beyond that reference design into a more custom platform:
+
+- A scratch-built mechanical layout using carbon members and 3D-printed structural parts.
+- A serviceable electronics cage rather than a sealed body shell.
+- Per-leg inverse kinematics for a custom 3-DoF mechanism.
+- A move from iBUS-style receiver handling to custom CRSF/ExpressLRS parsing on the ESP32.
+- A new Domino PCB manufacturing package based on lessons from the older SpotMicro Nitro board.
+- CAD, STEP, USD, and Isaac Sim export work documenting the mechanical and simulation path.
+
+As a portfolio project, Domino demonstrates mechanical design, embedded firmware, RC protocol work, power distribution, servo safety, calibration, and simulation constraints in one prototype hardware stack.
+
 ## Domino Quadruped Studio
 
 **Quadruped Studio is the project's desktop engineering application.** Use it
@@ -25,23 +42,6 @@ setup.*
 - **Mission tools:** local route planning, geographic map overlays, GPS/LiDAR
   views and capability-gated vehicle controls.
 - **Projects:** portable configuration files and telemetry capture/export.
-
-> Work in progress: Domino is an active engineering prototype, not a finished kit. The firmware, CAD exports, PCB package, calibration notes, and simulation files are included as a project record and technical reference. The repo does not yet contain a complete step-by-step build manual, measured BOM, wiring diagram, or validated production assembly process.
-
-![Domino quadruped robot build](docs/images/domino-master.jpg)
-
-## Why This Project Matters
-
-Domino is the successor to my earlier SpotMicro ESP32 Nitro work. The earlier project gave me a working base for servo-driven quadruped control, PCB packaging, and RC-controlled robot bring-up. Domino moves beyond that reference design into a more custom platform:
-
-- A scratch-built mechanical layout using carbon members and 3D-printed structural parts.
-- A serviceable electronics cage rather than a sealed body shell.
-- Per-leg inverse kinematics for a custom 3-DoF mechanism.
-- A move from iBUS-style receiver handling to custom CRSF/ExpressLRS parsing on the ESP32.
-- A new Domino PCB manufacturing package based on lessons from the older SpotMicro Nitro board.
-- CAD, STEP, USD, and Isaac Sim export work documenting the mechanical and simulation path.
-
-As a portfolio project, Domino demonstrates mechanical design, embedded firmware, RC protocol work, power distribution, servo safety, calibration, and simulation constraints in one prototype hardware stack.
 
 ## Current Status
 

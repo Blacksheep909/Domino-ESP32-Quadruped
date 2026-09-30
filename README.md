@@ -60,6 +60,30 @@ Domino is the successor to my earlier SpotMicro ESP32 Nitro work. The earlier pr
 
 As a portfolio project, Domino demonstrates mechanical design, embedded firmware, RC protocol work, power distribution, servo safety, calibration, and simulation constraints in one prototype hardware stack.
 
+## Domino Quadruped Studio
+
+**Quadruped Studio is the project's desktop engineering application.** Use it
+to stand and move the CAD robot in simulation, develop gait profiles, inspect
+joint travel, review calibration, record telemetry and plan routes.
+
+**[Read the Studio guide](docs/quadruped-studio.md)** ·
+**[Open the Studio source](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/tree/codex/desktop-app/simulation/standalone)** ·
+**[Download Studio 0.3.1 for Windows](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/releases/tag/v0.3.1)**
+
+![Domino standing on four feet in Quadruped Studio's Simulation workspace](docs/images/studio-simulation-standing.jpg)
+
+*Captured from Studio 0.3.1. The robot is standing in the
+local firmware/CAD simulation; the screenshot does not show a physical robot
+connection. The guide explains build availability and source setup.*
+
+- **Simulation:** firmware modes, actual CAD/linkage geometry, physics,
+  keyboard/controllers, gait tuning and joint inspection.
+- **LIVE:** comparison, data graphs, calibration, gait profiles, diagnostics
+  and saved sessions through a compatible robot adapter.
+- **Mission tools:** local route planning, geographic map overlays, GPS/LiDAR
+  views and capability-gated vehicle controls.
+- **Projects:** portable configuration files and telemetry capture/export.
+
 ## Three Project Tracks
 
 The repository is deliberately split into three connected but distinct tracks:
@@ -197,7 +221,7 @@ Installed builds check GitHub for releases on startup and every six hours. When
 an update is downloaded, the app prompts to restart and installs it over the
 existing Domino Quadruped Studio installation; it does not create a second app
 copy. Use the `.exe` installer for this workflow; the `.zip` remains a manual
-portable build. The current local build is `0.2.26`; install its NSIS setup over
+portable build. The current local build is `0.3.1`; install its NSIS setup over
 an existing Domino Quadruped Studio copy to update that installation in place.
 Later NSIS releases continue using the same installation and can use the
 generated block map for differential downloads.

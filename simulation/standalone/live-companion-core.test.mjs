@@ -2,14 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { DOMINO_ROBOT_LINK_PROTOCOL, LiveCompanionCore } from "./live-companion-core.mjs";
-import { createLiveCalibrationProfile } from "./web/src/live-calibration-state.js";
+import { createCalibrationBenchCommand, createLiveCalibrationProfile, createLiveCalibrationState } from "./web/src/live-calibration-state.js";
+import { validCalibrationCommand } from "./web/src/live-calibration-protocol.js";
+import { DEFAULT_MOTION_SMOOTHING } from "./web/src/live-motion-smoothing-state.js";
 import { createLiveGaitProfile } from "./web/src/live-gait-state.js";
 
 const adapterId = "adapter-test";
 const hello = (robotState = "disarmed") => ({
   type: "robot-hello", protocol: DOMINO_ROBOT_LINK_PROTOCOL,
   robotId: "domino-test", robotName: "Domino test", firmwareVersion: "test", robotState,
-  capabilities: { telemetry: true, calibration: true, gaitProfiles: true, persistentProfiles: true, manualControl: true },
+  capabilities: { telemetry: true, calibration: true, motionSmoothing: true, gaitProfiles: true, persistentProfiles: true, manualControl: true },
   gaitProfile: { schemaVersion: 2, robot: "domino-test", name: "Robot safe" },
 });
 const pose = (timestampMs) => ({
@@ -326,6 +328,50 @@ test("active calibration readback returns robot profile without entering bench m
   assert.equal(core.benchMode, false);
   core.robotState = "armed";
   assert.equal(core.handleRelay({ ...request, requestId: "armed-read" }, 1_070).relay[0].accepted, false);
+});
+
+test("motion smoothing is bounded, saved separately, and read back while disarmed", () => {
+  const core = connectedCore();
+  const state = createLiveCalibrationState();
+  const envelope = { adapterId, sessionId: core.sessionId };
+  const request = {
+    ...createCalibrationBenchCommand(state, "request-smoothing", "smooth-read", 1_050),
+    ...envelope,
+  };
+  assert.equal(validCalibrationCommand(request), true);
+  assert.equal(core.handleRelay(request, 1_050).robot[0].action, "request-smoothing");
+  assert.equal(core.benchMode, false);
+  const read = core.handleRobot({
+    protocol: DOMINO_ROBOT_LINK_PROTOCOL, type: "robot-ack", kind: "calibration",
+    action: "request-smoothing", requestId: "smooth-read", accepted: true,
+    robotState: "disarmed", benchMode: false, smoothing: DEFAULT_MOTION_SMOOTHING,
+  }, 1_060);
+  assert.deepEqual(read.relay[0].smoothing, DEFAULT_MOTION_SMOOTHING);
+
+  const tuned = { ...DEFAULT_MOTION_SMOOTHING, updatedAt: 1_080, enabled: false, rollRateDegPerSec: 140 };
+  const save = {
+    ...createCalibrationBenchCommand(state, "save-smoothing", "smooth-save", 1_080,
+      { baseUpdatedAt: 0, settings: tuned }),
+    ...envelope,
+  };
+  assert.equal(validCalibrationCommand(save), true);
+  const forwarded = core.handleRelay(save, 1_080).robot[0].payload.smoothing;
+  assert.equal(forwarded.rollRateDegPerSec, 140);
+  assert.equal(forwarded.enabled, false);
+  const saved = core.handleRobot({
+    protocol: DOMINO_ROBOT_LINK_PROTOCOL, type: "robot-ack", kind: "calibration",
+    action: "save-smoothing", requestId: "smooth-save", accepted: true,
+    robotState: "disarmed", benchMode: false, persisted: true,
+  }, 1_090);
+  assert.equal(saved.relay[0].persisted, true);
+  assert.equal(core.benchMode, false);
+
+  const unsafe = { ...save, requestId: "too-fast", smoothing: { ...tuned, yawRateDegPerSec: 999 } };
+  assert.equal(validCalibrationCommand(unsafe), false);
+  assert.equal(validCalibrationCommand({ ...save, smoothing: { ...tuned, enabled: 0 } }), false);
+  assert.equal(validCalibrationCommand({ ...save, smoothing: { ...tuned, schemaVersion: 1 } }), false);
+  core.robotState = "armed";
+  assert.equal(core.handleRelay({ ...save, requestId: "armed-save" }, 1_100).relay[0].accepted, false);
 });
 
 test("physical request timeouts return explicit rejection acknowledgements", () => {

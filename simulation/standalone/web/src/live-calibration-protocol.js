@@ -1,6 +1,11 @@
+import { validMotionSmoothingSettings } from "./live-motion-smoothing-state.js";
+
 export const LIVE_CALIBRATION_JOG_LIMIT_DEG = 10;
 export const LIVE_CALIBRATION_MAX_SPEED_DEG_PER_SEC = 5;
-export const LIVE_CALIBRATION_ACTIONS = Object.freeze(["request-profile", "enter", "exit", "jog", "save-profile"]);
+
+export const LIVE_CALIBRATION_ACTIONS = Object.freeze([
+  "request-profile", "request-smoothing", "save-smoothing", "enter", "exit", "jog", "save-profile",
+]);
 
 export function validCalibrationCommand(message) {
   const envelopeValid = Boolean(
@@ -9,7 +14,7 @@ export function validCalibrationCommand(message) {
     LIVE_CALIBRATION_ACTIONS.includes(message.action) &&
     typeof message.requestId === "string" &&
     message.requestId.length > 0 &&
-    message.safety?.benchModeRequired === (message.action !== "request-profile") &&
+    message.safety?.benchModeRequired === !["request-profile", "request-smoothing", "save-smoothing"].includes(message.action) &&
     Number(message.safety?.maxSpeedDegPerSec) > 0 &&
     Number(message.safety?.maxSpeedDegPerSec) <= LIVE_CALIBRATION_MAX_SPEED_DEG_PER_SEC &&
     Number(message.safety?.jogLimitDeg) > 0 &&
@@ -33,6 +38,11 @@ export function validCalibrationCommand(message) {
       physicalChannels.every((channel) => Number.isInteger(channel) && channel >= 0 && channel < 16) &&
       logicalChannels.every((channel) => Number.isInteger(channel) && channel >= 0 && channel < 16) &&
       new Set(physicalChannels).size === 12 && new Set(logicalChannels).size === 12;
+  }
+  if (message.action === "save-smoothing") {
+    return Number.isSafeInteger(message.baseUpdatedAt) && message.baseUpdatedAt >= 0 &&
+      validMotionSmoothingSettings(message.smoothing) &&
+      message.smoothing.updatedAt > message.baseUpdatedAt;
   }
   return true;
 }

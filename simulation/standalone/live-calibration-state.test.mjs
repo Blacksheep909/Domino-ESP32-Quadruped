@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 
 import {
   acceptRobotCalibrationProfile,
+  calibrationInspectionModelAngles,
+  calibrationOutputForModelChannel,
   calibrationPreviewModelAngles,
   calibrationPreviewServoAngles,
   calibrationChannelMap,
@@ -15,6 +17,7 @@ import {
   jogCalibrationJoint,
   LIVE_CALIBRATION_JOG_LIMIT_DEG,
   LIVE_CALIBRATION_JOINTS,
+  LIVE_CALIBRATION_OUTPUTS,
   parseCalibrationProfileJson,
   robotCalibrationReady,
   restoreCalibrationDefaults,
@@ -29,6 +32,56 @@ import {
   validCalibrationAcknowledgement,
   validCalibrationCommand,
 } from "./web/src/live-calibration-protocol.js";
+import { legs, standServoReference } from "./web/src/domino-config.js";
+
+test("rear-right calibration identifies the existing outputs that move each physical joint", () => {
+  const rearRight = LIVE_CALIBRATION_OUTPUTS.filter((output) => output.leg === "BR");
+  assert.deepEqual(rearRight.map(({ label, channel }) => [label, channel]), [
+    ["BR Hip", 9], ["BR Lower", 10], ["BR Upper", 11],
+  ]);
+  assert.equal(calibrationOutputForModelChannel(10).channel, 11);
+  assert.equal(calibrationOutputForModelChannel(11).channel, 10);
+  assert.equal(calibrationOutputForModelChannel(9).channel, 9);
+  assert.equal(calibrationOutputForModelChannel(6), undefined);
+});
+
+test("a calibration preview follows the firmware cross-reversed physical response on every leg", () => {
+  const state = createLiveCalibrationState();
+  for (const leg of legs) {
+    for (const [output, physicalJoint, sign] of [
+      ["shoulder", "shoulder", 1], ["upper", "lower", -1], ["lower", "upper", -1],
+    ]) {
+      selectCalibrationJoint(state, leg.channels[output]);
+      const angles = calibrationInspectionModelAngles(state, 6);
+      const physicalChannel = leg.channels[physicalJoint];
+      assert.equal((angles[physicalChannel] - standServoReference[physicalChannel]) / leg.directions[physicalJoint], sign * 6);
+      assert.equal(angles.filter((angle, channel) => angle !== standServoReference[channel]).length, 1);
+    }
+  }
+});
+
+test("model inspection preserves read-back calibration, electrical neutral targets and saved routes", () => {
+  const active = createLiveCalibrationProfile({ savedAt: 1770000000000 });
+  active.joints.forEach((joint, index) => {
+    joint.offsetDeg = index / 10;
+    joint.direction = index % 2 ? -1 : 1;
+    joint.minimumDeg = -17;
+    joint.maximumDeg = 23;
+  });
+  [active.joints[0].channel, active.joints[11].channel] = [active.joints[11].channel, active.joints[0].channel];
+  const state = createLiveCalibrationState();
+  assert.equal(acceptRobotCalibrationProfile(state, active, "existing-robot").accepted, true);
+  const before = calibrationProfileJson(state.profile);
+  const neutralOutputs = calibrationPreviewServoAngles(state);
+  for (const output of LIVE_CALIBRATION_OUTPUTS) {
+    selectCalibrationJoint(state, output.channel);
+    calibrationInspectionModelAngles(state, -12.3);
+    calibrationInspectionModelAngles(state, 14.7);
+    assert.deepEqual(calibrationPreviewServoAngles(state), neutralOutputs);
+    assert.equal(calibrationProfileJson(state.profile), before);
+  }
+  assert.equal(state.dirty, false);
+});
 
 test("creates one bounded calibration record for every driven Domino joint", () => {
   const profile = createLiveCalibrationProfile();

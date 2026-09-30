@@ -1,5 +1,9 @@
 # Domino Virtual Lab
 
+This is the source workspace for **Domino Quadruped Studio**. Start with the
+[Studio user guide](../../docs/quadruped-studio.md) for the feature tour,
+standing simulation screenshot, calibration/preview workflow and setup.
+
 The Virtual Lab is Domino's standalone, computer-game-like 3D environment for
 testing the real firmware controller against the real CAD before connecting
 the physical robot. It is a separate project track from the ESP32 firmware
@@ -320,7 +324,7 @@ every six hours. Updates download in the background and install over the
 existing installation after a restart, so repeated releases do not create a
 new app directory or a second shortcut set. Use the NSIS `.exe` for automatic
 updates; the `.zip` is a manual portable build. The current local build is
-`0.2.26`; install its NSIS setup over an existing copy to update that
+`0.3.1`; install its NSIS setup over an existing copy to update that
 installation in place. Later NSIS releases continue using the same installation
 and can use the generated block map for differential downloads. A successful firmware build or
 upload also triggers an immediate app-update check, so firmware iterations do
@@ -434,5 +438,6 @@ endpoint regression is treated as a fixed-foot kinematic proof.
 .\simulation\standalone\stop.ps1
 ```
 
-This environment is under active local development and is not ready for public
-repository publication.
+Studio is under active development. Check the public branch and release notes
+for the features available in each build; the user guide identifies newer
+development features separately.

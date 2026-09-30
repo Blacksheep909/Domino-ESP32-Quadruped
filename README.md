@@ -27,11 +27,11 @@ joint travel, review calibration, record telemetry and plan routes.
 
 **[Read the Studio guide](docs/quadruped-studio.md)** ·
 **[Open the Studio source](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/tree/codex/desktop-app/simulation/standalone)** ·
-**[Windows releases](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/releases)**
+**[Download Studio 0.3.1 for Windows](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/releases/tag/v0.3.1)**
 
 ![Domino standing on four feet in Quadruped Studio's Simulation workspace](docs/images/studio-simulation-standing.jpg)
 
-*Captured from the Studio 0.3.1 development build. The robot is standing in the
+*Captured from Studio 0.3.1. The robot is standing in the
 local firmware/CAD simulation. The guide explains build availability and source
 setup.*
 

@@ -6,28 +6,31 @@ It brings the Domino CAD, native firmware simulator, local service and robot
 companion tools into one workspace.
 
 **Start here:** [Studio source](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/tree/codex/desktop-app/simulation/standalone)
-· [Windows releases](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/releases)
+· [Download Studio 0.3.1 for Windows](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/releases/tag/v0.3.1)
 · [Project home](../README.md)
 
 ![Domino standing on four feet in Quadruped Studio's Simulation workspace](images/studio-simulation-standing.jpg)
 
-*An actual screenshot of the Studio 0.3.1 development build, with the simulated
+*An actual screenshot of Studio 0.3.1, with the simulated
 robot standing at a commanded height of 280 mm and four ground contacts. The
 connection indicators in this view belong to the local simulator.*
 
 ## Availability
 
-Studio is developed on the repository's `codex/desktop-app` branch. At the time
-of this guide, that public branch contains version 0.2.26; the screenshot and
-the sections marked **0.3 development** show the newer local 0.3.1 build.
-Check the branch's `package.json` and release notes for the features included
-in the build you install.
+**[Download the Windows x64 installer](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/releases/download/v0.3.1/Domino-Quadruped-Studio-0.3.1-x64.exe)**
+or choose the **[portable ZIP](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/releases/download/v0.3.1/Domino-Quadruped-Studio-0.3.1-x64.zip)**.
+Run the installer, then open **Domino Quadruped Studio v0.3.1** from the Start
+menu. For the portable build, extract the complete ZIP to a normal folder and
+run `DominoQuadrupedStudio.exe` inside it.
 
-Windows installers use `Domino-Quadruped-Studio-<version>-x64.exe`. Portable
-builds use the corresponding `.zip`. No public GitHub installer release is
-listed yet; the source-build instructions below are the available public route.
-The installed application bundles its runtime dependencies, so ordinary use
-does not need a separate Node terminal.
+The application bundles its runtime dependencies, so ordinary use does not
+need a separate Node terminal. The release also includes `SHA256SUMS.txt`
+and the update checker's `latest.yml` and installer blockmap.
+
+Studio is developed on `codex/desktop-app`. The **[v0.3.1 source tag](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/tree/v0.3.1)**
+records the source for this release; use that tag to reproduce this version.
+Check the [release notes](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/releases/tag/v0.3.1)
+for the features included in the build you install.
 
 ## Start with Simulation
 
@@ -111,7 +114,7 @@ the robot's calibration. **SAVE BROWSER COPY** saves a local draft; **SEND TO
 ROBOT** is a separate physical action. Importing a project or profile also
 produces local configuration for review.
 
-### Interactive inspection — 0.3 development
+### Interactive inspection — 0.3.1
 
 The selected joint has a readable screen overlay with CAD pose, estimated servo
 angle, allowed travel, distance to each stop and limit status. **FOCUS JOINT**
@@ -130,7 +133,7 @@ label is not a request to swap wires or replace the saved calibration.
 **CAD PROXIMITY SCREEN** reports broad bounding-box proximity. It helps spot a
 potential conflict in the model but cannot certify real mechanical clearance.
 
-## Motion smoothing — 0.3 development
+## Motion smoothing — 0.3.1
 
 Calibration's review step includes **MOTION RESPONSE / RAMP**. The graph shows a
 requested pose step and the rate-limited command sent toward IK. Select roll,

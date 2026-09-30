@@ -163,6 +163,7 @@ export class LiveCompanionCore {
     this.capabilities = {
       telemetry: false,
       calibration: false,
+      motionSmoothing: false,
       gaitProfiles: false,
       persistentProfiles: false,
       manualControl: false,
@@ -355,7 +356,7 @@ export class LiveCompanionCore {
 
     if (message.type === "live-calibration-command" && validCalibrationCommand(message)) {
       const allowed = this.robotState === "disarmed" &&
-        (["request-profile", "enter"].includes(message.action) || this.benchMode);
+        (["request-profile", "request-smoothing", "save-smoothing", "enter"].includes(message.action) || this.benchMode);
       if (!allowed) {
         relay.push(this.calibrationAck(message, false, "Calibration requires disarmed robot state; writes also require acknowledged bench mode."));
       } else {
@@ -593,7 +594,7 @@ export class LiveCompanionCore {
     }
     for (const [requestId, pending] of this.pending) {
       const timeoutMs = ["calibration", "gait"].includes(pending.kind) &&
-        ["save-profile", "apply-profile", "revert-profile"].includes(pending.action)
+        ["save-profile", "save-smoothing", "apply-profile", "revert-profile"].includes(pending.action)
         ? COMPANION_PERSISTENCE_ACK_TIMEOUT_MS
         : COMPANION_COMMAND_ACK_TIMEOUT_MS;
       if (now - pending.sentAt <= timeoutMs) continue;
@@ -639,6 +640,8 @@ export class LiveCompanionCore {
       ...(Number(physical?.maxSpeedDegPerSec) > 0 && Number(physical?.maxSpeedDegPerSec) <= 5
         ? { maxSpeedDegPerSec: Number(physical.maxSpeedDegPerSec) } : {}),
       ...(typeof physical?.persisted === "boolean" ? { persisted: physical.persisted } : {}),
+      ...(physical?.smoothing && typeof physical.smoothing === "object"
+        ? { smoothing: physical.smoothing } : {}),
     };
   }
 

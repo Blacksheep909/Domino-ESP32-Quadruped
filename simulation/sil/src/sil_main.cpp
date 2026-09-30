@@ -16,10 +16,12 @@
 #include "gait_profile.h"
 #include "leg_controller.h"
 #include "manual_control_guard.h"
+#include "motion_smoothing.h"
 #include "power_monitor_math.h"
 #include "power_fault_guard.h"
 #include "sim_pwm.h"
 #include "servo_calibration.h"
+#include "Ramp.h"
 
 void setup();
 void loop();
@@ -153,6 +155,31 @@ bool validateGaitProfiles() {
     std::cerr << "FAIL: gait profile bounds or runtime activation failed\n";
   }
   return accepted && outOfBoundsRejected && nonFiniteRejected && restored;
+}
+
+bool validateMotionSmoothingBypass() {
+  const MotionSmoothingSettings original = motionSmoothingSettings();
+  MotionSmoothingSettings settings = defaultMotionSmoothingSettings();
+  settings.enabled = false;
+  const bool disabledAccepted = setMotionSmoothingSettings(settings) &&
+      !motionSmoothingSettings().enabled;
+  settings.schemaVersion = 1;
+  const bool oldSchemaRejected = !validateMotionSmoothingSettings(settings);
+  simSetTimeUs(0);
+  rampFloat ramp;
+  ramp.go(0.0f);
+  simAdvanceTimeUs(20000);
+  const float limited = commandWithMotionSmoothing(ramp, 16.0f, 180.0f, true);
+  simAdvanceTimeUs(20000);
+  const float direct = commandWithMotionSmoothing(ramp, 16.0f, 180.0f, false);
+  simAdvanceTimeUs(20000);
+  const float resumed = commandWithMotionSmoothing(ramp, 0.0f, 180.0f, true);
+  const bool restored = setMotionSmoothingSettings(original);
+  const bool passed = disabledAccepted && oldSchemaRejected && restored &&
+      fabsf(limited - 3.6f) < 0.01f && fabsf(direct - 16.0f) < 0.01f &&
+      fabsf(resumed - 12.4f) < 0.01f;
+  if (!passed) std::cerr << "FAIL: smoothing switch bypass or restart behavior failed\n";
+  return passed;
 }
 
 bool validateManualControlGuard() {
@@ -401,6 +428,40 @@ bool validateCalibratedHipDirection() {
   }
   setServoCalibrationProfile(defaultServoCalibrationProfile());
   if (!passed) std::cerr << "FAIL: calibrated CAD/fallback hip shaft directions disagree\n";
+  return passed;
+}
+
+bool validateServoWriteReuse() {
+  Adafruit_PWMServoDriver driver;
+  setServoCalibrationProfile(defaultServoCalibrationProfile());
+  setServoOutputsEnabled(driver, true);
+  moveLegFR(driver, -15.75f, -38.0f, 280.0f);
+  constexpr uint8_t kChannels[3] = {3, 4, 15};
+  uint32_t firstWrites[3] = {};
+  for (int index = 0; index < 3; ++index) {
+    firstWrites[index] = simServoWriteCount(kChannels[index]);
+  }
+
+  moveLegFR(driver, -15.75f, -38.0f, 280.0f);
+  bool passed = true;
+  for (int index = 0; index < 3; ++index) {
+    passed = passed && simServoWriteCount(kChannels[index]) == firstWrites[index];
+  }
+
+  simAdvanceTimeUs(250000);
+  moveLegFR(driver, -15.75f, -38.0f, 280.0f);
+  for (int index = 0; index < 3; ++index) {
+    passed = passed && simServoWriteCount(kChannels[index]) == firstWrites[index] + 1;
+  }
+
+  setServoOutputsEnabled(driver, false);
+  setServoOutputsEnabled(driver, true);
+  moveLegFR(driver, -15.75f, -38.0f, 280.0f);
+  for (int index = 0; index < 3; ++index) {
+    passed = passed && simServoWriteCount(kChannels[index]) == firstWrites[index] + 2;
+  }
+  setServoOutputsEnabled(driver, false);
+  if (!passed) std::cerr << "FAIL: unchanged PCA writes or re-enable refresh\n";
   return passed;
 }
 
@@ -740,11 +801,13 @@ int main(int argc, char** argv) {
                                     : RealtimePacer{NULL, LARGE_INTEGER(), 0};
   const bool calibrationMathPassed = validateCalibrationMath();
   const bool gaitProfilesPassed = validateGaitProfiles();
+  const bool smoothingBypassPassed = validateMotionSmoothingBypass();
   const bool manualControlPassed = validateManualControlGuard();
   const bool powerMonitorMathPassed = validatePowerMonitorMath();
   const bool powerFaultGuardPassed = validatePowerFaultGuard();
   const bool crsfBurstPassed = validateCrsfBurstRecovery();
   const bool fallbackHipDirectionPassed = validateCalibratedHipDirection();
+  const bool servoWriteReusePassed = validateServoWriteReuse();
   simSetTimeUs(0);
   simResetServoOutputs();
   setup();
@@ -773,6 +836,10 @@ int main(int argc, char** argv) {
   bool carefulSupportViolation = false;
   bool sawCarefulSwing = false;
   bool sawFailsafeStow = false;
+  bool tiltSlewViolation = false;
+  bool tiltRollSampleValid = false;
+  float lastTiltRollDeg = 0.0f;
+  uint32_t lastTiltRollChangeMs = 0;
   float gaitMinX = 10000.0f;
   float gaitMaxX = -10000.0f;
   float gaitMaxLiftMm = 0.0f;
@@ -801,6 +868,21 @@ int main(int argc, char** argv) {
 
     loop();
     const int mode = dominoSilBodyMode();
+    if (mode == 2) {
+      const float rollDeg = dominoSilBodyRollDeg();
+      if (tiltRollSampleValid && fabsf(rollDeg - lastTiltRollDeg) > 0.001f) {
+        const float maximumChange = 180.0f *
+            static_cast<float>(elapsedMs - lastTiltRollChangeMs) / 1000.0f + 0.05f;
+        tiltSlewViolation = tiltSlewViolation ||
+            fabsf(rollDeg - lastTiltRollDeg) > maximumChange;
+        lastTiltRollChangeMs = elapsedMs;
+      }
+      if (!tiltRollSampleValid) lastTiltRollChangeMs = elapsedMs;
+      lastTiltRollDeg = rollDeg;
+      tiltRollSampleValid = true;
+    } else {
+      tiltRollSampleValid = false;
+    }
     sawStand = sawStand || mode == 1;
     sawTilt = sawTilt || mode == 2;
     sawGait = sawGait || mode == 4;
@@ -911,8 +993,11 @@ int main(int argc, char** argv) {
     return 0;
   }
 
-  const bool passed = calibrationMathPassed && gaitProfilesPassed && manualControlPassed &&
+  if (tiltSlewViolation) std::cerr << "FAIL: tilt roll exceeded its commanded slew rate\n";
+  const bool passed = calibrationMathPassed && gaitProfilesPassed && smoothingBypassPassed &&
+      manualControlPassed &&
       powerMonitorMathPassed && powerFaultGuardPassed && crsfBurstPassed && fallbackHipDirectionPassed &&
+      servoWriteReusePassed && !tiltSlewViolation &&
       validateOutputs(sawStand, sawTilt, sawGait, sawCareful,
                                       gaitTiltInterlockViolation,
                                       motionInputInterlockViolation,

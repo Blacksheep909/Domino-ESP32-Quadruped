@@ -43,10 +43,15 @@
 #include "crsf.h"
 #include "gait_profile.h"
 #include "leg_controller.h"
+#include "motion_smoothing.h"
 #include "imu.h"
 #ifndef DOMINO_SIL
 #include "live_robot_endpoint.h"
 #include "loop_diagnostics.h"
+#endif
+
+#ifndef DOMINO_IMU_ENABLED
+#define DOMINO_IMU_ENABLED 1
 #endif
 
 enum LegIndex { LEG_FL = 0, LEG_FR = 1, LEG_BL = 2, LEG_BR = 3 };
@@ -89,7 +94,6 @@ constexpr float kNeutralY = 0.0f;
 // below at full command without changing assembly branch.
 constexpr float kNeutralZ = kNeutralHeightMm;
 constexpr uint32_t kControlIntervalMs = 20;
-constexpr float kRampSpeedMmPerSec = 120.0f;
 
 constexpr float kCloserPoseZ = 160.0f;
 
@@ -280,12 +284,26 @@ float gaitForwardCommand = 0.0f;
 float gaitTurnCommand = 0.0f;
 float gaitAmplitude = 0.0f;
 float gaitBodyZ = 265.0f;
+rampFloat tiltRollRamp;
+rampFloat tiltPitchRamp;
+rampFloat tiltYawRamp;
 bool motionInputAwaitingCenter = false;
 uint32_t motionInputCenteredSinceMs = 0;
 
-float normalizeChannel(int chValueUs) {
-  const float normalized = (static_cast<float>(chValueUs) - kStickCenterUs) / kStickHalfRangeUs;
+float normalizeChannel(float chValueUs) {
+  const float normalized = (chValueUs - kStickCenterUs) / kStickHalfRangeUs;
   return constrain(normalized, -1.0f, 1.0f);
+}
+
+float applyTiltInputDeadband(float value) {
+  const MotionSmoothingSettings &smoothing = motionSmoothingSettings();
+  if (!smoothing.enabled) return value;
+  const float kTiltInputDeadband = smoothing.tiltInputDeadband;
+  const float magnitude = fabsf(value);
+  if (magnitude <= kTiltInputDeadband) return 0.0f;
+  return copysignf((magnitude - kTiltInputDeadband) /
+                       (1.0f - kTiltInputDeadband),
+                   value);
 }
 
 MotionInputProfile motionInputProfileForMode(BodyMode mode) {
@@ -344,7 +362,9 @@ float readMotionChannelNormalized(int channelIndex) {
     if (channelIndex == ROLL_CH_INDEX) return activeManualControl.roll;
   }
 #endif
-  return motionInputAwaitingCenter ? 0.0f : normalizeChannel(ch_us[channelIndex]);
+  // Switches still use the more heavily filtered integer channels. Motion
+  // axes use the first CRSF filter stage; the tilt ramp limits their speed.
+  return motionInputAwaitingCenter ? 0.0f : normalizeChannel(ch_us_filt[channelIndex]);
 }
 
 float manualRollFootZOffset(float lateralMm) {
@@ -982,9 +1002,9 @@ void applyTiltPose(Adafruit_PWMServoDriver &driver) {
   // roll: right stick X (lean left/right)
   // pitch: right stick Y (lean forward/back)
   // yaw: left stick X (twist the body about Z)
-  const float yawNorm = readMotionChannelNormalized(YAW_CH_INDEX);
-  float rollNorm = readMotionChannelNormalized(ROLL_CH_INDEX);
-  float pitchNorm = readMotionChannelNormalized(PITCH_CH_INDEX);
+  const float yawNorm = applyTiltInputDeadband(readMotionChannelNormalized(YAW_CH_INDEX));
+  float rollNorm = applyTiltInputDeadband(readMotionChannelNormalized(ROLL_CH_INDEX));
+  float pitchNorm = applyTiltInputDeadband(readMotionChannelNormalized(PITCH_CH_INDEX));
   float yawNormLimited = yawNorm;
 
   // Keep diagonal stick commands inside one combined body-pose envelope.
@@ -999,9 +1019,16 @@ void applyTiltPose(Adafruit_PWMServoDriver &driver) {
     yawNormLimited *= scale;
   }
 
-  const float rollDeg = rollNorm * kMaxRollDeg;
-  const float pitchDeg = pitchNorm * kMaxPitchDeg;
-  const float yawDeg = yawNormLimited * kMaxYawDeg;
+  const MotionSmoothingSettings &smoothing = motionSmoothingSettings();
+  const float rollTargetDeg = rollNorm * kMaxRollDeg;
+  const float pitchTargetDeg = pitchNorm * kMaxPitchDeg;
+  const float yawTargetDeg = yawNormLimited * kMaxYawDeg;
+  const float rollDeg = commandWithMotionSmoothing(
+      tiltRollRamp, rollTargetDeg, smoothing.rollRateDegPerSec, smoothing.enabled);
+  const float pitchDeg = commandWithMotionSmoothing(
+      tiltPitchRamp, pitchTargetDeg, smoothing.pitchRateDegPerSec, smoothing.enabled);
+  const float yawDeg = commandWithMotionSmoothing(
+      tiltYawRamp, yawTargetDeg, smoothing.yawRateDegPerSec, smoothing.enabled);
 
 #ifdef DOMINO_SIL
   silBodyRollDeg = rollDeg;
@@ -1019,12 +1046,18 @@ void applyTiltPose(Adafruit_PWMServoDriver &driver) {
 }
 
 void enterTiltMode() {
+  tiltRollRamp.go(0.0f);
+  tiltPitchRamp.go(0.0f);
+  tiltYawRamp.go(0.0f);
   tiltModeActive = true;
   Serial.printf("Tilt mode enabled (SA=%d SD=%d)\n", ch_us[SA_CH_INDEX], ch_us[SD_CH_INDEX]);
 }
 
 void exitTiltMode() {
   tiltModeActive = false;
+  tiltRollRamp.go(0.0f);
+  tiltPitchRamp.go(0.0f);
+  tiltYawRamp.go(0.0f);
   Serial.printf("Tilt mode disabled (SA=%d SD=%d)\n", ch_us[SA_CH_INDEX], ch_us[SD_CH_INDEX]);
 }
 }  // namespace
@@ -1049,13 +1082,14 @@ void setup() {
 #endif
   Wire.begin();
 #ifndef DOMINO_SIL
-  // The IMU and servo driver share Wire. A sensor bus fault must not hold
-  // the control loop at the library's default transaction timeout.
+  // Keep servo-bus transactions bounded if a device stops responding.
   Wire.setClock(100000);
   Wire.setTimeOut(20);
 #endif
 
+#if DOMINO_IMU_ENABLED
   imuInit();
+#endif
 
 #ifndef DOMINO_SIL
   Serial2.setRxBufferSize(CRSF_RX_BUFFER_BYTES);
@@ -1072,8 +1106,15 @@ void setup() {
   liveRobotEndpointBegin(pca);
 #endif
 
-  zRamp.setSpeed(kRampSpeedMmPerSec);
+  const MotionSmoothingSettings &smoothing = motionSmoothingSettings();
+  zRamp.setSpeed(smoothing.heightRateMmPerSec);
   zRamp.go(kCloserPoseZ);
+  tiltRollRamp.setSpeed(smoothing.rollRateDegPerSec);
+  tiltPitchRamp.setSpeed(smoothing.pitchRateDegPerSec);
+  tiltYawRamp.setSpeed(smoothing.yawRateDegPerSec);
+  tiltRollRamp.go(0.0f);
+  tiltPitchRamp.go(0.0f);
+  tiltYawRamp.go(0.0f);
   lastPoseZ = kCloserPoseZ;
   sitBlend = 1.0f;
   moveLegsToSitBlend(pca, lastPoseZ, sitBlend);
@@ -1114,6 +1155,7 @@ void loop() {
     lastUartOverflowCount = uartOverflowCount;
   }
 #endif
+#if DOMINO_IMU_ENABLED
   // Refresh IMU sample; failures simply leave the previous values.
   {
 #ifndef DOMINO_SIL
@@ -1121,6 +1163,7 @@ void loop() {
 #endif
     (void)imuReadSample();
   }
+#endif
   // A delayed UART or I2C read must not make the remainder of this pass use
   // a timestamp captured before the delay.
   now = millis();
@@ -1131,6 +1174,9 @@ void loop() {
   }
   if (liveRobotEndpointReceiverPassthroughActive()) return;
   activeManualControl = liveRobotEndpointManualControl();
+  // A transport read may take time; schedule the servo pass against the
+  // current clock rather than the timestamp captured before that read.
+  now = millis();
 #endif
 
   // 1) Read current RC "menu inputs" (switches, link status).
@@ -1319,7 +1365,9 @@ void loop() {
     ScopedLoopStage controlStage(LoopStage::Control);
 #endif
     lastControlMs = now;
-    const float rampZ = zRamp.update();
+    const MotionSmoothingSettings &smoothing = motionSmoothingSettings();
+    const float rampZ = commandWithMotionSmoothing(
+        zRamp, currentTargetZ, smoothing.heightRateMmPerSec, smoothing.enabled);
     lastPoseZ = rampZ;
     const float sitBlendTarget = (menuState.mode == BODY_STOW) ? 1.0f : 0.0f;
     const float sitBlendStep = kSitBlendSpeedPerSec * (static_cast<float>(kControlIntervalMs) / 1000.0f);

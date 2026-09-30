@@ -7,6 +7,7 @@
   </head>
   <body data-workspace="simulation">
     <canvas id="scene" aria-label="Domino 3D robot viewport"></canvas>
+    <div id="joint-inspection-overlay" class="joint-screen-overlay" hidden></div>
 
     <header>
       <div class="brand">
@@ -673,7 +674,7 @@
                   <circle class="live-lidar-ring" cx="120" cy="120" r="92"></circle><circle class="live-lidar-ring" cx="120" cy="120" r="61"></circle><circle class="live-lidar-ring" cx="120" cy="120" r="30"></circle>
                   <path class="live-lidar-crosshair" d="M120 20v200M20 120h200"></path>
                   <g id="live-lidar-rays"></g><circle class="live-lidar-robot" cx="120" cy="120" r="7"></circle>
-                  <text x="120" y="14" text-anchor="middle">FRONT</text><text x="226" y="124">RIGHT</text><text x="120" y="236" text-anchor="middle">REAR</text><text x="14" y="124" text-anchor="end">LEFT</text>
+                  <text x="120" y="14" text-anchor="middle">FRONT</text><text x="232" y="124" text-anchor="end">RIGHT</text><text x="120" y="236" text-anchor="middle">REAR</text><text x="8" y="124">LEFT</text>
                 </svg>
               </div>
               <div class="live-lidar-readout">
@@ -744,32 +745,39 @@
             </div>
             <div class="live-route-planner" aria-label="Domino route planner">
               <div class="live-planner-map-shell">
-                <div class="live-planner-map-heading"><div><span>TOP-DOWN ROUTE PLANNER</span><strong id="live-nav-planner-status">LOCAL PLANNING FRAME</strong></div><div class="live-planner-map-settings"><label><span>RANGE</span><select id="live-nav-planner-range" aria-label="Planning map range"><option value="40">40 M</option><option value="80">80 M</option><option value="160">160 M</option></select></label><label><span>LOOPS</span><select id="live-nav-loop-count" aria-label="Domino route loop count"><option value="1">1X</option><option value="2">2X</option><option value="3">3X</option><option value="5">5X</option></select></label><label class="live-planner-layer"><span>LAYER</span><select id="live-nav-map-layer" aria-label="Planning map layer"><option value="local">LOCAL GRID</option><option value="osm">OPEN MAP</option><option value="streetview">STREET VIEW</option></select></label><div class="live-planner-map-view-controls" role="group" aria-label="Planning map zoom"><span>ZOOM</span><div><button id="live-nav-zoom-out" type="button" aria-label="Zoom out of planning map" title="Zoom out">−</button><button id="live-nav-zoom-in" type="button" aria-label="Zoom in on planning map" title="Zoom in">+</button></div></div></div></div>
+                <div class="live-planner-map-heading"><div><span>MISSION / GEO MAP</span><strong id="live-nav-planner-status">AWAITING MAP REFERENCE</strong></div><div class="live-planner-map-settings"><label><span>RANGE</span><select id="live-nav-planner-range" aria-label="Planning map range"><option value="40">40 M</option><option value="80">80 M</option><option value="160">160 M</option></select></label><label><span>LOOPS</span><select id="live-nav-loop-count" aria-label="Domino route loop count"><option value="1">1X</option><option value="2">2X</option><option value="3">3X</option><option value="5">5X</option></select></label><label class="live-planner-layer"><span>BASEMAP</span><select id="live-nav-map-layer" aria-label="Planning map layer"><option value="osm">OPENSTREETMAP</option><option value="local">LOCAL GRID</option><option value="streetview">STREET VIEW</option></select></label><div class="live-planner-map-view-controls" role="group" aria-label="Planning map zoom"><span>ZOOM</span><div><button id="live-nav-zoom-out" type="button" aria-label="Zoom out of planning map" title="Zoom out">−</button><button id="live-nav-zoom-in" type="button" aria-label="Zoom in on planning map" title="Zoom in">+</button></div></div></div></div>
                 <div class="live-planner-overlay-controls" role="group" aria-label="Planning map overlays"><span>OVERLAYS</span><label><input type="checkbox" data-live-nav-overlay="route" checked><span>ROUTE</span></label><label><input type="checkbox" data-live-nav-overlay="track" checked><span>GPS TRACK</span></label><label><input type="checkbox" data-live-nav-overlay="lidar" checked><span>LIDAR</span></label><label><input type="checkbox" data-live-nav-overlay="fence" checked><span>FENCE</span></label><label><input type="checkbox" data-live-nav-overlay="vehicle" checked><span>VEHICLE</span></label></div>
                 <div class="live-planner-map-location"><label><span>MAP ORIGIN / LAT, LON</span><input id="live-nav-map-origin" type="text" inputmode="decimal" placeholder="-36.8509, 174.7645" autocomplete="off" spellcheck="false"></label><button id="live-nav-set-map-origin" type="button" title="Use this coordinate as the map and route reference">SET ORIGIN</button><button id="live-nav-use-device-location" type="button" title="Use this computer's location as the local map origin">USE DEVICE</button><button id="live-nav-clear-map-origin" type="button" title="Forget the planner's geographic reference without deleting the route">CLEAR ORIGIN</button><button id="live-nav-open-streetview" type="button" title="Open a Street View panorama at the map origin">OPEN STREET VIEW</button></div>
                 <div class="live-planner-place-search"><label><span>SEARCH PLACE / ADDRESS</span><input id="live-nav-place-search" type="search" maxlength="120" placeholder="Search an area before planning" autocomplete="off" spellcheck="false"></label><button id="live-nav-place-search-submit" type="button">SEARCH</button><select id="live-nav-place-results" aria-label="Map place search results" hidden disabled><option value="">SEARCH FOR A PLACE</option></select><span id="live-nav-place-search-status" aria-live="polite">OPTIONAL / NETWORK REQUIRED</span></div>
-                <svg id="live-nav-planner-map" class="live-planner-map" viewBox="0 0 100 100" role="img" tabindex="0" aria-label="Click to add local route waypoints. Focus the map and use plus or minus to zoom.">
-                  <rect class="live-planner-map-surface" x="0" y="0" width="100" height="100" rx="3"></rect>
+                <div class="live-planner-map-stage">
+                <svg id="live-nav-planner-map" class="live-planner-map" viewBox="0 0 100 100" role="img" tabindex="0" aria-label="Click to add route waypoints. Focus the map and use plus or minus to zoom.">
+                  <rect id="live-nav-planner-surface" class="live-planner-map-surface" x="0" y="0" width="100" height="100"></rect>
                   <g id="live-nav-planner-tiles" class="live-planner-map-tiles" aria-hidden="true"></g>
-                  <path class="live-planner-grid-major" d="M10 0v100M20 0v100M30 0v100M40 0v100M50 0v100M60 0v100M70 0v100M80 0v100M90 0v100M0 10h100M0 20h100M0 30h100M0 40h100M0 50h100M0 60h100M0 70h100M0 80h100M0 90h100"></path>
-                  <path class="live-planner-axis" d="M50 0v100M0 50h100"></path>
+                  <path id="live-nav-planner-grid" class="live-planner-grid-major" d=""></path>
+                  <path id="live-nav-planner-axis" class="live-planner-axis" d=""></path>
                   <circle id="live-nav-planner-geofence" class="live-planner-geofence" cx="50" cy="50" r="0" visibility="hidden"></circle>
                   <g id="live-nav-planner-clearance" class="live-planner-clearance" data-state="waiting"></g>
                   <polyline id="live-nav-planner-track" class="live-planner-track" points="" visibility="hidden"></polyline>
                   <polyline id="live-nav-planner-route" class="live-planner-route" points=""></polyline>
                   <polyline id="live-nav-planner-return-route" class="live-planner-return-route" points=""></polyline>
+                  <g id="live-nav-planner-leg-labels" class="live-planner-leg-labels" aria-hidden="true"></g>
                   <g id="live-nav-planner-markers"></g>
-                  <g id="live-nav-planner-vehicle" class="live-planner-vehicle"><circle cx="50" cy="50" r="2.4"></circle><path d="M50 44l-2.2 4h4.4z"></path></g>
-                  <g class="live-planner-scale" aria-hidden="true"><line x1="8" y1="92" x2="33" y2="92"></line><line x1="8" y1="89.5" x2="8" y2="94.5"></line><line x1="33" y1="89.5" x2="33" y2="94.5"></line><text id="live-nav-planner-scale-label" x="8" y="87">20 M</text></g>
-                  <text x="50" y="5" text-anchor="middle">N</text><text x="96" y="53">E</text>
+                  <g id="live-nav-planner-vehicle" class="live-planner-vehicle" visibility="hidden"><circle cx="0" cy="0" r="2.3"></circle><path d="M0 -5l-2.1 4h4.2z"></path></g>
+                  <g id="live-nav-planner-scale" class="live-planner-scale" aria-hidden="true"><line x1="8" y1="92" x2="33" y2="92"></line><line x1="8" y1="89.5" x2="8" y2="94.5"></line><line x1="33" y1="89.5" x2="33" y2="94.5"></line><text id="live-nav-planner-scale-label" x="8" y="87">10 M</text></g>
                 </svg>
+                <div class="live-planner-map-scale-bar" aria-label="Map distance scale"><span id="live-nav-planner-scale-bar-label">10 M</span><i id="live-nav-planner-scale-bar-rule"></i></div>
+                <div class="live-planner-map-readout" aria-hidden="true"><span>DOMINO / MISSION PLANNER</span><strong id="live-nav-map-reference-label">NO GEO REFERENCE</strong><small id="live-nav-map-signal-label">ROBOT POSITION UNAVAILABLE</small></div>
+                <div class="live-planner-map-compass" aria-hidden="true"><b>▲</b><span>N</span></div>
+                <div id="live-nav-map-setup" class="live-planner-map-setup"><span>01 / LOCATION REFERENCE</span><h4>Choose an area to load the map</h4><p>Search a place, enter coordinates, or use this computer’s location. A map reference is separate from a live robot GPS fix.</p><div><button id="live-nav-map-setup-search" type="button">SEARCH AREA</button><button id="live-nav-map-setup-device" type="button">USE DEVICE</button></div></div>
+                <div id="live-nav-planner-attribution" class="live-planner-attribution" hidden><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a></div>
+                </div>
                 <div id="live-nav-streetview-panel" class="live-planner-streetview" hidden>
                   <div class="live-planner-streetview-heading"><div><span>STREET VIEW INSPECTION</span><strong id="live-nav-streetview-target">MAP ORIGIN</strong></div><span id="live-nav-streetview-index">NO WAYPOINT SELECTED</span></div>
                   <div class="live-planner-streetview-meta"><span><b>POSITION</b><strong id="live-nav-streetview-coordinate">NO GPS REFERENCE</strong></span><span><b>HEADING</b><strong id="live-nav-streetview-heading-value">--°</strong></span></div>
                   <p id="live-nav-streetview-description">Open an interactive panorama in a new tab, then return here to place or adjust route waypoints against the same map reference.</p>
                   <div class="live-planner-streetview-actions"><button id="live-nav-streetview-previous" type="button" disabled>PREVIOUS</button><button id="live-nav-streetview-next" type="button" disabled>NEXT</button><button id="live-nav-streetview-add" type="button">ADD AT MAP CENTER</button><button id="live-nav-streetview-copy" type="button" disabled>COPY VIEW LINK</button><button id="live-nav-streetview-panel-open" type="button">OPEN PANORAMA</button></div>
                 </div>
-                <div class="live-planner-map-meta"><div id="live-nav-planner-tile-status" class="live-planner-tile-status" data-state="offline" aria-live="polite">LOCAL GRID / OFFLINE SAFE</div><button id="live-nav-planner-retry-tiles" type="button" title="Retry loading the visible OpenStreetMap tiles" hidden>RETRY MAP</button><div id="live-nav-planner-attribution" class="live-planner-attribution" hidden>© OpenStreetMap contributors</div></div>
+                <div class="live-planner-map-meta"><div id="live-nav-planner-tile-status" class="live-planner-tile-status" data-state="offline" aria-live="polite">MAP / SET LOCATION</div><button id="live-nav-planner-retry-tiles" type="button" title="Retry loading the visible OpenStreetMap tiles" hidden>RETRY MAP</button></div>
                 <div class="live-planner-map-legend" aria-label="Route map legend"><span id="live-nav-planner-route-legend"><i class="is-plan"></i>PLANNED ROUTE</span><span id="live-nav-planner-track-legend" data-state="waiting"><i class="is-track"></i><b>GPS TRACK / WAITING</b></span><span id="live-nav-planner-clearance-legend" data-state="waiting"><i class="is-clearance"></i><b>LIDAR / WAITING</b></span><span id="live-nav-planner-return-legend"><i class="is-return"></i>CLOSING LEG</span></div>
                 <div id="live-nav-planner-cursor" class="live-planner-cursor" aria-live="polite"><span>CURSOR POSITION</span><strong id="live-nav-planner-cursor-local">MOVE OVER MAP</strong><em id="live-nav-planner-cursor-global">GPS / SET ORIGIN FOR COORDINATES</em></div>
                 <p class="live-planner-help">Click to add a waypoint. Drag a marker to reposition it; scroll or use + / − with the map focused to zoom, press F to fit the route or Home to reset the map, or hold Shift or use the middle mouse button to drag empty map space and pan. Set a map origin to use the Open Map overlay or inspect the area in Street View.</p>
@@ -836,12 +844,21 @@
           <div class="live-page-status"><span id="live-calibration-link-state" data-state="offline">ROBOT NOT READY</span><strong id="live-calibration-save-state">UNSAVED DRAFT</strong></div>
         </header>
         <div class="calibration-preview-caption">
-          <span>3D NEUTRAL PREVIEW</span>
+          <span>JOINT INSPECTION / CAD PREVIEW</span>
           <strong id="live-calibration-preview-caption">FL HIP / PHYSICAL TRIM +0.0&deg; / TEST JOG +0.0&deg;</strong>
           <button id="live-calibration-float" type="button" aria-pressed="true" aria-label="Show calibration preview on floor" title="Floating preview on — click to show the floor">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 8.5h11v5h-11zM8 13.5v2.25M16 13.5v2.25M5 4.5l2-2 2 2M7 2.75v3.5M15 19.5l2 2 2-2M17 17.75v3.5"/></svg>
           </button>
-          <small>Drag to orbit / double-click a joint to select / preview never drives hardware</small>
+          <div class="calibration-inspection-actions"><button id="live-calibration-focus-joint" type="button">FOCUS JOINT</button><button id="live-calibration-show-robot" type="button">FULL ROBOT</button><span>DRAG TO ORBIT · DOUBLE-CLICK A PART TO SELECT</span></div>
+          <div class="calibration-inspection-readouts" aria-live="polite">
+            <div><span>PREVIEW TARGET</span><strong id="live-calibration-inspect-pose">+0.0°</strong></div>
+            <div><span>LIMIT MARGIN</span><strong id="live-calibration-inspect-margin">45.0°</strong></div>
+            <div><span>EST. SERVO ANGLE</span><strong id="live-calibration-inspect-servo">129.87°</strong></div>
+            <div><span>FOOT TO FLOOR</span><strong id="live-calibration-inspect-foot">FLOAT MODE</strong></div>
+          </div>
+          <div class="calibration-inspection-travel"><div><span>CONFIGURED TRAVEL</span><strong id="live-calibration-inspect-range">−45° / +45°</strong></div><div class="calibration-inspection-travel-track"><i id="live-calibration-inspect-limit-band"></i><b id="live-calibration-inspect-pose-marker"></b><em id="live-calibration-inspect-neutral-marker"></em></div><div class="calibration-inspection-travel-labels"><span id="live-calibration-inspect-min-label">MIN −45°</span><span>NEUTRAL 0°</span><span id="live-calibration-inspect-max-label">MAX +45°</span></div></div>
+          <div class="calibration-inspection-sweep"><div><span>VISUAL TRAVEL TEST</span><strong id="live-calibration-inspect-mode">TEST JOG</strong></div><input id="live-calibration-inspect-slider" type="range" min="-45" max="45" step="0.1" value="0" aria-label="Preview selected joint angle in CAD only"><div><button id="live-calibration-inspect-play" type="button" aria-pressed="false">PLAY SWEEP</button><button id="live-calibration-inspect-neutral" type="button">NEUTRAL</button><small>Model only · never sends a jog command</small></div></div>
+          <div class="calibration-inspection-clearance"><span>CAD PROXIMITY SCREEN</span><strong id="live-calibration-inspect-clearance" data-state="unknown">LOADING MODEL</strong><small id="live-calibration-inspect-clearance-detail">Checks model bounds near the chassis and other legs. Verify real hardware, wiring and flex on the bench.</small></div>
         </div>
 
         <div class="live-calibration-layout">
@@ -876,12 +893,12 @@
             </section>
 
             <section class="calibration-panel" data-calibration-panel="2" hidden>
-              <div class="calibration-panel-heading"><span>STEP 3 OF 5</span><h2>Set the neutral pose</h2><p>Adjust the physical servo center to match the CAD stance. Saved trim becomes the new center; only a temporary test jog moves the 3D preview.</p></div>
+              <div class="calibration-panel-heading"><span>STEP 3 OF 5</span><h2>Set the neutral pose</h2><p>Adjust the physical servo center to match the CAD stance. Test jog and the visual travel controls move the 3D model; the visual sweep never commands hardware.</p></div>
               <div class="calibration-editor-heading"><div><span>SELECTED JOINT</span><strong id="live-calibration-neutral-title">FL HIP</strong></div><div><span>SERVO CHANNEL</span><strong id="live-calibration-channel">0</strong></div><div><span>BASE REFERENCE</span><strong id="live-calibration-reference">129.87&deg;</strong></div><div><span>CALIBRATED NEUTRAL</span><strong id="live-calibration-neutral-output">129.87&deg;</strong></div></div>
               <div class="calibration-field-grid">
                 <label>ZERO OFFSET <input id="live-calibration-offset" type="number" min="-30" max="30" step="0.1" value="0"><span>degrees</span></label>
                 <label>DIRECTION <select id="live-calibration-direction"><option value="1">NORMAL</option><option value="-1">INVERTED</option></select><span>logical to servo</span></label>
-                <label class="calibration-preview-toggle"><input id="live-calibration-preview" type="checkbox" checked><strong>PREVIEW TEST JOG</strong><span>3D model only</span></label>
+                <label class="calibration-preview-toggle"><input id="live-calibration-preview" type="checkbox" checked><strong>ENABLE CAD PREVIEW</strong><span>Visual jog + sweep</span></label>
               </div>
               <div class="calibration-jog-control calibration-neutral-trim">
                 <div><span>PERMANENT NEUTRAL TRIM</span><strong id="live-calibration-trim-value">+0.0&deg;</strong><small>Adjusts the selected channel's saved default / 0.1&deg; fine steps</small></div>
@@ -889,7 +906,7 @@
               </div>
               <div class="calibration-secondary-actions"><button id="live-calibration-restore-joint" type="button">RESTORE SELECTED JOINT</button><span>Resets offset, direction and limits; keeps its physical PCA9685 channel.</span></div>
               <div class="calibration-jog-control">
-                <div><span>TEMPORARY TEST JOG</span><strong id="live-calibration-jog-value">+0.0&deg;</strong><small>&plusmn;10&deg; inspection only; this value is not saved</small></div>
+                <div><span id="live-calibration-jog-label">VISUAL PREVIEW NUDGE</span><strong id="live-calibration-jog-value">+0.0&deg;</strong><small id="live-calibration-jog-description">Relative moves within the selected limits; model only, not saved</small></div>
                 <div role="group" aria-label="Calibration jog controls"><button type="button" data-calibration-jog="-1">-1&deg;</button><button type="button" data-calibration-jog="-0.1">-0.1&deg;</button><button type="button" data-calibration-jog-reset>NEUTRAL</button><button type="button" data-calibration-jog="0.1">+0.1&deg;</button><button type="button" data-calibration-jog="1">+1&deg;</button></div>
               </div>
               <div class="calibration-jog-status-row">
@@ -911,6 +928,50 @@
             <section class="calibration-panel" data-calibration-panel="4" hidden>
               <div class="calibration-panel-heading"><span>STEP 5 OF 5</span><h2>Review and save</h2><p>Export the browser draft or read the active profile from a connected, disarmed robot.</p></div>
               <div class="calibration-review-table-wrap"><table><thead><tr><th>JOINT</th><th>CH</th><th>OFFSET</th><th>DIRECTION</th><th>MIN</th><th>MAX</th></tr></thead><tbody id="live-calibration-review-body"></tbody></table></div>
+              <section class="calibration-smoothing" aria-labelledby="live-calibration-smoothing-title">
+                <div class="calibration-smoothing-heading"><div><span>MOTION RESPONSE / RAMP</span><h3 id="live-calibration-smoothing-title">Shape the command before it reaches IK</h3><p>Ramp limits the speed of a pose change. It is not PID or measured servo feedback. Slower rates soften sudden moves but take longer to reach the target.</p></div><div class="calibration-smoothing-heading-actions"><span class="calibration-smoothing-badge">LIVE DRAFT PREVIEW</span><label class="calibration-smoothing-switch" for="live-calibration-smoothing-enabled"><span><strong>MOTION SMOOTHING</strong><small>Ramp + center deadband</small></span><input id="live-calibration-smoothing-enabled" type="checkbox" role="switch" checked><b id="live-calibration-smoothing-enabled-label">ON</b></label></div></div>
+                <p id="live-calibration-smoothing-mode-note" class="calibration-smoothing-mode-note">Ramp and center deadband are active in this draft.</p>
+                <div class="calibration-smoothing-preview">
+                  <div class="calibration-smoothing-plot">
+                    <div class="calibration-smoothing-plot-heading"><strong>STEP RESPONSE</strong><span>REQUESTED MOVE <span aria-hidden="true">→</span> COMMANDED POSE</span></div>
+                    <div class="calibration-smoothing-axis-tabs" role="group" aria-label="Preview motion axis">
+                      <button type="button" data-smoothing-preview-axis="rollRateDegPerSec" aria-pressed="true">ROLL</button>
+                      <button type="button" data-smoothing-preview-axis="pitchRateDegPerSec" aria-pressed="false">PITCH</button>
+                      <button type="button" data-smoothing-preview-axis="yawRateDegPerSec" aria-pressed="false">YAW</button>
+                      <button type="button" data-smoothing-preview-axis="heightRateMmPerSec" aria-pressed="false">HEIGHT</button>
+                    </div>
+                    <svg id="live-calibration-smoothing-chart" class="calibration-smoothing-chart" viewBox="0 0 600 230" role="img" aria-label="Preview of a requested step move and its rate-limited command over time">
+                      <line class="smoothing-grid" x1="48" y1="20" x2="572" y2="20"/><line class="smoothing-grid" x1="48" y1="98" x2="572" y2="98"/><line class="smoothing-grid" x1="48" y1="176" x2="572" y2="176"/>
+                      <line class="smoothing-grid" x1="179" y1="20" x2="179" y2="176"/><line class="smoothing-grid" x1="310" y1="20" x2="310" y2="176"/><line class="smoothing-grid" x1="441" y1="20" x2="441" y2="176"/>
+                      <line class="smoothing-axis" x1="48" y1="20" x2="48" y2="176"/><line class="smoothing-axis" x1="48" y1="176" x2="572" y2="176"/>
+                      <path id="live-calibration-smoothing-fill" class="smoothing-draft-fill"/>
+                      <path id="live-calibration-smoothing-input-path" class="smoothing-input-path"/>
+                      <path id="live-calibration-smoothing-robot-path" class="smoothing-robot-path" hidden/>
+                      <path id="live-calibration-smoothing-draft-path" class="smoothing-draft-path"/>
+                      <circle id="live-calibration-smoothing-settle-dot" class="smoothing-settle-dot" r="5"/>
+                      <text id="live-calibration-smoothing-y-label" x="40" y="25" text-anchor="end">20°</text>
+                      <text x="40" y="180" text-anchor="end">0</text>
+                      <text x="48" y="205" text-anchor="middle">0</text>
+                      <text id="live-calibration-smoothing-mid-label" x="310" y="205" text-anchor="middle">300 ms</text>
+                      <text id="live-calibration-smoothing-end-label" x="572" y="205" text-anchor="middle">600 ms</text>
+                    </svg>
+                    <div class="calibration-smoothing-legend"><span><i class="smoothing-legend-input"></i> Requested step</span><span><i class="smoothing-legend-draft"></i> <span id="live-calibration-smoothing-draft-legend">Draft ramp</span></span><span id="live-calibration-smoothing-robot-legend" hidden><i class="smoothing-legend-robot"></i> Robot setting preview</span></div>
+                  </div>
+                  <div class="calibration-smoothing-side">
+                    <div class="calibration-smoothing-target"><label for="live-calibration-smoothing-target">TEST MOVE</label><strong id="live-calibration-smoothing-target-value">16° roll</strong><input id="live-calibration-smoothing-target" type="range" min="0" max="20" step="1" value="16"><small>Change the example move; this does not command the robot.</small></div>
+                    <dl class="calibration-smoothing-metrics"><div><dt>RATE LIMIT</dt><dd id="live-calibration-smoothing-rate">180°/s</dd></div><div><dt>CHANGE PER CONTROL TICK</dt><dd id="live-calibration-smoothing-step">3.6° / 20 ms</dd></div><div><dt>REACHES TARGET IN</dt><dd id="live-calibration-smoothing-settle">100 ms</dd></div></dl>
+                    <div class="calibration-smoothing-deadband"><div><strong>CENTER RESPONSE</strong><span id="live-calibration-smoothing-deadband-label">2% deadband</span></div><svg id="live-calibration-smoothing-deadband-chart" viewBox="0 0 220 120" role="img" aria-label="Preview of stick input near center after deadband"><rect id="live-calibration-smoothing-deadband-zone" class="smoothing-deadband-zone" x="24" y="12" width="0" height="86"/><line class="smoothing-axis" x1="24" y1="98" x2="204" y2="98"/><line class="smoothing-axis" x1="24" y1="12" x2="24" y2="98"/><path class="smoothing-deadband-ideal" d="M24 98 L204 12"/><path id="live-calibration-smoothing-deadband-path" class="smoothing-deadband-path"/><text x="24" y="115">0</text><text x="204" y="115" text-anchor="end">10% stick</text></svg><p id="live-calibration-smoothing-deadband-result">At 10% stick, command is 8.2%.</p></div>
+                  </div>
+                </div>
+                <div class="calibration-smoothing-tuning-heading"><span>RAMP LIMITS</span><small>Edit the draft below. The graph updates immediately; the robot changes only after a verified save.</small></div>
+                <div id="live-calibration-smoothing-fields" class="calibration-smoothing-fields"></div>
+                <div class="calibration-smoothing-actions">
+                  <button id="live-calibration-smoothing-read" type="button" disabled>READ ROBOT</button>
+                  <button id="live-calibration-smoothing-defaults" type="button">DEFAULT DRAFT</button>
+                  <button id="live-calibration-smoothing-save" type="button" disabled>SAVE SMOOTHING TO ROBOT</button>
+                </div>
+                <p id="live-calibration-smoothing-status" role="status">Connect a disarmed robot to read its active smoothing settings.</p>
+              </section>
               <div class="calibration-review-actions">
                 <button id="live-calibration-save-browser" type="button">SAVE BROWSER COPY</button>
                 <button id="live-calibration-export" type="button">EXPORT BROWSER DRAFT</button>

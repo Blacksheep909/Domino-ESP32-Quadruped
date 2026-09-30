@@ -36,6 +36,40 @@ export const LIVE_CALIBRATION_JOINTS = Object.freeze(
   }))).sort((a, b) => a.channel - b.channel),
 );
 
+// Physical firmware uses DOMINO_PLANAR_DRIVE_CROSS_REVERSED=1. Its correction
+// changes drive deltas, not output channels or electrical neutral values.
+// Keep the persisted profile contract above unchanged, and describe the CAD
+// joint each existing output actually moves in a separate presentation map.
+export const LIVE_CALIBRATION_OUTPUTS = Object.freeze(
+  LIVE_CALIBRATION_JOINTS.map((definition) => {
+    const leg = legs.find((candidate) => candidate.label === definition.leg);
+    const modelJoint = definition.joint === "upper" ? "lower"
+      : definition.joint === "lower" ? "upper" : "shoulder";
+    const modelChannel = leg.channels[modelJoint];
+    return Object.freeze({
+      ...definition,
+      joint: modelJoint,
+      label: `${definition.leg} ${jointLabels[modelJoint]}`,
+      modelChannel,
+      modelDirection: leg.directions[modelJoint],
+      modelPoseSign: modelJoint === "shoulder" ? 1 : -1,
+    });
+  }),
+);
+
+export function calibrationOutputForModelChannel(modelChannel) {
+  return LIVE_CALIBRATION_OUTPUTS.find((definition) => definition.modelChannel === Number(modelChannel));
+}
+
+export function calibrationInspectionModelAngles(state, poseDeg = state?.jogOffsetDeg ?? 0) {
+  const angles = [...standServoReference];
+  const definition = LIVE_CALIBRATION_OUTPUTS.find((joint) => joint.channel === state?.selectedChannel);
+  if (definition && Number.isFinite(poseDeg)) {
+    angles[definition.modelChannel] += definition.modelDirection * definition.modelPoseSign * poseDeg;
+  }
+  return angles;
+}
+
 const finite = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
 
@@ -222,10 +256,7 @@ export function calibrationPreviewServoAngles(state) {
 export function calibrationPreviewModelAngles(state) {
   // Saved trim and shaft direction define the physical output basis. They do
   // not change the robot geometry or the center shown by the CAD preview.
-  const angles = [...standServoReference];
-  const definition = LIVE_CALIBRATION_JOINTS.find((joint) => joint.channel === state?.selectedChannel);
-  if (definition) angles[definition.channel] += definition.defaultDirection * state.jogOffsetDeg;
-  return angles;
+  return calibrationInspectionModelAngles(state);
 }
 
 export function calibrationProfileJson(profile) {
@@ -293,8 +324,8 @@ export function updateCalibrationChannelMap(state, channelMap) {
   return { accepted: true, issues: [] };
 }
 
-export function createCalibrationBenchCommand(state, action, requestId, now = Date.now()) {
-  const allowedActions = ["request-profile", "enter", "exit", "jog", "save-profile"];
+export function createCalibrationBenchCommand(state, action, requestId, now = Date.now(), smoothing = null) {
+  const allowedActions = ["request-profile", "request-smoothing", "save-smoothing", "enter", "exit", "jog", "save-profile"];
   if (!state || !allowedActions.includes(action)) return null;
   if (action === "save-profile" && !robotCalibrationReady(state, state.robotProfileSessionId)) return null;
   const joint = state.profile.joints.find((candidate) => candidate.logicalChannel === state.selectedChannel);
@@ -308,7 +339,7 @@ export function createCalibrationBenchCommand(state, action, requestId, now = Da
     requestId: String(requestId),
     timestampMs: now,
     safety: {
-      benchModeRequired: action !== "request-profile",
+      benchModeRequired: !["request-profile", "request-smoothing", "save-smoothing"].includes(action),
       maxSpeedDegPerSec: LIVE_CALIBRATION_MAX_SPEED_DEG_PER_SEC,
       jogLimitDeg: LIVE_CALIBRATION_JOG_LIMIT_DEG,
     },
@@ -317,6 +348,10 @@ export function createCalibrationBenchCommand(state, action, requestId, now = Da
     jogOffsetDeg: state.jogOffsetDeg,
     targetServoDeg: calibrationPreviewServoAngles(state)[state.selectedChannel],
     ...(action === "save-profile" ? { baseSavedAt: state.robotProfileSavedAt } : {}),
+    ...(action === "save-smoothing" && smoothing ? {
+      baseUpdatedAt: smoothing.baseUpdatedAt,
+      smoothing: smoothing.settings,
+    } : {}),
     profile: persistedProfile,
   };
 }

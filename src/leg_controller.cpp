@@ -100,9 +100,19 @@ float gCadLowerSeedDeg[kLegCount] = {};
 float gCommandedServoAnglesDeg[kPcaChannelCount] = {};
 float gCommandedModelServoAnglesDeg[kPcaChannelCount] = {};
 uint16_t gCommandedServoPulseUs[kPcaChannelCount] = {};
+uint16_t gLastWrittenPulseUs[kPcaChannelCount] = {};
+uint32_t gLastWrittenAtMs[kPcaChannelCount] = {};
+bool gWrittenPulseValid[kPcaChannelCount] = {};
 bool gServoOutputsEnabled = false;
 uint32_t gServoSafetyClipCount = 0;
 ServoCalibrationProfile gServoCalibration = defaultServoCalibrationProfile();
+constexpr uint32_t kServoWriteRefreshMs = 250;
+
+void invalidateServoWriteCache() {
+  for (uint8_t channel = 0; channel < kPcaChannelCount; ++channel) {
+    gWrittenPulseValid[channel] = false;
+  }
+}
 
 struct ServoAngleLimit {
   float minDeg;
@@ -435,14 +445,22 @@ void write270(Adafruit_PWMServoDriver &driver, uint8_t logicalChannel, float ang
         servoCalibrationModelAngle(gServoCalibration, logicalChannel, safeAngle);
     gCommandedServoPulseUs[logicalChannel] = pulseUs;
   }
-#ifdef DOMINO_SIL
-  driver.writeMicroseconds(physicalChannel, pulseUs);
-#else
-  if (gServoOutputsEnabled) {
-    ScopedLoopStage stage(LoopStage::ServoWrite);
-    driver.writeMicroseconds(physicalChannel, pulseUs);
-  }
+#ifndef DOMINO_SIL
+  if (!gServoOutputsEnabled) return;
 #endif
+  // PCA9685 keeps generating the last pulse without another I2C write. Retry
+  // unchanged values periodically in case an earlier bus transaction failed.
+  const uint32_t nowMs = millis();
+  if (gWrittenPulseValid[physicalChannel] &&
+      gLastWrittenPulseUs[physicalChannel] == pulseUs &&
+      nowMs - gLastWrittenAtMs[physicalChannel] < kServoWriteRefreshMs) return;
+#ifndef DOMINO_SIL
+  ScopedLoopStage stage(LoopStage::ServoWrite);
+#endif
+  driver.writeMicroseconds(physicalChannel, pulseUs);
+  gLastWrittenPulseUs[physicalChannel] = pulseUs;
+  gLastWrittenAtMs[physicalChannel] = nowMs;
+  gWrittenPulseValid[physicalChannel] = true;
 }
 
 // Leg channel assignments:
@@ -603,6 +621,7 @@ void setBodyPose(const BodyPose & /*pose*/, Adafruit_PWMServoDriver & /*driver*/
 }
 
 void setServoOutputsEnabled(Adafruit_PWMServoDriver &driver, bool enabled) {
+  if (gServoOutputsEnabled != enabled || !enabled) invalidateServoWriteCache();
   gServoOutputsEnabled = enabled;
 #ifdef DOMINO_SIL
   (void)driver;
@@ -637,11 +656,15 @@ bool commandCalibrationServoAngle(Adafruit_PWMServoDriver &driver,
       servoCalibrationModelAngle(gServoCalibration, logicalChannel, safeAngle);
   gCommandedServoPulseUs[logicalChannel] = pulseUs;
   driver.writeMicroseconds(physicalChannel, pulseUs);
+  gLastWrittenPulseUs[physicalChannel] = pulseUs;
+  gLastWrittenAtMs[physicalChannel] = millis();
+  gWrittenPulseValid[physicalChannel] = true;
   return true;
 }
 
 void disableServoOutputPhysicalChannel(Adafruit_PWMServoDriver &driver, uint8_t physicalChannel) {
   if (physicalChannel >= kPcaChannelCount) return;
+  gWrittenPulseValid[physicalChannel] = false;
 #ifndef DOMINO_SIL
   driver.setPWM(physicalChannel, 0, 4096);
 #else
@@ -652,6 +675,7 @@ void disableServoOutputPhysicalChannel(Adafruit_PWMServoDriver &driver, uint8_t 
 bool setServoCalibrationProfile(const ServoCalibrationProfile &profile) {
   if (!validateServoCalibrationProfile(profile)) return false;
   gServoCalibration = profile;
+  invalidateServoWriteCache();
   return true;
 }
 

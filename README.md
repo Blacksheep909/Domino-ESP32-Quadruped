@@ -2,6 +2,30 @@
 
 Domino is a prototype ESP32 quadruped robot built around a carbon-and-printed composite chassis, a custom 3-DoF leg mechanism, CRSF/ExpressLRS radio control, PCA9685 servo output, and CAD-to-simulation experiments.
 
+## Domino Quadruped Studio
+
+**Quadruped Studio is the project's desktop engineering application.** Use it
+to stand and move the CAD robot in simulation, develop gait profiles, inspect
+joint travel, review calibration, record telemetry and plan routes.
+
+**[Read the Studio guide](docs/quadruped-studio.md)** ·
+**[Open the Studio source](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/tree/codex/desktop-app/simulation/standalone)** ·
+**[Windows releases](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/releases)**
+
+![Domino standing on four feet in Quadruped Studio's Simulation workspace](docs/images/studio-simulation-standing.jpg)
+
+*Captured from the Studio 0.3.1 development build. The robot is standing in the
+local firmware/CAD simulation. The guide explains build availability and source
+setup.*
+
+- **Simulation:** firmware modes, actual CAD/linkage geometry, physics,
+  keyboard/controllers, gait tuning and joint inspection.
+- **LIVE:** comparison, data graphs, calibration, gait profiles, diagnostics
+  and saved sessions through a compatible robot adapter.
+- **Mission tools:** local route planning, geographic map overlays, GPS/LiDAR
+  views and capability-gated vehicle controls.
+- **Projects:** portable configuration files and telemetry capture/export.
+
 > Work in progress: Domino is an active engineering prototype, not a finished kit. The firmware, CAD exports, PCB package, calibration notes, and simulation files are included as a project record and technical reference. The repo does not yet contain a complete step-by-step build manual, measured BOM, wiring diagram, or validated production assembly process.
 
 ![Domino quadruped robot build](docs/images/domino-master.jpg)
@@ -23,6 +47,7 @@ As a portfolio project, Domino demonstrates mechanical design, embedded firmware
 
 Implemented or documented:
 
+- [Domino Quadruped Studio](docs/quadruped-studio.md): Windows simulation and robot engineering application, with source on the `codex/desktop-app` branch.
 - ESP32 DevKit firmware using PlatformIO and Arduino.
 - PCA9685 output for twelve servos across four legs.
 - CAD-derived inverse kinematics for hip, upper-leg, and lower-linkage angles.
@@ -46,7 +71,9 @@ Still in progress:
 
 ## Where To Start
 
-If you are looking to build the project start here:
+To use the desktop application, start with the [Quadruped Studio guide](docs/quadruped-studio.md).
+
+If you are looking to build the physical robot start here:
 
 1. [docs/control-notes.md](docs/control-notes.md) - coordinate frames, IK constants, servo mapping, and mode flow.
 2. [docs/crsf.md](docs/crsf.md) - CRSF/ExpressLRS parser and receiver migration notes.

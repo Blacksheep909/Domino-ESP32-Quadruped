@@ -8,6 +8,8 @@ export const LIVE_CALIBRATION_SCHEMA_VERSION = 2;
 export const LIVE_CALIBRATION_STORAGE_KEY = "domino-live-calibration-v2";
 export const LIVE_CALIBRATION_LEGACY_STORAGE_KEY = "domino-live-calibration-v1";
 export const LIVE_CALIBRATION_PRE_SYNC_BACKUP_KEY = "domino-live-calibration-before-robot-sync-v1";
+export const LIVE_CALIBRATION_LAST_ROBOT_KEY = "domino-live-calibration-last-robot-v1";
+export const LIVE_CALIBRATION_CORRUPT_BACKUP_KEY = "domino-live-calibration-unreadable-v1";
 export { LIVE_CALIBRATION_JOG_LIMIT_DEG, LIVE_CALIBRATION_MAX_SPEED_DEG_PER_SEC };
 
 export const LIVE_CALIBRATION_STEPS = Object.freeze([
@@ -132,6 +134,8 @@ export function createLiveCalibrationState(profile = createLiveCalibrationProfil
     profile: createLiveCalibrationProfile(profile),
     robotProfileSessionId: "",
     robotProfileSavedAt: null,
+    robotOrigin: null,
+    restorableProfile: false,
   };
 }
 
@@ -139,19 +143,95 @@ export function forgetRobotCalibrationProfile(state) {
   if (!state) return;
   state.robotProfileSessionId = "";
   state.robotProfileSavedAt = null;
+  state.robotOrigin = null;
+  state.restorableProfile = false;
 }
 
-export function acceptRobotCalibrationProfile(state, profile, sessionId) {
+const DEFAULT_ORIGIN_SOURCES = new Set(["default-empty", "default-fallback"]);
+const KNOWN_ORIGIN_SOURCES = new Set([...DEFAULT_ORIGIN_SOURCES, "nvs", "nvs-backup", "nvs-legacy"]);
+
+// Firmware >= 0.8.16 reports which stored record produced the active profile.
+// Older firmware sends nothing, in which case `known` is false and a profile
+// with savedAt === 0 is still treated as the compiled default.
+export function normalizeCalibrationOrigin(origin, profile = null) {
+  const source = KNOWN_ORIGIN_SOURCES.has(origin?.source) ? origin.source : "";
+  const savedAt = profile?.savedAt ?? origin?.savedAt ?? 0;
+  const usingDefaults = source
+    ? DEFAULT_ORIGIN_SOURCES.has(source)
+    : !(Number.isFinite(Number(savedAt)) && Number(savedAt) > 0);
+  return {
+    known: Boolean(source),
+    source: source || (usingDefaults ? "default-unreported" : "nvs-unreported"),
+    usingDefaults,
+    detail: typeof origin?.detail === "string" ? origin.detail.slice(0, 96) : "",
+  };
+}
+
+export function calibrationOriginWarning(state) {
+  const origin = state?.robotOrigin;
+  if (!origin) return null;
+  if (origin.usingDefaults) {
+    const why = origin.source === "default-fallback"
+      ? `A stored profile exists but could not be read${origin.detail ? ` (${origin.detail})` : ""}.`
+      : "No saved profile was found on the robot.";
+    return {
+      level: "danger",
+      title: "ROBOT IS RUNNING DEFAULT CALIBRATION",
+      detail: state.restorableProfile
+        ? `${why} Your last known Studio profile is loaded as an unsaved draft: review it, then save it to the robot.`
+        : `${why} Servo centers, directions and limits are the compiled defaults, not your calibration.`,
+    };
+  }
+  if (origin.source === "nvs-backup") {
+    return {
+      level: "warning",
+      title: "ROBOT RECOVERED ITS PREVIOUS PROFILE",
+      detail: `The newest stored profile was unreadable${origin.detail ? ` (${origin.detail})` : ""}; the robot is using its previous backup. Review and save to refresh it.`,
+    };
+  }
+  if (origin.source === "nvs-legacy") {
+    return {
+      level: "notice",
+      title: "ROBOT PROFILE IS IN THE OLD FORMAT",
+      detail: "Save the profile once to upgrade it to the versioned format with a backup copy.",
+    };
+  }
+  return null;
+}
+
+// `lastKnownGood` is the newest profile previously read from a robot that was
+// NOT on defaults. It lets a robot that lost its flash profile be restored
+// without trusting an overwritten browser copy.
+export function acceptRobotCalibrationProfile(state, profile, sessionId, origin = null, lastKnownGood = null) {
   if (!state || !sessionId) return { accepted: false, adopted: false };
   const active = parseCalibrationProfileJson(JSON.stringify(profile));
-  const adopted = !state.dirty;
+  const robotOrigin = normalizeCalibrationOrigin(origin, active);
+  state.robotOrigin = robotOrigin;
+  state.restorableProfile = false;
+  let adopted = !state.dirty;
+  let restored = false;
+  if (robotOrigin.usingDefaults && !state.dirty) {
+    // The robot lost its profile. Never overwrite a previously saved browser
+    // copy with defaults; keep it (or the last robot-read copy) as an unsaved
+    // draft so one review-and-save restores the robot.
+    const localSaved = Number(state.profile?.savedAt) > 0 ? state.profile : null;
+    const candidate = localSaved || (lastKnownGood && Number(lastKnownGood.savedAt) > 0 ? lastKnownGood : null);
+    if (candidate) {
+      state.profile = parseCalibrationProfileJson(JSON.stringify(candidate));
+      state.dirty = true;
+      state.restorableProfile = true;
+      state.jogOffsetDeg = 0;
+      adopted = false;
+      restored = true;
+    }
+  }
   if (adopted) {
     state.profile = active;
     state.jogOffsetDeg = 0;
   }
   state.robotProfileSessionId = sessionId;
   state.robotProfileSavedAt = active.savedAt ?? 0;
-  return { accepted: true, adopted };
+  return { accepted: true, adopted, restored, robotUsingDefaults: robotOrigin.usingDefaults };
 }
 
 export function robotCalibrationReady(state, sessionId) {

@@ -27,3 +27,7 @@ simulation/isaac/out/
 
 # Local robot radio credentials; copy the tracked example and keep secrets local.
 src/live_robot_secrets.h
+
+# Local scratch output
+tmp/
+simulation/standalone/tmp/

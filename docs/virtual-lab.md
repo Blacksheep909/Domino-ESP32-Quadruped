@@ -1,5 +1,8 @@
 # Domino Virtual Lab
 
+For the application overview, current build availability and an illustrated
+first-use workflow, start with the [Quadruped Studio guide](quadruped-studio.md).
+
 The Domino Virtual Lab is a local engineering application for developing the
 quadruped's firmware, mechanism, controls, and future physical-robot tooling.
 It is source code that runs from this repository. It is not a hosted GitHub
@@ -8,7 +11,7 @@ installed.
 
 ## Current desktop release
 
-Domino Quadruped Studio `0.2.1` is the primary distribution. The Windows
+Domino Quadruped Studio is the primary application. The Windows
 installer bundles the same frontend source used by the local browser build,
 along with the local service, CAD assets, firmware SIL, and companion adapter.
 Use the desktop installer for normal operation and updates; use the browser

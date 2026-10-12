@@ -1,0 +1,1451 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Domino Virtual Lab</title>
+  </head>
+  <body data-workspace="simulation">
+    <canvas id="scene" aria-label="Domino 3D robot viewport"></canvas>
+    <div id="joint-inspection-overlay" class="joint-screen-overlay" hidden></div>
+
+    <header>
+      <div class="brand">
+        <strong>DOMINO</strong>
+        <span id="workspace-subtitle">VIRTUAL LAB / 3D CODE TESTING</span>
+      </div>
+      <div class="workspace-tabs" role="tablist" aria-label="Domino workspace">
+        <button id="workspace-simulation" type="button" role="tab" aria-selected="true" aria-controls="simulation-workspace">SIMULATION</button>
+        <button id="workspace-real-robot" type="button" role="tab" aria-selected="false" aria-controls="real-workspace">LIVE</button>
+      </div>
+      <button id="project-open" class="project-open" type="button" aria-haspopup="dialog" title="Open or export the Domino project bundle">
+        <span>PROJECT</span><strong id="project-name-label">DOMINO V2</strong>
+      </button>
+      <div class="status">
+        <button id="firmware-deploy-button" class="firmware-deploy-button real-robot-only" type="button" title="Review, build, and upload firmware to Domino">UPLOAD FW</button>
+        <span id="firmware-status" class="simulation-only" data-state="offline">FIRMWARE</span>
+        <span id="link-status" class="simulation-only" data-state="offline">CONTROLLER</span>
+        <span id="physics-status" class="simulation-only" data-state="offline">PHYSICS</span>
+        <span id="real-drive-status" class="real-robot-only" data-state="offline">DRIVE LINK</span>
+        <button id="real-engineering-status" class="real-robot-only pc-link-status live-header-link-status" type="button" aria-haspopup="dialog" data-state="offline" title="Open the robot connection manager">PC LINK</button>
+        <button id="live-connection-open" class="live-connection-open real-robot-only" type="button" aria-haspopup="dialog" title="Find and pair this PC with Domino">PAIR ROBOT</button>
+        <span id="real-battery-status" class="real-robot-only live-header-battery" data-state="unavailable" title="Measured robot battery voltage">BAT --.- V</span>
+        <span id="real-safety-status" class="real-robot-only" data-state="safe">DISARMED</span>
+        <button id="live-global-estop" class="real-robot-only live-global-estop" type="button" title="Latch the robot emergency stop" disabled>E-STOP</button>
+        <button id="shortcuts-open" class="utility-button" type="button" aria-haspopup="dialog" title="Show keyboard shortcuts (?)">?</button>
+        <button id="fullscreen-toggle" class="utility-button" type="button" aria-pressed="false" title="Enter fullscreen (F)">⛶</button>
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false" title="Switch to dark theme">
+          <span id="theme-icon" aria-hidden="true">&#9788;</span>
+          <span id="theme-label" class="sr-only">Light theme</span>
+        </button>
+      </div>
+    </header>
+
+    <aside id="app-hud" class="app-hud" aria-label="ArduPilot autonomous navigation HUD">
+      <div class="app-hud-heading">
+        <div>
+          <span id="hud-context">AUTONOMY / NAV</span>
+          <strong id="hud-mode">HOLD</strong>
+        </div>
+        <button id="hud-toggle" type="button" aria-expanded="true" title="Collapse autonomous HUD">−</button>
+      </div>
+      <div class="app-hud-body">
+        <div class="app-hud-status-row">
+          <span id="hud-state" data-state="warning" aria-live="polite">CHECKS</span>
+          <span id="hud-link">MAVLINK WAITING</span>
+        </div>
+        <div class="app-hud-readouts">
+          <div><span>GPS FIX</span><strong id="hud-height">NO FIX</strong></div>
+          <div><span>HDOP</span><strong id="hud-roll">--</strong></div>
+          <div><span>SATELLITES</span><strong id="hud-pitch">--</strong></div>
+          <div><span>SPEED</span><strong id="hud-yaw">--.- m/s</strong></div>
+          <div><span id="hud-secondary-label">MISSION</span><strong id="hud-secondary-value">DRAFT / 0</strong></div>
+          <div><span id="hud-tertiary-label">FRONT</span><strong id="hud-tertiary-value">--.- m</strong></div>
+        </div>
+        <div class="app-hud-footer">
+          <span id="hud-age">NAV AGE --</span>
+          <span id="hud-fps">-- FPS</span>
+        </div>
+      </div>
+    </aside>
+
+    <aside id="live-camera-panel" class="live-camera-panel" aria-label="Robot camera feed">
+      <header>
+        <div><span>CAMERA / FRONT</span><strong id="live-camera-state" data-state="offline">OFFLINE</strong></div>
+        <div class="live-camera-header-meta"><span id="live-camera-rate">-- FPS</span><span id="live-camera-resolution">FRAME / WAITING</span></div>
+      </header>
+      <div class="live-camera-body">
+        <div class="live-camera-feed" id="live-camera-feed">
+          <img id="live-camera-image" alt="Live forward robot camera" hidden>
+          <div id="live-camera-placeholder"><strong>NO CAMERA STREAM</strong><span>Enter an HTTP/MJPEG image stream from the robot.</span></div>
+        </div>
+        <div class="live-camera-controls">
+          <div class="live-camera-angles" aria-label="Camera orientation">
+            <div><span>YAW</span><strong id="live-camera-yaw">+0.0°</strong></div>
+            <div><span>PITCH</span><strong id="live-camera-pitch">-8.0°</strong></div>
+            <div><span>FOV</span><strong id="live-camera-fov">90°</strong></div>
+          </div>
+          <label for="live-camera-url">STREAM URL</label>
+          <div class="live-camera-url-row">
+            <input id="live-camera-url" type="url" inputmode="url" placeholder="http://robot.local:81/stream" autocomplete="off" spellcheck="false">
+            <button id="live-camera-connect" type="button">CONNECT</button>
+            <button id="live-camera-clear" class="live-camera-clear" type="button" title="Forget the saved camera URL">CLEAR</button>
+          </div>
+          <div class="live-camera-telemetry"><span id="live-camera-telemetry-state" data-state="waiting">TELEMETRY / WAITING</span><span id="live-camera-telemetry-age">AGE --</span></div>
+          <div class="live-camera-actions">
+            <button id="live-camera-snapshot" type="button" disabled>SNAPSHOT</button>
+            <button id="live-camera-fullscreen" type="button" disabled>FULLSCREEN</button>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <section id="channel-strip" class="simulation-only" aria-label="ELRS and CRSF channels">
+      <div class="channel-strip-label">
+        <strong id="channel-source">ELRS</strong>
+        <span id="channel-source-detail">CRSF INPUT</span>
+      </div>
+      <div id="channel-bars"></div>
+    </section>
+
+    <nav id="simulation-workspace" class="simulation-only" aria-label="Robot controls">
+      <div class="toolbar-group pose-control" role="group" aria-label="Body pose">
+        <button id="stand-button" type="button" title="Stand Domino">SITTING</button>
+        <button id="tilt-button" type="button" title="Tilt Domino">LEVEL</button>
+      </div>
+      <div class="toolbar-group walk-control" role="group" aria-label="Channel 7 walk mode">
+        <span>WALK<small>CH7 / SC</small></span>
+        <div class="segmented-control">
+          <button id="walk-stand" type="button" data-walk-mode="0" title="SC low: stand">STAND</button>
+          <button id="walk-careful" type="button" data-walk-mode="1" title="SC middle: careful four-beat walk">CAREFUL</button>
+          <button id="walk-trot" type="button" data-walk-mode="2" title="SC high: diagonal trot">TROT</button>
+        </div>
+        <button id="gait-lab-button" class="gait-lab-button" type="button" aria-expanded="false" aria-controls="gait-lab-panel" title="Open simulator-only gait tuning">TUNE</button>
+      </div>
+      <div class="toolbar-group height-control" role="group" aria-label="Ride height">
+        <span>RIDE HEIGHT<small>CH3 / LEFT Y</small></span>
+        <div class="height-meter" aria-live="polite">
+          <div class="height-meter-track" aria-hidden="true">
+            <div id="height-meter-fill"></div>
+          </div>
+          <output id="height-control-value">280 MM</output>
+        </div>
+      </div>
+      <div class="toolbar-group reset-control" role="group" aria-label="Reset controls">
+        <button id="reset-button" type="button" title="Reset position and return control to the radio">RESET ROBOT</button>
+        <button id="reset-view-button" type="button" title="Reset camera orbit and centre">RESET VIEW</button>
+      </div>
+      <div class="toolbar-group inspection-control" role="group" aria-label="Joint inspection overlay">
+        <button id="joints-button" type="button" aria-pressed="false" title="Inspect joint motion">INSPECT</button>
+        <select id="joint-leg" aria-label="Annotated leg">
+          <option value="FR">FR</option>
+          <option value="FL">FL</option>
+          <option value="BR">BR</option>
+          <option value="BL">BL</option>
+          <option value="ALL">ALL</option>
+        </select>
+        <button id="float-button" class="float-button" type="button" aria-pressed="false" title="Suspend Domino and disable ground physics">FLOAT</button>
+        <label class="joint-opacity-control" title="Joint overlay opacity">
+          <span>OPACITY</span>
+          <input id="joint-opacity" type="range" min="0.25" max="1" step="0.01" value="0.78" aria-label="Joint overlay opacity">
+        </label>
+      </div>
+    </nav>
+
+    <section id="gait-lab-panel" class="gait-lab-panel simulation-only" aria-label="Simulator gait tuning" hidden>
+      <div class="gait-lab-heading panel-drag-handle" title="Drag to move gait lab">
+        <div>
+          <span>GAIT LAB</span>
+          <small id="gait-lab-runtime-status" data-state="idle">SIM ONLY / WAITING</small>
+        </div>
+        <label class="gait-lab-enable">
+          <input id="gait-lab-enabled" type="checkbox" checked>
+          <span>OVERRIDE</span>
+        </label>
+        <button id="gait-lab-close" type="button" aria-label="Close gait tuning" title="Close gait tuning">&times;</button>
+      </div>
+      <div class="gait-preset-row" role="group" aria-label="Gait presets">
+        <button type="button" data-gait-preset="stable">STABLE</button>
+        <button type="button" data-gait-preset="balanced" class="active">BALANCED</button>
+        <button type="button" data-gait-preset="fast">FAST</button>
+      </div>
+      <div class="gait-profile-manager" aria-label="Saved gait profiles">
+        <input id="gait-profile-name" type="text" maxlength="32" placeholder="PROFILE NAME" aria-label="Gait profile name">
+        <button id="gait-profile-save" type="button">SAVE</button>
+        <select id="gait-profile-select" aria-label="Saved gait profile">
+          <option value="">SAVED PROFILES</option>
+        </select>
+        <button id="gait-profile-load" type="button" disabled>LOAD</button>
+        <button id="gait-profile-delete" type="button" disabled>DELETE</button>
+        <output id="gait-profile-status" aria-live="polite"></output>
+      </div>
+      <div class="gait-control-grid">
+        <label class="gait-setting" data-gait-setting="cadenceHz"><span>Cadence</span><output></output><input type="range"></label>
+        <label class="gait-setting" data-gait-setting="strideMm"><span>Stride</span><output></output><input type="range"></label>
+        <label class="gait-setting" data-gait-setting="liftMm"><span>Clearance</span><output></output><input type="range"></label>
+        <label class="gait-setting" data-gait-setting="dutyFactor"><span>Ground time</span><output></output><input type="range"></label>
+        <label class="gait-setting" data-gait-setting="bodyHeightMm"><span>Gait height</span><output></output><input type="range"></label>
+        <label class="gait-setting" data-gait-setting="stanceWidthMm"><span>Stance width</span><output></output><input type="range"></label>
+        <label class="gait-setting" data-gait-setting="turnGain"><span>Turn gain</span><output></output><input type="range"></label>
+        <label class="gait-setting" data-gait-setting="responseMs"><span>Response</span><output></output><input type="range"></label>
+        <label class="gait-setting" data-gait-setting="swingShape"><span>Swing shape</span><output></output><input type="range"></label>
+        <label class="gait-setting" data-gait-setting="diagonalPhase"><span>Diagonal phase</span><output></output><input type="range"></label>
+        <label class="gait-setting gait-setting-expert" data-gait-setting="touchdownXMm"><span>Foot X neutral <small>EXPERT</small></span><output></output><input type="range"></label>
+        <label class="gait-setting gait-setting-expert" data-gait-setting="maxForwardScale"><span>Forward limit <small>EXPERT</small></span><output></output><input type="range"></label>
+        <label class="gait-setting gait-setting-expert" data-gait-setting="maxTurnScale"><span>Turn limit <small>EXPERT</small></span><output></output><input type="range"></label>
+      </div>
+      <footer class="gait-lab-footer">
+        <div><span>EST. SPEED</span><output id="gait-lab-speed">0 mm/s</output></div>
+        <div><span>SUPPORT</span><output id="gait-lab-support">4 / 4</output></div>
+        <div><span>REACH</span><output id="gait-lab-reach">4 / 4</output></div>
+        <button id="gait-setting-info-button" class="gait-setting-info-button" type="button" aria-label="Gait setting guide" aria-expanded="false" aria-controls="gait-setting-info" title="Gait setting guide">i</button>
+        <button id="gait-lab-reset" type="button">RESET</button>
+      </footer>
+    </section>
+
+    <div id="gait-setting-info" class="gait-setting-info simulation-only" role="dialog" aria-modal="false" aria-labelledby="gait-setting-info-title" hidden>
+      <div>
+        <strong id="gait-setting-info-title">GAIT SETTINGS</strong>
+        <button id="gait-setting-info-close" type="button" aria-label="Close setting information" title="Close">&times;</button>
+      </div>
+      <dl id="gait-setting-info-list"></dl>
+    </div>
+
+    <aside id="telemetry-panel" class="simulation-only">
+      <section class="simulation-links">
+        <h2>SIMULATION LINKS</h2>
+        <dl>
+          <div><dt>Local bridge</dt><dd id="sim-bridge-state" data-state="disconnected">DISCONNECTED</dd></div>
+          <div><dt>Heartbeat RTT</dt><dd id="sim-heartbeat-rtt">-- ms</dd></div>
+          <div><dt>Last acknowledgement</dt><dd id="sim-heartbeat-age">--</dd></div>
+          <div><dt>Radio input</dt><dd id="sim-boxer-state" data-state="disconnected">OFFLINE</dd></div>
+          <div><dt>Radio packet age</dt><dd id="sim-boxer-age">--</dd></div>
+          <div><dt>CRSF to firmware</dt><dd id="sim-crsf-state" data-state="disconnected">OFFLINE</dd></div>
+          <div><dt>Accepted CRSF frames</dt><dd id="sim-crsf-frames">0</dd></div>
+        </dl>
+      </section>
+      <section>
+        <h2 class="panel-heading-action">COMMAND <button id="gamepad-setup-open" type="button">MAP</button></h2>
+        <dl>
+          <div><dt>Source</dt><dd id="gamepad-name">KEYBOARD</dd></div>
+          <div><dt>Pitch</dt><dd id="forward-value">0.00</dd></div>
+          <div><dt>Yaw</dt><dd id="turn-value">0.00</dd></div>
+          <div><dt>Roll</dt><dd id="roll-value">0.00</dd></div>
+          <div><dt>Ride height</dt><dd id="height-input-value">280 mm</dd></div>
+        </dl>
+      </section>
+      <section>
+        <h2>STATE</h2>
+        <dl>
+          <div><dt>Commanded height</dt><dd id="ride-height">280 mm</dd></div>
+          <div><dt>Walk mode</dt><dd id="gait-state" data-state="idle">STAND</dd></div>
+          <div><dt>Body height</dt><dd id="body-height">--</dd></div>
+          <div><dt>Foot contacts</dt><dd id="foot-contacts">0 / 4</dd></div>
+          <div><dt>Actuators</dt><dd>12 LIVE</dd></div>
+        </dl>
+      </section>
+      <section>
+        <h2>MODEL HEALTH</h2>
+        <dl>
+          <div><dt>CAD meshes</dt><dd id="mesh-count">0 / 29</dd></div>
+          <div><dt>Linkages</dt><dd id="linkage-health">CHECKING</dd></div>
+          <div><dt>Worst pin</dt><dd id="pin-error">--</dd></div>
+          <div><dt>Foot symmetry</dt><dd id="foot-symmetry">--</dd></div>
+          <div><dt>Physics</dt><dd id="physics-engine">STARTING</dd></div>
+          <div><dt>Mass model</dt><dd id="mass-model">--</dd></div>
+        </dl>
+      </section>
+      <section id="joint-legend" hidden>
+        <h2 class="panel-drag-handle" title="Drag to move inspector">JOINT MOTION <span id="joint-legend-leg">FR</span></h2>
+        <div class="body-plane-readout" aria-label="Body attitude">
+          <div><span><i class="axis-x"></i>ROLL</span><output id="body-roll">--</output></div>
+          <div><span><i class="axis-y"></i>PITCH</span><output id="body-pitch">--</output></div>
+          <div><span><i class="axis-z"></i>YAW</span><output id="body-yaw">--</output></div>
+          <div><span>LEAN</span><output id="body-plane-tilt">--</output></div>
+        </div>
+        <div class="joint-drive-selector" role="group" aria-label="Selected driven joint">
+          <button type="button" data-drive-joint="shoulder" aria-pressed="false"><b>q1</b><small>SHOULDER</small></button>
+          <button type="button" data-drive-joint="upper" aria-pressed="true" class="active"><b>q2</b><small>UPPER</small></button>
+          <button type="button" data-drive-joint="lower" aria-pressed="false"><b>q3</b><small>LOWER</small></button>
+        </div>
+        <div class="joint-legend-group">
+          <strong><i class="joint-swatch active"></i>DRIVES <small>OFFSET / SERVO</small></strong>
+          <span><b>q1</b><em>SHOULDER / X</em><output id="joint-q1-value">--</output></span>
+          <span><b>q2</b><em>UPPER / Y</em><output id="joint-q2-value">--</output></span>
+          <span><b>q3</b><em>LOWER / Y</em><output id="joint-q3-value">--</output></span>
+        </div>
+        <div class="joint-kinematic-readout">
+          <div><span>FOOT TARGET <small>X / Y / Z</small></span><output id="joint-foot-target">--</output></div>
+          <div><span>FOOT STATE</span><output id="joint-foot-state" data-state="unknown">--</output></div>
+          <div><span>FINAL SERVO OUTPUT <small>CALIBRATED COMMAND</small></span><output id="joint-servo-output">--</output></div>
+        </div>
+        <div class="joint-closure-readout">
+          <span><i class="joint-swatch passive"></i>PIN CLOSURE</span>
+          <output id="joint-closure-value">6 / 6 LOCKED</output>
+        </div>
+      </section>
+    </aside>
+
+    <div id="gamepad-setup" class="gamepad-setup simulation-only" role="dialog" aria-modal="true" aria-labelledby="gamepad-setup-title" hidden>
+      <form>
+        <header><div><span>INPUT / CONTROLLER</span><h2 id="gamepad-setup-title">Controller mapping</h2><p id="gamepad-setup-device">Connect a gamepad to configure it.</p></div><button id="gamepad-setup-close" type="button" aria-label="Close controller mapping">&times;</button></header>
+        <div class="gamepad-map-grid">
+          <label>ROLL AXIS <select id="gamepad-map-roll"></select><span><input id="gamepad-invert-roll" type="checkbox"> INVERT</span></label>
+          <label>FORWARD AXIS <select id="gamepad-map-forward"></select><span><input id="gamepad-invert-forward" type="checkbox"> INVERT</span></label>
+          <label>TURN AXIS <select id="gamepad-map-turn"></select><span><input id="gamepad-invert-turn" type="checkbox"> INVERT</span></label>
+          <label>STAND BUTTON <select id="gamepad-map-stand"></select></label>
+          <label>TILT BUTTON <select id="gamepad-map-tilt"></select></label>
+          <label>RESET BUTTON <select id="gamepad-map-reset"></select></label>
+          <label>DEADZONE <span><input id="gamepad-map-deadzone" type="range" min="0" max="0.4" step="0.01"><output id="gamepad-map-deadzone-value">0.10</output></span></label>
+          <label>RESPONSE CURVE <span><input id="gamepad-map-response" type="range" min="1" max="3" step="0.1"><output id="gamepad-map-response-value">1.0</output></span></label>
+        </div>
+        <section class="gamepad-signal-trace" aria-label="Live controller signal trace">
+          <header><span>LIVE SIGNAL TRACE</span><strong>RAW → PROCESSED → ROBOT COMMAND</strong></header>
+          <div id="gamepad-signal-rows">
+            <div data-gamepad-signal="roll"><strong>ROLL</strong><span>AXIS --</span><output>+0.000 → +0.000 → BODY ROLL +0.000</output></div>
+            <div data-gamepad-signal="forward"><strong>FORWARD</strong><span>AXIS --</span><output>+0.000 → +0.000 → FORWARD +0.000</output></div>
+            <div data-gamepad-signal="turn"><strong>TURN</strong><span>AXIS --</span><output>+0.000 → +0.000 → YAW +0.000</output></div>
+          </div>
+        </section>
+        <p class="gamepad-map-note">Deadzone removes stick drift. Higher response curves soften movement near centre while preserving full travel. Settings are saved for this exact controller name; CRSF radios keep direct channel mapping.</p>
+        <footer><button id="gamepad-map-default" type="button">RESTORE DEFAULT</button><button id="gamepad-map-save" type="submit">SAVE MAPPING</button></footer>
+      </form>
+    </div>
+
+    <div id="project-dialog" class="project-dialog" role="dialog" aria-modal="true" aria-labelledby="project-dialog-title" hidden>
+      <section class="project-dialog-shell">
+        <header>
+          <div>
+            <span>PROJECT / DOMINO V2</span>
+            <h2 id="project-dialog-title">Project bundle</h2>
+            <p>Move robot-specific tuning between machines without exporting a live connection or safety state.</p>
+          </div>
+          <button id="project-dialog-close" type="button" aria-label="Close project bundle">&times;</button>
+        </header>
+        <label class="project-name-field">
+          <span>PROJECT NAME</span>
+          <input id="project-name" type="text" maxlength="80" value="Domino V2" autocomplete="off">
+        </label>
+        <div class="project-summary-grid" aria-label="Project bundle contents">
+          <div><span>SIM GAITS</span><strong id="project-gait-count">0</strong></div>
+          <div><span>LIVE GAITS</span><strong id="project-live-gait-count">0</strong></div>
+          <div><span>CONTROLLERS</span><strong id="project-controller-count">0</strong></div>
+          <div><span>CALIBRATION</span><strong id="project-calibration-count">12 JOINTS</strong></div>
+          <div><span>ROUTE POINTS</span><strong id="project-route-count">0</strong></div>
+          <div><span>SAVED ROUTES</span><strong id="project-route-library-count">0</strong></div>
+        </div>
+        <p id="project-storage-mode" class="project-storage-mode">Portable project file</p>
+        <div class="project-actions">
+          <button id="project-import" type="button">IMPORT PROJECT</button>
+          <button id="project-export" type="button">EXPORT .QSTUDIO</button>
+          <input id="project-import-file" type="file" accept="application/json,.json,.qstudio" hidden>
+        </div>
+        <p id="project-status" class="project-dialog-status" role="status">Project bundles include tuning, controller mappings, calibration, route plans, and saved route libraries. Safety and connection state never leave this app.</p>
+        <div class="project-boundary">
+          <div><strong>INCLUDED</strong><span>Gait settings, saved gait profiles, LIVE gait drafts, route plans and route libraries, calibration, and gamepad mappings.</span></div>
+          <div><strong>EXCLUDED</strong><span>Robot links, arm state, E-stop, bench mode, telemetry, and recorded sessions.</span></div>
+        </div>
+        <footer><button id="project-dialog-done" type="button">DONE</button></footer>
+      </section>
+    </div>
+
+    <div id="shortcuts-dialog" class="utility-dialog" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title" hidden>
+      <section class="utility-dialog-shell">
+        <header>
+          <div>
+            <span>DOMINO / QUICK REFERENCE</span>
+            <h2 id="shortcuts-title">Keyboard shortcuts</h2>
+            <p>Shortcuts are disabled while typing in a field. Press <kbd>?</kbd> any time to reopen this guide.</p>
+          </div>
+          <button id="shortcuts-close" type="button" aria-label="Close keyboard shortcuts">&times;</button>
+        </header>
+        <div class="shortcut-grid" aria-label="Available keyboard shortcuts">
+          <div><kbd>SPACE</kbd><span>Stand / sit in Simulation</span></div>
+          <div><kbd>T</kbd><span>Toggle tilt</span></div>
+          <div><kbd>G</kbd><span>Cycle stand / careful / trot</span></div>
+          <div><kbd>R</kbd><span>Reset the simulation</span></div>
+          <div><kbd>0</kbd><span>Open Simulation</span></div>
+          <div><kbd>1–7</kbd><span>Open a LIVE engineering view</span></div>
+          <div><kbd>DELETE</kbd><span>Remove a focused route waypoint</span></div>
+          <div><kbd>ARROWS</kbd><span>Nudge a focused waypoint; Shift moves 5 m</span></div>
+          <div><kbd>M</kbd><span>Open guarded LIVE manual control</span></div>
+          <div><kbd>H</kbd><span>Collapse / expand the autonomous HUD</span></div>
+          <div><kbd>F</kbd><span>Toggle fullscreen</span></div>
+          <div><kbd>?</kbd><span>Open this guide</span></div>
+        </div>
+        <footer><button id="shortcuts-done" type="button">DONE</button></footer>
+      </section>
+    </div>
+
+    <main id="real-workspace" class="real-robot-only" aria-label="Live robot digital twin" hidden>
+      <nav class="live-toolbar" aria-label="Live robot tools">
+        <div class="live-toolbar-section">
+          <strong>LIVE TWIN</strong>
+          <span>PHYSICAL / EXPECTED</span>
+        </div>
+        <div class="live-view-tabs" role="tablist" aria-label="Live engineering view">
+          <button type="button" role="tab" data-live-view="compare" aria-selected="true" aria-controls="live-view-compare">COMPARE</button>
+          <button type="button" role="tab" data-live-view="data" aria-selected="false" aria-controls="live-view-data">DATA</button>
+          <button type="button" role="tab" data-live-view="sensors" aria-selected="false" aria-controls="live-view-sensors">GPS / LIDAR</button>
+          <button type="button" role="tab" data-live-view="calibration" aria-selected="false" aria-controls="live-view-calibration">CALIBRATION</button>
+          <button type="button" role="tab" data-live-view="gaits" aria-selected="false" aria-controls="live-view-gaits">GAITS</button>
+          <button type="button" role="tab" data-live-view="diagnostics" aria-selected="false" aria-controls="live-view-diagnostics">DIAGNOSTICS</button>
+          <button type="button" role="tab" data-live-view="sessions" aria-selected="false" aria-controls="live-view-sessions">SESSIONS</button>
+        </div>
+        <div class="live-inspection-control inspection-control" role="group" aria-label="Live joint inspection overlay">
+          <button id="live-joints-button" type="button" aria-pressed="false" title="Inspect the digital twin joint motion">INSPECT</button>
+          <select id="live-joint-leg" aria-label="Live annotated leg">
+            <option value="FR">FR</option>
+            <option value="FL">FL</option>
+            <option value="BR">BR</option>
+            <option value="BL">BL</option>
+            <option value="ALL">ALL</option>
+          </select>
+          <button id="live-float-button" class="float-button" type="button" aria-pressed="false" title="Lift the preview clear of the floor while keeping live motion visible">FLOAT</button>
+        </div>
+        <button id="live-manual-open" class="live-manual-open" type="button">MANUAL CONTROL</button>
+      </nav>
+
+      <section id="live-view-compare" class="live-view-content" aria-labelledby="live-compare-title">
+      <header class="live-page-heading live-compare-page-heading">
+        <div><span>LIVE / COMPARE</span><h1 id="live-compare-title">Digital twin</h1><p>The 3D pose shows commands; the IMU measures tilt. Foot contact and body position are estimated.</p></div>
+        <div class="live-page-status"><span>VIEW</span><strong>EXPECTED + MEASURED</strong></div>
+      </header>
+      <section class="live-safety-dock" aria-label="Live robot safety state">
+        <div class="live-state-heading">
+          <span>ROBOT STATE</span>
+          <strong id="live-robot-safety-state">DISCONNECTED</strong>
+        </div>
+        <p id="live-robot-safety-copy">No physical link is configured. Commands are blocked and the CAD is a reference model only.</p>
+        <button id="live-safety-arm" type="button" disabled><span>HOLD TO ARM</span><i aria-hidden="true"></i></button>
+        <button id="live-safety-disarm" type="button" disabled>DISARM</button>
+        <button id="live-safety-reset-estop" type="button" disabled>RESET E-STOP</button>
+        <button id="live-safety-ack-fault" type="button" disabled>ACKNOWLEDGE FAULT</button>
+        <button id="live-safety-estop" type="button" class="estop" disabled>E-STOP</button>
+        <div class="live-safety-watchdog"><span>WATCHDOG</span><strong id="live-safety-watchdog">INACTIVE</strong></div>
+        <p id="live-safety-status">Connect a robot to inspect its safety state.</p>
+      </section>
+
+      <aside class="live-comparison-panel" aria-label="Live telemetry comparison">
+        <section class="live-panel-section live-links">
+          <h2>LIVE LINKS</h2>
+          <dl>
+            <div><dt>CRSF / ELRS drive</dt><dd id="live-drive-link" data-state="disconnected">OFFLINE</dd></div>
+            <div><dt>PC link</dt><dd id="live-engineering-link" data-state="disconnected">OFFLINE</dd></div>
+            <div><dt>Last robot packet</dt><dd id="live-packet-age">--</dd></div>
+            <div><dt>Round-trip latency</dt><dd id="live-link-rtt">-- ms</dd></div>
+          </dl>
+        </section>
+
+        <section class="live-panel-section twin-status">
+          <h2>DIGITAL TWIN</h2>
+          <dl>
+            <div><dt>Expected command</dt><dd id="live-expected-state" data-state="disconnected">NO STREAM</dd></div>
+            <div><dt>Measured pose</dt><dd id="live-measured-state" data-state="disconnected">NO STREAM</dd></div>
+            <div><dt>Time alignment</dt><dd id="live-time-alignment">-- ms</dd></div>
+            <div><dt>Worst joint error</dt><dd id="live-worst-joint-error">--&deg;</dd></div>
+          </dl>
+          <div class="twin-legend" aria-label="Digital twin legend">
+            <span><i class="expected"></i>EXPECTED</span>
+            <span><i class="measured"></i>MEASURED</span>
+            <span><i class="error"></i>ERROR</span>
+          </div>
+        </section>
+
+        <section class="live-panel-section body-comparison">
+          <div class="comparison-heading">
+            <h2>BODY POSE</h2>
+            <span>EXPECTED / MEASURED / ERROR</span>
+          </div>
+          <div class="comparison-table comparison-table-heading" aria-hidden="true">
+            <span></span><span>EXP</span><span>MEAS</span><span>&Delta;</span>
+          </div>
+          <div class="comparison-table">
+            <strong>ROLL</strong><output data-live-body="rollDeg" data-stream="expected">--.-&deg;</output><output data-live-body="rollDeg" data-stream="measured">--.-&deg;</output><output data-live-body-error="rollDeg">--.-&deg;</output>
+            <strong>PITCH</strong><output data-live-body="pitchDeg" data-stream="expected">--.-&deg;</output><output data-live-body="pitchDeg" data-stream="measured">--.-&deg;</output><output data-live-body-error="pitchDeg">--.-&deg;</output>
+            <strong>YAW</strong><output data-live-body="yawDeg" data-stream="expected">--.-&deg;</output><output data-live-body="yawDeg" data-stream="measured">--.-&deg;</output><output data-live-body-error="yawDeg">--.-&deg;</output>
+            <strong>HEIGHT</strong><output data-live-body="heightMm" data-stream="expected">--- mm</output><output data-live-body="heightMm" data-stream="measured">--- mm</output><output data-live-body-error="heightMm">-- mm</output>
+          </div>
+        </section>
+
+        <section class="live-panel-section joint-comparison" data-expert-only>
+          <div class="comparison-heading">
+            <h2>JOINT ERROR</h2>
+            <span>SHOULDER / UPPER / LOWER</span>
+          </div>
+          <div class="joint-error-grid" aria-label="Joint position error by leg">
+            <strong>FR</strong><output data-live-joint-error="3">--.-&deg;</output><output data-live-joint-error="4">--.-&deg;</output><output data-live-joint-error="15">--.-&deg;</output>
+            <strong>FL</strong><output data-live-joint-error="0">--.-&deg;</output><output data-live-joint-error="1">--.-&deg;</output><output data-live-joint-error="2">--.-&deg;</output>
+            <strong>BR</strong><output data-live-joint-error="9">--.-&deg;</output><output data-live-joint-error="10">--.-&deg;</output><output data-live-joint-error="11">--.-&deg;</output>
+            <strong>BL</strong><output data-live-joint-error="14">--.-&deg;</output><output data-live-joint-error="7">--.-&deg;</output><output data-live-joint-error="8">--.-&deg;</output>
+          </div>
+        </section>
+
+        <section class="live-panel-section live-power">
+          <div class="comparison-heading"><h2>POWER</h2><span>MEASURED</span></div>
+          <div class="live-power-row">
+            <div><span>PACK VOLTAGE</span><strong id="live-voltage">--.- V</strong></div>
+            <div><span>AVG CELL / 4S</span><strong id="live-cell-voltage">-.--- V</strong></div>
+            <div><span>EST. CHARGE</span><strong id="live-charge-percent">--%</strong></div>
+            <div><span>CURRENT</span><strong id="live-current">--.- A</strong></div>
+            <div><span>POWER</span><strong id="live-power">--- W</strong></div>
+          </div>
+        </section>
+      </aside>
+
+      <section class="live-error-scope" aria-label="Expected and measured error history">
+        <div class="live-scope-heading">
+          <div><span>COMPARISON SCOPE</span><strong id="live-chart-title">Body pitch / degrees</strong></div>
+          <div class="live-scope-actions">
+            <span id="live-session-state">NO ACTIVE SESSION</span>
+            <label for="live-chart-signal" class="sr-only">Comparison signal</label>
+            <select id="live-chart-signal" aria-label="Comparison signal">
+              <option value="pitchDeg">PITCH</option>
+              <option value="maximumLoopGapMs">LONGEST LOOP GAP</option>
+              <option value="maxCrsfStageMs">LONGEST RADIO READ</option>
+              <option value="maxImuStageMs">LONGEST IMU READ</option>
+              <option value="maxLiveStageMs">LONGEST APP TRANSPORT</option>
+              <option value="maxControlStageMs">LONGEST CONTROL UPDATE</option>
+              <option value="maxServoWriteMs">LONGEST SERVO WRITE</option>
+              <option value="imuI2cErrors">IMU I²C ERRORS</option>
+              <option value="imuSampleAgeMs">IMU SAMPLE AGE</option>
+              <option value="crsfPendingBytes">RADIO RX BACKLOG</option>
+              <option value="crsfBudgetHits">RADIO RX BUDGET HITS</option>
+              <option value="rollDeg">ROLL</option>
+              <option value="yawDeg">YAW</option>
+              <option value="heightMm">HEIGHT</option>
+              <option value="voltageV">VOLTAGE SENSOR</option><option value="averageCellVoltageV">AVERAGE CELL VOLTAGE</option><option value="estimatedChargePercent">ESTIMATED CHARGE</option><option value="currentA">CURRENT</option><option value="powerW">POWER</option><option value="alignmentMs">COMMAND LATENCY</option><option value="footZ0">FL FOOT Z</option><option value="footZ1">FR FOOT Z</option><option value="footZ2">BL FOOT Z</option><option value="footZ3">BR FOOT Z</option><option value="joint0">FL HIP ANGLE</option><option value="joint1">FL UPPER ANGLE</option><option value="joint2">FL LOWER ANGLE</option><option value="joint3">FR HIP ANGLE</option><option value="joint4">FR UPPER ANGLE</option><option value="joint15">FR LOWER ANGLE</option><option value="joint14">BL HIP ANGLE</option><option value="joint7">BL UPPER ANGLE</option><option value="joint8">BL LOWER ANGLE</option><option value="joint9">BR HIP ANGLE</option><option value="joint10">BR UPPER ANGLE</option><option value="joint11">BR LOWER ANGLE</option>
+            </select>
+            <label for="live-chart-window" class="sr-only">Scope window</label>
+            <select id="live-chart-window" aria-label="Scope window"><option value="10">10 S</option><option value="30" selected>30 S</option><option value="60">60 S</option><option value="all">FULL</option></select>
+            <button id="live-recording-toggle" type="button" disabled>START RECORDING</button>
+            <button id="live-export-csv" type="button" disabled>EXPORT CSV</button>
+            <button id="live-export-json" type="button" disabled>EXPORT JSON</button>
+          </div>
+        </div>
+        <div class="live-scope-grid">
+          <canvas id="live-comparison-chart" aria-label="Expected and measured telemetry graph"></canvas>
+          <div class="live-chart-legend" aria-hidden="true">
+            <span><i class="expected"></i>EXPECTED</span>
+            <span><i class="measured"></i>MEASURED</span>
+            <span><i class="error"></i>ERROR</span>
+          </div>
+          <em id="live-chart-empty">Connect the PC link, then start recording.</em>
+        </div>
+      </section>
+      </section>
+
+      <section id="live-view-data" class="live-view-page" aria-labelledby="live-data-title" hidden>
+        <header class="live-page-heading">
+          <div><span>LIVE / DATA</span><h1 id="live-data-title">Robot data</h1><p>Record, inspect and export synchronized command, pose and power telemetry.</p></div>
+          <div class="live-page-status"><span id="live-data-link-state" data-state="offline">PC LINK OFFLINE</span><strong id="live-data-sample-count">0 SAMPLES</strong></div>
+        </header>
+        <div class="live-data-grid">
+          <section class="live-data-card live-data-summary">
+            <header><span>CURRENT SAMPLE</span><strong id="live-data-current-time">NO TELEMETRY</strong></header>
+            <div class="live-data-metrics">
+              <div><span>ALIGNMENT</span><strong id="live-data-alignment">-- ms</strong></div>
+              <div><span>IMU PITCH</span><strong id="live-data-pitch">--.-&deg;</strong></div>
+              <div><span>VOLTAGE SENSOR</span><strong id="live-data-voltage">--.- V</strong></div>
+              <div><span>AVG CELL / 4S</span><strong id="live-data-cell-voltage">-.--- V</strong></div>
+              <div><span>EST. CHARGE</span><strong id="live-data-charge-percent">--%</strong></div>
+              <div><span>POWER</span><strong id="live-data-power">--- W</strong></div>
+            </div>
+          </section>
+          <section class="live-data-card live-data-controls">
+            <header><span>RECORDER</span><strong id="live-data-recorder-state">WAITING FOR BOTH STREAMS</strong></header>
+            <div>
+              <button id="live-data-recording-toggle" type="button" disabled>START RECORDING</button>
+              <button id="live-data-export-csv" type="button" disabled>EXPORT CSV</button>
+              <button id="live-data-export-json" type="button" disabled>EXPORT JSON</button>
+              <button id="live-data-clear" type="button" disabled>CLEAR DATA</button>
+              <button id="live-data-back" type="button">BACK TO LIVE</button>
+            </div>
+          </section>
+          <section class="live-data-card live-data-dashboard-card">
+            <header><span>GRAPH DASHBOARD</span><div><strong>DRAG GRIP TO REORDER · DRAG GRAPH TO ZOOM</strong><button id="live-data-add-graph" type="button">+ GRAPH</button></div></header>
+            <div id="live-data-dashboard" class="live-data-dashboard" aria-label="Configurable telemetry graphs"></div>
+          </section>
+          <section class="live-data-card live-data-table-card" data-expert-only>
+            <header><span>RECENT SYNCHRONIZED SAMPLES</span><strong>NEWEST FIRST</strong></header>
+            <div class="live-data-table-wrap"><table><thead><tr><th>TIME</th><th>ALIGN</th><th>PITCH EXP</th><th>PITCH MEAS</th><th>ERROR</th><th>VOLTAGE</th><th>AVG CELL</th><th>CHARGE</th><th>POWER</th></tr></thead><tbody id="live-data-table-body"><tr><td colspan="9">No recorded samples.</td></tr></tbody></table></div>
+          </section>
+        </div>
+      </section>
+
+      <section id="live-view-sensors" class="live-view-page" aria-labelledby="live-sensors-title" hidden>
+        <header class="live-page-heading">
+          <div><span>LIVE / MISSION CONSOLE</span><h1 id="live-sensors-title">Navigation console</h1><p>Plan and preview routes offline. Connect Domino navigation sensors or an ArduPilot/MAVLink vehicle for live data.</p></div>
+          <div class="live-page-status"><span id="live-sensors-link-state" data-state="offline">PC LINK OFFLINE</span><strong id="live-sensors-imu-state">IMU WAITING</strong><button id="live-nav-open-mavlink" type="button">MAVLINK SETUP</button></div>
+        </header>
+        <div class="live-sensor-grid">
+          <section class="live-data-card live-sensor-attitude-card">
+            <header><span>3D IMU INSPECTOR</span><strong id="live-sensor-reference-state">RAW SENSOR FRAME</strong></header>
+            <div id="live-sensor-plane" class="live-sensor-inspector-copy" aria-label="Live 3D IMU attitude inspector">
+              <strong>Attitude reference</strong>
+              <p>The preview follows measured roll, pitch, and yaw from the IMU. Enable Inspect to show body axes, joint callouts, and foot trajectories. Float hides the floor reference for a clear view of each axis.</p>
+              <span>Drag to orbit · Choose a leg or ALL from the toolbar.</span>
+            </div>
+            <div class="live-sensor-readout">
+              <div><span>ROLL</span><strong id="live-sensor-roll">--.-°</strong></div>
+              <div><span>PITCH</span><strong id="live-sensor-pitch">--.-°</strong></div>
+              <div><span>YAW / RELATIVE</span><strong id="live-sensor-yaw">--.-°</strong></div>
+              <div><span>GRAVITY</span><strong id="live-sensor-gravity">-.--- g</strong></div>
+              <div><span>SAMPLE</span><strong id="live-sensor-sample-age">-- ms</strong></div>
+            </div>
+          </section>
+
+          <section class="live-data-card live-sensor-inventory-card">
+            <header><span>SENSOR BUS</span><strong>CAPABILITY MAP</strong></header>
+            <div class="live-sensor-module" data-state="waiting"><i>IMU</i><div><strong>MPU6050</strong><span id="live-sensor-imu-detail">WAITING FOR TELEMETRY</span></div><b id="live-sensor-imu-badge">OFFLINE</b></div>
+            <div class="live-sensor-module" data-sensor-module="gps" data-state="waiting"><i>GPS</i><div><strong>GNSS / GPS</strong><span id="live-gps-module-detail">POSITION, SPEED, UTC AND FIX QUALITY</span></div><b id="live-gps-module-badge">WAITING</b></div>
+            <div class="live-sensor-module" data-sensor-module="lidar" data-state="waiting"><i>3D</i><div><strong>LiDAR</strong><span id="live-lidar-module-detail">RANGE CLOUD AND OBSTACLE CLEARANCE</span></div><b id="live-lidar-module-badge">WAITING</b></div>
+            <p id="live-navigation-capability-copy">GPS, LiDAR and ArduPilot data appear here only when a robot-reported capability and fresh telemetry are present; the interface never fabricates readings.</p>
+          </section>
+
+          <section class="live-data-card live-sensor-calibration-card">
+            <header><span>GUIDED IMU CALIBRATION</span><strong id="live-sensor-calibration-state">STEP 1 / 4</strong></header>
+            <div class="live-sensor-guide">
+              <ol>
+                <li class="active"><b>01</b><div><strong>Make the robot safe</strong><span>Support the chassis, keep servo power isolated, and leave the robot motionless.</span></div></li>
+                <li><b>02</b><div><strong>Verify the axes</strong><span>+X points forward, +Y points left and +Z points upward in the body frame.</span></div></li>
+                <li><b>03</b><div><strong>Capture level</strong><span>Place the body on a measured level reference, then capture roll and pitch zero.</span></div></li>
+                <li><b>04</b><div><strong>Validate and persist</strong><span>Check nose-up and left-up motion. Robot-side persistence will unlock with the sensor-calibration capability.</span></div></li>
+              </ol>
+              <div class="live-sensor-calibration-workspace">
+                <label><input id="live-sensor-safe-check" type="checkbox"> Robot supported, stationary and servo power isolated</label>
+                <label><input id="live-sensor-axis-check" type="checkbox"> I verified +X forward, +Y left and +Z up against the physical mounting</label>
+                <div class="live-sensor-axis-values">
+                  <div><span>RAW AX</span><strong id="live-sensor-ax">-.--- g</strong></div>
+                  <div><span>RAW AY</span><strong id="live-sensor-ay">-.--- g</strong></div>
+                  <div><span>RAW AZ</span><strong id="live-sensor-az">-.--- g</strong></div>
+                </div>
+                <div class="live-sensor-axis-guide"><span><i class="axis-x"></i>+X FORWARD</span><span><i class="axis-y"></i>+Y LEFT</span><span><i class="axis-z"></i>+Z UP</span></div>
+                <p id="live-sensor-calibration-copy">Complete the physical safety check before capturing a browser-side level reference.</p>
+                <div class="live-sensor-actions"><button id="live-sensor-capture-level" type="button" disabled>CAPTURE LEVEL</button><button id="live-sensor-reset-level" type="button" disabled>RESET REFERENCE</button><button type="button" disabled title="Requires a future robot sensor-calibration capability">SAVE TO ROBOT</button></div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div class="live-navigation-grid" aria-label="GPS, LiDAR and ArduPilot navigation controls">
+          <section class="live-data-card live-gps-card">
+            <header><span>GNSS POSITION</span><strong id="live-gps-fix-badge" data-state="offline">NO FIX</strong></header>
+            <div class="live-nav-metric-grid">
+              <div><span>LATITUDE</span><strong id="live-gps-lat">--.------</strong></div>
+              <div><span>LONGITUDE</span><strong id="live-gps-lon">--.------</strong></div>
+              <div><span>SATELLITES</span><strong id="live-gps-satellites">--</strong></div>
+              <div><span>HDOP</span><strong id="live-gps-hdop">--</strong></div>
+              <div><span>GROUND SPEED</span><strong id="live-gps-speed">--.- m/s</strong></div>
+              <div><span>COURSE</span><strong id="live-gps-course">---.-°</strong></div>
+              <div><span>ALTITUDE</span><strong id="live-gps-altitude">--.- m</strong></div>
+              <div><span>AGE</span><strong id="live-gps-age">--</strong></div>
+              <div><span>HEADING</span><strong id="live-gps-heading">---.-°</strong></div>
+              <div><span>VDOP</span><strong id="live-gps-vdop">--</strong></div>
+              <div><span>H ACCURACY</span><strong id="live-gps-hacc">--.- m</strong></div>
+              <div><span>V ACCURACY</span><strong id="live-gps-vacc">--.- m</strong></div>
+              <div><span>VERTICAL SPEED</span><strong id="live-gps-climb">--.- m/s</strong></div>
+              <div><span>UTC</span><strong id="live-gps-utc">--:--:--</strong></div>
+              <div><span>HOME DISTANCE</span><strong id="live-gps-home-distance">--.- m</strong></div>
+              <div><span>SOURCE</span><strong id="live-gps-source">--</strong></div>
+            </div>
+            <div class="live-gps-coordinate-actions">
+              <button id="live-nav-add-current" type="button" disabled>ADD CURRENT POSITION</button>
+              <button id="live-nav-set-home-current" type="button" disabled>SET HOME HERE</button>
+            </div>
+            <div class="live-gps-track-wrap">
+              <svg id="live-gps-track" viewBox="0 0 200 200" role="img" aria-label="Recent GPS track">
+                <rect x="4" y="4" width="192" height="192" rx="6"></rect>
+                <path d="M12 100h176M100 12v176" class="live-gps-track-grid"></path>
+                <polyline id="live-gps-track-line" points=""></polyline>
+                <circle id="live-gps-track-home" r="5" visibility="hidden"></circle>
+                <circle id="live-gps-track-current" r="4" visibility="hidden"></circle>
+                <text x="12" y="18">N</text><text x="188" y="194" text-anchor="end">E</text>
+              </svg>
+              <div class="live-gps-track-footer"><span id="live-gps-track-status">NO 3D GPS TRACK</span><div><button id="live-nav-track-to-plan" type="button" disabled>CREATE PLAN FROM TRACK</button><button id="live-nav-clear-track" type="button" disabled>CLEAR TRACK</button></div></div>
+            </div>
+          </section>
+
+          <section class="live-data-card live-lidar-card">
+            <header><span>LiDAR OBSTACLE MAP</span><strong id="live-lidar-scan-state" data-state="offline">WAITING</strong></header>
+            <div class="live-lidar-layout">
+              <div class="live-lidar-radar-wrap">
+                <svg id="live-lidar-radar" viewBox="0 0 240 240" role="img" aria-label="LiDAR obstacle radar">
+                  <circle class="live-lidar-ring" cx="120" cy="120" r="92"></circle><circle class="live-lidar-ring" cx="120" cy="120" r="61"></circle><circle class="live-lidar-ring" cx="120" cy="120" r="30"></circle>
+                  <path class="live-lidar-crosshair" d="M120 20v200M20 120h200"></path>
+                  <g id="live-lidar-rays"></g><circle class="live-lidar-robot" cx="120" cy="120" r="7"></circle>
+                  <text x="120" y="14" text-anchor="middle">FRONT</text><text x="232" y="124" text-anchor="end">RIGHT</text><text x="120" y="236" text-anchor="middle">REAR</text><text x="8" y="124">LEFT</text>
+                </svg>
+              </div>
+              <div class="live-lidar-readout">
+                <div><span>FRONT</span><strong id="live-lidar-front">--.- m</strong></div>
+                <div><span>LEFT</span><strong id="live-lidar-left">--.- m</strong></div>
+                <div><span>RIGHT</span><strong id="live-lidar-right">--.- m</strong></div>
+                <div><span>REAR</span><strong id="live-lidar-rear">--.- m</strong></div>
+                <div><span>OBSTACLES</span><strong id="live-lidar-obstacles">--</strong></div>
+                <div><span>SCAN RATE</span><strong id="live-lidar-rate">--.- Hz</strong></div>
+                <div><span>SCAN AGE</span><strong id="live-lidar-age">--</strong></div>
+                <div><span>FRAME</span><strong id="live-lidar-frame">--</strong></div>
+                <div><span>RANGE</span><strong id="live-lidar-range">--</strong></div>
+                <div><span>KNOWN SECTORS</span><strong id="live-lidar-sectors">--</strong></div>
+              </div>
+            </div>
+            <div class="live-obstacle-policy">
+              <label><input id="live-nav-obstacle-enabled" type="checkbox" checked> ENABLE OBSTACLE GUARD</label>
+              <label><span>STOP <output id="live-nav-stop-distance-value">0.45 m</output></span><input id="live-nav-stop-distance" type="range" min="0.10" max="5" step="0.05" value="0.45"></label>
+              <label><span>SLOW <output id="live-nav-slow-distance-value">1.20 m</output></span><input id="live-nav-slow-distance" type="range" min="0.20" max="10" step="0.05" value="1.20"></label>
+              <button id="live-nav-send-obstacle-policy" type="button" disabled>APPLY TO ROBOT</button>
+            </div>
+          </section>
+
+          <section class="live-data-card live-autopilot-card">
+            <header><span>VEHICLE ADAPTER / ROVER</span><strong id="live-autopilot-state" data-state="offline">NOT DETECTED</strong></header>
+            <div class="live-autopilot-summary">
+              <div><span>MODE</span><strong id="live-nav-current-mode">--</strong></div>
+              <div><span>ARM STATE</span><strong id="live-nav-arm-state">DISARMED</strong></div>
+              <div><span>EKF</span><strong id="live-nav-ekf-state">--</strong></div>
+              <div><span>PRE-ARM</span><strong id="live-nav-prearm-state">--</strong></div>
+              <div><span>MISSION</span><strong id="live-nav-mission-progress">NO MISSION</strong></div>
+              <div><span>HEARTBEAT</span><strong id="live-nav-heartbeat-age">--</strong></div>
+            </div>
+            <div class="live-autopilot-controls">
+              <label><span>ROVER MODE</span><select id="live-nav-mode-select" aria-label="ArduPilot Rover mode"></select></label>
+              <button id="live-nav-set-mode" type="button" disabled>SET MODE</button>
+              <button id="live-nav-arm" type="button" disabled>ARM AUTOPILOT</button>
+              <button id="live-nav-disarm" type="button" disabled>DISARM AUTOPILOT</button>
+              <button id="live-nav-rtl" type="button" disabled>RETURN TO LAUNCH</button>
+              <button id="live-nav-hold" type="button" disabled>HOLD</button>
+            </div>
+            <div class="live-parameter-controls">
+              <label><span>PARAMETER</span><input id="live-nav-parameter-name" type="text" maxlength="32" placeholder="FENCE_RADIUS"></label>
+              <label><span>VALUE</span><input id="live-nav-parameter-value" type="number" step="any" placeholder="50"></label>
+              <button id="live-nav-set-parameter" type="button" disabled>SET PARAMETER</button>
+            </div>
+            <p id="live-nav-autopilot-status" class="live-navigation-status">ArduPilot navigation is unavailable until a MAVLink-capable adapter reports a heartbeat.</p>
+          </section>
+
+          <section class="live-data-card live-mission-card">
+            <header><span>DOMINO AUTONOMY</span><div><strong id="live-nav-mission-state">DRAFT / 0 WAYPOINTS</strong><button id="live-nav-add-waypoint" type="button">+ WAYPOINT</button></div></header>
+            <div class="live-mission-toolbar">
+              <label><span>MISSION NAME</span><input id="live-nav-mission-name" type="text" maxlength="64" value="Domino patrol"></label>
+              <button id="live-nav-upload-mission" type="button" disabled>SEND TO VEHICLE</button>
+              <button id="live-nav-start-mission" type="button" disabled>START ROUTE</button>
+              <button id="live-nav-start-native-route" class="live-native-route-button" type="button" disabled>START DOMINO ROUTE</button>
+              <button id="live-nav-return-home" class="live-native-route-home-button" type="button" disabled>RETURN HOME</button>
+              <button id="live-nav-pause-native-route" class="live-native-route-pause-button" type="button" disabled>PAUSE DOMINO ROUTE</button>
+              <button id="live-nav-skip-waypoint" class="live-native-route-skip-button" type="button" disabled>SKIP WAYPOINT</button>
+              <span id="live-nav-native-route-state" class="live-native-route-state" data-state="offline">DOMINO ADAPTER WAITING</span>
+              <button id="live-nav-pause-mission" type="button" disabled>PAUSE / HOLD</button>
+              <button id="live-nav-resume-mission" type="button" disabled>RESUME ROUTE</button>
+              <button id="live-nav-clear-mission" type="button" disabled>CLEAR VEHICLE ROUTE</button>
+              <button id="live-nav-clear-draft" type="button">CLEAR PLAN</button>
+              <button id="live-nav-export-mission" type="button">EXPORT JSON</button>
+              <button id="live-nav-import-mission" type="button">IMPORT JSON</button>
+              <input id="live-nav-import-file" type="file" accept="application/json,.json" hidden>
+            </div>
+            <div class="live-route-planner" aria-label="Domino route planner">
+              <div class="live-planner-map-shell">
+                <div class="live-planner-map-heading"><div><span>MISSION / GEO MAP</span><strong id="live-nav-planner-status">AWAITING MAP REFERENCE</strong></div><div class="live-planner-map-settings"><label><span>RANGE</span><select id="live-nav-planner-range" aria-label="Planning map range"><option value="40">40 M</option><option value="80">80 M</option><option value="160">160 M</option></select></label><label><span>LOOPS</span><select id="live-nav-loop-count" aria-label="Domino route loop count"><option value="1">1X</option><option value="2">2X</option><option value="3">3X</option><option value="5">5X</option></select></label><label class="live-planner-layer"><span>BASEMAP</span><select id="live-nav-map-layer" aria-label="Planning map layer"><option value="osm">OPENSTREETMAP</option><option value="local">LOCAL GRID</option><option value="streetview">STREET VIEW</option></select></label><div class="live-planner-map-view-controls" role="group" aria-label="Planning map zoom"><span>ZOOM</span><div><button id="live-nav-zoom-out" type="button" aria-label="Zoom out of planning map" title="Zoom out">−</button><button id="live-nav-zoom-in" type="button" aria-label="Zoom in on planning map" title="Zoom in">+</button></div></div></div></div>
+                <div class="live-planner-overlay-controls" role="group" aria-label="Planning map overlays"><span>OVERLAYS</span><label><input type="checkbox" data-live-nav-overlay="route" checked><span>ROUTE</span></label><label><input type="checkbox" data-live-nav-overlay="track" checked><span>GPS TRACK</span></label><label><input type="checkbox" data-live-nav-overlay="lidar" checked><span>LIDAR</span></label><label><input type="checkbox" data-live-nav-overlay="fence" checked><span>FENCE</span></label><label><input type="checkbox" data-live-nav-overlay="vehicle" checked><span>VEHICLE</span></label></div>
+                <div class="live-planner-map-location"><label><span>MAP ORIGIN / LAT, LON</span><input id="live-nav-map-origin" type="text" inputmode="decimal" placeholder="-36.8509, 174.7645" autocomplete="off" spellcheck="false"></label><button id="live-nav-set-map-origin" type="button" title="Use this coordinate as the map and route reference">SET ORIGIN</button><button id="live-nav-use-device-location" type="button" title="Use this computer's location as the local map origin">USE DEVICE</button><button id="live-nav-clear-map-origin" type="button" title="Forget the planner's geographic reference without deleting the route">CLEAR ORIGIN</button><button id="live-nav-open-streetview" type="button" title="Open a Street View panorama at the map origin">OPEN STREET VIEW</button></div>
+                <div class="live-planner-place-search"><label><span>SEARCH PLACE / ADDRESS</span><input id="live-nav-place-search" type="search" maxlength="120" placeholder="Search an area before planning" autocomplete="off" spellcheck="false"></label><button id="live-nav-place-search-submit" type="button">SEARCH</button><select id="live-nav-place-results" aria-label="Map place search results" hidden disabled><option value="">SEARCH FOR A PLACE</option></select><span id="live-nav-place-search-status" aria-live="polite">OPTIONAL / NETWORK REQUIRED</span></div>
+                <div class="live-planner-map-stage">
+                <svg id="live-nav-planner-map" class="live-planner-map" viewBox="0 0 100 100" role="img" tabindex="0" aria-label="Click to add route waypoints. Focus the map and use plus or minus to zoom.">
+                  <rect id="live-nav-planner-surface" class="live-planner-map-surface" x="0" y="0" width="100" height="100"></rect>
+                  <g id="live-nav-planner-tiles" class="live-planner-map-tiles" aria-hidden="true"></g>
+                  <path id="live-nav-planner-grid" class="live-planner-grid-major" d=""></path>
+                  <path id="live-nav-planner-axis" class="live-planner-axis" d=""></path>
+                  <circle id="live-nav-planner-geofence" class="live-planner-geofence" cx="50" cy="50" r="0" visibility="hidden"></circle>
+                  <g id="live-nav-planner-clearance" class="live-planner-clearance" data-state="waiting"></g>
+                  <polyline id="live-nav-planner-track" class="live-planner-track" points="" visibility="hidden"></polyline>
+                  <polyline id="live-nav-planner-route" class="live-planner-route" points=""></polyline>
+                  <polyline id="live-nav-planner-return-route" class="live-planner-return-route" points=""></polyline>
+                  <g id="live-nav-planner-leg-labels" class="live-planner-leg-labels" aria-hidden="true"></g>
+                  <g id="live-nav-planner-markers"></g>
+                  <g id="live-nav-planner-vehicle" class="live-planner-vehicle" visibility="hidden"><circle cx="0" cy="0" r="2.3"></circle><path d="M0 -5l-2.1 4h4.2z"></path></g>
+                  <g id="live-nav-planner-scale" class="live-planner-scale" aria-hidden="true"><line x1="8" y1="92" x2="33" y2="92"></line><line x1="8" y1="89.5" x2="8" y2="94.5"></line><line x1="33" y1="89.5" x2="33" y2="94.5"></line><text id="live-nav-planner-scale-label" x="8" y="87">10 M</text></g>
+                </svg>
+                <div class="live-planner-map-scale-bar" aria-label="Map distance scale"><span id="live-nav-planner-scale-bar-label">10 M</span><i id="live-nav-planner-scale-bar-rule"></i></div>
+                <div class="live-planner-map-readout" aria-hidden="true"><span>DOMINO / MISSION PLANNER</span><strong id="live-nav-map-reference-label">NO GEO REFERENCE</strong><small id="live-nav-map-signal-label">ROBOT POSITION UNAVAILABLE</small></div>
+                <div class="live-planner-map-compass" aria-hidden="true"><b>▲</b><span>N</span></div>
+                <div id="live-nav-map-setup" class="live-planner-map-setup"><span>01 / LOCATION REFERENCE</span><h4>Choose an area to load the map</h4><p>Search a place, enter coordinates, or use this computer’s location. A map reference is separate from a live robot GPS fix.</p><div><button id="live-nav-map-setup-search" type="button">SEARCH AREA</button><button id="live-nav-map-setup-device" type="button">USE DEVICE</button></div></div>
+                <div id="live-nav-planner-attribution" class="live-planner-attribution" hidden><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a></div>
+                </div>
+                <div id="live-nav-streetview-panel" class="live-planner-streetview" hidden>
+                  <div class="live-planner-streetview-heading"><div><span>STREET VIEW INSPECTION</span><strong id="live-nav-streetview-target">MAP ORIGIN</strong></div><span id="live-nav-streetview-index">NO WAYPOINT SELECTED</span></div>
+                  <div class="live-planner-streetview-meta"><span><b>POSITION</b><strong id="live-nav-streetview-coordinate">NO GPS REFERENCE</strong></span><span><b>HEADING</b><strong id="live-nav-streetview-heading-value">--°</strong></span></div>
+                  <p id="live-nav-streetview-description">Open an interactive panorama in a new tab, then return here to place or adjust route waypoints against the same map reference.</p>
+                  <div class="live-planner-streetview-actions"><button id="live-nav-streetview-previous" type="button" disabled>PREVIOUS</button><button id="live-nav-streetview-next" type="button" disabled>NEXT</button><button id="live-nav-streetview-add" type="button">ADD AT MAP CENTER</button><button id="live-nav-streetview-copy" type="button" disabled>COPY VIEW LINK</button><button id="live-nav-streetview-panel-open" type="button">OPEN PANORAMA</button></div>
+                </div>
+                <div class="live-planner-map-meta"><div id="live-nav-planner-tile-status" class="live-planner-tile-status" data-state="offline" aria-live="polite">MAP / SET LOCATION</div><button id="live-nav-planner-retry-tiles" type="button" title="Retry loading the visible OpenStreetMap tiles" hidden>RETRY MAP</button></div>
+                <div class="live-planner-map-legend" aria-label="Route map legend"><span id="live-nav-planner-route-legend"><i class="is-plan"></i>PLANNED ROUTE</span><span id="live-nav-planner-track-legend" data-state="waiting"><i class="is-track"></i><b>GPS TRACK / WAITING</b></span><span id="live-nav-planner-clearance-legend" data-state="waiting"><i class="is-clearance"></i><b>LIDAR / WAITING</b></span><span id="live-nav-planner-return-legend"><i class="is-return"></i>CLOSING LEG</span></div>
+                <div id="live-nav-planner-cursor" class="live-planner-cursor" aria-live="polite"><span>CURSOR POSITION</span><strong id="live-nav-planner-cursor-local">MOVE OVER MAP</strong><em id="live-nav-planner-cursor-global">GPS / SET ORIGIN FOR COORDINATES</em></div>
+                <p class="live-planner-help">Click to add a waypoint. Drag a marker to reposition it; scroll or use + / − with the map focused to zoom, press F to fit the route or Home to reset the map, or hold Shift or use the middle mouse button to drag empty map space and pan. Set a map origin to use the Open Map overlay or inspect the area in Street View.</p>
+                <details class="live-plan-library">
+                  <summary><span>SAVED ROUTES</span><strong id="live-nav-plan-library-count">0 SAVED</strong></summary>
+                  <div class="live-plan-library-controls">
+                    <label><span>PLAN NAME</span><input id="live-nav-library-name" type="text" maxlength="64" placeholder="Morning patrol" autocomplete="off"></label>
+                    <label><span>OPEN PLAN</span><select id="live-nav-plan-library" aria-label="Saved route plans"><option value="">NO SAVED PLANS</option></select></label>
+                    <button id="live-nav-library-save" type="button">SAVE CURRENT</button>
+                    <button id="live-nav-library-open" type="button">OPEN SELECTED</button>
+                    <button id="live-nav-library-delete" type="button">DELETE SELECTED</button>
+                    <div class="live-plan-library-actions" aria-label="Route library file actions">
+                      <button id="live-nav-library-export" type="button" title="Export all saved route plans as a validated JSON library">EXPORT LIBRARY</button>
+                      <button id="live-nav-library-import" type="button" title="Replace saved route plans with a validated JSON library">IMPORT LIBRARY</button>
+                      <input id="live-nav-library-file" type="file" accept="application/json,.json" hidden>
+                      <button id="live-nav-geojson-export" type="button" title="Export the current route for standard mapping tools">EXPORT GEOJSON</button>
+                      <button id="live-nav-geojson-import" type="button" title="Import an ordered Point or LineString GeoJSON route">IMPORT GEOJSON</button>
+                      <input id="live-nav-geojson-file" type="file" accept=".geojson,.json,application/geo+json,application/json" hidden>
+                    </div>
+                  </div>
+                </details>
+                <div class="live-planner-actions"><button id="live-nav-undo" type="button" disabled title="Undo the last route-plan edit">UNDO</button><button id="live-nav-redo" type="button" disabled title="Redo the route-plan edit">REDO</button><button id="live-nav-preview-route" type="button" disabled>PREVIEW ROUTE</button><button id="live-nav-preview-pause" type="button" disabled>PAUSE</button><button id="live-nav-preview-step" type="button" disabled>STEP</button><label class="live-planner-speed"><span>SPEED</span><select id="live-nav-preview-speed" aria-label="Preview speed"><option value="0.5">0.5X</option><option value="1" selected>1X</option><option value="2">2X</option><option value="4">4X</option></select></label><button id="live-nav-fit-route" type="button" disabled>FIT ROUTE</button><button id="live-nav-center-vehicle" type="button" disabled title="Center the map on the current dog position">CENTER DOG</button><button id="live-nav-reset-map" type="button" title="Reset the planning map view to its local origin">RESET MAP</button><button id="live-nav-focus-map" type="button" aria-pressed="false" title="Expand the route planner for waypoint editing">FOCUS MAP</button><label class="live-planner-follow"><input id="live-nav-follow-vehicle" type="checkbox"><span>FOLLOW DOG</span></label><button id="live-nav-reverse-route" type="button" disabled title="Reverse the route order for a return pass">REVERSE ROUTE</button><button id="live-nav-reference-plan" type="button" disabled>REFERENCE LOCAL PLAN</button><span id="live-nav-plan-storage-status" data-state="saved">LOCAL AUTOSAVE ON</span><span id="live-nav-planner-help-status">Local plans can be referenced when a home position is available.</span></div>
+              </div>
+              <aside class="live-autonomy-hud" aria-label="Domino autonomy status">
+                <div class="live-autonomy-hud-heading"><div><span>DOMINO AUTONOMY</span><strong id="live-nav-hud-mode">PLANNING</strong></div><span id="live-nav-hud-state" data-state="offline">OFFLINE</span></div>
+                <div class="live-autonomy-hud-readouts"><div><span>ROUTE</span><strong id="live-nav-hud-route">DRAFT / 0</strong></div><div><span>NEXT</span><strong id="live-nav-hud-next">--</strong></div><div><span>TOTAL</span><strong id="live-nav-hud-total">--</strong></div><div><span>ETA</span><strong id="live-nav-hud-eta">--</strong></div><div><span>POSITION</span><strong id="live-nav-hud-position">NO FIX</strong></div><div><span>HEADING</span><strong id="live-nav-hud-heading">WAITING</strong></div><div><span>OBSTACLE</span><strong id="live-nav-hud-obstacle">--</strong></div><div><span>DOMINO CONTROL</span><strong id="live-nav-hud-control">STANDBY</strong></div></div>
+                <div class="live-native-preflight" aria-label="Domino route preflight"><span class="live-native-preflight-title">DOMINO PREFLIGHT</span><div class="live-native-preflight-grid"><span data-native-preflight="adapter"><b>ADAPTER</b><strong>WAITING</strong></span><span data-native-preflight="route"><b>ROUTE</b><strong>WAITING</strong></span><span data-native-preflight="gps"><b>GPS</b><strong>WAITING</strong></span><span data-native-preflight="heading"><b>HEADING</b><strong>WAITING</strong></span><span data-native-preflight="lidar"><b>LIDAR</b><strong>WAITING</strong></span><span data-native-preflight="safety"><b>SAFETY</b><strong>WAITING</strong></span><span data-native-preflight="fence"><b>FENCE</b><strong>WAITING</strong></span></div></div>
+                <button id="live-nav-manual-override" type="button">OPEN MANUAL OVERRIDE</button>
+                <p>Manual control remains available as the operator handoff. Vehicle actions stay gated by the active safety checks.</p>
+              </aside>
+            </div>
+            <div id="live-nav-waypoint-list" class="live-waypoint-list"><p class="live-empty-state">Add a current GPS position or create a waypoint to build a mission.</p></div>
+            <details class="live-activity-log">
+              <summary><span>AUTONOMY ACTIVITY</span><strong id="live-nav-activity-count">0 EVENTS</strong></summary>
+              <div class="live-activity-log-heading"><span>RECENT OPERATOR ACTIONS</span><div><button id="live-nav-activity-export" type="button">EXPORT LOG</button><button id="live-nav-activity-clear" type="button">CLEAR</button></div></div>
+              <div id="live-nav-activity-list" class="live-activity-log-list" aria-live="polite"><p class="live-empty-state">No autonomy actions recorded in this session.</p></div>
+            </details>
+          </section>
+
+          <section class="live-data-card live-nav-safety-card">
+            <header><span>AUTONOMY SAFETY</span><strong id="live-nav-safety-state" data-state="offline">LOCKED</strong></header>
+            <div class="live-nav-safety-grid">
+              <label class="live-toggle-line"><input id="live-nav-geofence-enabled" type="checkbox"><span>ENABLE RADIUS GEOFENCE</span></label>
+              <label><span>MAX RADIUS</span><input id="live-nav-geofence-radius" type="number" min="5" max="10000" step="1" value="50"><em>m from home</em></label>
+              <button id="live-nav-apply-geofence" type="button" disabled>APPLY GEOFENCE</button>
+              <button id="live-nav-request-state" type="button" disabled>REFRESH NAV STATE</button>
+            </div>
+            <ul id="live-nav-prearm-checklist" class="live-nav-prearm-checklist">
+              <li data-check="link"><i></i><span>Navigation link</span><b>WAITING</b></li>
+              <li data-check="gps"><i></i><span>3D GPS fix</span><b>WAITING</b></li>
+              <li data-check="ekf"><i></i><span>ArduPilot EKF</span><b>WAITING</b></li>
+              <li data-check="obstacle"><i></i><span>Obstacle guard</span><b>WAITING</b></li>
+              <li data-check="fence"><i></i><span>Geofence</span><b>WAITING</b></li>
+              <li data-check="route"><i></i><span>Route plan</span><b>WAITING</b></li>
+            </ul>
+            <p id="live-nav-safety-copy">Position modes remain blocked until the link, GPS, EKF and safety policy are healthy.</p>
+          </section>
+        </div>
+      </section>
+
+      <section id="live-view-calibration" class="live-view-page live-calibration-page" aria-labelledby="live-calibration-title" hidden>
+        <header class="live-page-heading">
+          <div><span>LIVE / CALIBRATION</span><h1 id="live-calibration-title">Servo calibration</h1><p>A guided, joint-by-joint setup for neutral offsets, direction and safe mechanical limits.</p></div>
+          <div class="live-page-status"><span id="live-calibration-link-state" data-state="offline">ROBOT NOT READY</span><strong id="live-calibration-save-state">UNSAVED DRAFT</strong></div>
+        </header>
+        <div id="live-calibration-origin-banner" class="calibration-origin-banner" data-level="notice" role="alert" hidden>
+          <strong id="live-calibration-origin-title"></strong>
+          <p id="live-calibration-origin-detail"></p>
+        </div>
+        <div class="calibration-preview-caption">
+          <span>JOINT INSPECTION / CAD PREVIEW</span>
+          <strong id="live-calibration-preview-caption">FL HIP / PHYSICAL TRIM +0.0&deg; / TEST JOG +0.0&deg;</strong>
+          <button id="live-calibration-float" type="button" aria-pressed="true" aria-label="Show calibration preview on floor" title="Floating preview on — click to show the floor">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 8.5h11v5h-11zM8 13.5v2.25M16 13.5v2.25M5 4.5l2-2 2 2M7 2.75v3.5M15 19.5l2 2 2-2M17 17.75v3.5"/></svg>
+          </button>
+          <div class="calibration-inspection-actions"><button id="live-calibration-focus-joint" type="button">FOCUS JOINT</button><button id="live-calibration-show-robot" type="button">FULL ROBOT</button><span>DRAG TO ORBIT · DOUBLE-CLICK A PART TO SELECT</span></div>
+          <div class="calibration-inspection-readouts" aria-live="polite">
+            <div><span>PREVIEW TARGET</span><strong id="live-calibration-inspect-pose">+0.0°</strong></div>
+            <div><span>LIMIT MARGIN</span><strong id="live-calibration-inspect-margin">45.0°</strong></div>
+            <div><span>EST. SERVO ANGLE</span><strong id="live-calibration-inspect-servo">129.87°</strong></div>
+            <div><span>FOOT TO FLOOR</span><strong id="live-calibration-inspect-foot">FLOAT MODE</strong></div>
+          </div>
+          <div class="calibration-inspection-travel"><div><span>CONFIGURED TRAVEL</span><strong id="live-calibration-inspect-range">−45° / +45°</strong></div><div class="calibration-inspection-travel-track"><i id="live-calibration-inspect-limit-band"></i><b id="live-calibration-inspect-pose-marker"></b><em id="live-calibration-inspect-neutral-marker"></em></div><div class="calibration-inspection-travel-labels"><span id="live-calibration-inspect-min-label">MIN −45°</span><span>NEUTRAL 0°</span><span id="live-calibration-inspect-max-label">MAX +45°</span></div></div>
+          <div class="calibration-inspection-sweep"><div><span>VISUAL TRAVEL TEST</span><strong id="live-calibration-inspect-mode">TEST JOG</strong></div><input id="live-calibration-inspect-slider" type="range" min="-45" max="45" step="0.1" value="0" aria-label="Preview selected joint angle in CAD only"><div><button id="live-calibration-inspect-play" type="button" aria-pressed="false">PLAY SWEEP</button><button id="live-calibration-inspect-neutral" type="button">NEUTRAL</button><small>Model only · never sends a jog command</small></div></div>
+          <div class="calibration-inspection-clearance"><span>CAD PROXIMITY SCREEN</span><strong id="live-calibration-inspect-clearance" data-state="unknown">LOADING MODEL</strong><small id="live-calibration-inspect-clearance-detail">Checks model bounds near the chassis and other legs. Verify real hardware, wiring and flex on the bench.</small></div>
+        </div>
+
+        <div class="live-calibration-layout">
+          <aside class="calibration-step-rail" aria-label="Calibration steps">
+            <button type="button" data-calibration-step="0" aria-current="step"><span>01</span><strong>SAFETY</strong><small>Prepare the bench</small></button>
+            <button type="button" data-calibration-step="1"><span>02</span><strong>SELECT JOINT</strong><small>Choose one actuator</small></button>
+            <button type="button" data-calibration-step="2"><span>03</span><strong>SET NEUTRAL</strong><small>Offset and direction</small></button>
+            <button type="button" data-calibration-step="3"><span>04</span><strong>SET LIMITS</strong><small>Mechanical travel</small></button>
+            <button type="button" data-calibration-step="4"><span>05</span><strong>REVIEW</strong><small>Save and back up</small></button>
+          </aside>
+
+          <div class="calibration-workspace">
+            <section class="calibration-panel" data-calibration-panel="0">
+              <div class="calibration-panel-heading"><span>STEP 1 OF 5</span><h2>Make the robot safe</h2><p>Calibration can move individual servos. Complete these checks before a hardware session.</p></div>
+              <div class="calibration-safety-grid">
+                <article><span>01</span><strong>Support the chassis</strong><p>Lift all feet clear of the bench and remove external loads from the selected leg.</p></article>
+                <article><span>02</span><strong>Disable locomotion</strong><p>The robot adapter must acknowledge bench mode before any physical jog is allowed.</p></article>
+                <article><span>03</span><strong>Keep an E-stop ready</strong><p>Use low current limits and keep physical power isolation within reach.</p></article>
+              </div>
+              <label class="calibration-confirm"><input id="live-calibration-safety-confirm" type="checkbox"><span>I have supported the robot and understand that browser preview does not move hardware.</span></label>
+              <div class="calibration-lock-state"><span>PHYSICAL JOG</span><strong id="live-calibration-bench-state">LOCKED - BENCH MODE NOT ACKNOWLEDGED</strong><small id="live-calibration-bench-feedback" aria-live="polite"></small><button id="live-calibration-request-bench" type="button" disabled>REQUEST BENCH MODE</button></div>
+            </section>
+
+            <section class="calibration-panel" data-calibration-panel="1" hidden>
+              <div class="calibration-panel-heading"><span>STEP 2 OF 5</span><h2>Select one joint</h2><p>Work through one actuator at a time. The channel map follows the current Domino wiring.</p></div>
+              <div class="calibration-wiring-toolbar">
+                <div><span>PHYSICAL OUTPUT MAP</span><strong id="live-calibration-wiring-summary">12 UNIQUE CHANNELS</strong><small>Logical joints can be assigned to any PCA9685 output from 0-15.</small></div>
+                <button id="live-calibration-edit-wiring" type="button">EDIT CHANNEL MAP</button>
+              </div>
+              <div id="live-calibration-joint-list" class="calibration-joint-map" aria-label="Domino calibration joints"></div>
+              <div class="calibration-selection-summary"><span>SELECTED</span><strong id="live-calibration-selected-summary">FL HIP / CHANNEL 0</strong><small>Selection is reflected in the neutral and limit steps.</small></div>
+            </section>
+
+            <section class="calibration-panel" data-calibration-panel="2" hidden>
+              <div class="calibration-panel-heading"><span>STEP 3 OF 5</span><h2>Set the neutral pose</h2><p>Adjust the physical servo center to match the CAD stance. Test jog and the visual travel controls move the 3D model; the visual sweep never commands hardware.</p></div>
+              <div class="calibration-editor-heading"><div><span>SELECTED JOINT</span><strong id="live-calibration-neutral-title">FL HIP</strong></div><div><span>SERVO CHANNEL</span><strong id="live-calibration-channel">0</strong></div><div><span>BASE REFERENCE</span><strong id="live-calibration-reference">129.87&deg;</strong></div><div><span>CALIBRATED NEUTRAL</span><strong id="live-calibration-neutral-output">129.87&deg;</strong></div></div>
+              <div class="calibration-field-grid">
+                <label>ZERO OFFSET <input id="live-calibration-offset" type="number" min="-30" max="30" step="0.1" value="0"><span>degrees</span></label>
+                <label>DIRECTION <select id="live-calibration-direction"><option value="1">NORMAL</option><option value="-1">INVERTED</option></select><span>logical to servo</span></label>
+                <label class="calibration-preview-toggle"><input id="live-calibration-preview" type="checkbox" checked><strong>ENABLE CAD PREVIEW</strong><span>Visual jog + sweep</span></label>
+              </div>
+              <div class="calibration-jog-control calibration-neutral-trim">
+                <div><span>PERMANENT NEUTRAL TRIM</span><strong id="live-calibration-trim-value">+0.0&deg;</strong><small>Adjusts the selected channel's saved default / 0.1&deg; fine steps</small></div>
+                <div role="group" aria-label="Permanent neutral trim controls"><button type="button" data-calibration-trim="-1">-1&deg;</button><button type="button" data-calibration-trim="-0.1">-0.1&deg;</button><button type="button" data-calibration-trim="0.1">+0.1&deg;</button><button type="button" data-calibration-trim="1">+1&deg;</button></div>
+              </div>
+              <div class="calibration-secondary-actions"><button id="live-calibration-restore-joint" type="button">RESTORE SELECTED JOINT</button><span>Resets offset, direction and limits; keeps its physical PCA9685 channel.</span></div>
+              <div class="calibration-jog-control">
+                <div><span id="live-calibration-jog-label">VISUAL PREVIEW NUDGE</span><strong id="live-calibration-jog-value">+0.0&deg;</strong><small id="live-calibration-jog-description">Relative moves within the selected limits; model only, not saved</small></div>
+                <div role="group" aria-label="Calibration jog controls"><button type="button" data-calibration-jog="-1">-1&deg;</button><button type="button" data-calibration-jog="-0.1">-0.1&deg;</button><button type="button" data-calibration-jog-reset>NEUTRAL</button><button type="button" data-calibration-jog="0.1">+0.1&deg;</button><button type="button" data-calibration-jog="1">+1&deg;</button></div>
+              </div>
+              <div class="calibration-jog-status-row">
+                <p id="live-calibration-jog-status" class="calibration-inline-status">Preview only. Connect a compatible robot adapter and receive a bench-mode acknowledgement to unlock physical movement.</p>
+                <button id="live-calibration-enable-jog" type="button" hidden>ENABLE PHYSICAL JOG</button>
+              </div>
+            </section>
+
+            <section class="calibration-panel" data-calibration-panel="3" hidden>
+              <div class="calibration-panel-heading"><span>STEP 4 OF 5</span><h2>Set mechanical limits</h2><p>Enter the safe logical travel for the selected joint. These bounds are checked before export or robot apply.</p></div>
+              <div class="calibration-limit-editor">
+                <label>MINIMUM <input id="live-calibration-minimum" type="number" min="-90" max="89" step="1" value="-45"><span>degrees from neutral</span></label>
+                <div class="calibration-range-graphic" aria-hidden="true"><i></i><b></b><i></i></div>
+                <label>MAXIMUM <input id="live-calibration-maximum" type="number" min="-89" max="90" step="1" value="45"><span>degrees from neutral</span></label>
+              </div>
+              <div class="calibration-limit-summary"><span>SAFE OUTPUT ENVELOPE</span><strong id="live-calibration-output-range">84.87&deg; - 174.87&deg;</strong><p>Limits describe logical joint travel. Direction inversion is applied before conversion to servo output.</p></div>
+            </section>
+
+            <section class="calibration-panel" data-calibration-panel="4" hidden>
+              <div class="calibration-panel-heading"><span>STEP 5 OF 5</span><h2>Review and save</h2><p>Export the browser draft or read the active profile from a connected, disarmed robot.</p></div>
+              <div class="calibration-review-table-wrap"><table><thead><tr><th>JOINT</th><th>CH</th><th>OFFSET</th><th>DIRECTION</th><th>MIN</th><th>MAX</th></tr></thead><tbody id="live-calibration-review-body"></tbody></table></div>
+              <section class="calibration-smoothing" aria-labelledby="live-calibration-smoothing-title">
+                <div class="calibration-smoothing-heading"><div><span>MOTION RESPONSE / RAMP</span><h3 id="live-calibration-smoothing-title">Shape the command before it reaches IK</h3><p>Ramp limits the speed of a pose change. It is not PID or measured servo feedback. Slower rates soften sudden moves but take longer to reach the target.</p></div><div class="calibration-smoothing-heading-actions"><span class="calibration-smoothing-badge">LIVE DRAFT PREVIEW</span><label class="calibration-smoothing-switch" for="live-calibration-smoothing-enabled"><span><strong>MOTION SMOOTHING</strong><small>Ramp + center deadband</small></span><input id="live-calibration-smoothing-enabled" type="checkbox" role="switch" checked><b id="live-calibration-smoothing-enabled-label">ON</b></label></div></div>
+                <p id="live-calibration-smoothing-mode-note" class="calibration-smoothing-mode-note">Ramp and center deadband are active in this draft.</p>
+                <div class="calibration-smoothing-preview">
+                  <div class="calibration-smoothing-plot">
+                    <div class="calibration-smoothing-plot-heading"><strong>STEP RESPONSE</strong><span>REQUESTED MOVE <span aria-hidden="true">→</span> COMMANDED POSE</span></div>
+                    <div class="calibration-smoothing-axis-tabs" role="group" aria-label="Preview motion axis">
+                      <button type="button" data-smoothing-preview-axis="rollRateDegPerSec" aria-pressed="true">ROLL</button>
+                      <button type="button" data-smoothing-preview-axis="pitchRateDegPerSec" aria-pressed="false">PITCH</button>
+                      <button type="button" data-smoothing-preview-axis="yawRateDegPerSec" aria-pressed="false">YAW</button>
+                      <button type="button" data-smoothing-preview-axis="heightRateMmPerSec" aria-pressed="false">HEIGHT</button>
+                    </div>
+                    <svg id="live-calibration-smoothing-chart" class="calibration-smoothing-chart" viewBox="0 0 600 230" role="img" aria-label="Preview of a requested step move and its rate-limited command over time">
+                      <line class="smoothing-grid" x1="48" y1="20" x2="572" y2="20"/><line class="smoothing-grid" x1="48" y1="98" x2="572" y2="98"/><line class="smoothing-grid" x1="48" y1="176" x2="572" y2="176"/>
+                      <line class="smoothing-grid" x1="179" y1="20" x2="179" y2="176"/><line class="smoothing-grid" x1="310" y1="20" x2="310" y2="176"/><line class="smoothing-grid" x1="441" y1="20" x2="441" y2="176"/>
+                      <line class="smoothing-axis" x1="48" y1="20" x2="48" y2="176"/><line class="smoothing-axis" x1="48" y1="176" x2="572" y2="176"/>
+                      <path id="live-calibration-smoothing-fill" class="smoothing-draft-fill"/>
+                      <path id="live-calibration-smoothing-input-path" class="smoothing-input-path"/>
+                      <path id="live-calibration-smoothing-robot-path" class="smoothing-robot-path" hidden/>
+                      <path id="live-calibration-smoothing-draft-path" class="smoothing-draft-path"/>
+                      <circle id="live-calibration-smoothing-settle-dot" class="smoothing-settle-dot" r="5"/>
+                      <text id="live-calibration-smoothing-y-label" x="40" y="25" text-anchor="end">20°</text>
+                      <text x="40" y="180" text-anchor="end">0</text>
+                      <text x="48" y="205" text-anchor="middle">0</text>
+                      <text id="live-calibration-smoothing-mid-label" x="310" y="205" text-anchor="middle">300 ms</text>
+                      <text id="live-calibration-smoothing-end-label" x="572" y="205" text-anchor="middle">600 ms</text>
+                    </svg>
+                    <div class="calibration-smoothing-legend"><span><i class="smoothing-legend-input"></i> Requested step</span><span><i class="smoothing-legend-draft"></i> <span id="live-calibration-smoothing-draft-legend">Draft ramp</span></span><span id="live-calibration-smoothing-robot-legend" hidden><i class="smoothing-legend-robot"></i> Robot setting preview</span></div>
+                  </div>
+                  <div class="calibration-smoothing-side">
+                    <div class="calibration-smoothing-target"><label for="live-calibration-smoothing-target">TEST MOVE</label><strong id="live-calibration-smoothing-target-value">16° roll</strong><input id="live-calibration-smoothing-target" type="range" min="0" max="20" step="1" value="16"><small>Change the example move; this does not command the robot.</small></div>
+                    <dl class="calibration-smoothing-metrics"><div><dt>RATE LIMIT</dt><dd id="live-calibration-smoothing-rate">180°/s</dd></div><div><dt>CHANGE PER CONTROL TICK</dt><dd id="live-calibration-smoothing-step">3.6° / 20 ms</dd></div><div><dt>REACHES TARGET IN</dt><dd id="live-calibration-smoothing-settle">100 ms</dd></div></dl>
+                    <div class="calibration-smoothing-deadband"><div><strong>CENTER RESPONSE</strong><span id="live-calibration-smoothing-deadband-label">2% deadband</span></div><svg id="live-calibration-smoothing-deadband-chart" viewBox="0 0 220 120" role="img" aria-label="Preview of stick input near center after deadband"><rect id="live-calibration-smoothing-deadband-zone" class="smoothing-deadband-zone" x="24" y="12" width="0" height="86"/><line class="smoothing-axis" x1="24" y1="98" x2="204" y2="98"/><line class="smoothing-axis" x1="24" y1="12" x2="24" y2="98"/><path class="smoothing-deadband-ideal" d="M24 98 L204 12"/><path id="live-calibration-smoothing-deadband-path" class="smoothing-deadband-path"/><text x="24" y="115">0</text><text x="204" y="115" text-anchor="end">10% stick</text></svg><p id="live-calibration-smoothing-deadband-result">At 10% stick, command is 8.2%.</p></div>
+                  </div>
+                </div>
+                <div class="calibration-smoothing-tuning-heading"><span>RAMP LIMITS</span><small>Edit the draft below. The graph updates immediately; the robot changes only after a verified save.</small></div>
+                <div id="live-calibration-smoothing-fields" class="calibration-smoothing-fields"></div>
+                <div class="calibration-smoothing-actions">
+                  <button id="live-calibration-smoothing-read" type="button" disabled>READ ROBOT</button>
+                  <button id="live-calibration-smoothing-defaults" type="button">DEFAULT DRAFT</button>
+                  <button id="live-calibration-smoothing-save" type="button" disabled>SAVE SMOOTHING TO ROBOT</button>
+                </div>
+                <p id="live-calibration-smoothing-status" role="status">Connect a disarmed robot to read its active smoothing settings.</p>
+              </section>
+              <div class="calibration-review-actions">
+                <button id="live-calibration-save-browser" type="button">SAVE BROWSER COPY</button>
+                <button id="live-calibration-export" type="button">EXPORT BROWSER DRAFT</button>
+                <button id="live-calibration-export-robot" type="button" disabled>EXPORT ROBOT PROFILE</button>
+                <button id="live-calibration-import" type="button">IMPORT JSON</button>
+                <button id="live-calibration-restore-browser-copy" type="button" hidden>LOAD PREVIOUS BROWSER COPY</button>
+                <button id="live-calibration-restore-all" type="button">RESTORE DEFAULTS</button>
+                <button id="live-calibration-apply-robot" type="button" disabled>SEND TO ROBOT</button>
+                <input id="live-calibration-import-file" type="file" accept="application/json,.json" hidden>
+              </div>
+              <p id="live-calibration-review-status" class="calibration-inline-status">Robot apply is locked until the engineering adapter confirms bench mode and persistent calibration support.</p>
+            </section>
+
+            <footer class="calibration-wizard-footer">
+              <button id="live-calibration-back" type="button" disabled>BACK</button>
+              <div><span id="live-calibration-progress-label">STEP 1 / 5</span><i><b id="live-calibration-progress"></b></i></div>
+              <button id="live-calibration-next" type="button" disabled>NEXT: SELECT JOINT</button>
+            </footer>
+          </div>
+        </div>
+
+        <dialog id="live-calibration-wiring-dialog" class="calibration-dialog" aria-labelledby="live-calibration-wiring-title">
+          <div class="calibration-dialog-shell">
+            <header><div><span>CALIBRATION / WIRING</span><h2 id="live-calibration-wiring-title">Assign physical servo channels</h2><p>Choose the PCA9685 output physically connected to each logical joint. Every assignment must be unique.</p></div><button id="live-calibration-wiring-close" type="button" aria-label="Close channel map editor">&times;</button></header>
+            <section id="live-calibration-wiring-edit" class="calibration-wiring-stage">
+              <div id="live-calibration-wiring-list" class="calibration-wiring-list"></div>
+              <p id="live-calibration-wiring-error" class="calibration-dialog-status" aria-live="polite"></p>
+            </section>
+            <section id="live-calibration-wiring-confirm" class="calibration-wiring-stage" hidden>
+              <div class="calibration-warning"><strong>CHECK THE PHYSICAL WIRING</strong><p>A wrong mapping can energize a different joint than the one shown on screen. Servo output stays locked while this local map is changed.</p></div>
+              <div id="live-calibration-wiring-changes" class="calibration-wiring-changes"></div>
+              <label class="calibration-confirm"><input id="live-calibration-wiring-ack" type="checkbox"><span>I checked each cable and understand that these assignments control physical PCA9685 outputs.</span></label>
+            </section>
+            <footer>
+              <button id="live-calibration-wiring-cancel" type="button">CANCEL</button>
+              <span></span>
+              <button id="live-calibration-wiring-back" type="button" hidden>BACK</button>
+              <button id="live-calibration-wiring-review" type="button">REVIEW CHANGES</button>
+              <button id="live-calibration-wiring-apply" type="button" hidden disabled>CONFIRM CHANNEL MAP</button>
+            </footer>
+          </div>
+        </dialog>
+
+        <dialog id="live-calibration-robot-confirm" class="calibration-dialog calibration-robot-confirm" aria-labelledby="live-calibration-robot-confirm-title">
+          <div class="calibration-dialog-shell">
+            <header><div><span>CALIBRATION / ROBOT WRITE</span><h2 id="live-calibration-robot-confirm-title">Save this profile to the robot?</h2><p>This replaces the robot's persistent channel map, neutral offsets, directions, and mechanical limits.</p></div><button id="live-calibration-robot-confirm-close" type="button" aria-label="Cancel robot profile write">&times;</button></header>
+            <section class="calibration-wiring-stage">
+              <div class="calibration-warning"><strong>PHYSICAL OUTPUTS WILL USE THIS MAP</strong><p>Keep Domino supported, verify all 12 channel assignments in the review table, and leave the E-stop within reach.</p></div>
+              <label class="calibration-confirm"><input id="live-calibration-robot-confirm-ack" type="checkbox"><span>I reviewed the wiring map and want to persist these changes on the connected robot.</span></label>
+            </section>
+            <footer><button id="live-calibration-robot-confirm-cancel" type="button">CANCEL</button><span></span><button id="live-calibration-robot-confirm-send" type="button" disabled>CONFIRM &amp; SEND</button></footer>
+          </div>
+        </dialog>
+
+        <dialog id="live-calibration-restore-confirm" class="calibration-dialog calibration-robot-confirm" aria-labelledby="live-calibration-restore-title">
+          <div class="calibration-dialog-shell">
+            <header><div><span>CALIBRATION / LOCAL DRAFT</span><h2 id="live-calibration-restore-title">Restore calibration defaults?</h2><p id="live-calibration-restore-copy">Review the affected settings before changing the local calibration draft.</p></div><button id="live-calibration-restore-close" type="button" aria-label="Cancel calibration restore">&times;</button></header>
+            <section class="calibration-wiring-stage">
+              <div class="calibration-warning"><strong>THIS DOES NOT MOVE OR WRITE THE ROBOT</strong><p>The restored values remain a local draft until you explicitly save a browser copy or send the complete profile to a bench-mode robot.</p></div>
+              <label id="live-calibration-restore-wiring-option" class="calibration-confirm"><input id="live-calibration-restore-wiring" type="checkbox"><span>Also restore the compiled PCA9685 channel map. Leave this off to preserve the robot's physical wiring.</span></label>
+              <label class="calibration-confirm"><input id="live-calibration-restore-ack" type="checkbox"><span id="live-calibration-restore-ack-copy">I understand which calibration values will be replaced.</span></label>
+            </section>
+            <footer><button id="live-calibration-restore-cancel" type="button">CANCEL</button><span></span><button id="live-calibration-restore-confirm-button" type="button" disabled>RESTORE LOCAL DRAFT</button></footer>
+          </div>
+        </dialog>
+      </section>
+
+      <section id="live-view-gaits" class="live-view-page live-gaits-page" aria-labelledby="live-gaits-title" hidden>
+        <header class="live-page-heading">
+          <div><span>LIVE / GAITS</span><h1 id="live-gaits-title">Gait profile transfer</h1><p>Review Simulation profiles in the 3D preview, compare them with the robot, then apply through an explicit disarmed handshake.</p></div>
+          <div class="live-page-status"><span id="live-gait-link-state" data-state="offline">ROBOT PROFILE UNKNOWN</span><strong id="live-gait-draft-state">LOCAL DRAFT</strong></div>
+        </header>
+        <div class="live-gait-preview-caption"><span>3D GAIT PREVIEW</span><strong id="live-gait-preview-health">4 / 4 REACHABLE</strong><small>Local kinematics only / never drives hardware</small></div>
+        <div class="live-gaits-layout">
+          <div class="live-gaits-editor">
+            <section class="live-gait-card live-gait-library-card">
+              <header><div><span>PROFILE LIBRARY</span><strong>SHARED WITH SIMULATION</strong></div></header>
+              <div class="live-gait-library-controls">
+                <select id="live-gait-library" aria-label="Shared gait profiles" title="Select a saved gait profile"><option value="">SELECT PROFILE</option></select>
+                <button id="live-gait-load" type="button" disabled>OPEN</button>
+                <input id="live-gait-name" type="text" maxlength="32" value="Balanced" aria-label="Gait profile name">
+                <button id="live-gait-save" type="button">SAVE COPY</button>
+                <button id="live-gait-import" type="button">IMPORT JSON</button>
+                <button id="live-gait-export" type="button">EXPORT JSON</button>
+                <input id="live-gait-import-file" type="file" accept="application/json,.json" hidden>
+              </div>
+            </section>
+
+            <section class="live-gait-card live-gait-preview-controls">
+              <header><div><span>SAFE LOCAL PREVIEW</span><strong id="live-gait-preview-mode-label">TROT / 65% FORWARD</strong></div><label><input id="live-gait-preview-enabled" type="checkbox" checked> ENABLED</label></header>
+              <div class="live-gait-preview-row">
+                <div role="group" aria-label="Preview gait mode"><button type="button" data-live-gait-mode="careful" aria-pressed="false">CAREFUL</button><button type="button" data-live-gait-mode="trot" aria-pressed="true">TROT</button></div>
+                <label>FORWARD <input id="live-gait-preview-forward" type="range" min="-1" max="1" step="0.05" value="0.65"><output id="live-gait-preview-forward-value">+0.65</output></label>
+                <label>TURN <input id="live-gait-preview-turn" type="range" min="-1" max="1" step="0.05" value="0"><output id="live-gait-preview-turn-value">0.00</output></label>
+                <div><span>EST. SPEED</span><strong id="live-gait-preview-speed">0 mm/s</strong></div>
+                <div><span>SUPPORT</span><strong id="live-gait-preview-support">4 / 4</strong></div>
+              </div>
+            </section>
+
+            <section class="live-gait-card live-gait-settings-card">
+              <header><div><span>PROFILE PARAMETERS</span><strong id="live-gait-profile-title">BALANCED</strong></div><div class="live-gait-presets" role="group" aria-label="Known gait presets"><button type="button" data-live-gait-preset="stable">STABLE</button><button type="button" data-live-gait-preset="balanced" aria-pressed="true">BALANCED</button><button type="button" data-live-gait-preset="fast">FAST</button></div></header>
+              <div id="live-gait-settings" class="live-gait-settings"></div>
+            </section>
+
+            <section class="live-gait-card live-gait-ik-card">
+              <header><div><span>IK INSPECTOR</span><strong id="live-gait-ik-summary">WAITING FOR PREVIEW</strong></div><small>LOCAL PREVIEW / NO HARDWARE OUTPUT</small></header>
+              <div class="live-gait-ik-table-wrap"><table><thead><tr><th>LEG</th><th>FOOT TARGET X / Y / Z</th><th>IK</th><th>q1 / q2 / q3 DELTA</th><th>CONTACT</th></tr></thead><tbody id="live-gait-ik-body"></tbody></table></div>
+              <p id="live-gait-ik-warning" class="live-gait-ik-warning" data-state="ok">All four targets solve inside the bounded CAD linkage envelope.</p>
+            </section>
+
+            <section class="live-gait-card live-gait-compare-card">
+              <header><div><span>DRAFT VS ROBOT</span><strong id="live-gait-compare-summary">ROBOT PROFILE NOT REPORTED</strong></div><button id="live-gait-request-profile" type="button">REQUEST ROBOT PROFILE</button></header>
+              <div class="live-gait-compare-table-wrap"><table><thead><tr><th>PARAMETER</th><th>LOCAL DRAFT</th><th>ROBOT</th><th>DELTA</th></tr></thead><tbody id="live-gait-compare-body"></tbody></table></div>
+              <div id="live-gait-risk" class="live-gait-risk"></div>
+            </section>
+
+            <section class="live-gait-card live-gait-apply-card">
+              <div><span>TWO-STAGE APPLY</span><strong id="live-gait-apply-state">PREVIEW ONLY</strong><p id="live-gait-status">A compatible robot adapter must report a disarmed state and persistent gait-profile support.</p></div>
+              <button id="live-gait-use-robot" type="button" disabled>LOAD ROBOT INTO DRAFT</button>
+              <button id="live-gait-revert" type="button" disabled>REVERT ROBOT</button>
+              <button id="live-gait-apply" type="button" disabled>APPLY DRAFT TO ROBOT</button>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section id="live-view-diagnostics" class="live-view-page live-diagnostics-page" aria-labelledby="live-diagnostics-title" hidden>
+        <header class="live-page-heading">
+          <div><span>LIVE / DIAGNOSTICS</span><h1 id="live-diagnostics-title">Command-chain diagnostics</h1><p>Trace the first broken stage from PC command packet to servo output, with counters and timestamped evidence.</p></div>
+          <div class="live-page-status"><span id="live-diagnostics-health" data-state="offline">NO TELEMETRY</span><strong id="live-diagnostics-event-count">0 EVENTS</strong></div>
+        </header>
+        <div class="live-diagnostics-grid">
+          <section class="diagnostics-card diagnostics-pipeline-card">
+            <header><div><span>COMMAND PIPELINE</span><strong id="live-diagnostics-pipeline-summary">WAITING FOR ROBOT DATA</strong></div><button id="live-diagnostics-export" type="button">DOWNLOAD BUNDLE</button></header>
+            <div id="live-diagnostics-pipeline" class="diagnostics-pipeline" aria-label="Live command pipeline"></div>
+            <div id="live-diagnostics-first-break" class="diagnostics-first-break" data-state="unavailable"><span>FIRST BROKEN STAGE</span><strong>NOT ENOUGH DATA</strong><p>Connect the robot PC stream to trace the control chain.</p></div>
+          </section>
+          <section class="diagnostics-card diagnostics-metrics-card">
+            <header><div><span>TRANSPORT + FIRMWARE</span><strong>LIVE COUNTERS</strong></div></header>
+            <div class="diagnostics-metrics">
+              <div><span>PACKET RATE</span><strong id="live-diagnostics-rate">0.0 Hz</strong></div>
+              <div><span>COMMAND LATENCY</span><strong id="live-diagnostics-latency">-- ms</strong></div>
+              <div><span>DROPPED / REJECTED</span><strong id="live-diagnostics-dropped">0 / 0</strong></div>
+              <div><span>STALE EVENTS</span><strong id="live-diagnostics-stale">0</strong></div>
+              <div><span>ESP32 LOOP</span><strong id="live-diagnostics-loop">-- Hz</strong></div>
+              <div><span>UPTIME</span><strong id="live-diagnostics-uptime">--:--:--</strong></div>
+              <div><span>ROBOT STATE</span><strong id="live-diagnostics-robot-state">UNKNOWN</strong></div>
+              <div><span>LAST SEQUENCE</span><strong id="live-diagnostics-sequence">--</strong></div>
+              <div><span>BOOT ID</span><strong id="live-diagnostics-boot-id">--</strong></div>
+              <div><span>RESET CAUSE</span><strong id="live-diagnostics-reset-reason">--</strong></div>
+              <div><span>STAGE AT RESET</span><strong id="live-diagnostics-prior-stage">--</strong></div>
+              <div><span>LONGEST LOOP GAP</span><strong id="live-diagnostics-max-gap">-- ms</strong></div>
+              <div><span>LAST SLOW STAGE</span><strong id="live-diagnostics-slow-stage">--</strong></div>
+              <div><span>MAX RADIO READ</span><strong id="live-diagnostics-max-crsf">-- ms</strong></div>
+              <div><span>MAX IMU READ</span><strong id="live-diagnostics-max-imu">-- ms</strong></div>
+              <div><span>MAX APP TRANSPORT</span><strong id="live-diagnostics-max-live">-- ms</strong></div>
+              <div><span>MAX CONTROL UPDATE</span><strong id="live-diagnostics-max-control">-- ms</strong></div>
+              <div><span>MAX SERVO WRITE</span><strong id="live-diagnostics-max-servo">-- ms</strong></div>
+              <div><span>IMU I²C ERRORS</span><strong id="live-diagnostics-imu-errors">--</strong></div>
+              <div><span>IMU AGE / CONSECUTIVE ERRORS</span><strong id="live-diagnostics-imu-age">-- ms / --</strong></div>
+              <div><span>CRSF CRC / UART</span><strong id="live-diagnostics-crsf-errors">-- / --</strong></div>
+              <div><span>RADIO RX / BACKLOG</span><strong id="live-diagnostics-crsf-backlog">-- / -- B</strong></div>
+              <div><span>RADIO BUDGET HITS</span><strong id="live-diagnostics-crsf-budget">--</strong></div>
+              <div><span>SKIPPED USB REPORTS</span><strong id="live-diagnostics-usb-skips">--</strong></div>
+            </div>
+          </section>
+          <section class="diagnostics-card diagnostics-controller-card">
+            <header><div><span>CRSF / ELRS CONTROLLER</span><strong id="live-controller-summary">NO RECEIVER TELEMETRY</strong></div><span id="live-controller-quality" data-state="offline">OFFLINE</span></header>
+            <div class="controller-overview">
+              <div><span>FRAME AGE</span><strong id="live-controller-frame-age">-- ms</strong></div>
+              <div><span>PACKET RATE</span><strong id="live-controller-rate">-- Hz</strong></div>
+              <div><span>LINK QUALITY</span><strong id="live-controller-lq">-- %</strong></div>
+              <div><span>RSSI 1 / 2</span><strong id="live-controller-rssi">-- / -- dBm</strong></div>
+              <div><span>RECEIVER</span><strong id="live-controller-voltage">-- V</strong></div>
+              <div><span>FAILSAFE</span><strong id="live-controller-failsafe">UNKNOWN</strong></div>
+              <div data-expert-only><span>SNR</span><strong id="live-controller-snr">-- dB</strong></div>
+              <div data-expert-only><span>RF MODE</span><strong id="live-controller-rf-mode">--</strong></div>
+              <div data-expert-only><span>TX POWER</span><strong id="live-controller-tx-power">-- mW</strong></div>
+              <div data-expert-only><span>FRAME LOSS</span><strong id="live-controller-frame-loss">--</strong></div>
+              <div data-expert-only><span>FAILSAFE COUNT</span><strong id="live-controller-failsafe-count">--</strong></div>
+              <div data-expert-only><span>ACTIVE ANTENNA</span><strong id="live-controller-antenna">--</strong></div>
+            </div>
+            <div class="controller-detail-grid">
+              <section>
+                <div class="controller-subheading"><span>CRSF CHANNELS</span><strong>µs AT ROBOT</strong></div>
+                <div id="live-controller-channels" class="controller-channels" aria-label="Robot received CRSF channels"></div>
+              </section>
+              <section data-expert-only>
+                <div class="controller-subheading"><span>LINK EVENTS</span><strong>NEWEST FIRST</strong></div>
+                <div id="live-controller-events" class="controller-events"></div>
+                <p id="live-controller-events-empty" class="diagnostics-empty">No controller transitions recorded.</p>
+              </section>
+            </div>
+          </section>
+          <section class="diagnostics-card diagnostics-log-card">
+            <header><div><span>EVENT LOG</span><strong>NEWEST FIRST</strong></div><div class="diagnostics-log-actions" role="group" aria-label="Diagnostic log filter"><button type="button" data-diagnostic-filter="all" aria-pressed="true">ALL</button><button type="button" data-diagnostic-filter="warning" aria-pressed="false">WARNINGS</button><button type="button" data-diagnostic-filter="fault" aria-pressed="false">FAULTS</button><button id="live-diagnostics-clear" type="button">CLEAR</button></div></header>
+            <div id="live-diagnostics-events" class="diagnostics-events" aria-live="polite"></div>
+            <p id="live-diagnostics-events-empty" class="diagnostics-empty">No diagnostic events recorded in this app run.</p>
+          </section>
+          <section class="diagnostics-card diagnostics-packet-card" data-expert-only>
+            <header><div><span>PACKET INSPECTOR</span><strong>EXPERT MODE</strong></div></header>
+            <div class="diagnostics-packet-grid"><div><span>LAST RECEIVED TELEMETRY</span><pre id="live-diagnostics-last-packet">No packet received.</pre></div><div><span>LAST GENERATED COMMAND</span><pre id="live-diagnostics-last-command">No expected command received.</pre></div></div>
+          </section>
+        </div>
+      </section>
+
+      <section id="live-view-sessions" class="live-view-page" aria-labelledby="live-sessions-title" hidden>
+        <header class="live-page-heading">
+          <div><span>LIVE / SESSIONS</span><h1 id="live-sessions-title">Recorded sessions</h1><p>Store recordings locally, move them between machines as JSON, and compare pose tracking and power.</p></div>
+          <div class="live-page-status"><span id="live-session-storage-state">LOADING</span><strong id="live-session-archive-count">0 SAVED</strong></div>
+        </header>
+        <section class="live-session-current">
+          <div><span>ACTIVE RECORDER</span><strong id="live-sessions-current-state">IDLE</strong></div>
+          <div><span>SAMPLES</span><strong id="live-sessions-current-samples">0</strong></div>
+          <div><span>DURATION</span><strong id="live-sessions-current-duration">0.0 S</strong></div>
+          <button id="live-sessions-open-data" type="button">OPEN DATA</button>
+          <button id="live-sessions-import" type="button">IMPORT JSON</button>
+          <input id="live-sessions-import-file" type="file" accept="application/json,.json" hidden>
+        </section>
+        <p id="live-session-import-status" class="live-session-import-status" role="status">Import a Domino engineering-session JSON package to restore a run for offline analysis.</p>
+        <section class="live-session-comparison" aria-labelledby="live-session-comparison-title">
+          <header>
+            <div><span>OPTIMIZATION</span><h2 id="live-session-comparison-title">Compare saved runs</h2><p>Choose a baseline and candidate to quantify pose tracking and power changes.</p></div>
+            <div class="live-session-compare-controls">
+              <label>BASELINE<select id="live-session-baseline" aria-label="Baseline session"></select></label>
+              <label>CANDIDATE<select id="live-session-candidate" aria-label="Candidate session"></select></label>
+              <label>SIGNAL<select id="live-session-compare-signal" aria-label="Comparison chart signal"><option value="pitchDeg">PITCH ERROR</option><option value="rollDeg">ROLL ERROR</option><option value="yawDeg">YAW ERROR</option><option value="heightMm">HEIGHT ERROR</option><option value="powerW">POWER</option></select></label>
+            </div>
+          </header>
+          <div id="live-session-compare-metrics" class="live-session-compare-metrics"></div>
+          <div class="live-session-compare-chart-wrap">
+            <canvas id="live-session-compare-chart" aria-label="Baseline and candidate session trend comparison"></canvas>
+            <div class="live-session-compare-legend"><span><i></i>BASELINE</span><span><i></i>CANDIDATE</span></div>
+            <em id="live-session-compare-empty">Save at least two sessions to compare runs.</em>
+          </div>
+        </section>
+        <div id="live-session-list" class="live-session-list" aria-live="polite"></div>
+        <p id="live-session-list-empty" class="live-session-list-empty">No completed sessions yet. Start a recording from Compare or Data.</p>
+      </section>
+    </main>
+
+    <dialog id="live-connection-dialog" class="live-connection-dialog" aria-labelledby="live-connection-title">
+      <div class="live-connection-workspace">
+        <header>
+          <div>
+            <span>LIVE / PHYSICAL LINK</span>
+            <h1 id="live-connection-title">Pair a vehicle</h1>
+            <p>Choose Domino or ArduPilot, verify the vehicle identity, then establish a read-only PC link.</p>
+          </div>
+          <div class="live-connection-header-actions">
+            <span id="live-connection-phase" data-state="offline">DISCONNECTED</span>
+            <button id="live-connection-close" type="button" aria-label="Close robot connection manager">&times;</button>
+          </div>
+        </header>
+
+        <div class="live-connection-body">
+          <section class="live-connection-discovery" aria-label="Robot adapter discovery">
+            <div class="live-connection-section-heading"><div><span>01</span><strong>Find an adapter</strong></div><small>LOCAL COMPANION SERVICE</small></div>
+            <label class="live-connection-protocol"><span>ADAPTER TYPE</span><select id="live-connection-protocol"><option value="domino">DOMINO ESP32</option><option value="ardupilot">ARDUPILOT / MAVLINK UDP</option></select></label>
+            <div id="live-mavlink-endpoint" class="live-mavlink-endpoint" hidden><label><span>VEHICLE HOST</span><input id="live-mavlink-host" type="text" value="127.0.0.1" autocomplete="off" spellcheck="false"></label><label><span>LISTEN PORT</span><input id="live-mavlink-port" type="number" min="1" max="65535" value="14550"></label><p>Use 127.0.0.1:14550 for local ArduPilot SITL. Configure the vehicle or router to send MAVLink UDP to this PC on that port.</p></div>
+            <div class="live-transport-options" role="group" aria-label="Connection transport">
+              <button type="button" data-live-transport="auto" aria-pressed="true">AUTO</button>
+              <button type="button" data-live-transport="wifi" aria-pressed="false">WI-FI</button>
+              <button type="button" data-live-transport="bluetooth" aria-pressed="false">BLUETOOTH</button>
+              <button type="button" data-live-transport="usb" aria-pressed="false">USB</button>
+            </div>
+            <button id="live-connection-discover" class="live-connection-primary" type="button">SEARCH FOR ADAPTERS</button>
+            <div id="live-adapter-list" class="live-adapter-list" role="listbox" aria-label="Available robot adapters"></div>
+            <p id="live-adapter-empty" class="live-adapter-empty">No adapters found yet. Start the Domino Wi-Fi, Bluetooth, or USB companion adapter, then search again.</p>
+          </section>
+
+          <section class="live-connection-detail" aria-label="Selected robot adapter">
+            <div class="live-connection-section-heading"><div><span>02</span><strong>Verify the robot</strong></div><small id="live-adapter-transport">NO ADAPTER</small></div>
+            <div class="live-adapter-identity">
+              <div><span>ROBOT</span><strong id="live-adapter-robot-name">Not selected</strong></div>
+              <div><span>ROBOT ID</span><strong id="live-adapter-robot-id">--</strong></div>
+              <div><span>FIRMWARE</span><strong id="live-adapter-firmware">--</strong></div>
+              <div><span>SIGNAL</span><strong id="live-adapter-signal">--</strong></div>
+              <div><span>ENDPOINT</span><strong id="live-adapter-endpoint">--</strong></div>
+              <div><span>SESSION</span><strong id="live-adapter-session">--</strong></div>
+            </div>
+            <div class="live-adapter-capabilities" aria-label="Adapter capabilities">
+              <span data-live-capability="telemetry">TELEMETRY</span>
+              <span data-live-capability="calibration">CALIBRATION</span>
+              <span data-live-capability="gaitProfiles">GAIT PROFILES</span>
+              <span data-live-capability="persistentProfiles">PERSISTENT STORAGE</span>
+              <span data-live-capability="manualControl">MANUAL CONTROL</span>
+            </div>
+            <div class="live-connection-safety-note">
+              <strong>READ-ONLY HANDSHAKE</strong>
+              <p>Connecting never arms or moves the robot. Calibration, gait, and future motion controls remain locked until their independent safety checks pass.</p>
+            </div>
+          </section>
+        </div>
+
+        <footer>
+          <p id="live-connection-status" role="status">Choose a transport and search for a compatible Domino adapter.</p>
+          <div>
+            <button id="live-connection-restart" type="button" hidden>RESTART LINK</button>
+            <button id="live-connection-disconnect" type="button" disabled>DISCONNECT</button>
+            <button id="live-connection-connect" class="live-connection-primary" type="button" disabled>CONNECT READ-ONLY</button>
+          </div>
+        </footer>
+      </div>
+    </dialog>
+
+    <dialog id="live-manual-dialog" class="live-manual-dialog" aria-labelledby="live-manual-title">
+      <form method="dialog" class="live-manual-shell">
+        <header>
+          <div><span>LIVE / GUARDED CONTROL</span><h2 id="live-manual-title">Browser manual control</h2></div>
+          <button id="live-manual-close" type="submit" aria-label="Close manual control">×</button>
+        </header>
+        <section class="live-manual-state">
+          <div><span>AUTHORITY</span><strong id="live-manual-phase">UNAVAILABLE</strong></div>
+          <div><span>LEASE</span><strong id="live-manual-lease">--</strong></div>
+          <p id="live-manual-status">Connect an armed, compatible robot to request browser control.</p>
+        </section>
+        <label class="live-manual-consent"><input id="live-manual-consent" type="checkbox"> <span>I have the physical E-stop ready. While the deadman is held, browser commands temporarily override the radio.</span></label>
+        <div class="live-manual-authority-actions">
+          <button id="live-manual-request" type="button" disabled>REQUEST 30 S AUTHORITY</button>
+          <button id="live-manual-release" type="button" disabled>RELEASE AUTHORITY</button>
+        </div>
+        <section class="live-manual-controls" aria-label="Manual command controls">
+          <div class="live-manual-modes" role="group" aria-label="Manual gait mode">
+            <button type="button" data-live-manual-mode="stand" aria-pressed="true">STAND</button>
+            <button type="button" data-live-manual-mode="careful" aria-pressed="false">CAREFUL</button>
+            <button type="button" data-live-manual-mode="trot" aria-pressed="false">TROT</button>
+          </div>
+          <label><span>FORWARD <output data-live-manual-output="forward">0.00</output></span><input data-live-manual-axis="forward" type="range" min="-1" max="1" step="0.01" value="0"></label>
+          <label><span>TURN <output data-live-manual-output="turn">0.00</output></span><input data-live-manual-axis="turn" type="range" min="-1" max="1" step="0.01" value="0"></label>
+          <label class="expert-only"><span>BODY ROLL <output data-live-manual-output="roll">0.00</output></span><input data-live-manual-axis="roll" type="range" min="-1" max="1" step="0.01" value="0"></label>
+          <label class="expert-only"><span>BODY PITCH <output data-live-manual-output="pitch">0.00</output></span><input data-live-manual-axis="pitch" type="range" min="-1" max="1" step="0.01" value="0"></label>
+          <label class="expert-only"><span>BODY YAW <output data-live-manual-output="yaw">0.00</output></span><input data-live-manual-axis="yaw" type="range" min="-1" max="1" step="0.01" value="0"></label>
+          <label class="expert-only"><span>BODY X <output data-live-manual-output="bodyX">0.00</output></span><input data-live-manual-axis="bodyX" type="range" min="-1" max="1" step="0.01" value="0"></label>
+          <label class="expert-only"><span>BODY Y <output data-live-manual-output="bodyY">0.00</output></span><input data-live-manual-axis="bodyY" type="range" min="-1" max="1" step="0.01" value="0"></label>
+          <label class="expert-only"><span>BODY HEIGHT <output data-live-manual-output="height">0.00</output></span><input data-live-manual-axis="height" type="range" min="-1" max="1" step="0.01" value="0"></label>
+          <p>The 3D expected pose follows robot-acknowledged telemetry, never an optimistic local preview.</p>
+        </section>
+        <button id="live-manual-deadman" class="live-manual-deadman" type="button" disabled>HOLD TO DRIVE</button>
+        <div class="live-manual-emergency">
+          <span>Commands stream at 20 Hz and expire robot-side after 250 ms.</span>
+          <button id="live-manual-estop" type="button" disabled>E-STOP</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="live-battery-alert" class="live-battery-alert" aria-labelledby="live-battery-alert-title">
+      <form method="dialog">
+        <div class="live-battery-alert-icon" aria-hidden="true">
+          <span></span>
+        </div>
+        <div>
+          <span id="live-battery-alert-kicker">LIVE / BATTERY</span>
+          <h2 id="live-battery-alert-title">Battery low</h2>
+          <p id="live-battery-alert-message">Domino's estimated battery charge is low.</p>
+          <dl>
+            <div><dt>PACK</dt><dd id="live-battery-alert-voltage">--.- V</dd></div>
+            <div><dt>EST. CHARGE</dt><dd id="live-battery-alert-percent">--%</dd></div>
+          </dl>
+        </div>
+        <footer>
+          <button id="live-battery-alert-estop" type="button" hidden>E-STOP ROBOT</button>
+          <button id="live-battery-alert-dismiss" type="button">UNDERSTOOD</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="firmware-deploy-dialog" class="firmware-deploy-dialog" aria-labelledby="firmware-deploy-title">
+      <div class="firmware-workspace">
+        <header class="firmware-workspace-header">
+          <div>
+            <span class="firmware-kicker">DOMINO / ESP32</span>
+            <h1 id="firmware-deploy-title">Firmware deployment</h1>
+            <p>Review and validate the exact package before writing to hardware.</p>
+          </div>
+          <div class="firmware-header-actions">
+            <span id="firmware-package-state" class="firmware-state-pill" data-state="loading">CHECKING</span>
+            <button id="firmware-deploy-close" class="firmware-icon-button" type="button" aria-label="Close firmware deployment" title="Close">&times;</button>
+          </div>
+        </header>
+
+        <div class="firmware-workspace-body">
+          <section class="firmware-package-panel" aria-label="Firmware package">
+            <div class="firmware-section-heading">
+              <div><span>PACKAGE</span><strong id="firmware-package-name">esp32dev</strong></div>
+              <output id="firmware-package-size">--</output>
+            </div>
+            <div class="firmware-package-meta">
+              <span id="firmware-board-name">ESP32 Dev Module</span>
+              <code id="firmware-package-hash">--------</code>
+            </div>
+            <div id="firmware-file-list" class="firmware-file-list" role="listbox" aria-label="Firmware files"></div>
+          </section>
+
+          <section class="firmware-review-panel" aria-label="Source review">
+            <div class="firmware-section-heading">
+              <div><span>REVIEW</span><strong id="firmware-review-path">Select a file</strong></div>
+              <output id="firmware-review-size">--</output>
+            </div>
+            <pre id="firmware-source-viewer" tabindex="0"><code>Choose a package file to inspect the code that will be compiled and uploaded.</code></pre>
+          </section>
+
+          <aside class="firmware-action-panel" aria-label="Deployment controls">
+            <section>
+              <div class="firmware-step-heading"><span>01</span><div><strong>Toolchain</strong><small>Local build environment</small></div></div>
+              <dl class="firmware-readiness-list">
+                <div><dt>PlatformIO</dt><dd id="firmware-toolchain-state">Checking</dd></div>
+                <div><dt>Environment</dt><dd>esp32dev</dd></div>
+                <div><dt>Framework</dt><dd>Arduino</dd></div>
+              </dl>
+              <button id="firmware-build-button" class="firmware-primary-action" type="button">BUILD &amp; VALIDATE</button>
+            </section>
+
+            <section>
+              <div class="firmware-step-heading"><span>02</span><div><strong>Hardware</strong><small>USB serial bootloader</small></div></div>
+              <label class="firmware-field" for="firmware-port-select">
+                <span>UPLOAD PORT</span>
+                <select id="firmware-port-select"><option value="">AUTO DETECT</option></select>
+              </label>
+              <button id="firmware-refresh-ports" class="firmware-secondary-action" type="button">REFRESH PORTS</button>
+              <ol class="firmware-boot-guide">
+                <li>Connect Domino's ESP32 over USB.</li>
+                <li>Press and hold the <b>BOOT</b> button.</li>
+                <li>Start upload, then release BOOT when connecting begins.</li>
+              </ol>
+              <label class="firmware-confirmation">
+                <input id="firmware-boot-confirm" type="checkbox">
+                <span>I am holding BOOT and the robot is safely supported.</span>
+              </label>
+              <button id="firmware-upload-button" class="firmware-upload-action" type="button" disabled>UPLOAD TO ESP32</button>
+            </section>
+          </aside>
+        </div>
+
+        <footer class="firmware-console-panel">
+          <div class="firmware-progress-row">
+            <div><span id="firmware-job-label">READY</span><strong id="firmware-job-stage">No active job</strong></div>
+            <output id="firmware-job-percent">0%</output>
+          </div>
+          <div class="firmware-progress-track"><div id="firmware-progress-fill"></div></div>
+          <div class="firmware-console-heading">
+            <span>DEPLOYMENT LOG</span>
+            <div><button id="firmware-copy-log" type="button">COPY</button><button id="firmware-cancel-job" type="button" disabled>CANCEL</button></div>
+          </div>
+          <pre id="firmware-console" aria-live="polite">Waiting for a build or upload job.</pre>
+        </footer>
+      </div>
+    </dialog>
+
+    <div id="loading" class="simulation-only">
+      <strong>LOADING DOMINO CAD</strong>
+      <span id="loading-detail">Preparing renderer</span>
+      <progress id="loading-progress" max="29" value="0"></progress>
+    </div>
+
+    <div class="camera-gizmo" aria-label="Camera axis navigation">
+      <canvas class="camera-gizmo-lines" width="112" height="112" aria-hidden="true"></canvas>
+      <button id="camera-home-button" class="camera-home-button" type="button" aria-label="Recenter 3D camera" title="Recenter camera">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10.5 12 4l8 6.5M6.5 9.5V20h11V9.5M10 20v-6h4v6"/></svg>
+      </button>
+      <button type="button" data-axis="+X" aria-label="View from positive X" title="View from +X">X</button>
+      <button type="button" data-axis="-X" aria-label="View from negative X" title="View from -X">-X</button>
+      <button type="button" data-axis="+Y" aria-label="View from positive Y" title="Top view">Y</button>
+      <button type="button" data-axis="-Y" aria-label="View from negative Y" title="Bottom view">-Y</button>
+      <button type="button" data-axis="+Z" aria-label="View from positive Z" title="View from +Z">Z</button>
+      <button type="button" data-axis="-Z" aria-label="View from negative Z" title="View from -Z">-Z</button>
+    </div>
+
+    <div id="toast-region" class="toast-region" role="status" aria-live="polite" aria-atomic="true"></div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

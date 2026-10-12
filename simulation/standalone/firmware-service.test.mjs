@@ -1,0 +1,236 @@
+import assert from "node:assert/strict";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import process from "node:process";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+
+import {
+  collectFirmwarePackage,
+  FirmwareService,
+  preparePlatformioEnvironment,
+  resolveReviewFile,
+  syncFirmwareWorkspace,
+} from "./firmware-service.mjs";
+
+function fixture() {
+  const root = mkdtempSync(path.join(tmpdir(), "domino-firmware-"));
+  mkdirSync(path.join(root, "src"));
+  mkdirSync(path.join(root, "private"));
+  writeFileSync(path.join(root, "platformio.ini"), "[env:esp32dev]\nboard = esp32dev\n");
+  writeFileSync(path.join(root, "src", "main.cpp"), "void setup() {}\nvoid loop() {}\n");
+  writeFileSync(path.join(root, "private", "secret.txt"), "not deployable\n");
+  return root;
+}
+
+test("firmware package includes only approved project roots", () => {
+  const root = fixture();
+  const firmwarePackage = collectFirmwarePackage(root);
+  assert.deepEqual(firmwarePackage.files.map((file) => file.path), ["platformio.ini", "src/main.cpp"]);
+  assert.equal(resolveReviewFile(root, "private/secret.txt"), null);
+  assert.match(resolveReviewFile(root, "src/main.cpp").contents, /void setup/);
+});
+
+test("firmware package hash changes when deployable source changes", () => {
+  const root = fixture();
+  const before = collectFirmwarePackage(root).hash;
+  writeFileSync(path.join(root, "src", "main.cpp"), "void setup() {}\nvoid loop() { delay(1); }\n");
+  const after = collectFirmwarePackage(root).hash;
+  assert.notEqual(after, before);
+});
+
+test("firmware jobs keep writable PlatformIO state in a separate core", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "domino-platformio-"));
+  const installedCore = path.join(root, "installed");
+  const runtimeRoot = path.join(root, "runtime");
+  mkdirSync(path.join(installedCore, "platforms"), { recursive: true });
+  mkdirSync(path.join(installedCore, "packages"), { recursive: true });
+
+  const coreDir = path.join(root, "studio-core");
+  const environment = preparePlatformioEnvironment(runtimeRoot, installedCore, coreDir);
+  assert.equal(environment.PLATFORMIO_CORE_DIR, coreDir);
+  assert.equal(environment.PLATFORMIO_SETTING_ENABLE_TELEMETRY, "No");
+  assert.equal(
+    realpathSync(path.join(environment.PLATFORMIO_CORE_DIR, "platforms")),
+    realpathSync(path.join(installedCore, "platforms")),
+  );
+  assert.equal(
+    realpathSync(path.join(environment.PLATFORMIO_CORE_DIR, "packages")),
+    realpathSync(path.join(installedCore, "packages")),
+  );
+});
+
+test("installed firmware builds copy reviewed source into a writable workspace", { timeout: 8_000 }, async () => {
+  const root = fixture();
+  const runtimeRoot = mkdtempSync(path.join(tmpdir(), "domino-runtime-"));
+  const buildRoot = path.join(runtimeRoot, "firmware-workspace");
+  const service = new FirmwareService({ projectRoot: root, runtimeRoot, buildRoot });
+  service.platformio = process.execPath;
+  service.startJob("build", ["-e", "require('node:fs').writeFileSync('working-dir.txt', process.cwd())"]);
+  await new Promise((resolve, reject) => {
+    const deadline = Date.now() + 6_000;
+    const timer = setInterval(() => {
+      if (service.job?.status === "success") { clearInterval(timer); resolve(); }
+      else if (service.job?.status === "failed" || Date.now() > deadline) {
+        clearInterval(timer);
+        reject(new Error(`Firmware workspace build did not succeed: ${service.job?.status}`));
+      }
+    }, 25);
+  });
+  assert.equal(readFileSync(path.join(buildRoot, "working-dir.txt"), "utf8"), buildRoot);
+  assert.equal(readFileSync(path.join(buildRoot, "src", "main.cpp"), "utf8"),
+    readFileSync(path.join(root, "src", "main.cpp"), "utf8"));
+  writeFileSync(path.join(root, "src", "old.cpp"), "void oldCode() {}\n");
+  syncFirmwareWorkspace(root, buildRoot, collectFirmwarePackage(root));
+  assert.equal(existsSync(path.join(buildRoot, "src", "old.cpp")), true);
+  unlinkSync(path.join(root, "src", "old.cpp"));
+  syncFirmwareWorkspace(root, buildRoot, collectFirmwarePackage(root));
+  assert.equal(existsSync(path.join(buildRoot, "src", "old.cpp")), false);
+});
+
+test("intentional firmware cancellation is reported as cancelled and preserves the last good build", { timeout: 8_000 }, async () => {
+  const root = fixture();
+  const runtimeRoot = mkdtempSync(path.join(tmpdir(), "domino-firmware-runtime-"));
+  const service = new FirmwareService({ projectRoot: root, runtimeRoot });
+  service.platformio = process.execPath;
+  const packageHash = service.package().hash;
+  const previousBuild = { ok: true, packageHash, completedAt: "before", jobId: "previous" };
+  service.lastBuild = previousBuild;
+
+  service.startJob("build", ["-e", "setTimeout(() => {}, 5000)"]);
+  assert.equal(service.cancel(), true);
+  await new Promise((resolve, reject) => {
+    const deadline = Date.now() + 6_000;
+    const timer = setInterval(() => {
+      if (service.job?.status === "cancelled") {
+        clearInterval(timer);
+        resolve();
+      } else if (Date.now() > deadline) {
+        clearInterval(timer);
+        reject(new Error(`Firmware cancellation did not finish: ${service.job?.status}`));
+      }
+    }, 25);
+  });
+  assert.equal(service.job.stage, "Job cancelled");
+  assert.deepEqual(service.lastBuild, previousBuild);
+});
+
+test("successful firmware jobs notify the desktop updater hook", { timeout: 8_000 }, async () => {
+  const root = fixture();
+  const runtimeRoot = mkdtempSync(path.join(tmpdir(), "domino-firmware-runtime-"));
+  const completed = [];
+  const service = new FirmwareService({
+    projectRoot: root,
+    runtimeRoot,
+    onJobFinished: (job) => completed.push(job),
+  });
+  service.platformio = process.execPath;
+
+  service.startJob("build", ["-e", "process.exit(0)"]);
+  await new Promise((resolve, reject) => {
+    const deadline = Date.now() + 6_000;
+    const timer = setInterval(() => {
+      if (service.job?.status === "success") {
+        clearInterval(timer);
+        resolve();
+      } else if (Date.now() > deadline) {
+        clearInterval(timer);
+        reject(new Error(`Firmware build did not finish: ${service.job?.status}`));
+      }
+    }, 25);
+  });
+  assert.equal(completed.length, 1);
+  assert.equal(completed[0].status, "success");
+  assert.equal(completed[0].type, "build");
+  assert.equal(completed[0].packageHash, service.package().hash);
+});
+
+test("physical CRSF control does not require a LIVE browser arm", () => {
+  const standaloneRoot = path.dirname(fileURLToPath(import.meta.url));
+  const repoRoot = path.resolve(standaloneRoot, "..", "..");
+  const mainSource = readFileSync(path.join(repoRoot, "src", "main.cpp"), "utf8");
+  const endpointSource = readFileSync(path.join(repoRoot, "src", "live_robot_endpoint.cpp"), "utf8");
+
+  assert.match(mainSource, /liveRobotEndpointAllowsRadioControl\(\)/);
+  assert.match(mainSource, /if \(!servoOutputsEnabled\(\)\) setServoOutputsEnabled\(pca, true\)/);
+  assert.doesNotMatch(
+    mainSource,
+    /servoOutputsEnabled\(\)\s*&&\s*!liveRobotEndpointAllowsLocomotion\(\)/,
+  );
+  assert.match(endpointSource, /bool radioControlEnabled = true;/);
+  assert.match(endpointSource, /radioControlEnabled = false;\s*\n\s*benchMode = true;/);
+});
+
+test("physical telemetry and profile commands use bounded UART rings", () => {
+  const standaloneRoot = path.dirname(fileURLToPath(import.meta.url));
+  const repoRoot = path.resolve(standaloneRoot, "..", "..");
+  const mainSource = readFileSync(path.join(repoRoot, "src", "main.cpp"), "utf8");
+  const endpointSource = readFileSync(path.join(repoRoot, "src", "live_robot_endpoint.cpp"), "utf8");
+
+  assert.match(
+    mainSource,
+    /#ifndef DOMINO_SIL\s*\n\s*Serial\.setTxBufferSize\(4096\);\s*\n\s*Serial\.setRxBufferSize\(4096\);\s*\n\s*#endif/,
+  );
+  assert.match(mainSource, /Serial\.begin\(460800\);/);
+  assert.match(endpointSource, /static char output\[kDocumentBufferBytes\]/);
+  assert.match(endpointSource, /Serial\.write\([^;]+length \+ 1\);/s);
+  assert.doesNotMatch(endpointSource, /serializeJson\(document, Serial\)/);
+});
+
+test("firmware keeps all identically oriented hip servos in the same direction", () => {
+  const standaloneRoot = path.dirname(fileURLToPath(import.meta.url));
+  const repoRoot = path.resolve(standaloneRoot, "..", "..");
+  const controllerSource = readFileSync(path.join(repoRoot, "src", "leg_controller.cpp"), "utf8");
+  const calibrationSource = readFileSync(path.join(repoRoot, "src", "servo_calibration.cpp"), "utf8");
+
+  for (const leg of ["FR", "BR", "FL", "BL"]) {
+    assert.match(controllerSource, new RegExp(String.raw`const LegConfig ${leg}_leg\{[\s\S]*?\+1,\s*// hipDir`));
+  }
+  const directions = calibrationSource
+    .match(/constexpr int8_t kDefaultDirection[^=]*=\s*\{([^}]+)\}/s)?.[1]
+    .match(/-?\d+/g)
+    .map(Number) || [];
+  for (const channel of [0, 3, 9, 14]) {
+    assert.equal(directions[channel], 1, `hip channel ${channel} must use normal direction`);
+  }
+  assert.match(controllerSource, /constexpr float kMaxHipMechanicalDeltaDeg = 30\.0f;/);
+  assert.match(calibrationSource, /if \(hipChannel\(logicalChannel\)\)[\s\S]*?logicalDelta < -30\.0f[\s\S]*?logicalDelta > 30\.0f/);
+  assert.match(calibrationSource, /hipChannel\(channel\) \? 30\.0f : 45\.0f/);
+});
+
+test("firmware body tilt keeps CAD foot stance while rotating leg-frame targets", () => {
+  const standaloneRoot = path.dirname(fileURLToPath(import.meta.url));
+  const repoRoot = path.resolve(standaloneRoot, "..", "..");
+  const mainSource = readFileSync(path.join(repoRoot, "src", "main.cpp"), "utf8");
+
+  assert.match(
+    mainSource,
+    /void moveLegsFromBodyPose\([\s\S]*?bodyKinematicsSimple\(static_cast<LegIndex>\(i\),[\s\S]*?bodyZ,\s*rollDeg,\s*pitchDeg,\s*yawDeg,[\s\S]*?&zLeg\);/,
+  );
+  assert.match(
+    mainSource,
+    /const float R20 = -sp;[\s\S]*?const float R21 = cp \* sr;[\s\S]*?const float R22 = cp \* cr;/,
+  );
+  assert.match(
+    mainSource,
+    /const float footWorldX = footBaseX \+ CAD_NEUTRAL_FOOT_X_FROM_HIP;[\s\S]*?const float footWorldZ = HIP_HEIGHT_Z \+ CAD_NEUTRAL_FOOT_Z_FROM_HIP;/,
+  );
+  assert.match(
+    mainSource,
+    /const float legX_local = R00 \* legX_world[\s\S]*?const float legZ_localUp = R02 \* legX_world[\s\S]*?\*outZ =/,
+  );
+});
+
+test("Domino PCB voltage telemetry uses the routed GPIO36 divider", () => {
+  const standaloneRoot = path.dirname(fileURLToPath(import.meta.url));
+  const repoRoot = path.resolve(standaloneRoot, "..", "..");
+  const projectConfig = readFileSync(path.join(repoRoot, "platformio.ini"), "utf8");
+  const monitorSource = readFileSync(path.join(repoRoot, "src", "power_monitor.cpp"), "utf8");
+  const endpointSource = readFileSync(path.join(repoRoot, "src", "live_robot_endpoint.cpp"), "utf8");
+
+  assert.match(projectConfig, /DOMINO_VOLTAGE_ADC_PIN=36/);
+  assert.match(projectConfig, /DOMINO_VOLTAGE_DIVIDER_RATIO_MILLI=5000/);
+  assert.match(monitorSource, /analogReadMilliVolts\(DOMINO_VOLTAGE_ADC_PIN\)/);
+  assert.match(endpointSource, /if \(power\.voltageValid\) powerJson\["voltageV"\]/);
+});

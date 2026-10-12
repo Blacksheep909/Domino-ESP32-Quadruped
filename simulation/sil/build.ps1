@@ -1,0 +1,62 @@
+param(
+    [string]$OutputName = "domino_sil.exe"
+)
+
+$ErrorActionPreference = "Stop"
+
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+$compiler = Join-Path $env:USERPROFILE ".platformio\packages\toolchain-gccmingw32\bin\g++.exe"
+$compilerDirectory = Split-Path -Parent $compiler
+$outputDirectory = Join-Path $PSScriptRoot "bin"
+$outputPath = Join-Path $outputDirectory $OutputName
+
+if (-not (Test-Path -LiteralPath $compiler)) {
+    throw "Native compiler not found. Install it with: pio pkg install --global --tool platformio/toolchain-gccmingw32"
+}
+
+New-Item -ItemType Directory -Force -Path $outputDirectory | Out-Null
+$env:PATH = "$compilerDirectory;$env:PATH"
+
+$arguments = @(
+    "-std=c++11",
+    "-O2",
+    "-Wall",
+    "-Wextra",
+    # Keep the standalone firmware executable self-contained. Without this,
+    # MinGW leaves libwinpthread-1.dll as a runtime dependency and launching
+    # the Virtual Lab outside the compiler shell silently loses the SIL process.
+    "-static",
+    "-DDOMINO_SIL=1",
+    "-static-libgcc",
+    "-static-libstdc++",
+    "-I$($PSScriptRoot)\include",
+    "-I$($repoRoot)\src",
+    "-I$($repoRoot)\lib\Ramp\src",
+    (Join-Path $repoRoot "src\main.cpp"),
+    (Join-Path $repoRoot "src\crsf.cpp"),
+    (Join-Path $repoRoot "src\gait_profile.cpp"),
+    (Join-Path $repoRoot "src\manual_control_guard.cpp"),
+    (Join-Path $repoRoot "src\motion_smoothing.cpp"),
+    (Join-Path $repoRoot "src\power_fault_guard.cpp"),
+    (Join-Path $repoRoot "src\power_monitor_math.cpp"),
+    (Join-Path $repoRoot "src\leg_controller.cpp"),
+    (Join-Path $repoRoot "src\servo_calibration.cpp"),
+    (Join-Path $repoRoot "src\ik.cpp"),
+    (Join-Path $PSScriptRoot "src\arduino_sim.cpp"),
+    (Join-Path $PSScriptRoot "src\pwm_sim.cpp"),
+    (Join-Path $PSScriptRoot "src\imu_sim.cpp"),
+    (Join-Path $PSScriptRoot "src\sil_main.cpp"),
+    "-o",
+    $outputPath
+)
+
+# Windows PowerShell 5.1 turns compiler warnings on stderr into terminating
+# errors under "Stop". Only the exit code decides whether the build failed.
+$ErrorActionPreference = "Continue"
+& $compiler @arguments
+$ErrorActionPreference = "Stop"
+if ($LASTEXITCODE -ne 0) {
+    throw "SIL compilation failed with exit code $LASTEXITCODE"
+}
+
+Write-Host "Built $outputPath"

@@ -50,7 +50,11 @@ $arguments = @(
     $outputPath
 )
 
+# Windows PowerShell 5.1 turns compiler warnings on stderr into terminating
+# errors under "Stop". Only the exit code decides whether the build failed.
+$ErrorActionPreference = "Continue"
 & $compiler @arguments
+$ErrorActionPreference = "Stop"
 if ($LASTEXITCODE -ne 0) {
     throw "SIL compilation failed with exit code $LASTEXITCODE"
 }

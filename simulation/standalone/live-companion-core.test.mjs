@@ -325,9 +325,32 @@ test("active calibration readback returns robot profile without entering bench m
     robotState: "disarmed", benchMode: false, profile,
   }, 1_060);
   assert.equal(inbound.relay[0].profile.joints[0].direction, -1);
+  assert.equal(inbound.relay[0].origin, undefined, "older firmware reports no origin");
   assert.equal(core.benchMode, false);
   core.robotState = "armed";
   assert.equal(core.handleRelay({ ...request, requestId: "armed-read" }, 1_070).relay[0].accepted, false);
+});
+
+test("the robot's calibration origin is relayed, bounded and sanitised", () => {
+  const readOrigin = (origin) => {
+    const core = connectedCore();
+    const request = {
+      type: "live-calibration-command", action: "request-profile", requestId: "cal-origin",
+      adapterId, sessionId: core.sessionId,
+      safety: { benchModeRequired: false, maxSpeedDegPerSec: 5, jogLimitDeg: 10 },
+    };
+    core.handleRelay(request, 1_050);
+    return core.handleRobot({
+      protocol: DOMINO_ROBOT_LINK_PROTOCOL, type: "robot-ack", kind: "calibration",
+      action: "request-profile", requestId: "cal-origin", accepted: true,
+      robotState: "disarmed", benchMode: false, profile: createLiveCalibrationProfile(), origin,
+    }, 1_060).relay[0].origin;
+  };
+  assert.deepEqual(readOrigin({ source: "default-fallback", savedAt: 0, detail: "active2:bad-checksum", junk: 1 }),
+    { source: "default-fallback", usingDefaults: true, savedAt: 0, detail: "active2:bad-checksum" });
+  assert.equal(readOrigin({ source: "nvs", savedAt: 1790639152123 }).usingDefaults, false);
+  assert.equal(readOrigin({ source: "something-else" }), undefined);
+  assert.equal(readOrigin("nvs"), undefined);
 });
 
 test("motion smoothing is bounded, saved separately, and read back while disarmed", () => {

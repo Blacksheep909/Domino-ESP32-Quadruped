@@ -1,457 +1,100 @@
-# Domino ESP32 Composite Quadruped
+<p align="center">
+  <img src="simulation/standalone/desktop/assets/domino-studio-icon-smooth.png" alt="Domino Quadruped Studio icon" width="112">
+</p>
 
-Domino is a prototype ESP32 quadruped robot built around a carbon-and-printed composite chassis, a custom 3-DoF leg mechanism, CRSF/ExpressLRS radio control, PCA9685 servo output, and CAD-to-simulation experiments.
+<h1 align="center">Domino Quadruped</h1>
 
-For the portfolio-level explanation of the architecture, control flow, linkage
-problem, and the most interesting implementation details, start with the
-[Domino Engineering Overview](docs/engineering-overview.md).
-Current implementation status and remaining physical-validation gates are in
-the [Virtual Lab roadmap status](docs/virtual-lab-roadmap-status.md). Use the
-[LIVE hardware bring-up procedure](docs/live-hardware-bring-up.md) before
-enabling physical calibration, motion, wireless control, or power telemetry.
+<p align="center">
+  <strong>A carbon-frame ESP32 robot dog, and the desktop studio that drives it.</strong><br>
+  Custom 3-DoF legs, ExpressLRS radio control, CAD-accurate simulation, and a calibration workflow that tells you the truth about what the robot is running.
+</p>
 
-> Work in progress: Domino is an active engineering prototype, not a finished kit. The firmware, CAD exports, PCB package, calibration notes, and simulation files are included as a project record and technical reference. The repo does not yet contain a complete step-by-step build manual, measured BOM, wiring diagram, or validated production assembly process.
+<p align="center">
+  <a href="https://github.com/Blacksheep909/Domino-ESP32-Quadruped/releases/latest"><strong>Download for Windows</strong></a> ·
+  <a href="#getting-started">Getting started</a> ·
+  <a href="#features">Features</a> ·
+  <a href="docs/calibration-guide.md">Calibration</a>
+</p>
 
-![Domino quadruped robot build](docs/images/domino-master.jpg)
+<p align="center">
+  <img src="docs/images/studio-simulation-standing.jpg" alt="Domino standing on four feet in Quadruped Studio's Simulation workspace" width="900">
+</p>
 
-## Virtual Environment At A Glance
+Domino is a prototype quadruped built around a carbon-and-printed chassis, a scratch-designed three-joint leg, a PCA9685 servo driver and an ESP32 running PlatformIO firmware. **Quadruped Studio** is the Windows desktop app that ships with it: it runs the real firmware kinematics against the CAD model in simulation, then connects to the physical robot for calibration, gait tuning, diagnostics and recording.
 
-| Simulation sandbox | LIVE robot workspace |
+Domino is an active engineering prototype, not a finished kit. The firmware, CAD, PCB package and notes are published as a project record; see [build status](docs/project-overview.md#build-and-bring-up-status) for what is and is not validated.
+
+## Features
+
+- **Simulation.** Stand, stow, tilt, ride height and gait modes on the actual CAD and closed-linkage geometry, driven from a keyboard, gamepad or CRSF transmitter.
+- **Calibration you can trust.** A five-step wizard for neutral offsets, directions, travel limits and PCA9685 channel routing. The robot reports where its profile came from, and Studio warns loudly if it is running defaults.
+- **Safe by design.** One-servo limited jog with a bench-mode handshake, per-servo hard limits, power-fault guards and an explicit safety dock.
+- **LIVE workspace.** Digital-twin comparison, telemetry graphs, gait profiles, diagnostics, and saved or exportable sessions.
+- **Mission tools.** Local route planning, map overlays, GPS and LiDAR views, behind capability gates.
+- **Firmware in the loop.** Build and upload the ESP32 firmware from inside Studio, with a software-in-the-loop executable that runs the production code before any hardware does.
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/virtual-lab-simulation-workspace.png" alt="Simulation workspace with the CAD quadruped on terrain" width="100%"><br><sub><b>Simulation.</b> The production firmware kinematics on the real CAD linkage.</sub></td>
+    <td width="50%"><img src="docs/images/virtual-lab-real-robot-workspace.png" alt="LIVE workspace comparing the digital twin with the physical robot" width="100%"><br><sub><b>LIVE.</b> Digital twin and physical-robot controls side by side.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/virtual-lab-live-calibration.png" alt="Five-step servo calibration wizard" width="100%"><br><sub><b>Calibration.</b> Offsets, directions, limits and channel routing, previewed on the CAD model.</sub></td>
+    <td width="50%"><img src="docs/images/virtual-lab-live-gaits.png" alt="Gait profile editor" width="100%"><br><sub><b>Gaits.</b> Tune, preview and persist gait profiles on the robot.</sub></td>
+  </tr>
+</table>
+
+<p><em>Screenshots show simulation and demo data; none depict a live physical connection.</em></p>
+
+## Getting started
+
+1. Download the latest **Domino Quadruped Studio** installer (or the portable zip) from the [releases page](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/releases/latest).
+2. Run it. Simulation works offline with no robot attached.
+3. To drive hardware, follow the [LIVE hardware bring-up procedure](docs/live-hardware-bring-up.md) and the [calibration guide](docs/calibration-guide.md) before enabling any motion.
+
+Studio targets Windows 10 and 11. See the [Studio guide](docs/quadruped-studio.md) for build availability and controls.
+
+## Build from source
+
+You need Node.js 20 or newer for Studio, and [PlatformIO](https://platformio.org/) for the firmware.
+
+```powershell
+# Firmware: build the ESP32 image
+pio run -e esp32dev
+
+# Studio: install, test, and run from source
+cd simulation/standalone
+npm install
+npm test
+npm start            # browser/source version at http://127.0.0.1:8770
+
+# Firmware software-in-the-loop checks
+./simulation/sil/test.ps1
+./simulation/sil/test-calibration-storage.ps1
+```
+
+## Calibration and persistence
+
+The calibration profile (offsets, directions, limits, channel map) is stored in the ESP32's NVS flash as a versioned, checksummed record with an automatic backup copy. Normal firmware uploads preserve it. On every connection Studio reads the active profile and tells you its source, so a robot that has lost its profile is flagged immediately instead of silently running defaults. Export a JSON backup before any full-chip erase. Details: [calibration guide](docs/calibration-guide.md).
+
+## Documentation
+
+| | |
 | --- | --- |
-| ![Domino simulation environment with the CAD quadruped and terrain](docs/images/virtual-lab-simulation-workspace.png) | ![Domino LIVE digital twin and physical-robot controls](docs/images/virtual-lab-real-robot-workspace.png) |
-
-The complete offline Virtual Lab implementation is in
-[`simulation/standalone`](simulation/standalone). Open the
-[Virtual Lab guide](docs/virtual-lab.md) for the feature tour, setup, controls,
-connection architecture, calibration workflow, data tools, screenshots, and
-current limitations.
-
-The installed desktop build can open and save validated Dog V2 `.qstudio.json`
-project files through native Windows dialogs, keeping configuration projects in
-normal local folders without serializing any live safety or connection state.
-
-## Downloads
-
-The preferred way to use Domino is the Windows desktop application. It bundles
-the Virtual Lab UI, local service, CAD, firmware SIL, and companion adapter so
-Simulation and LIVE work offline without a separately opened terminal.
-
-- **[Download the latest Domino Quadruped Studio Windows release](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/releases/latest)** — preferred installer and portable desktop builds.
-- **[Open the browser/source version](simulation/standalone)** — secondary development and quick-inspection option; it runs locally from the repository.
-
-The browser version remains available for development and lightweight review,
-but the desktop application is the primary distribution and update path.
-
-The LIVE Sensors view includes a top-down route planner, local autosave, named
-editable waypoints, precise local cursor coordinates, offline route preview,
-LiDAR clearance sectors, a geofence gate, an exportable autonomy activity
-timeline, and explicit Domino `DRIVE` versus ArduPilot `GUIDE` actions.
-
-## Why This Project Matters
-
-Domino is the successor to my earlier SpotMicro ESP32 Nitro work. The earlier project gave me a working base for servo-driven quadruped control, PCB packaging, and RC-controlled robot bring-up. Domino moves beyond that reference design into a more custom platform:
-
-- A scratch-built mechanical layout using carbon members and 3D-printed structural parts.
-- A serviceable electronics cage rather than a sealed body shell.
-- Per-leg inverse kinematics for a custom 3-DoF mechanism.
-- A move from iBUS-style receiver handling to custom CRSF/ExpressLRS parsing on the ESP32.
-- A new Domino PCB manufacturing package based on lessons from the older SpotMicro Nitro board.
-- CAD, STEP, USD, and Isaac Sim export work documenting the mechanical and simulation path.
-
-As a portfolio project, Domino demonstrates mechanical design, embedded firmware, RC protocol work, power distribution, servo safety, calibration, and simulation constraints in one prototype hardware stack.
-
-## Domino Quadruped Studio
-
-**Quadruped Studio is the project's desktop engineering application.** Use it
-to stand and move the CAD robot in simulation, develop gait profiles, inspect
-joint travel, review calibration, record telemetry and plan routes.
-
-**[Read the Studio guide](docs/quadruped-studio.md)** ·
-**[Open the Studio source](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/tree/codex/desktop-app/simulation/standalone)** ·
-**[Download Studio 0.3.1 for Windows](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/releases/tag/v0.3.1)**
-
-![Domino standing on four feet in Quadruped Studio's Simulation workspace](docs/images/studio-simulation-standing.jpg)
-
-*Captured from Studio 0.3.1. The robot is standing in the
-local firmware/CAD simulation; the screenshot does not show a physical robot
-connection. The guide explains build availability and source setup.*
-
-- **Simulation:** firmware modes, actual CAD/linkage geometry, physics,
-  keyboard/controllers, gait tuning and joint inspection.
-- **LIVE:** comparison, data graphs, calibration, gait profiles, diagnostics
-  and saved sessions through a compatible robot adapter.
-- **Mission tools:** local route planning, geographic map overlays, GPS/LiDAR
-  views and capability-gated vehicle controls.
-- **Projects:** portable configuration files and telemetry capture/export.
-
-## Three Project Tracks
-
-The repository is deliberately split into three connected but distinct tracks:
-
-- **Physical Domino** - the ESP32/PlatformIO firmware, CRSF receiver link,
-  servo mapping, CAD-derived IK, electronics, and build documentation for the
-  real robot.
-- **Isaac Sim / Isaac Lab** - CAD import, closed-linkage experiments,
-  actuator/contact modelling, environments, and reinforcement-learning policy
-  research.
-- **Domino Virtual Lab** - the standalone 3D application for plugging in a
-  CRSF transmitter or standard gamepad, exercising the production firmware in a game-like CAD
-  environment, and checking changes before hardware bring-up.
-
-The Virtual Lab lives at [`simulation/standalone`](simulation/standalone) for
-script compatibility, but it is a separate product track from the Isaac
-research environment and the physical firmware project.
-
-![Domino Virtual Lab simulation workspace](docs/images/virtual-lab-simulation-workspace.png)
-
-The browser/source version remains available as a secondary path for local
-development and quick inspection. Clone the repository, install the Virtual
-Lab's Node dependencies, and run its PowerShell launcher. The desktop build is
-the preferred distribution. See the [Virtual Lab guide](docs/virtual-lab.md)
-for setup, screenshots, architecture, controls, and current limitations.
-
-## Domino Virtual Lab
-
-The Virtual Lab is the desktop control and development environment included in
-this repository. It is not a mock website or a hosted demo: the browser UI,
-local Node service, CAD assets, physics runtime, firmware bridge, physical
-companion protocol, tests, and launch scripts are all included under
-[`simulation/standalone`](simulation/standalone).
-
-Simulation and LIVE are deliberately separate top-level workspaces:
-
-- **Simulation** is the safe sandbox. It runs the Domino CAD and linkage model
-  with Rapier physics, terrain, gait tuning, joint inspection, keyboard/gamepad
-  input, generic gamepads, and RadioMaster/EdgeTX/OpenTX CRSF transmitters.
-  Xbox, DualShock 4, DualSense, and compatible controllers are identified by
-  name and normalized to the same driving controls. Profiles can be pushed hard here
-  without implying that a physical actuator moved.
-- **LIVE** is the physical-robot workspace. `PAIR ROBOT` opens a read-only
-  Wi-Fi, Bluetooth, or USB pairing flow; `UPLOAD FW` opens the reviewed firmware
-  build/flash workflow. DRIVE LINK and PC LINK remain independent status
-  signals. Rejected or timed-out handshakes and adapter-reported errors enter a
-  reasoned connection `FAULT` instead of looking like an ordinary disconnect,
-  and every motion-capable operation remains closed until a new handshake and
-  the independent robot safety checks succeed.
-
-The LIVE digital twin can overlay robot-reported measured joint and IMU state
-against the expected command. Its seven pages divide normal operation from the
-deeper engineering tools. The desktop and browser builds use the same frontend
-source, so LIVE layout, typography, and behavior are kept in sync:
-
-The always-available **PROJECT** control now exports and imports a validated
-Dog V2 `.qstudio.json` bundle. This is the first project-driven desktop step:
-robot-specific gait, calibration, controller, and saved route configuration can move with
-the project while connection, E-stop, arm, bench, telemetry, and session state
-remain local and fail-closed.
-
-| Page | Purpose |
-| --- | --- |
-| **Compare** | Expected-versus-measured CAD, body/joint error, power, safety state, recording, and guarded manual control. |
-| **Data** | Larger synchronized graphs, recorder controls, CSV export, and an Expert sample table. |
-| **Sensors** | Stabilized 3D IMU attitude platform with four illuminated body corners and fading motion trails, live GPS/LiDAR telemetry, a native click-to-plan route map with legend, scale reference, and fresh-LiDAR clearance sectors, offline local planning, named editable waypoints, per-waypoint Street View inspection, an app-owned bounded navigation controller, route preview and fit-to-route framing with deliberate GPS referencing, live GPS trail comparison, local route autosave, duplicate/undo/redo route editing, bounded 1x/2x/3x/5x patrol loops with closing-leg visualization, route metrics, a compact autonomy HUD, home-radius geofence visualization and gating, safety checks, and manual override access. |
-| **Calibration** | Five-step servo setup, remappable PCA9685 channels, neutral offsets, direction, limits, guarded default restoration, safe jog contracts, and JSON backup. |
-| **Gaits** | Cross-compatible Simulation profiles, local animated preview, risk checks, robot comparison, persistent apply, and rollback. |
-| **Diagnostics** | Command-pipeline tracing, CRSF/ELRS health, packet counters, event history, and Expert raw packet inspection. |
-| **Sessions** | Durable local captures restored across reloads, portable validated JSON import/export, baseline/candidate optimization metrics, trend overlays, deletion, and independent CSV export. |
-
-Simple mode keeps the operating views compact. Expert mode reveals joint-level,
-RF, packet, and sample detail without weakening any safety limit. The app
-remembers that presentation choice and the last LIVE tool locally, while every
-reload still starts in Simulation and never restores a robot connection, armed
-state, bench acknowledgement, or browser-control authority.
-
-### Program walkthrough
-
-![Domino Virtual Lab usage tour](docs/images/virtual-lab-usage-tour.gif)
-
-The short tour above is captured from the locally running repository build. It
-switches between Simulation and LIVE, then visits comparison, calibration,
-physical channel mapping, telemetry, gait transfer, and diagnostics without
-claiming a physical robot connection.
-
-| Simulation sandbox | LIVE digital twin |
-| --- | --- |
-| ![Current Simulation workspace](docs/images/virtual-lab-simulation-workspace.png) | ![Current LIVE comparison workspace](docs/images/virtual-lab-real-robot-workspace.png) |
-
-| Pair a robot | Robot data and graphs |
-| --- | --- |
-| ![Current robot pairing manager](docs/images/virtual-lab-live-pairing.png) | ![Current LIVE data workspace](docs/images/virtual-lab-live-data.png) |
-
-| Controller mapping | Saved-run optimization |
-| --- | --- |
-| ![Per-controller gamepad mapping](docs/images/virtual-lab-controller-mapping.png) | ![Durable session comparison workspace](docs/images/virtual-lab-session-comparison.png) |
-
-| Guided servo calibration | Gait profile transfer |
-| --- | --- |
-| ![Current servo calibration workflow](docs/images/virtual-lab-live-calibration.png) | ![Current gait profile workspace](docs/images/virtual-lab-live-gaits.png) |
-
-| Command diagnostics | Recorded sessions |
-| --- | --- |
-| ![Current command-chain diagnostics](docs/images/virtual-lab-live-diagnostics.png) | ![Current recorded sessions workspace](docs/images/virtual-lab-live-sessions.png) |
-
-The gallery above shows the current local build in its honest offline state;
-controls requiring a controller, physical robot, telemetry, or saved sessions
-remain visibly unavailable rather than being populated with invented data.
-The deeper [Virtual Lab guide](docs/virtual-lab.md) also contains clearly
-labelled synthetic-adapter captures that demonstrate armed-state, synchronized
-telemetry, and failure diagnostics without implying that a powered physical
-robot was used. The real ESP32 endpoint opens disarmed and requires fresh
-heartbeats plus explicit robot acknowledgements before hardware motion is
-available.
-
-### Run the program
-
-The recommended Windows build is the offline desktop application. Build the
-installer once from a clone:
-
-```powershell
-cd simulation\standalone
-pnpm install
-pnpm run desktop:make
-```
-
-Run the generated `out\Domino-Quadruped-Studio-<version>-x64.exe` to install it,
-or unpack the matching `.zip` for a portable copy. The installed program embeds the local
-web service, firmware SIL, CAD, and companion adapter, so normal Simulation and
-LIVE use does not depend on an internet connection or a separately opened
-terminal.
-
-Installed builds check GitHub for releases on startup and every six hours. When
-an update is downloaded, the app prompts to restart and installs it over the
-existing Domino Quadruped Studio installation; it does not create a second app
-copy. Use the `.exe` installer for this workflow; the `.zip` remains a manual
-portable build. The current local build is `0.3.1`; install its NSIS setup over
-an existing Domino Quadruped Studio copy to update that installation in place.
-Later NSIS releases continue using the same installation and can use the
-generated block map for differential downloads.
-
-When firmware changes, prepare a release from `simulation\standalone`:
-
-```powershell
-pnpm run release:firmware
-git add package.json
-git commit -m "release: firmware update"
-git tag v<new-version>
-git push origin HEAD v<new-version>
-```
-
-The tag starts the Windows release workflow, which rebuilds the firmware SIL,
-bundles the updated firmware workspace, and publishes the installer artifacts
-used by the updater. Use `pnpm run desktop:start` for immediate local iteration;
-that development build intentionally does not check for published updates.
-
-For source development, launch from the repository root:
-
-```powershell
-cd simulation\standalone
-pnpm install
-cd ..\..
-.\simulation\standalone\launch.ps1
-```
-
-The source launcher starts the local service and opens the browser build.
-Full setup, controller notes, connection transports, safety contracts, and
-troubleshooting are in the [Virtual Lab guide](docs/virtual-lab.md).
-
-For a physical build, start with the [public build and bring-up manual](docs/build-guide.md),
-then copy the [as-built record template](docs/build-record-template.md). The
-manual separates repository-confirmed interfaces from dimensions, ratings, and
-test results that still need to be measured on the actual robot.
-
-## Current Status
-
-Implemented or documented:
-
-- ESP32 DevKit firmware using PlatformIO and Arduino.
-- PCA9685 output for twelve servos across four legs.
-- CAD-derived inverse kinematics for hip, upper-leg, and lower-linkage angles.
-- Custom CRSF/ExpressLRS receiver parser with packed-channel decoding, filtering, switch debouncing, and link-loss handling.
-- Stand, stow, body tilt, continuous ride height, and a first sinusoidal gait mode.
-- MPU6050 IMU sampling and filtered roll/pitch state.
-- Per-servo safety limits to reduce the chance of driving the mechanism into hard stops.
-- STEP exports for assembly, body, and leg inspection.
-- USD/USDZ exports from the Isaac Sim exploration path.
-- Raw Isaac Lab URDF import smoke test documented for the generated CAD export.
-- Domino PCB V1.1B Gerber package and PCB screenshots.
-
-Still in progress:
-
-- Gait tuning beyond the first slow diagonal sinusoidal trot.
-- Dynamic balance tuning.
-- A completed measured as-built record and exact BOM.
-- An as-built wiring diagram and annotated cable-routing photos.
-- Measured printed-part orientation, fastener, bearing, insert, and rod-length evidence.
-- Physical validation of the new public build manual's commissioning gates.
-
-## Where To Start
-
-If you are looking to build the project start here:
-
-1. [docs/build-guide.md](docs/build-guide.md) - public build sequence, evidence labels, functional BOM, wiring architecture, and commissioning gates.
-2. [docs/build-record-template.md](docs/build-record-template.md) - copyable record for exact parts, measurements, calibration, and acceptance evidence.
-3. [docs/engineering-overview.md](docs/engineering-overview.md) - portfolio overview, architecture, data flow, code tour, and current boundaries.
-4. [docs/control-notes.md](docs/control-notes.md) - coordinate frames, IK constants, servo mapping, and mode flow.
-5. [docs/crsf.md](docs/crsf.md) - CRSF/ExpressLRS parser and receiver migration notes.
-6. [docs/cad-design.md](docs/cad-design.md) - mechanical structure, STEP exports, composite cage, and simulation limitations.
-7. [docs/electronics.md](docs/electronics.md) - electronics architecture, PCB evolution, and power/control notes.
-8. [hardware/pcb/domino-quadruped-pcb-v1.1b](hardware/pcb/domino-quadruped-pcb-v1.1b) - Domino PCB V1.1B Gerber package.
-
-## Mechanical Design
-
-Each leg has three actuated degrees of freedom:
-
-- Hip abduction/adduction.
-- Upper-leg pitch.
-- Lower linkage / knee motion.
-
-The body uses a long central cage instead of a compact square chassis. This keeps wiring, receiver placement, PCB access, and servo harness routing serviceable while giving the leg modules room to move.
-
-The lower leg behaves more like a closed-chain/four-bar mechanism than a simple open-chain robot arm. That creates useful packaging options, but it also makes firmware and simulation more demanding: servo mapping, linkage clearances, safe joint limits, and CAD-derived IK constants all need to agree.
-
-![Domino side linkage view](docs/images/domino-linkage-side.jpg)
-
-![CAD side view](docs/images/cad-full-side.png)
-
-The neutral CAD exports are included under [cad/step](cad/step). The mechanical write-up is in [docs/cad-design.md](docs/cad-design.md).
-
-## Electronics
-
-Domino began by reusing the electronics architecture from my SpotMicro ESP32 Nitro fork: ESP32 control, PCA9685 servo output, external servo power, receiver wiring, sensor headers, and utility connections gathered into a serviceable board layout.
-
-The first Domino prototype reused the older PCB directly. Moving to CRSF/ExpressLRS did not require a full board redesign: the receiver needed suitable power, common ground, and its TX signal routed into the ESP32 serial input used by the firmware.
-
-The newer Domino PCB V1.1B is a dedicated board package for this platform. It follows the same ESP32/PCA9685 quadruped-control concept, but adds extra headers, improves connector layout and silkscreen presentation, and addresses practical issues found while using the older board.
-
-![Domino PCB V1.1B layout view](docs/images/domino-pcb-1.png)
-
-![Domino PCB V1.1B render](docs/images/domino-pcb-2.png)
-
-More detail is in [docs/electronics.md](docs/electronics.md).
-
-## Firmware Architecture
-
-The firmware is split by responsibility:
-
-- `src/crsf.cpp` / `src/crsf.h`: CRSF frame parsing, channel unpacking, filtering, and link-health state.
-- `src/ik.cpp` / `src/ik.h`: CAD-derived single-leg inverse kinematics.
-- `src/leg_controller.cpp` / `src/leg_controller.h`: PCA9685 channel mapping, direction signs, trims, and servo limit enforcement.
-- `src/imu.cpp` / `src/imu.h`: MPU6050 initialization, sampling, and filtered orientation state.
-- `src/main.cpp`: high-level state machine, body pose model, ride height, tilt mode, sinusoidal gait, balance experiment, and failsafe behavior.
-
-High-level behavior generates body/foot pose targets, then passes them through the same IK and servo mapping path. Stand, stow, tilt, balance, and gait therefore use the same CAD-derived geometry and servo safety limits.
-
-### Test Firmware Before Hardware
-
-Domino now has a desktop software-in-the-loop build under
-[simulation/sil](simulation/sil). It compiles the production `src/main.cpp`,
-CRSF parser, mode logic, IK, trims, channel mapping, and servo safety limits
-directly against simulated Arduino hardware. There is no second copy of the
-control algorithm to keep in sync.
-
-Run the deterministic safety scenario:
-
-```powershell
-.\simulation\sil\test.ps1
-```
-
-Open the live firmware monitor:
-
-```powershell
-.\simulation\sil\launch.ps1
-```
-
-The first stage validates the exact commands that would be sent to the
-PCA9685 without powering a servo. It covers startup stow, valid CRSF parsing,
-debounced mode changes, stand and tilt movement, continuous ride height, gait
-stride/lift, the tilt interlock, link
-loss, failsafe stow, and all 12 output pulse widths. The next integration stage
-will feed those same outputs into the CAD-derived Isaac articulation and accept
-compatible CRSF-transmitter input over USB.
-
-## CRSF / ExpressLRS Radio Link
-
-One major goal of Domino was replacing simpler iBUS-style receiver handling with CRSF. CRSF is common in ExpressLRS systems and gives the robot a fast serial RC link, but it also requires correct frame synchronization, CRC validation, packed-channel decoding, filtering, and failsafe behavior.
-
-The robot repo includes the integrated parser in `src/crsf.*` and a small example under [examples/crsf-esp32-reader](examples/crsf-esp32-reader). The reusable extraction now lives in its own repo:
-
-- [Blacksheep909/ESP32_CRSF_Reader](https://github.com/Blacksheep909/ESP32_CRSF_Reader)
-
-## CAD And Simulation Exports
-
-The repo includes:
-
-- STEP files under [cad/step](cad/step).
-- USD/USDZ exports under [simulation/usd](simulation/usd).
-- URDF reference export, Isaac topology report, and simulation bring-up notes under [simulation/isaac](simulation/isaac).
-- CAD and simulation notes in [docs/cad-design.md](docs/cad-design.md) and [docs/simulation-notes.md](docs/simulation-notes.md).
-
-The CAD-derived Isaac articulation and reinforcement-learning environment are
-still work in progress. The real leg mechanism is a closed-chain linkage rather
-than a simple URDF tree, so the simulation uses explicit pin-joint and linkage
-handling. The firmware SIL is deliberately separate from contact physics: it
-validates control decisions quickly, while Isaac validates mechanism motion,
-contacts, and learned policies.
-
-## Build And Bring-Up Status
-
-The firmware can be built with PlatformIO:
-
-```powershell
-pio run
-```
-
-The LIVE workspace can connect to firmware `0.8.0` over ESP32 USB serial,
-Wi-Fi TCP, or a paired Bluetooth SPP port through the fail-closed PC companion. See
-[`docs/live-companion-protocol.md`](docs/live-companion-protocol.md) for the
-protocol, startup command, supported capabilities, and hardware safety rules.
-
-Upload to an ESP32 DevKit:
-
-```powershell
-pio run -t upload
-```
-
-Open the serial monitor:
-
-```powershell
-pio device monitor
-```
-
-Hardware bring-up should be done in layers: receiver first, then one servo, then one leg, then all legs on a stand. The current docs do not yet contain enough measured hardware detail to recommend building the full robot directly from the repo.
-
-## Repository Layout
-
-```text
-.
-|-- cad/
-|   `-- step/                STEP exports for assembly, body, and leg modules
-|-- hardware/
-|   `-- pcb/                 Domino PCB Gerber package and notes
-|-- simulation/
-|   |-- isaac/               Isaac Sim / Isaac Lab bring-up notes and URDF topology tooling
-|   |-- standalone/          Domino Virtual Lab 3D firmware/CAD testing app
-|   |-- sil/                 Desktop build of the production firmware and live monitor
-|   |-- urdf/generated/      Generated URDF reference export
-|   `-- usd/                 USD/USDZ exports for Isaac Sim experiments
-|-- platformio.ini          PlatformIO build configuration
-|-- src/                    Robot firmware
-|-- examples/
-|   `-- crsf-esp32-reader   Standalone CRSF parser demo
-|-- docs/                   Design, calibration, electronics, and simulation notes
-|-- include/                Project include directory
-|-- lib/                    Project-local libraries
-`-- test/                   Future firmware tests
-```
-
-## Related Work
-
-This project builds on lessons from my earlier SpotMicro ESP32 fork:
-
-- [Blacksheep909/SpotMicroESP32-Nitro-Fork](https://github.com/Blacksheep909/SpotMicroESP32-Nitro-Fork)
-
-The earlier fork is closer to an instructional build log. Domino is a custom engineering snapshot: the firmware, CAD, PCB work, and simulation experiments are being shaped into a cleaner quadruped platform.
-
-## Credits
-
-Domino's mechanical direction is derived from the ESP32 quadruped robot design by [Tazer Technical](https://www.youtube.com/@TazerTechnical). Thanks to Tazer Technical for publishing the design ideas and build material that helped shape this project.
+| [Project overview](docs/project-overview.md) | Full tour: tracks, mechanics, electronics, firmware architecture, repository layout and credits |
+| [Engineering overview](docs/engineering-overview.md) | Architecture, data flow, code tour and current boundaries |
+| [Build guide](docs/build-guide.md) | Build sequence, functional BOM, wiring architecture and commissioning gates |
+| [Calibration guide](docs/calibration-guide.md) | Servo centering, the LIVE wizard and how the profile is stored |
+| [Quadruped Studio](docs/quadruped-studio.md) | Desktop app guide |
+| [Virtual Lab](docs/virtual-lab.md) | Simulation, LIVE workspace, controls and limitations |
+| [LIVE bring-up](docs/live-hardware-bring-up.md) | Safe procedure before physical calibration or motion |
+| [Control notes](docs/control-notes.md) | Coordinate frames, IK constants, servo mapping and mode flow |
+| [CRSF / ExpressLRS](docs/crsf.md) | Receiver parser and migration notes |
+| [Electronics](docs/electronics.md) | Power, PCB evolution and control notes |
+| [Troubleshooting](docs/troubleshooting.md) | Common faults and fixes |
+
+## Related work
+
+Domino is the successor to my earlier [SpotMicro ESP32 Nitro fork](https://github.com/Blacksheep909/SpotMicroESP32-Nitro-Fork). See the [project overview](docs/project-overview.md#credits) for credits.

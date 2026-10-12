@@ -4150,6 +4150,28 @@ body[data-workspace="real-robot"] #telemetry-panel:has(#joint-legend:not([hidden
   font: 700 13px/1 "Cascadia Mono", Consolas, monospace;
 }
 
+.calibration-origin-banner {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  display: grid;
+  gap: 5px;
+  border: 1px solid #c9a24a;
+  border-left-width: 4px;
+  border-radius: 7px;
+  background: #fbf3dc;
+  color: #4d3a0c;
+}
+
+.calibration-origin-banner[hidden] { display: none; }
+.calibration-origin-banner strong { font: 750 11px/1.2 "Cascadia Mono", Consolas, monospace; letter-spacing: 0.06em; }
+.calibration-origin-banner p { margin: 0; font-size: 12px; line-height: 1.45; }
+.calibration-origin-banner[data-level="danger"] { border-color: #b8432f; background: #fbe6e1; color: #5c1d12; }
+.calibration-origin-banner[data-level="notice"] { border-color: #8aa0b4; background: #eaf0f5; color: #24384a; }
+
+:root[data-theme="dark"] .calibration-origin-banner { background: #3a2f12; color: #f2e2b0; border-color: #a98530; }
+:root[data-theme="dark"] .calibration-origin-banner[data-level="danger"] { background: #43201a; color: #f6cfc7; border-color: #c4553f; }
+:root[data-theme="dark"] .calibration-origin-banner[data-level="notice"] { background: #1f2c38; color: #cddbe8; border-color: #5f7a94; }
+
 .live-page-status [data-state="online"] { color: #28764a; }
 .live-page-status [data-state="offline"] { color: #a34835; }
 

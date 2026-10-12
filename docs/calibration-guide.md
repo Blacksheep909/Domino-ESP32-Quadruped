@@ -52,8 +52,40 @@ partition; a full-chip erase does not. Export Robot Profile provides a portable
 JSON backup before any full-chip erase or hardware replacement.
 
 Browser calibration schema v1 files import as the default fixed wiring map and
-are rewritten as schema v2. Older binary NVS blobs do not match the v2 record
-size and safely fall back to the compiled wiring and calibration defaults.
+are rewritten as schema v2.
+
+### How the profile is stored (firmware 0.8.16 and later)
+
+The profile lives in the ESP32's NVS flash (namespace `domino-cal`) as an
+explicit, little-endian, checksummed record (`active2`, 212 bytes). It is no
+longer a raw C struct dump, so compiler or struct changes cannot make a saved
+profile unreadable. Each save first keeps the profile being replaced as
+`backup2`, then writes and read-back-verifies the new record.
+
+At boot the firmware tries `active2`, then `backup2`, then the old firmware
+0.8.15 blob (`active`, read-only, migrated on the next save). Defaults are used
+only when nothing usable exists.
+
+### Where is the robot's profile coming from?
+
+The robot reports the source in `robot-hello` (`calibration`) and with every
+profile readback (`origin`). Studio shows a banner on the Calibration page:
+
+| Source | Meaning |
+| --- | --- |
+| `nvs` | Normal: the current saved record. |
+| `nvs-backup` | The newest record was unreadable; the previous profile is in use. Review and save to refresh it. |
+| `nvs-legacy` | Profile saved by firmware 0.8.15 or earlier. Save once to upgrade the format. |
+| `default-empty` | Nothing was ever saved (first boot, or flash erased). **The robot is on compiled defaults.** |
+| `default-fallback` | Something was stored but could not be read. **The robot is on compiled defaults.** The `detail` field names the reason (for example `active2:bad-checksum`). |
+
+When the robot is on defaults, Studio does **not** overwrite your saved browser
+copy. It keeps that copy (or the last profile read from a healthy robot) as an
+unsaved draft: review it, then save it to the robot. The serial console also
+prints `Calibration source: ...` at boot.
+
+The hip, upper and lower trims in `src/leg_controller.h` are compiled into the
+firmware and applied under every profile; they are not part of the saved record.
 
 ## Servo Centering
 

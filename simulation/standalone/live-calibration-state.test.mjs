@@ -1,0 +1,455 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+
+import {
+  acceptRobotCalibrationProfile,
+  calibrationOriginWarning,
+  normalizeCalibrationOrigin,
+  calibrationInspectionModelAngles,
+  calibrationOutputForModelChannel,
+  calibrationPreviewModelAngles,
+  calibrationPreviewServoAngles,
+  calibrationChannelMap,
+  calibrationChannelMapIssues,
+  calibrationProfileJson,
+  createCalibrationBenchCommand,
+  createLiveCalibrationProfile,
+  createLiveCalibrationState,
+  forgetRobotCalibrationProfile,
+  jogCalibrationJoint,
+  LIVE_CALIBRATION_JOG_LIMIT_DEG,
+  LIVE_CALIBRATION_JOINTS,
+  LIVE_CALIBRATION_OUTPUTS,
+  parseCalibrationProfileJson,
+  robotCalibrationReady,
+  restoreCalibrationDefaults,
+  restoreSelectedCalibrationJoint,
+  selectCalibrationJoint,
+  selectCalibrationStep,
+  trimCalibrationJoint,
+  updateCalibrationJoint,
+  updateCalibrationChannelMap,
+} from "./web/src/live-calibration-state.js";
+import {
+  validCalibrationAcknowledgement,
+  validCalibrationCommand,
+} from "./web/src/live-calibration-protocol.js";
+import { legs, standServoReference } from "./web/src/domino-config.js";
+
+test("rear-right calibration identifies the existing outputs that move each physical joint", () => {
+  const rearRight = LIVE_CALIBRATION_OUTPUTS.filter((output) => output.leg === "BR");
+  assert.deepEqual(rearRight.map(({ label, channel }) => [label, channel]), [
+    ["BR Hip", 9], ["BR Lower", 10], ["BR Upper", 11],
+  ]);
+  assert.equal(calibrationOutputForModelChannel(10).channel, 11);
+  assert.equal(calibrationOutputForModelChannel(11).channel, 10);
+  assert.equal(calibrationOutputForModelChannel(9).channel, 9);
+  assert.equal(calibrationOutputForModelChannel(6), undefined);
+});
+
+test("a calibration preview follows the firmware cross-reversed physical response on every leg", () => {
+  const state = createLiveCalibrationState();
+  for (const leg of legs) {
+    for (const [output, physicalJoint, sign] of [
+      ["shoulder", "shoulder", 1], ["upper", "lower", -1], ["lower", "upper", -1],
+    ]) {
+      selectCalibrationJoint(state, leg.channels[output]);
+      const angles = calibrationInspectionModelAngles(state, 6);
+      const physicalChannel = leg.channels[physicalJoint];
+      assert.equal((angles[physicalChannel] - standServoReference[physicalChannel]) / leg.directions[physicalJoint], sign * 6);
+      assert.equal(angles.filter((angle, channel) => angle !== standServoReference[channel]).length, 1);
+    }
+  }
+});
+
+test("model inspection preserves read-back calibration, electrical neutral targets and saved routes", () => {
+  const active = createLiveCalibrationProfile({ savedAt: 1770000000000 });
+  active.joints.forEach((joint, index) => {
+    joint.offsetDeg = index / 10;
+    joint.direction = index % 2 ? -1 : 1;
+    joint.minimumDeg = -17;
+    joint.maximumDeg = 23;
+  });
+  [active.joints[0].channel, active.joints[11].channel] = [active.joints[11].channel, active.joints[0].channel];
+  const state = createLiveCalibrationState();
+  assert.equal(acceptRobotCalibrationProfile(state, active, "existing-robot").accepted, true);
+  const before = calibrationProfileJson(state.profile);
+  const neutralOutputs = calibrationPreviewServoAngles(state);
+  for (const output of LIVE_CALIBRATION_OUTPUTS) {
+    selectCalibrationJoint(state, output.channel);
+    calibrationInspectionModelAngles(state, -12.3);
+    calibrationInspectionModelAngles(state, 14.7);
+    assert.deepEqual(calibrationPreviewServoAngles(state), neutralOutputs);
+    assert.equal(calibrationProfileJson(state.profile), before);
+  }
+  assert.equal(state.dirty, false);
+});
+
+test("creates one bounded calibration record for every driven Domino joint", () => {
+  const profile = createLiveCalibrationProfile();
+  assert.equal(profile.joints.length, 12);
+  assert.deepEqual(
+    profile.joints.map((joint) => joint.channel),
+    LIVE_CALIBRATION_JOINTS.map((joint) => joint.channel),
+  );
+});
+
+test("all four physical hip servos share the same normal direction", () => {
+  const hips = LIVE_CALIBRATION_JOINTS.filter((joint) => joint.joint === "shoulder");
+  assert.deepEqual(hips.map((joint) => joint.leg).sort(), ["BL", "BR", "FL", "FR"]);
+  assert.ok(hips.every((joint) => joint.defaultDirection === 1));
+
+  const profile = createLiveCalibrationProfile();
+  const hipChannels = new Set(hips.map((joint) => joint.channel));
+  assert.ok(profile.joints
+    .filter((joint) => hipChannels.has(joint.logicalChannel))
+    .every((joint) => joint.direction === 1
+      && joint.minimumDeg === -30
+      && joint.maximumDeg === 30));
+});
+
+test("selects wizard steps and joints without accepting unknown values", () => {
+  const state = createLiveCalibrationState();
+  assert.equal(selectCalibrationStep(state, "neutral"), true);
+  assert.equal(state.step, 2);
+  assert.equal(selectCalibrationStep(state, "wireless-magic"), false);
+  assert.equal(selectCalibrationJoint(state, 15), true);
+  assert.equal(selectCalibrationJoint(state, 6), false);
+});
+
+test("calibration edits are clamped to conservative configuration bounds", () => {
+  const state = createLiveCalibrationState();
+  updateCalibrationJoint(state, {
+    offsetDeg: 200,
+    direction: -1,
+    minimumDeg: -500,
+    maximumDeg: 500,
+  });
+  const joint = state.profile.joints.find((candidate) => candidate.channel === state.selectedChannel);
+  assert.deepEqual(joint, {
+    logicalChannel: state.selectedChannel,
+    channel: state.selectedChannel,
+    offsetDeg: 30,
+    direction: -1,
+    minimumDeg: -30,
+    maximumDeg: 30,
+  });
+  assert.equal(state.dirty, true);
+});
+
+test("restores one joint without changing its physical servo assignment", () => {
+  const state = createLiveCalibrationState();
+  const remapped = calibrationChannelMap(state.profile);
+  [remapped[0], remapped[11]] = [remapped[11], remapped[0]];
+  updateCalibrationChannelMap(state, remapped);
+  updateCalibrationJoint(state, { offsetDeg: 12, direction: -1, minimumDeg: -20, maximumDeg: 30 });
+  state.jogOffsetDeg = 4;
+  assert.equal(restoreSelectedCalibrationJoint(state), true);
+  const joint = state.profile.joints.find((candidate) => candidate.logicalChannel === state.selectedChannel);
+  const definition = LIVE_CALIBRATION_JOINTS.find((candidate) => candidate.channel === state.selectedChannel);
+  assert.equal(joint.channel, remapped[0]);
+  assert.equal(joint.offsetDeg, 0);
+  assert.equal(joint.direction, definition.defaultDirection);
+  assert.equal(joint.minimumDeg, -30);
+  assert.equal(joint.maximumDeg, 30);
+  assert.equal(state.jogOffsetDeg, 0);
+});
+
+test("restores all tuning defaults while resetting wiring only when requested", () => {
+  const state = createLiveCalibrationState();
+  const remapped = calibrationChannelMap(state.profile);
+  [remapped[0], remapped[11]] = [remapped[11], remapped[0]];
+  updateCalibrationChannelMap(state, remapped);
+  updateCalibrationJoint(state, { offsetDeg: 9, minimumDeg: -12, maximumDeg: 22 });
+  assert.equal(restoreCalibrationDefaults(state), true);
+  assert.deepEqual(calibrationChannelMap(state.profile), remapped);
+  const hipChannels = new Set(
+    LIVE_CALIBRATION_JOINTS
+      .filter((joint) => joint.joint === "shoulder")
+      .map((joint) => joint.channel),
+  );
+  assert.ok(state.profile.joints.every((joint) => {
+    const travel = hipChannels.has(joint.logicalChannel) ? 30 : 45;
+    return joint.offsetDeg === 0
+      && joint.minimumDeg === -travel
+      && joint.maximumDeg === travel;
+  }));
+  assert.equal(restoreCalibrationDefaults(state, true), true);
+  assert.deepEqual(calibrationChannelMap(state.profile), LIVE_CALIBRATION_JOINTS.map((joint) => joint.channel));
+});
+
+test("channel mapping is atomic, unique and retained in versioned JSON", () => {
+  const state = createLiveCalibrationState();
+  const remapped = calibrationChannelMap(state.profile);
+  [remapped[0], remapped[11]] = [remapped[11], remapped[0]];
+  assert.deepEqual(calibrationChannelMapIssues(remapped), []);
+  assert.equal(updateCalibrationChannelMap(state, remapped).accepted, true);
+  assert.deepEqual(calibrationChannelMap(state.profile), remapped);
+  assert.equal(state.dirty, true);
+
+  const duplicate = [...remapped];
+  duplicate[1] = duplicate[0];
+  const rejected = updateCalibrationChannelMap(state, duplicate);
+  assert.equal(rejected.accepted, false);
+  assert.match(rejected.issues[0], /assigned more than once/i);
+  assert.deepEqual(calibrationChannelMap(state.profile), remapped);
+
+  const restored = parseCalibrationProfileJson(calibrationProfileJson(state.profile));
+  assert.deepEqual(calibrationChannelMap(restored), remapped);
+});
+
+test("version 1 calibration imports migrate fixed channels into version 2", () => {
+  const legacy = createLiveCalibrationProfile();
+  const legacyJson = JSON.stringify({
+    ...legacy,
+    schemaVersion: 1,
+    joints: legacy.joints.map(({ logicalChannel, ...joint }) => joint),
+  });
+  const migrated = parseCalibrationProfileJson(legacyJson);
+  assert.equal(migrated.schemaVersion, 2);
+  assert.deepEqual(calibrationChannelMap(migrated), LIVE_CALIBRATION_JOINTS.map((joint) => joint.channel));
+});
+
+test("preview jogging is limited and only changes the selected servo", () => {
+  const state = createLiveCalibrationState();
+  const baseline = calibrationPreviewServoAngles(state);
+  jogCalibrationJoint(state, 100);
+  const preview = calibrationPreviewServoAngles(state);
+  assert.equal(state.jogOffsetDeg, LIVE_CALIBRATION_JOG_LIMIT_DEG);
+  assert.equal(preview[state.selectedChannel] - baseline[state.selectedChannel], LIVE_CALIBRATION_JOG_LIMIT_DEG);
+  assert.equal(preview.filter((angle, channel) => angle !== baseline[channel]).length, 1);
+});
+
+test("saved physical trim defines the new CAD center without moving the model", () => {
+  const state = createLiveCalibrationState();
+  const baselineModel = calibrationPreviewModelAngles(state);
+  const baselinePhysical = calibrationPreviewServoAngles(state);
+  updateCalibrationJoint(state, { offsetDeg: 8.5, direction: -1 });
+  assert.deepEqual(calibrationPreviewModelAngles(state), baselineModel);
+  assert.equal(
+    calibrationPreviewServoAngles(state)[state.selectedChannel],
+    baselinePhysical[state.selectedChannel] + 8.5,
+  );
+
+  jogCalibrationJoint(state, 2);
+  const definition = LIVE_CALIBRATION_JOINTS.find((joint) => joint.channel === state.selectedChannel);
+  assert.equal(
+    calibrationPreviewModelAngles(state)[state.selectedChannel],
+    baselineModel[state.selectedChannel] + definition.defaultDirection * 2,
+  );
+  assert.equal(
+    calibrationPreviewServoAngles(state)[state.selectedChannel],
+    baselinePhysical[state.selectedChannel] + 8.5 - 2,
+  );
+  assert.equal(
+    calibrationPreviewModelAngles(state).filter((angle, channel) => angle !== baselineModel[channel]).length,
+    1,
+  );
+});
+
+test("neutral trim works in 0.1 degree steps and becomes the physical neutral target", () => {
+  const state = createLiveCalibrationState();
+  state.jogOffsetDeg = 3;
+  assert.equal(trimCalibrationJoint(state, 0.1), true);
+  assert.equal(trimCalibrationJoint(state, 0.1), true);
+  const joint = state.profile.joints.find(
+    (candidate) => candidate.logicalChannel === state.selectedChannel,
+  );
+  assert.equal(joint.offsetDeg, 0.2);
+  assert.equal(state.jogOffsetDeg, 0);
+  assert.equal(state.dirty, true);
+  const command = createCalibrationBenchCommand(state, "jog", "trim-1", 1234);
+  assert.equal(command.jogOffsetDeg, 0);
+  assert.equal(command.targetServoDeg, LIVE_CALIBRATION_JOINTS[0].neutralServoDeg + 0.2);
+});
+
+test("calibration JSON round-trips and rejects other schemas or robots", () => {
+  const profile = createLiveCalibrationProfile({
+    joints: [{ channel: 0, offsetDeg: 2.5, direction: -1, minimumDeg: -40, maximumDeg: 42 }],
+  });
+  const restored = parseCalibrationProfileJson(calibrationProfileJson(profile));
+  assert.deepEqual(restored, profile);
+  assert.throws(() => parseCalibrationProfileJson('{"schemaVersion":2,"robot":"domino-esp32-quadruped"}'));
+  assert.throws(() => parseCalibrationProfileJson('{"schemaVersion":1,"robot":"other"}'));
+});
+
+test("bench commands carry explicit robot-side safety limits", () => {
+  const state = createLiveCalibrationState();
+  jogCalibrationJoint(state, 1);
+  const command = createCalibrationBenchCommand(state, "jog", "request-1", 1234);
+  assert.equal(command.type, "live-calibration-command");
+  assert.equal(command.safety.benchModeRequired, true);
+  assert.equal(command.safety.maxSpeedDegPerSec, 5);
+  assert.equal(command.timestampMs, 1234);
+  assert.equal(validCalibrationCommand(command), true);
+  assert.equal(validCalibrationCommand({ ...command, physicalChannel: command.selectedChannel }), true);
+  assert.equal(validCalibrationCommand({ ...command, physicalChannel: 16 }), false);
+  assert.equal(validCalibrationCommand({ ...command, safety: { ...command.safety, maxSpeedDegPerSec: 6 } }), false);
+  assert.equal(validCalibrationAcknowledgement({
+    type: "live-calibration-ack",
+    action: "enter",
+    requestId: "request-1",
+    accepted: true,
+  }), true);
+  assert.equal(validCalibrationAcknowledgement({
+    type: "live-calibration-ack",
+    action: "sweep",
+    requestId: "request-1",
+    accepted: true,
+  }), false);
+  assert.equal(createCalibrationBenchCommand(state, "unsafe-sweep", "request-2"), null);
+});
+
+test("active calibration readback is a valid command without bench mode", () => {
+  const command = createCalibrationBenchCommand(
+    createLiveCalibrationState(), "request-profile", "read-active", 1234,
+  );
+  assert.equal(command.safety.benchModeRequired, false);
+  assert.equal(validCalibrationCommand(command), true);
+  assert.equal(validCalibrationCommand({
+    ...command, safety: { ...command.safety, benchModeRequired: true },
+  }), false);
+});
+
+test("robot persistence commands always carry a concrete save timestamp", () => {
+  const state = createLiveCalibrationState();
+  assert.equal(createCalibrationBenchCommand(state, "save-profile", "unsynced", 1234), null);
+  const active = createLiveCalibrationProfile({ savedAt: 1200 });
+  active.joints.find((joint) => joint.logicalChannel === 0).direction = -1;
+  active.joints.find((joint) => joint.logicalChannel === 14).direction = -1;
+  const accepted = acceptRobotCalibrationProfile(state, active, "session-1");
+  assert.equal(accepted.accepted, true);
+  assert.equal(accepted.adopted, true);
+  assert.equal(state.profile.joints.find((joint) => joint.logicalChannel === 0).direction, -1);
+  assert.equal(robotCalibrationReady(state, "session-1"), true);
+  const command = createCalibrationBenchCommand(state, "save-profile", "save-timestamp", 1234);
+  assert.equal(command.profile.savedAt, 1234);
+  assert.equal(command.baseSavedAt, 1200);
+  assert.equal(validCalibrationCommand(command), true);
+  assert.equal(validCalibrationCommand({ ...command, baseSavedAt: undefined }), false);
+  forgetRobotCalibrationProfile(state);
+  assert.equal(robotCalibrationReady(state, "session-1"), false);
+  assert.equal(createCalibrationBenchCommand(state, "save-profile", "stale", 1235), null);
+});
+
+test("a robot readback preserves unsaved calibration edits", () => {
+  const state = createLiveCalibrationState();
+  updateCalibrationJoint(state, { offsetDeg: 4 });
+  const active = createLiveCalibrationProfile({ savedAt: 1000 });
+  active.joints.find((joint) => joint.logicalChannel === 0).direction = -1;
+  const result = acceptRobotCalibrationProfile(state, active, "session-2");
+  assert.equal(result.accepted, true);
+  assert.equal(result.adopted, false);
+  assert.equal(state.profile.joints[0].offsetDeg, 4);
+  assert.equal(state.profile.joints[0].direction, 1);
+  assert.equal(createCalibrationBenchCommand(state, "save-profile", "edit", 1001).baseSavedAt, 1000);
+});
+
+function ownerProfile(savedAt) {
+  const profile = createLiveCalibrationProfile({ savedAt });
+  profile.joints.find((joint) => joint.logicalChannel === 0).direction = -1;
+  profile.joints.find((joint) => joint.logicalChannel === 14).direction = -1;
+  profile.joints.find((joint) => joint.logicalChannel === 3).offsetDeg = 7;
+  return profile;
+}
+
+test("a robot that lost its profile never overwrites the saved browser copy with defaults", () => {
+  const state = createLiveCalibrationState(ownerProfile(5000));
+  const robotDefaults = createLiveCalibrationProfile();
+  const result = acceptRobotCalibrationProfile(
+    state, robotDefaults, "session-lost", { source: "default-fallback", detail: "active2:bad-checksum" },
+  );
+  assert.equal(result.robotUsingDefaults, true);
+  assert.equal(result.restored, true);
+  assert.equal(result.adopted, false);
+  assert.equal(state.dirty, true, "restored draft must require review and an explicit save");
+  assert.equal(state.profile.joints.find((joint) => joint.logicalChannel === 0).direction, -1);
+  assert.equal(state.profile.joints.find((joint) => joint.logicalChannel === 3).offsetDeg, 7);
+  // The save is concrete and based on the robot's (default) revision.
+  const command = createCalibrationBenchCommand(state, "save-profile", "restore", 6000);
+  assert.equal(command.baseSavedAt, 0);
+  assert.equal(command.profile.savedAt, 6000);
+  assert.equal(command.profile.joints.find((joint) => joint.logicalChannel === 14).direction, -1);
+  const warning = calibrationOriginWarning(state);
+  assert.equal(warning.level, "danger");
+  assert.match(warning.detail, /active2:bad-checksum/);
+  assert.match(warning.detail, /review it, then save/);
+});
+
+test("a default robot restores from the last robot-read profile when the browser copy is empty", () => {
+  const state = createLiveCalibrationState();
+  const result = acceptRobotCalibrationProfile(
+    state, createLiveCalibrationProfile(), "session-empty-browser",
+    { source: "default-empty" }, ownerProfile(4000),
+  );
+  assert.equal(result.restored, true);
+  assert.equal(state.profile.joints.find((joint) => joint.logicalChannel === 0).direction, -1);
+  assert.equal(state.restorableProfile, true);
+});
+
+test("a default robot with no earlier saved profile adopts the defaults and still warns", () => {
+  const state = createLiveCalibrationState();
+  const result = acceptRobotCalibrationProfile(
+    state, createLiveCalibrationProfile(), "session-fresh", { source: "default-empty" },
+  );
+  assert.equal(result.adopted, true);
+  assert.equal(result.restored, false);
+  assert.equal(state.dirty, false);
+  assert.equal(calibrationOriginWarning(state).level, "danger");
+  assert.match(calibrationOriginWarning(state).detail, /compiled defaults/);
+});
+
+test("a saved robot profile replaces the browser copy and shows no warning", () => {
+  const state = createLiveCalibrationState(ownerProfile(1000));
+  const result = acceptRobotCalibrationProfile(
+    state, ownerProfile(9000), "session-ok", { source: "nvs", savedAt: 9000 },
+  );
+  assert.equal(result.adopted, true);
+  assert.equal(result.robotUsingDefaults, false);
+  assert.equal(state.profile.savedAt, 9000);
+  assert.equal(calibrationOriginWarning(state), null);
+});
+
+test("backup, legacy and unreported origins are classified without false default alarms", () => {
+  const backup = createLiveCalibrationState();
+  acceptRobotCalibrationProfile(backup, ownerProfile(2000), "s", { source: "nvs-backup", detail: "active2:bad-magic" });
+  assert.equal(calibrationOriginWarning(backup).level, "warning");
+  const legacy = createLiveCalibrationState();
+  acceptRobotCalibrationProfile(legacy, ownerProfile(2000), "s", { source: "nvs-legacy" });
+  assert.equal(calibrationOriginWarning(legacy).level, "notice");
+  // Older firmware reports nothing: a saved revision is trusted, savedAt 0 is not.
+  assert.deepEqual(normalizeCalibrationOrigin(undefined, ownerProfile(3000)).usingDefaults, false);
+  assert.equal(normalizeCalibrationOrigin(undefined, createLiveCalibrationProfile()).usingDefaults, true);
+  assert.equal(normalizeCalibrationOrigin({ source: "<script>" }, ownerProfile(3000)).known, false);
+  forgetRobotCalibrationProfile(legacy);
+  assert.equal(calibrationOriginWarning(legacy), null);
+});
+
+test("unsaved browser edits are never replaced when the robot reports defaults", () => {
+  const state = createLiveCalibrationState(ownerProfile(5000));
+  updateCalibrationJoint(state, { offsetDeg: 4 });
+  const result = acceptRobotCalibrationProfile(
+    state, createLiveCalibrationProfile(), "session-dirty", { source: "default-fallback" },
+  );
+  assert.equal(result.adopted, false);
+  assert.equal(result.restored, false);
+  assert.equal(state.profile.joints[0].offsetDeg, 4);
+});
+
+test("a complete calibration save envelope fits the firmware USB receive ring", () => {
+  const state = createLiveCalibrationState();
+  acceptRobotCalibrationProfile(state, createLiveCalibrationProfile({ savedAt: 1000 }), "session-1");
+  const command = createCalibrationBenchCommand(state, "save-profile", "save-size", 1234);
+  const physicalEnvelope = {
+    type: "companion-command",
+    protocol: "domino-robot-link-v1",
+    kind: "calibration",
+    action: command.action,
+    requestId: command.requestId,
+    timestampMs: 1234,
+    payload: command,
+  };
+  const bytes = Buffer.byteLength(JSON.stringify(physicalEnvelope), "utf8") + 1;
+  assert.ok(bytes > 1024, "the regression command must exceed the former 1 KB reservation");
+  assert.ok(bytes <= 4096, "profile writes must remain inside the firmware's 4 KB RX ring");
+});

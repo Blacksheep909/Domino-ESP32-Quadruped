@@ -36,7 +36,10 @@ class rampFloat {
     float dt = (now - lastMicros_) / 1e6f;
     lastMicros_ = now;
 
-    if (dt <= 0.0f || speed_ <= 0.0f) {
+    // A same-tick update must hold position. Snapping to the target here
+    // defeats the rate limit when a mode transition resets the ramp.
+    if (dt <= 0.0f) return value_;
+    if (speed_ <= 0.0f) {
       value_ = target_;
       return value_;
     }

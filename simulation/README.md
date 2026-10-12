@@ -9,6 +9,7 @@ This folder contains USD-family exports from the Domino CAD-to-Isaac-Sim explora
 | Path | Purpose |
 | --- | --- |
 | `isaac/` | Isaac Sim / Isaac Lab bring-up notes, URDF topology report, and validation tooling. |
+| `standalone/` | Domino Virtual Lab: interactive 3D firmware and CAD testing environment. |
 | `urdf/generated/` | Generated URDF package from the CAD export. This is reference material, not a final training articulation. |
 | `usd/Domino_Isaac_SIM.usd` | Lightweight Isaac Sim-oriented USD scene/export. |
 | `usd/Domino_Quadruped.usd` | Domino quadruped USD export. |

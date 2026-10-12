@@ -1,0 +1,479 @@
+/* Shared colours for controls that appear in both workspaces. Keep this
+   stylesheet after the legacy layout rules so theme changes affect every
+   surface, including native controls and the mission-map overlays. */
+:root {
+  color-scheme: light;
+  --ui-panel: #f8faf6;
+  --ui-raised: #edf2eb;
+  --ui-field: #ffffff;
+  --ui-border: #bdcbbf;
+  --ui-field-border: #aabbad;
+  --ui-text: #25382b;
+  --ui-muted: #536b5b;
+  --ui-accent: #267747;
+  --ui-accent-soft: #e4f1e7;
+  --ui-accent-hover: #d4e8d9;
+  --ui-accent-border: #83b394;
+  --ui-primary: #2d7b4d;
+  --ui-on-primary: #f5fff7;
+  --ui-warning: #91601b;
+  --ui-warning-soft: #fbf0df;
+  --ui-danger: #a83f32;
+  --ui-danger-soft: #fbece8;
+  --ui-info: #226d8b;
+  --ui-disabled: #707a71;
+  --ui-disabled-surface: #e9ede7;
+  --ui-inner-highlight: rgba(255, 255, 255, .8);
+  --map-surface: #edf2e9;
+  --map-grid: #afc2b3;
+  --map-axis: #648d70;
+  --map-route: #287d43;
+  --map-route-shadow: rgba(255, 255, 255, .8);
+  --map-track: #197997;
+  --map-return: #93641c;
+  --map-marker: #f7fcf5;
+  --map-marker-text: #205f36;
+  --map-selected: #cbe6d2;
+  --map-vehicle: #1f7795;
+  --map-vehicle-outline: #f5ffff;
+  --map-overlay: rgba(248, 252, 246, .96);
+  --map-overlay-border: #93af99;
+  --map-setup: rgba(248, 252, 246, .98);
+  --map-shadow: rgba(35, 61, 44, .14);
+  --map-tile-filter: saturate(.8) brightness(1) contrast(1);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ui-panel: #17211d;
+  --ui-raised: #1d2e25;
+  --ui-field: #0f1915;
+  --ui-border: #3d5947;
+  --ui-field-border: #52715b;
+  --ui-text: #e3eee6;
+  --ui-muted: #a8c0ae;
+  --ui-accent: #95dda9;
+  --ui-accent-soft: #243c2d;
+  --ui-accent-hover: #31553c;
+  --ui-accent-border: #5c9670;
+  --ui-primary: #28774c;
+  --ui-on-primary: #f5fff7;
+  --ui-warning: #edc477;
+  --ui-warning-soft: #342b1d;
+  --ui-danger: #ffad9f;
+  --ui-danger-soft: #382522;
+  --ui-info: #8bcce1;
+  --ui-disabled: #a1aaa4;
+  --ui-disabled-surface: #222b25;
+  --ui-inner-highlight: rgba(190, 231, 202, .08);
+  --map-surface: #101b16;
+  --map-grid: #4b7056;
+  --map-axis: #9bcba8;
+  --map-route: #a2f0a4;
+  --map-route-shadow: #15391c;
+  --map-track: #57c1da;
+  --map-return: #edc474;
+  --map-marker: #16251d;
+  --map-marker-text: #e6ffe8;
+  --map-selected: #376449;
+  --map-vehicle: #54bdd8;
+  --map-vehicle-outline: #e4faff;
+  --map-overlay: rgba(10, 22, 16, .94);
+  --map-overlay-border: #617f68;
+  --map-setup: rgba(12, 25, 17, .98);
+  --map-shadow: rgba(0, 0, 0, .32);
+  --map-tile-filter: saturate(.68) brightness(.83) contrast(1.08);
+}
+
+/* The pairing protocol and MAVLink endpoint were added after the dialog's
+   dark rules. Use the same field palette in either adapter mode. */
+:root .live-connection-protocol select,
+:root .live-mavlink-endpoint input {
+  color: var(--ui-text);
+  background: var(--ui-field);
+  border-color: var(--ui-field-border);
+}
+
+:root .live-connection-protocol,
+:root .live-mavlink-endpoint label,
+:root .live-mavlink-endpoint p,
+:root .live-connection-safety-note p {
+  color: var(--ui-muted);
+}
+
+:root .live-connection-safety-note strong,
+:root .project-summary-grid strong,
+:root .gamepad-signal-trace output,
+:root .live-manual-state strong,
+:root .live-gait-settings label output,
+:root .calibration-safety-grid article > span {
+  color: var(--ui-accent);
+}
+
+/* Global dark h2 styles belong to telemetry headings, not dialog titles. */
+:root :is(.project-dialog, .gamepad-setup, .live-manual-shell,
+  .utility-dialog-shell, .calibration-dialog, .calibration-panel-heading) h2 {
+  color: var(--ui-text);
+  font-size: 22px;
+  line-height: 1.2;
+}
+
+:root .live-session-comparison h2 {
+  color: var(--ui-text);
+  font-size: 18px;
+}
+
+:root .calibration-dialog header span,
+:root .calibration-dialog-status {
+  color: var(--ui-accent);
+}
+
+:root .calibration-dialog-status[data-state="error"] {
+  color: var(--ui-danger);
+}
+
+:root .calibration-wiring-list select[data-invalid="true"] {
+  color: var(--ui-danger);
+  background: var(--ui-danger-soft);
+  border-color: var(--ui-danger);
+}
+
+:root[data-theme="dark"] #live-view-calibration .calibration-step-rail button[aria-current="step"] :is(span, strong),
+:root[data-theme="dark"] #live-view-calibration .calibration-joint-map button[aria-pressed="true"] strong {
+  color: var(--ui-accent);
+}
+
+:root .gamepad-setup header > button {
+  color: var(--ui-text);
+}
+
+:root :is(#linkage-health, #pin-error, #foot-symmetry)[data-state="ok"] {
+  color: var(--ui-accent);
+}
+
+:root :is(#linkage-health, #pin-error, #foot-symmetry)[data-state="fault"] {
+  color: var(--ui-danger);
+}
+
+:root:not([data-theme="dark"]) .joint-drive-selector button.active,
+:root[data-theme="dark"] .joint-drive-selector button.active {
+  color: var(--ui-on-primary);
+  background: var(--ui-primary);
+  border-color: var(--ui-accent-border);
+}
+
+:root .joint-drive-selector button.active :is(b, small) {
+  color: inherit;
+}
+
+:root .gamepad-setup header p,
+:root .gamepad-map-note,
+:root .gamepad-signal-trace :is(span, header strong) {
+  color: var(--ui-muted);
+}
+
+:root .gamepad-setup footer button:disabled,
+:root .live-manual-shell button:disabled {
+  color: var(--ui-disabled);
+  background: var(--ui-disabled-surface);
+  border-color: var(--ui-border);
+  opacity: .75;
+}
+
+:root .live-manual-modes button[aria-pressed="true"] {
+  color: var(--ui-accent);
+  background: var(--ui-accent-soft);
+  border-color: var(--ui-accent-border);
+}
+
+:root .live-manual-emergency button:not(:disabled),
+:root[data-theme="dark"] #live-view-sensors .live-autonomy-hud > button {
+  color: var(--ui-danger);
+  background: var(--ui-danger-soft);
+  border-color: var(--ui-danger);
+}
+
+:root:not([data-theme="dark"]) .status .live-global-estop:disabled {
+  color: #95665f;
+  background: #f4e6e2;
+  border-color: #d8b5ac;
+}
+
+:root .firmware-deploy-button {
+  color: var(--ui-accent);
+  background: var(--ui-accent-soft);
+  border-color: var(--ui-accent-border);
+  box-shadow: none;
+}
+
+:root .firmware-deploy-button:hover,
+:root .firmware-deploy-button:focus-visible,
+:root .firmware-deploy-button:active {
+  color: var(--ui-accent);
+  background: var(--ui-accent-hover);
+  border-color: var(--ui-accent);
+}
+
+:root #live-view-sensors .live-page-status #live-nav-open-mavlink,
+:root .utility-dialog-shell > footer button,
+:root .gait-preset-row button.active {
+  color: var(--ui-accent);
+  background: var(--ui-accent-soft);
+  border-color: var(--ui-accent-border);
+}
+
+:root .gait-lab-enable input,
+:root .gait-setting input[type="range"],
+:root .live-gait-settings input[type="range"],
+:root .live-gait-preview-row input[type="range"],
+:root .joint-opacity-control input[type="range"],
+:root .gamepad-map-grid input[type="range"] {
+  accent-color: var(--ui-accent);
+}
+
+:root[data-theme="dark"] :is(.gait-lab-panel, nav) input[type="range"],
+:root .calibration-smoothing input,
+:root .calibration-inspection-sweep input,
+:root #live-calibration-inspect-slider,
+:root .live-obstacle-policy input[type="range"],
+:root .live-manual-controls input[type="range"] {
+  accent-color: var(--ui-accent);
+}
+
+:root[data-theme="dark"] #simulation-workspace button.active,
+:root[data-theme="dark"] #real-workspace #live-joints-button.active {
+  color: var(--ui-on-primary);
+  background: var(--ui-primary);
+  border-color: var(--ui-accent-border);
+}
+
+:root #live-view-sensors :is(.live-planner-map-readout, .live-planner-map-compass) strong {
+  color: var(--ui-text);
+}
+
+/* These SVGs use IDs in the markup; older class selectors missed their
+   compass text, grid and live rays. */
+:root #live-lidar-radar text,
+:root #live-gps-track text {
+  fill: var(--ui-muted);
+  font: 700 8px "Cascadia Mono", Consolas, monospace;
+}
+
+:root #live-lidar-radar :is(.live-lidar-ring, .live-lidar-crosshair),
+:root #live-gps-track .live-gps-track-grid {
+  fill: none;
+  stroke: var(--map-grid);
+}
+
+:root #live-gps-track rect {
+  fill: var(--map-surface);
+  stroke: var(--ui-border);
+}
+
+:root #live-lidar-rays line {
+  stroke-width: 2;
+  stroke-linecap: round;
+  opacity: .8;
+}
+
+:root #live-lidar-rays line.clear { stroke: var(--ui-accent); }
+:root #live-lidar-rays line.slow { stroke: var(--ui-warning); }
+:root #live-lidar-rays line.stop { stroke: var(--ui-danger); stroke-width: 3; }
+
+:root .live-obstacle-policy output { color: var(--ui-accent); }
+:root .live-obstacle-policy input[type="checkbox"] { accent-color: var(--ui-accent); }
+
+:root #live-view-sensors .live-planner-map-heading strong[data-state="warning"],
+:root #live-view-sensors .live-autonomy-hud-heading > span[data-state="warning"],
+:root #live-view-sensors .live-native-preflight-grid strong {
+  color: var(--ui-warning);
+}
+
+:root #live-view-sensors .live-autonomy-hud-heading > span[data-state="error"] {
+  color: var(--ui-danger);
+}
+
+:root #live-view-sensors .live-autonomy-hud-heading > span[data-state="online"],
+:root #live-view-sensors .live-native-preflight-grid > span[data-state="online"] strong {
+  color: var(--ui-accent);
+}
+
+:root #live-view-sensors .live-native-preflight-grid > span {
+  color: var(--ui-muted);
+}
+
+:root #live-view-sensors .live-native-preflight-grid > span[data-state="offline"] strong {
+  color: var(--ui-muted);
+}
+
+/* Keep route and stop colours legible over both grid and street tiles. */
+:root #live-view-sensors .live-planner-marker.is-active circle {
+  fill: var(--map-selected);
+  stroke: var(--map-route);
+}
+
+:root #live-view-sensors .live-planner-marker.is-outside circle {
+  fill: var(--ui-danger-soft);
+  stroke: var(--ui-danger);
+}
+
+:root #live-view-sensors .live-planner-marker.is-outside text {
+  fill: var(--ui-danger);
+}
+
+:root #live-view-sensors .live-planner-marker.is-selected circle {
+  filter: none;
+}
+
+:root #live-view-sensors .live-planner-grid-major {
+  opacity: .5;
+}
+
+:root #live-view-sensors .live-planner-map-stage {
+  box-shadow: 0 0 0 3px var(--map-shadow);
+}
+
+:root #live-view-sensors .live-planner-map-setup {
+  box-shadow: 0 18px 55px var(--map-shadow);
+}
+
+:root #live-view-sensors .live-planner-actions button:disabled {
+  color: var(--ui-disabled);
+  background: var(--ui-disabled-surface);
+  border-color: var(--ui-border);
+}
+
+:root #live-view-sensors .live-planner-map-setup button:hover {
+  color: var(--ui-accent);
+  background: var(--ui-accent-hover);
+}
+
+:root #live-view-sensors .live-plan-library-controls :is(input, select) {
+  color: var(--ui-text);
+  background: var(--ui-field);
+  border-color: var(--ui-field-border);
+}
+
+:root #live-view-sensors .live-plan-library-controls button {
+  color: var(--ui-accent);
+  background: var(--ui-accent-soft);
+  border-color: var(--ui-accent-border);
+}
+
+:root[data-theme="dark"] .live-plan-library > summary,
+:root[data-theme="dark"] .live-plan-library-controls label > span,
+:root[data-theme="dark"] .live-plan-library > summary strong {
+  color: var(--ui-muted);
+}
+
+:root .live-chart-legend i.measured,
+:root .live-data-chart-legend i.measured,
+:root .live-session-compare-legend span:last-child i {
+  background: var(--ui-accent);
+}
+
+:root .live-chart-legend i.error,
+:root .live-data-chart-legend i.error {
+  background: var(--ui-danger);
+}
+
+:root[data-theme="dark"] .calibration-inspection-travel-labels,
+:root[data-theme="dark"] .calibration-inspection-readouts span,
+:root[data-theme="dark"] .calibration-inspection-clearance > span {
+  color: var(--ui-muted);
+}
+
+/* Ramp previews use the same palette as the surrounding calibration screen,
+   including SVG labels and the direct-command state when smoothing is off. */
+:root .calibration-smoothing-badge,
+:root .calibration-smoothing-switch,
+:root .calibration-smoothing .calibration-smoothing-mode-note {
+  color: var(--ui-accent);
+  background: var(--ui-accent-soft);
+  border-color: var(--ui-accent-border);
+}
+
+:root .calibration-smoothing-heading > div:first-child > span,
+:root .calibration-smoothing-tuning-heading > span,
+:root .calibration-smoothing-deadband > div span {
+  color: var(--ui-accent);
+}
+
+:root .calibration-smoothing-plot-heading,
+:root .calibration-smoothing-target label,
+:root .calibration-smoothing-metrics dt,
+:root .calibration-smoothing-deadband strong,
+:root .calibration-smoothing-tuning-heading small,
+:root .calibration-smoothing-field label,
+:root .calibration-smoothing-field small {
+  color: var(--ui-muted);
+}
+
+:root .calibration-smoothing-chart text,
+:root .calibration-smoothing-deadband svg text {
+  fill: var(--ui-muted);
+}
+
+:root .calibration-smoothing :is(.smoothing-draft-path, .smoothing-deadband-path) {
+  stroke: var(--ui-accent);
+}
+
+:root .calibration-smoothing :is(.smoothing-draft-fill, .smoothing-deadband-zone) {
+  fill: var(--ui-accent);
+  fill-opacity: .12;
+}
+
+:root .calibration-smoothing .smoothing-settle-dot {
+  fill: var(--ui-accent);
+  stroke: var(--ui-panel);
+}
+
+:root .calibration-smoothing-legend i {
+  border-color: var(--ui-accent);
+}
+
+:root .calibration-smoothing-legend .smoothing-legend-input {
+  border-color: var(--ui-muted);
+}
+
+:root #live-calibration-smoothing-target-value {
+  color: var(--ui-accent);
+}
+
+/* The legacy LIVE readability floor uses !important. Preserve the larger
+   test-move readout in both themes instead of flattening it to label size. */
+:root #real-workspace #live-calibration-smoothing-target-value {
+  font-size: 18px !important;
+  line-height: 1.25;
+}
+
+:root[data-theme="dark"] .calibration-smoothing input[type="range"],
+:root[data-theme="dark"] .calibration-smoothing input[type="checkbox"],
+:root[data-theme="dark"] .gait-lab-enable input {
+  accent-color: var(--ui-accent);
+}
+
+:root .calibration-smoothing-legend .smoothing-legend-robot {
+  border-color: var(--ui-warning);
+}
+
+:root .calibration-smoothing .smoothing-robot-path {
+  stroke: var(--ui-warning);
+}
+
+:root .calibration-smoothing[data-enabled="false"] .calibration-smoothing-switch,
+:root .calibration-smoothing[data-enabled="false"] .calibration-smoothing-mode-note {
+  color: var(--ui-warning);
+  background: var(--ui-warning-soft);
+  border-color: var(--ui-warning);
+}
+
+:root .calibration-smoothing[data-enabled="false"] .smoothing-draft-path,
+:root .calibration-smoothing[data-enabled="false"] .calibration-smoothing-legend i:not(.smoothing-legend-input):not(.smoothing-legend-robot) {
+  stroke: var(--ui-warning);
+  border-color: var(--ui-warning);
+}
+
+:root .calibration-smoothing[data-enabled="false"] :is(.smoothing-draft-fill, .smoothing-settle-dot) {
+  fill: var(--ui-warning);
+}

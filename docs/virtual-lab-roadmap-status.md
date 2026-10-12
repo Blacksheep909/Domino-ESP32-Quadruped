@@ -1,0 +1,78 @@
+# Virtual Lab Roadmap Status
+
+This status separates implemented software from features that still require
+physical hardware, wiring, or measured validation. Passing a browser test or
+compiling firmware is not presented as proof that a real robot was connected.
+
+## Implemented and verified in software
+
+| Roadmap requirement | Current implementation | Evidence |
+| --- | --- | --- |
+| Separate Simulation and LIVE workspaces | Independent top-level tabs and state ownership; hidden Simulation controls cannot own inputs while LIVE is active. | Application-state tests and current usage tour. |
+| Simulation heartbeat | Browser, relay, and firmware-in-the-loop acknowledgement age/RTT are tracked independently. | Heartbeat-state tests. |
+| Physical connection and safety | Read-only discovery plus USB, Wi-Fi TCP, and Bluetooth SPP companion transports; explicit reasoned PC-link fault for handshake rejection, timeout, or adapter error; paired-adapter automatic reconnect with visible bounded backoff; robot-reported state, measured CRSF command age, ESP32 loop rate and uptime; hold-to-arm, latched E-stop, and 400 ms armed watchdog. LIVE keeps measured battery state, arm state, both links, and the acknowledged E-stop visible in the global header across every tool. With the optional calibrated monitor enabled, a sustained robot-side critical-voltage condition latches a reasoned fault, disables outputs, blocks re-arm, and requires fresh recovery-voltage evidence plus acknowledged clearing. | Companion, connection, diagnostics, view, safety, and power-fault SIL tests; ESP32 build. |
+| Standalone physical control | ESP32 plus CRSF/ExpressLRS remains fully operational without the browser, companion, USB telemetry, Bluetooth, or Wi-Fi. A read-only LIVE session can observe and record without taking radio authority; only explicit LIVE safety/calibration ownership can inhibit outputs. | Firmware source-contract regression, ESP32 build, supported on-robot switch test. |
+| Expected versus measured digital twin | Commanded joint/body state and independently timestamped physical feedback are aligned; the joint inspector shows the final calibrated pulse and mapped PCA9685 output without presenting either as measured feedback; stale or malformed streams disappear. | LIVE telemetry tests and ESP32 build. |
+| Data, graphs, logging, and export | Synchronized recording; selectable body, voltage, current, power, command-alignment, four foot-Z, all 12 joint-angle, and all 12 calibrated-PWM graphs; true 10/30/60-second and full-session scope windows with bounded display downsampling; every sample retains the logical joint-to-PCA output map; IndexedDB-backed session archive restored across reloads; bounded retention; baseline/candidate optimization comparison; expanded CSV plus round-trip validated versioned raw-sample/analysis JSON session packages; and diagnostic JSON bundle. | Session analysis/persistence, telemetry, and diagnostics tests. |
+| Sensor alignment | Dedicated LIVE Sensors page with a rate-limited, boundary-unwrapped 3D IMU platform; four glowing body-corner references with two-second fading projected trails; roll/pitch/gravity/raw-axis readouts; guarded browser-side level capture/reset; four-step commissioning guide; a native Domino route planner with offline local drafts, deliberate GPS referencing, named editable waypoints, local autosave, bounded named route-library save/open/delete/import/export, standard GeoJSON route import/export with bounded validation and Domino metadata, bounded GPS-track-to-plan conversion, reversible route direction, bounded 1x/2x/3x/5x patrol loops with closing-leg metrics and preview, route metrics, a layered local/OpenStreetMap planning surface with visible attribution, map-origin entry plus local device-location shortcut, Shift/middle-button panning, pointer-anchored wheel zoom and keyboard-accessible zoom controls plus focused-map F/Home/C shortcuts, a precise local east/north cursor readout with optional latitude/longitude conversion, operator-selectable route/GPS/LiDAR/geofence/vehicle overlays, external Google Maps Street View handoff, a dynamic scale reference, fresh-LiDAR clearance sectors with explicit waiting/bypassed states, heading-aware vehicle marker and HUD readout, home-radius geofence visualization/gating, bounded and exportable autonomy activity timeline, manual override access, app-owned bounded route and return-home modes, per-waypoint Domino DRIVE direct-to control alongside the explicit ArduPilot GUIDE handoff, and an app-owned bounded navigation controller that reports turn/slow/stop decisions from route geometry, heading, LiDAR, and fence state. The autonomy HUD now includes a compact Domino preflight checklist for adapter, route, GPS, heading, LiDAR, safety, and fence readiness. A capability-gated native route runner can hand those bounded axes to a compatible guarded adapter, with pause/resume, dwell timing, current-waypoint skip, loop transitions, and guarded final-waypoint completion, while stale sensors, fence breaches, disarm, link loss, hidden tabs, or lease expiry neutralize it. The Sensors view also accepts optional robot camera telemetry for yaw, pitch, field of view, frame rate, and stale-state reporting while keeping the video URL user-configured; its frame and telemetry ages refresh in place, and disconnecting clears stale camera health data. GPS/LiDAR telemetry remains capability-gated. Robot-side axis remap, physical sensor integration, and calibration persistence remain future firmware work. | Sensor/navigation-state tests, native-navigation-controller/runner, camera telemetry, diagnostics, view-state, live visual QA, and production-build tests. |
+| Guided calibration | Five steps, floating/floor preview, safe bench acknowledgement, one-servo limited jog, offsets, directions, limits, guarded selected/all default restoration that preserves remapped wiring unless explicitly requested, JSON backup, and persistent ESP32 profile. | Calibration tests, SIL routing check, ESP32 build. |
+| Remappable servo channels | All 12 logical joints can select unique PCA9685 outputs 0-15; changed-only confirmation and separate robot-write confirmation. | Channel-map test, current screenshot, firmware routing assertion. |
+| CRSF/ELRS and gamepad input | RadioMaster/EdgeTX/OpenTX transmitters retain direct CRSF channels and detected identity. Xbox, PlayStation, and generic gamepads use normalized or per-device persistent axis/button mappings, inversion, deadzone, and response curves, with a live raw-to-processed-to-command trace. All 16 robot-side CRSF channels, RF statistics, and failsafe evidence remain available in LIVE. | HID, gamepad-profile, controller-state, and endpoint tests. |
+| Simple and Expert modes | Presentation detail is independent of workspace; Expert exposes deeper diagnostics and manual body controls. The bounded local preference record restores detail level, last LIVE tool, and calibration float/floor presentation while explicitly excluding every safety, connection, bench, authority, and telemetry field. Reload still opens Simulation. | Application-state, presentation-preference, and view-state tests. |
+| Separate but compatible gait labs | Simulation experiments and LIVE drafts are separate while sharing versioned JSON profiles; Expert adds production-backed touchdown-X and forward/turn command limits; LIVE includes a per-leg IK inspector for foot targets, solve validity, commanded joint deltas, limit contact, and stance/swing state; an unavailable, unreachable, or clipped preview blocks draft apply; schema-v1 files/NVS migrate; robot writes remain disarmed-only with two-slot NVS rollback. | Gait, companion, migration, and SIL tests; both ESP32 builds. |
+| Project-driven configuration bundle | The header PROJECT workflow opens/saves a validated Dog V2 `.qstudio.json` bundle through native Windows file dialogs in the packaged app, with portable import/export fallback outside the desktop package. It contains gait settings/profiles, LIVE gait drafts/profiles, local Domino route plans and bounded named route libraries with planning range, geofence, and obstacle policy, calibration, and controller mappings. Robot identity, schema, and physical channel maps are validated; imported calibration and route plans stay local until explicitly used. Arm, E-stop, bench, connection, telemetry, authority, and active route-runner state are never serialized. | Project-bundle and native-project-file contract tests; production Vite and installer builds. |
+| Guarded browser manual control | Maximum 30-second authority, constant-time token check, deadman, monotonic sequence, eight bounded locomotion/body axes, 250 ms neutral timeout, and CRSF-link prerequisite. Expert Stand adds production body pitch/yaw and bounded X/Y translation while keeping gait turn separate. | Manual-control browser tests, physical guard SIL tests, ESP32 build. |
+| Repository media and local run instructions | Source is locally runnable; README contains current screenshots and a 6.8-second workflow GIF. | Production Vite build and committed media. |
+| Public build documentation framework | Start-to-finish build/commissioning manual, evidence labels, functional BOM, wiring architecture, default channel map, layered gates, and a reusable as-built measurement record. | Cross-linked repository documentation and source-derived interface audit. |
+
+The complete standalone/state suite currently contains 274 passing tests. The
+same C++ controller passes the native SIL scenario, and firmware 0.8.0 builds
+with both the default configuration and the optional power-monitor path.
+
+## Implemented but awaiting physical validation
+
+- Wi-Fi and Bluetooth are compile-disabled until a local secrets header supplies
+  real credentials, a non-default PIN, and a 16+ character link key. USB remains
+  the recovery path.
+- Calibration persistence, gait persistence, manual control, and watchdog logic
+  compile for the ESP32 and are protocol/SIL tested, but still require supported-
+  chassis testing with physical power isolation and an E-stop within reach.
+- Optional INA226 voltage/current/power telemetry is implemented but disabled.
+  The existing PCB documentation does not prove that a monitor or suitable
+  external shunt is installed. The shunt, wiring, connectors, fuse, and scaling
+  must be measured before enabling it.
+- The current IMU provides measured body attitude. There are no documented joint
+  encoders, so LIVE deliberately does not fabricate measured servo angles.
+
+## Physical deliverables still missing
+
+- A real-hardware LIVE telemetry capture and repository GIF after safe electrical
+  bring-up.
+- A measured wiring diagram covering receiver, ESP32, PCA9685, servo rail,
+  optional power monitor, fuse, regulators, and grounds.
+- Measured shunt value/current range and bench comparison against independent
+  voltage/current instruments.
+- Joint encoders or another feedback source if per-joint physical pose comparison
+  is required rather than expected servo output plus measured IMU attitude.
+- A completed and physically validated as-built record containing the measured
+  BOM, print settings, wiring diagram, power results, calibration, gate evidence,
+  and final media. The repository now supplies the manual and record template,
+  but a template is not physical validation.
+
+The remaining robot-side gates are sequenced in the
+[LIVE hardware bring-up procedure](live-hardware-bring-up.md).
+
+## Verification commands
+
+```powershell
+cd simulation/standalone
+node --test app-state.test.mjs boxer-hid.test.mjs cad-endpoint.test.mjs control-state.test.mjs firmware-service.test.mjs gait-lab.test.mjs gamepad-profile.test.mjs heartbeat-state.test.mjs linkage.test.mjs live-calibration-state.test.mjs live-companion-adapter.test.mjs live-companion-core.test.mjs live-connection-state.test.mjs live-controller-state.test.mjs live-diagnostics-state.test.mjs live-gait-state.test.mjs live-manual-control-state.test.mjs live-safety-state.test.mjs live-session-state.test.mjs live-telemetry-state.test.mjs live-view-state.test.mjs native-navigation-controller.test.mjs native-navigation-runner.test.mjs physics.test.mjs
+node node_modules/vite/bin/vite.js build
+
+cd ../sil
+.\build.ps1
+.\bin\domino_sil.exe --duration-ms 11500
+
+cd ../..
+pio run
+```

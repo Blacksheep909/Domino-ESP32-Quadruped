@@ -1,0 +1,327 @@
+# Domino LIVE companion protocol
+
+The LIVE companion is the fail-closed bridge between the browser's localhost
+relay and the physical robot. The browser never talks directly to a servo
+controller. The companion binds every operation to one negotiated engineering
+session and waits for a physical acknowledgement before reporting success.
+
+The companion is optional. Domino must retain its complete physical
+CRSF/ExpressLRS control path when the app is closed, the companion is not
+running, or no telemetry cable/network is connected. Establishing a read-only
+session does not arm, disarm, or take ownership of that radio path. The
+fail-closed companion watchdog applies only after LIVE has explicitly acquired
+armed motion authority; it is not a permanent heartbeat requirement for
+standalone Boxer operation.
+
+```text
+Browser LIVE UI <-> ws://127.0.0.1:8770/control
+                         |
+                 live-companion-adapter.mjs
+                         |
+              domino-robot-link-v1 / JSONL
+                         |
+                 physical ESP32 endpoint
+```
+
+## Running the PC companion
+
+Start the Virtual Lab first. Then open a second PowerShell window in
+`simulation/standalone` and choose one physical link:
+
+```powershell
+# Match DOMINO_LIVE_LINK_KEY in the robot's local secrets header.
+$env:DOMINO_ROBOT_LINK_KEY = "your-separate-long-random-key"
+
+# Wi-Fi TCP endpoint on the robot (IP is printed on USB serial after joining)
+.\start-live-companion.ps1 -Transport wifi -RobotHost 192.168.1.123
+
+# Wired USB serial
+.\start-live-companion.ps1 -Transport usb -Device COM5
+
+# Paired Bluetooth SPP serial port
+.\start-live-companion.ps1 -Transport bluetooth -Device COM7
+```
+
+USB and Bluetooth default to 460800 baud, 8 data bits, no parity and one stop
+bit. The higher USB rate keeps verbose telemetry from delaying the independent
+CRSF control loop. The launcher configures that serial mode before opening the device. Wi-Fi
+defaults to TCP port 8766. Keep the companion terminal open; Ctrl+C commands
+neutral, closes the robot link and removes the adapter from LIVE.
+
+Wireless firmware is opt-in. Copy `src/live_robot_secrets.example.h` to the
+gitignored `src/live_robot_secrets.h`, set the station SSID/password, a separate
+16+ character LIVE link key, and a non-default Bluetooth PIN, then rebuild and
+flash. Wi-Fi joins the configured WPA2 network and never creates an access
+point. The serial monitor reports its assigned IP without printing credentials.
+Bluetooth must be paired in Windows before its SPP COM port can be passed to
+the launcher. USB works without a link key and remains the recovery path.
+The TCP protocol is not TLS: use it only on a trusted WPA2/WPA3 LAN, do not
+forward port 8766 from a router, and use a different random link key from the
+Wi-Fi password. The key is checked in constant time before any wireless command
+can claim ownership or reach the safety state machine.
+
+The first authenticated transport to send a command owns the robot command
+stream. Other transports remain telemetry-only until that owner disconnects or
+becomes idle while safely disarmed. An owner disconnect while armed enters the
+watchdog state immediately; a disconnect in calibration turns every servo off.
+An E-stop is still accepted from any authenticated transport.
+
+The adapter appears in **LIVE -> PAIR ROBOT** only after the physical endpoint has
+sent a fresh hello or telemetry message. A stale or disconnected robot is
+advertised as an error and cannot negotiate a session.
+
+## Physical-link framing
+
+The physical link uses UTF-8 newline-delimited JSON. Every JSON object occupies
+one line and includes:
+
+```json
+{"protocol":"domino-robot-link-v1","type":"robot-hello"}
+```
+
+The PC reader ignores non-JSON serial log lines, allowing normal ESP32 logs to
+share the USB serial port. Individual lines should remain below 64 KiB.
+
+### Robot identity
+
+The robot sends this after boot and whenever a link is established:
+
+```json
+{
+  "protocol": "domino-robot-link-v1",
+  "type": "robot-hello",
+  "robotId": "domino-1",
+  "robotName": "Domino",
+  "firmwareVersion": "0.8.2",
+  "robotState": "disarmed",
+  "capabilities": {
+    "telemetry": true,
+    "calibration": true,
+    "gaitProfiles": true,
+    "persistentProfiles": true,
+    "persistentGaitProfiles": true,
+    "manualControl": true
+  }
+}
+```
+
+The companion advertises only capabilities explicitly reported by the physical
+endpoint. Unsupported firmware features therefore stay disabled in LIVE rather
+than being inferred from the PC adapter.
+
+Valid states are `unknown`, `disarmed`, `arming`, `armed`, `disarming`,
+`estopped`, `fault`, and `watchdog`.
+
+### Telemetry
+
+The robot publishes telemetry at 10 Hz. `expected` is the pose accepted by the
+robot controller; `measured` comes only from physical feedback. The current
+hardware has IMU attitude but no servo encoders, so firmware sends a partial
+measured body pose and deliberately omits measured servo angles. LIVE can graph
+roll/pitch error but keeps the measured skeleton unavailable instead of copying
+commands and calling them feedback.
+
+```json
+{
+  "protocol": "domino-robot-link-v1",
+  "type": "robot-telemetry",
+  "robotState": "disarmed",
+  "robotTimeMs": 48250,
+  "expected": {
+    "timestampMs": 1723600000000,
+    "servoAngleDeg": [135,135,135,135,135,135,135,135,135,135,135,135,135,135,135,135],
+    "servoPulseUs": [1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500],
+    "servoPhysicalChannel": [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],
+    "footTargetMm": [[-15.75,38,280],[-15.75,-38,280],[-15.75,38,280],[-15.75,-38,280]],
+    "body": {"rollDeg":0,"pitchDeg":0,"yawDeg":0,"heightMm":280}
+  },
+  "measured": {
+    "timestampMs": 48250,
+    "body": {"rollDeg":0,"pitchDeg":0}
+  },
+  "power": {"voltageV":15.8,"currentA":1.1,"powerW":17.38},
+  "controller": {
+    "source":"boxer-elrs",
+    "frameTimestampMs":1723600000000,
+    "packetRateHz":150,
+    "frameLossCount":0,
+    "failsafe":false,
+    "failsafeCount":0,
+    "linkQualityPercent":95,
+    "rssi1Dbm":-62,
+    "rssi2Dbm":-64,
+    "snrDb":8,
+    "rfMode":"250hz",
+    "txPowerMw":100,
+    "activeAntenna":1,
+    "receiverVoltageV":5.1,
+    "channelsUs":[1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500,1500]
+  },
+  "diagnostics": {"robotState":"disarmed","uptimeMs":48250,"esp32LoopHz":8120.4,"controllerHz":149.8,"commandLatencyMs":3}
+}
+```
+
+`commandLatencyMs` is the age of the latest accepted CRSF command when the
+telemetry packet is emitted. `esp32LoopHz` is measured over a rolling one-second
+firmware window, and `uptimeMs` comes directly from the ESP32 monotonic clock.
+`servoPulseUs` is the final commanded pulse after calibration and safety
+limiting, indexed by logical joint. `servoPhysicalChannel` reports the PCA9685
+output selected by the active calibration map. These are command-path evidence,
+not measured joint feedback; `diagnostics.outputsEnabled` states whether the
+servo rail is currently being driven.
+
+When a robot carries a network camera, its navigation object may also include
+validated camera telemetry. Angles are in degrees, field of view is in degrees,
+and frame rate is in frames per second. The stream itself remains a separately
+configured HTTP/MJPEG URL in the desktop app; telemetry only describes the
+camera attached to the robot.
+
+```json
+{
+  "navigation": {
+    "camera": {
+      "timestampMs": 48250,
+      "yawDeg": 0,
+      "pitchDeg": -8,
+      "fovDeg": 90,
+      "fps": 30,
+      "connected": true
+    }
+  }
+}
+```
+
+LIVE marks camera telemetry stale after 2.5 seconds and never treats a stale
+orientation report as proof that the video stream is still live.
+
+An ESP32 may use `millis()` for `robotTimeMs` and each nested timestamp. The
+companion translates those monotonic values into the host clock domain while
+preserving expected/measured alignment. Endpoints with a synchronized clock may
+send Unix millisecond nested timestamps directly.
+
+## Companion commands
+
+PC-to-robot messages use `type: "companion-command"` and one of these kinds:
+
+| Kind | Purpose | Required robot-side enforcement |
+|---|---|---|
+| `safety` | Request state, arm, disarm, E-stop, reset E-stop | Physical state machine, drive-link prerequisite and latched E-stop |
+| `safety-heartbeat` | Armed-session watchdog | Disable outputs if not refreshed within 400 ms |
+| `manual-authority` | Grant/release a maximum 30 s browser lease | Unique token, armed state and one authority owner |
+| `manual-control` | Bounded stand/careful/trot axes | Deadman, token, monotonic sequence and 250 ms neutral timeout |
+| `calibration` | Enter/exit bench mode, limited jog, save profile | Disarmed state, supported chassis, 5 deg/s and +/-10 deg jog bounds |
+| `gait` | Read, validate, persist or roll back a gait profile | Disarmed state, full bounds validation and atomic storage |
+
+Most commands include the validated browser envelope under `payload`. The
+physical endpoint must validate it again; the companion is a second boundary,
+not a replacement for robot-side checks.
+
+After completing an operation, the robot returns:
+
+```json
+{
+  "protocol": "domino-robot-link-v1",
+  "type": "robot-ack",
+  "kind": "safety",
+  "action": "arm",
+  "requestId": "browser-request-id",
+  "accepted": true,
+  "robotState": "armed"
+}
+```
+
+Rejected acknowledgements include a concise `reason`. Calibration and gait
+acknowledgements may include the profile actually stored by the robot.
+
+For each `safety-heartbeat`, return the same sequence:
+
+```json
+{
+  "protocol": "domino-robot-link-v1",
+  "type": "robot-safety-heartbeat-ack",
+  "sequence": 42,
+  "robotState": "armed",
+  "watchdogRemainingMs": 400
+}
+```
+
+## Fail-closed invariants
+
+- Connecting is read-only and never arms or moves the robot.
+- No telemetry or command crosses a mismatched adapter/session boundary.
+- Arming requires disarmed state, fresh telemetry and a fresh failsafe-clear
+  Boxer/ELRS controller frame with acceptable RF quality.
+- Browser manual control requires a robot acknowledgement before the PC assumes
+  authority. Loss of the token, lease, telemetry, controller, session, or
+  deadman commands all locomotion and body-pose axes neutral within 250 ms.
+- The armed watchdog commands neutral and enters `watchdog` after 400 ms without
+  a browser safety heartbeat.
+- A robot-reported `fault` blocks arm and ordinary disarm. The browser shows the
+  bounded robot reason and sends `acknowledge-fault` only from that state. For
+  the firmware low-voltage cause, the ESP32 accepts acknowledgement only with a
+  fresh power sample at or above its separate recovery threshold.
+- Calibration and gait writes are rejected while armed.
+- PC request timeouts produce explicit rejection; they never produce an
+  optimistic success state.
+
+## Current ESP32 endpoint
+
+Firmware `0.8.0` implements the matching USB serial endpoint. Build and flash
+the normal PlatformIO `esp32dev` environment, connect the ESP32 over USB, then
+run the companion with `-Transport usb -Device COMx`.
+
+The endpoint boots with every PCA9685 channel fully off. It currently supports
+telemetry, CRSF link statistics, arm/disarm, a latched E-stop, the 400 ms armed
+watchdog, bounded calibration bench jogs, and persistent calibration profiles.
+Arming additionally requires the Boxer SA switch low; after arming, the normal
+Boxer controls remain primary.
+
+Calibration schema v2 saves contain exactly 12 stable logical channels and 12
+unique physical PCA9685 output channels. Each record also carries bounded
+offsets, direction and logical limits. A bench jog names both the logical joint
+used for safety bounds and the physical channel to energize; the firmware keeps
+only one such output active. Firmware turns all outputs off before a map change,
+writes a candidate NVS
+blob, reads it back, validates its checksum and full contents, and only then
+replaces the active profile. At boot, a missing or corrupt active blob falls
+back to the compiled safe defaults. Runtime commands are converted back to a
+neutral-relative logical joint angle, clamped to the saved joint limits, then
+mapped through the saved direction and offset before the existing hard servo
+envelope is applied.
+
+Gait profiles use the same v2 schema and bounds as Simulation. Apply and revert
+are accepted only while disarmed, outside calibration bench mode, with every
+servo output disabled. Cadence, stride, lift, duty factor, body height, stance
+width, turn gain, response time, swing shape, diagonal phase, neutral touchdown
+X, maximum forward-command scale, maximum turn-command scale, and the enabled
+flag all feed the production gait loop. Schema-v1 browser files and NVS slots
+migrate to preset-specific bounded defaults for the three new Expert fields.
+A candidate is written to the inactive
+NVS slot, read back, checksum-validated, and selected only after verification;
+the other valid slot remains the rollback profile. Telemetry reports the active
+profile and persistent-profile capabilities to LIVE.
+
+Browser manual driving is guarded independently on the ESP32. Authority is
+granted only while armed with a healthy Boxer/ELRS link, is bound to one
+constant-time-compared token, and expires after at most 30 seconds. Frames must
+carry a strictly increasing sequence, eight finite bounded axes (`forward`,
+`turn`, `roll`, `pitch`, `yaw`, `bodyX`, `bodyY`, and `height`), a supported
+mode, deadman, and the exact 250 ms timeout contract. A stale frame becomes a
+neutral stand command; lease expiry, disarm, watchdog, controller failure, or
+explicit release revokes the override. Granting authority alone never moves
+the robot. Static body yaw is deliberately separate from gait steering. In
+Stand, normalized pose axes are bounded again on the ESP32 to ±8° pitch/yaw,
+±15 mm fore/aft and ±12 mm lateral translation. LIVE diagnostics report lease
+time, frame age, override state, and deadman state without exposing the token.
+
+Power fields are published independently when their physical source has a fresh
+verified sample. Domino PCB V1.1B supplies `power.timestampMs` and `voltageV`
+from its GPIO36 divider by default. `currentA` and `powerW` remain absent unless
+the optional current monitor is configured and valid; an absent sensor must not
+look like a zero-current robot. The browser derives average 4S cell voltage and
+estimated charge percentage from `voltageV`; those derived values are not sent
+by the robot and are not individual balance-tap measurements.
+`diagnostics.powerMonitorOnline` and `diagnostics.powerSampleValid` distinguish
+configuration/link failure from a valid measurement.
+Wi-Fi TCP and Bluetooth SPP are implemented but compile disabled until the
+local secrets header explicitly enables them.

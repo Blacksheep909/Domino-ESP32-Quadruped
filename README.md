@@ -95,6 +95,10 @@ The calibration profile (offsets, directions, limits, channel map) is stored in 
 | [Electronics](docs/electronics.md) | Power, PCB evolution and control notes |
 | [Troubleshooting](docs/troubleshooting.md) | Common faults and fixes |
 
+## License
+
+Released under the [MIT License](LICENSE). Third-party libraries keep their own licenses.
+
 ## Related work
 
 Domino is the successor to my earlier [SpotMicro ESP32 Nitro fork](https://github.com/Blacksheep909/SpotMicroESP32-Nitro-Fork). See the [project overview](docs/project-overview.md#credits) for credits.

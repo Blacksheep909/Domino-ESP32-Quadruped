@@ -47,6 +47,20 @@ jobs:
         working-directory: simulation/standalone
         run: pnpm install --frozen-lockfile
 
+      # pnpm does not run Electron's postinstall download on the runner, and
+      # package.json points electron-builder at node_modules/electron/dist.
+      - name: Download Electron binary
+        working-directory: simulation/standalone
+        run: node node_modules/electron/install.js
+
+      - name: Verify Electron is present
+        working-directory: simulation/standalone
+        shell: pwsh
+        run: |
+          if (-not (Test-Path node_modules/electron/dist/electron.exe)) {
+            throw "Electron binary is missing after install"
+          }
+
       - name: Verify release version
         working-directory: simulation/standalone
         shell: pwsh

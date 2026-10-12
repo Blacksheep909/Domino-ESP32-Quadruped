@@ -1,6 +1,6 @@
 # Hardware Planning Checklist
 
-> Work in progress: this is a planning checklist, not a verified bill of materials. Exact fastener sizes, printed-part settings, rod lengths, battery choice, regulator rating, and final wiring diagrams still need to be documented.
+> Work in progress: this is a planning checklist, not a verified bill of materials. Use the [public build manual](build-guide.md) for the staged process and copy the [as-built record](build-record-template.md) to capture exact parts and measurements.
 
 ## Core Electronics
 
@@ -8,6 +8,7 @@
 - PCA9685 16-channel PWM servo driver or Domino PCB V1.1B.
 - CRSF / ExpressLRS receiver.
 - MPU6050 IMU.
+- PCB 0-25 V divider module on GPIO36 for measured battery voltage.
 - High-current servo regulator or BEC.
 - Battery suitable for the selected servos and regulator.
 - Common-ground wiring between servo power, ESP32, receiver, and PCA9685.

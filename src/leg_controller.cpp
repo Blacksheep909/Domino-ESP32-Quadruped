@@ -3,7 +3,6 @@
 
 #include "leg_controller.h"
 
-#include "ik.h"
 #include "servo_calibration.h"
 #ifndef DOMINO_SIL
 #include "loop_diagnostics.h"
@@ -11,17 +10,10 @@
 
 namespace {
 constexpr float kServoCenterDeg = 135.0f;
-// IK theta2/theta3 describe the virtual 160/153 mm leg, while Domino's two
-// physical servo arms drive the CAD four-bar linkage. These neutral-preserving
-// gains were solved against the rendered STL hole centers and foot endpoint.
-// The exported closure mesh orders its two holes opposite to the URDF's
-// parent/child naming, so calibration must follow the physical mesh pivots.
-// Keeping the neutral terms explicit means the proven 280 mm stand pulse is
-// unchanged while the full 160 mm sit remains within +/-45 degrees.
+// Retain the original virtual-chain neutral angles as the calibration basis;
+// motion deltas are solved only against the measured CAD four-bar linkage.
 constexpr float kNeutralTheta2Deg = -36.628307f;
 constexpr float kNeutralTheta3Deg = 31.397787f;
-constexpr float kUpperCadDriveGain = 0.66f;
-constexpr float kLowerCadDriveGain = 1.32f;
 constexpr float kNeutralCommandXmm = -15.75f;
 constexpr float kNeutralCommandYmm = 38.0f;
 constexpr float kNeutralCommandZmm = 280.0f;
@@ -97,6 +89,7 @@ constexpr CadGeometry kLeftCad{
 
 float gCadUpperSeedDeg[kLegCount] = {};
 float gCadLowerSeedDeg[kLegCount] = {};
+uint32_t gLegIkFailureCount = 0;
 float gCommandedServoAnglesDeg[kPcaChannelCount] = {};
 float gCommandedModelServoAnglesDeg[kPcaChannelCount] = {};
 uint16_t gCommandedServoPulseUs[kPcaChannelCount] = {};
@@ -537,6 +530,10 @@ const LegConfig BL_leg{
 }  // namespace
 
 void moveLeg(const LegConfig &leg, Adafruit_PWMServoDriver &driver, float x, float y, float z) {
+  if (!isfinite(x) || !isfinite(y) || !isfinite(z)) {
+    ++gLegIkFailureCount;
+    return;
+  }
   float shoulderDelta = 0.0f;
   float upperDelta = 0.0f;
   float lowerDelta = 0.0f;
@@ -549,18 +546,11 @@ void moveLeg(const LegConfig &leg, Adafruit_PWMServoDriver &driver, float x, flo
       &upperDelta,
       &lowerDelta);
 
-  if (!cadSolved) {
-    // Retain the old virtual-chain mapping as a bounded fallback if a target is
-    // outside the measured four-bar workspace or the numerical solve becomes
-    // singular. Normal stand, sit, and tilt poses use the CAD inverse above.
-    float theta1 = 0.0f;
-    float theta2 = 0.0f;
-    float theta3 = 0.0f;
-    IK(x, y * static_cast<float>(leg.lateralDir), z, &theta1, &theta2, &theta3);
-    // Match the CAD solver's outward-positive canonical hip coordinate.
-    shoulderDelta = theta1;
-    upperDelta = kUpperCadDriveGain * (theta2 - kNeutralTheta2Deg);
-    lowerDelta = kLowerCadDriveGain * (theta3 - kNeutralTheta3Deg);
+  if (!cadSolved || !isfinite(shoulderDelta) || !isfinite(upperDelta) || !isfinite(lowerDelta)) {
+    // A different linkage model is not a safe recovery for a failed CAD
+    // inverse. PCA9685 holds the last valid pulses for this leg instead.
+    ++gLegIkFailureCount;
+    return;
   }
 
   const float hipAngle =
@@ -614,6 +604,8 @@ void moveLegFR(Adafruit_PWMServoDriver &driver, float x, float y, float z) { mov
 void moveLegFL(Adafruit_PWMServoDriver &driver, float x, float y, float z) { moveLeg(FL_leg, driver, x, y, z); }
 void moveLegBR(Adafruit_PWMServoDriver &driver, float x, float y, float z) { moveLeg(BR_leg, driver, x, y, z); }
 void moveLegBL(Adafruit_PWMServoDriver &driver, float x, float y, float z) { moveLeg(BL_leg, driver, x, y, z); }
+
+uint32_t legIkFailureCount() { return gLegIkFailureCount; }
 
 // Stub: future body pose handling (keep feet fixed, move body)
 void setBodyPose(const BodyPose & /*pose*/, Adafruit_PWMServoDriver & /*driver*/) {

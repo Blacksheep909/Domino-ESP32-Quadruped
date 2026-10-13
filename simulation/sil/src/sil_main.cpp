@@ -16,6 +16,7 @@
 #include "gait_profile.h"
 #include "leg_controller.h"
 #include "manual_control_guard.h"
+#include "calibration_lease.h"
 #include "motion_smoothing.h"
 #include "power_monitor_math.h"
 #include "power_fault_guard.h"
@@ -256,6 +257,26 @@ bool validatePowerFaultGuard() {
   return passed;
 }
 
+bool validateCalibrationLease() {
+  CalibrationLease lease;
+  const bool inactive = !lease.expired(0) && !lease.expired(5000);
+  lease.refresh(0);
+  const bool initialWindow = !lease.expired(CalibrationLease::kTimeoutMs - 1) &&
+      lease.expired(CalibrationLease::kTimeoutMs);
+  lease.refresh(2500);
+  const bool renewalRestartsWindow = !lease.expired(2500 + CalibrationLease::kTimeoutMs - 1) &&
+      lease.expired(2500 + CalibrationLease::kTimeoutMs);
+  lease.revoke();
+  const bool revoked = !lease.expired(10000);
+
+  CalibrationLease rolloverLease;
+  rolloverLease.refresh(UINT32_MAX - 999U);
+  const bool rolloverSafe = !rolloverLease.expired(999U) && rolloverLease.expired(1000U);
+  const bool passed = inactive && initialWindow && renewalRestartsWindow && revoked && rolloverSafe;
+  if (!passed) std::cerr << "FAIL: calibration lease timeout, renewal, revoke, or wraparound failed\n";
+  return passed;
+}
+
 struct Options {
   uint32_t durationMs = kScenarioDurationMs;
   bool realtime = false;
@@ -417,17 +438,25 @@ bool validateCalibratedHipDirection() {
   for (int leg = 0; leg < 4; ++leg) {
     movers[leg](driver, -15.75f, neutralY[leg], 280.0f);
     const float neutral = commandedServoAnglesDeg()[hips[leg]];
-    // The owner verified same-axis physical hip motion with left directions
-    // inverted. Cover both CAD IK and deliberately unreachable X (fallback).
-    for (const float x : {-15.75f, 1000.0f}) {
-      movers[leg](driver, x, neutralY[leg] - 40.0f, 280.0f);
-      passed = passed && commandedServoAnglesDeg()[hips[leg]] < neutral - 5.0f;
-      movers[leg](driver, x, neutralY[leg] + 40.0f, 280.0f);
-      passed = passed && commandedServoAnglesDeg()[hips[leg]] > neutral + 5.0f;
-    }
+    // Canonical outward-positive CAD hip motion maps through each active
+    // calibration direction. Left channels are inverted for the installed
+    // shafts; verify both directions using reachable CAD targets.
+    movers[leg](driver, -15.75f, neutralY[leg] - 40.0f, 280.0f);
+    const float inward = commandedServoAnglesDeg()[hips[leg]];
+    passed = passed && inward < neutral - 5.0f;
+    movers[leg](driver, -15.75f, neutralY[leg] + 40.0f, 280.0f);
+    const float outward = commandedServoAnglesDeg()[hips[leg]];
+    passed = passed && outward > neutral + 5.0f;
+
+    // The production inverse has no fallback pose: an unreachable target
+    // must hold the last valid command and count the IK failure.
+    const uint32_t failuresBefore = legIkFailureCount();
+    movers[leg](driver, 1000.0f, neutralY[leg], 280.0f);
+    passed = passed && legIkFailureCount() == failuresBefore + 1 &&
+        fabsf(commandedServoAnglesDeg()[hips[leg]] - outward) < 0.001f;
   }
   setServoCalibrationProfile(defaultServoCalibrationProfile());
-  if (!passed) std::cerr << "FAIL: calibrated CAD/fallback hip shaft directions disagree\n";
+  if (!passed) std::cerr << "FAIL: calibrated CAD hip direction or invalid-target hold behavior failed\n";
   return passed;
 }
 
@@ -805,6 +834,7 @@ int main(int argc, char** argv) {
   const bool manualControlPassed = validateManualControlGuard();
   const bool powerMonitorMathPassed = validatePowerMonitorMath();
   const bool powerFaultGuardPassed = validatePowerFaultGuard();
+  const bool calibrationLeasePassed = validateCalibrationLease();
   const bool crsfBurstPassed = validateCrsfBurstRecovery();
   const bool fallbackHipDirectionPassed = validateCalibratedHipDirection();
   const bool servoWriteReusePassed = validateServoWriteReuse();
@@ -996,7 +1026,7 @@ int main(int argc, char** argv) {
   if (tiltSlewViolation) std::cerr << "FAIL: tilt roll exceeded its commanded slew rate\n";
   const bool passed = calibrationMathPassed && gaitProfilesPassed && smoothingBypassPassed &&
       manualControlPassed &&
-      powerMonitorMathPassed && powerFaultGuardPassed && crsfBurstPassed && fallbackHipDirectionPassed &&
+      powerMonitorMathPassed && powerFaultGuardPassed && calibrationLeasePassed && crsfBurstPassed && fallbackHipDirectionPassed &&
       servoWriteReusePassed && !tiltSlewViolation &&
       validateOutputs(sawStand, sawTilt, sawGait, sawCareful,
                                       gaitTiltInterlockViolation,

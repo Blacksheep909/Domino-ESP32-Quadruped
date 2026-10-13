@@ -73,6 +73,7 @@ export function sanitizeDiagnostics(diagnostics) {
     outputsEnabled: bool(diagnostics.outputsEnabled),
     radioControlEnabled: bool(diagnostics.radioControlEnabled),
     motionInputAwaitingCenter: bool(diagnostics.motionInputAwaitingCenter),
+    legIkFailures: finite(diagnostics.legIkFailures),
     crsfAcceptedFrames: finite(diagnostics.crsfAcceptedFrames),
     crsfCrcErrors: finite(diagnostics.crsfCrcErrors),
     crsfUartOverflows: finite(diagnostics.crsfUartOverflows),
@@ -146,6 +147,10 @@ export function observeLiveDiagnosticPacket(state, packet, accepted, receivedAt 
   state.packetTimes = state.packetTimes.filter((time) => receivedAt - time <= LIVE_DIAGNOSTIC_RATE_WINDOW_MS);
   state.telemetry = sanitizeDiagnostics(packet.diagnostics);
   const current = state.telemetry;
+  if (current?.legIkFailures !== null && current?.legIkFailures > (previous?.legIkFailures ?? 0)) {
+    addEvent(state, "fault", "CAD IK failed; the affected leg held its last valid output and motion was inhibited.",
+      receivedAt, "firmware");
+  }
   if (previous && current && previous.bootId !== null && current.bootId !== null &&
       current.bootId !== previous.bootId) {
     addEvent(state, "fault", `ESP32 restarted: reset reason ${current.resetReason ?? "unknown"}; prior active stage ${loopStageName(current.priorResetStage)}.`, receivedAt, "firmware");

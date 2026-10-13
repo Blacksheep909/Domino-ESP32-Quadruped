@@ -51,8 +51,8 @@
 #include <BluetoothSerial.h>
 #endif
 
-#include "calibration_storage.h"
 #include "crsf.h"
+#include "calibration_lease.h"
 #include "gait_profile.h"
 #include "imu.h"
 #include "leg_controller.h"
@@ -70,10 +70,8 @@ constexpr uint32_t kWatchdogMs = 400;
 constexpr uint32_t kLinkStatsFreshMs = 1000;
 constexpr float kCalibrationMaxSpeedDegPerSec = 5.0f;
 constexpr float kCalibrationJogLimitDeg = 10.0f;
+constexpr uint32_t kCalibrationMagic = 0x4443414c;  // DCAL
 constexpr char kCalibrationNamespace[] = "domino-cal";
-constexpr char kCalibrationActiveKey[] = "active2";
-constexpr char kCalibrationBackupKey[] = "backup2";
-constexpr char kCalibrationLegacyKey[] = "active";  // firmware <= 0.8.15, read-only
 constexpr uint32_t kSmoothingMagic = 0x44534d4f;  // DSMO
 constexpr char kSmoothingNamespace[] = "domino-smooth";
 constexpr uint32_t kGaitMagic = 0x44474149;  // DGAI
@@ -133,6 +131,7 @@ uint32_t bootId = 0;
 uint8_t controlBodyMode = 0;
 bool controlAwaitingStickCenter = false;
 bool benchMode = false;
+CalibrationLease calibrationLease;
 bool receiverPassthroughPending = false;
 bool receiverPassthroughActive = false;
 String usbInputLine;
@@ -156,8 +155,11 @@ PowerFaultGuard powerFaultGuard(kPowerCriticalVoltageV, kPowerFaultRecoveryVolta
                                 kLowVoltageFaultHoldMs);
 char faultReason[96] = {};
 
-CalibrationSource calibrationSource = CalibrationSource::DefaultEmpty;
-char calibrationLoadDetail[64] = "not-loaded";
+struct StoredCalibrationProfile {
+  uint32_t magic;
+  ServoCalibrationProfile profile;
+  uint32_t checksum;
+};
 
 struct StoredMotionSmoothingSettings {
   uint32_t magic;
@@ -231,100 +233,54 @@ uint32_t checksumBytes(const uint8_t *bytes, size_t length) {
   return hash;
 }
 
-void noteCalibrationLoad(CalibrationSource source, const char *detail) {
-  calibrationSource = source;
-  snprintf(calibrationLoadDetail, sizeof(calibrationLoadDetail), "%s", detail ? detail : "");
+StoredCalibrationProfile storedProfileFor(const ServoCalibrationProfile &profile) {
+  StoredCalibrationProfile stored{};
+  stored.magic = kCalibrationMagic;
+  stored.profile = profile;
+  stored.checksum = checksumBytes(
+      reinterpret_cast<const uint8_t *>(&stored.profile), sizeof(stored.profile));
+  return stored;
 }
 
-// Reads one explicit-layout record. `present` reports whether the key held any
-// bytes at all, so an empty chip is distinguishable from an unreadable one.
-CalibrationDecodeResult readCalibrationRecord(Preferences &preferences, const char *key,
-                                              bool legacy, ServoCalibrationProfile *profile,
-                                              bool *present) {
-  uint8_t buffer[sizeof(LegacyStoredCalibrationProfile) > kCalibrationRecordSize
-                     ? sizeof(LegacyStoredCalibrationProfile) : kCalibrationRecordSize];
-  const size_t length = preferences.getBytesLength(key);
-  *present = length > 0;
-  if (length == 0 || length > sizeof(buffer) ||
-      preferences.getBytes(key, buffer, length) != length) {
-    return CalibrationDecodeResult::WrongSize;
-  }
-  return legacy ? decodeLegacyCalibrationRecord(buffer, length, profile)
-                : decodeCalibrationRecord(buffer, length, profile);
+bool storedProfileValid(const StoredCalibrationProfile &stored) {
+  return stored.magic == kCalibrationMagic &&
+         stored.checksum == checksumBytes(
+             reinterpret_cast<const uint8_t *>(&stored.profile), sizeof(stored.profile)) &&
+         validateServoCalibrationProfile(stored.profile);
 }
 
-// Load order: current record, previous record, then the firmware <= 0.8.15
-// raw blob. A usable record from any of them keeps the owner's calibration.
-// Defaults are used only when nothing usable exists, and the reason is
-// recorded so Studio can warn instead of showing a stale or wrong profile.
 bool loadCalibrationProfile() {
   Preferences preferences;
-  if (!preferences.begin(kCalibrationNamespace, true)) {
-    noteCalibrationLoad(CalibrationSource::DefaultEmpty, "namespace-unavailable");
-    return false;
-  }
-  struct Candidate { const char *key; bool legacy; CalibrationSource source; };
-  const Candidate candidates[] = {
-      {kCalibrationActiveKey, false, CalibrationSource::Nvs},
-      {kCalibrationBackupKey, false, CalibrationSource::NvsBackup},
-      {kCalibrationLegacyKey, true, CalibrationSource::NvsLegacy},
-  };
-  bool anyPresent = false;
-  char firstFailure[64] = "";
-  for (const Candidate &candidate : candidates) {
-    ServoCalibrationProfile profile{};
-    bool present = false;
-    const CalibrationDecodeResult result =
-        readCalibrationRecord(preferences, candidate.key, candidate.legacy, &profile, &present);
-    anyPresent = anyPresent || present;
-    if (result == CalibrationDecodeResult::Ok && setServoCalibrationProfile(profile)) {
-      preferences.end();
-      noteCalibrationLoad(candidate.source, firstFailure);
-      return true;
-    }
-    if (present && !firstFailure[0]) {
-      snprintf(firstFailure, sizeof(firstFailure), "%s:%s", candidate.key,
-               calibrationDecodeResultName(result));
-    }
-  }
+  if (!preferences.begin(kCalibrationNamespace, true)) return false;
+  StoredCalibrationProfile stored{};
+  const size_t length = preferences.getBytesLength("active");
+  const size_t read = length == sizeof(stored)
+      ? preferences.getBytes("active", &stored, sizeof(stored)) : 0;
   preferences.end();
-  noteCalibrationLoad(anyPresent ? CalibrationSource::DefaultFallback
-                                 : CalibrationSource::DefaultEmpty,
-                      anyPresent ? firstFailure : "no-stored-profile");
-  return false;
+  return read == sizeof(stored) && storedProfileValid(stored) &&
+         setServoCalibrationProfile(stored.profile);
 }
 
 bool persistCalibrationProfile(const ServoCalibrationProfile &profile) {
-  uint8_t candidate[kCalibrationRecordSize];
-  if (encodeCalibrationRecord(profile, candidate, sizeof(candidate)) != sizeof(candidate)) return false;
-  // Keep the profile being replaced as a recoverable backup. Skipped when the
-  // robot is running defaults, which are not worth preserving. A failed backup
-  // is not fatal: the primary write below is still verified before success.
-  uint8_t previous[kCalibrationRecordSize];
-  const bool havePrevious = !calibrationSourceIsDefault(calibrationSource) &&
-      encodeCalibrationRecord(servoCalibrationProfile(), previous, sizeof(previous)) ==
-          sizeof(previous);
+  if (!validateServoCalibrationProfile(profile)) return false;
+  const StoredCalibrationProfile candidate = storedProfileFor(profile);
+  // NVS blob replacement is atomic at the key level. One committed write plus
+  // a read-only verification avoids the former candidate/active/remove chain,
+  // which could stall the USB command path through several flash commits.
   Preferences writer;
   if (!writer.begin(kCalibrationNamespace, false)) return false;
-  if (havePrevious) writer.putBytes(kCalibrationBackupKey, previous, sizeof(previous));
-  // NVS blob replacement is atomic at the key level; the read-back below proves it.
-  const bool written = writer.putBytes(kCalibrationActiveKey, candidate, sizeof(candidate)) ==
-      sizeof(candidate);
+  const bool written = writer.putBytes("active", &candidate, sizeof(candidate)) == sizeof(candidate);
   writer.end();
   if (!written) return false;
 
   Preferences verifier;
   if (!verifier.begin(kCalibrationNamespace, true)) return false;
-  uint8_t verified[kCalibrationRecordSize];
-  const bool verifiedRead = verifier.getBytesLength(kCalibrationActiveKey) == sizeof(verified) &&
-      verifier.getBytes(kCalibrationActiveKey, verified, sizeof(verified)) == sizeof(verified);
+  StoredCalibrationProfile verified{};
+  const bool verifiedRead = verifier.getBytes("active", &verified, sizeof(verified)) == sizeof(verified);
   verifier.end();
-  ServoCalibrationProfile decoded{};
-  const bool exactMatch = verifiedRead && memcmp(verified, candidate, sizeof(candidate)) == 0 &&
-      decodeCalibrationRecord(verified, sizeof(verified), &decoded) == CalibrationDecodeResult::Ok;
-  if (!exactMatch || !setServoCalibrationProfile(profile)) return false;
-  noteCalibrationLoad(CalibrationSource::Nvs, "");
-  return true;
+  const bool exactMatch = verifiedRead && storedProfileValid(verified) &&
+      memcmp(&verified, &candidate, sizeof(candidate)) == 0;
+  return exactMatch && setServoCalibrationProfile(profile);
 }
 
 StoredMotionSmoothingSettings storedSmoothingFor(const MotionSmoothingSettings &settings) {
@@ -601,6 +557,11 @@ bool parseCalibrationProfile(JsonObjectConst source, ServoCalibrationProfile *pr
   candidate.savedAt = source["savedAt"] | static_cast<uint64_t>(0);
   uint8_t index = 0;
   for (JsonObjectConst joint : joints) {
+    // Validate before narrowing: 256 must not wrap to channel 0, nor 257
+    // become direction +1. Rejected imports leave the active NVS untouched.
+    if (!joint["logicalChannel"].is<uint8_t>() || !joint["channel"].is<uint8_t>() ||
+        !joint["direction"].is<int>() ||
+        (joint["direction"].as<int>() != -1 && joint["direction"].as<int>() != 1)) return false;
     candidate.joints[index++] = {
         static_cast<uint8_t>(joint["logicalChannel"] | 255),
         static_cast<uint8_t>(joint["channel"] | 255),
@@ -629,15 +590,6 @@ void addCalibrationProfile(JsonObject target, const ServoCalibrationProfile &pro
     item["minimumDeg"] = joint.minimumDeg;
     item["maximumDeg"] = joint.maximumDeg;
   }
-}
-
-// Tells Studio which stored record (if any) produced the active profile. A
-// `default-*` source means the robot is NOT running a saved calibration.
-void addCalibrationOrigin(JsonObject target) {
-  target["source"] = calibrationSourceName(calibrationSource);
-  target["usingDefaults"] = calibrationSourceIsDefault(calibrationSource);
-  target["savedAt"] = servoCalibrationProfile().savedAt;
-  if (calibrationLoadDetail[0]) target["detail"] = calibrationLoadDetail;
 }
 
 bool parseMotionSmoothingSettings(JsonObjectConst source, MotionSmoothingSettings *settings) {
@@ -765,9 +717,8 @@ void sendHello(bool bestEffort = false) {
   document["type"] = "robot-hello";
   document["robotId"] = "domino-esp32-quadruped";
   document["robotName"] = "Domino";
-  document["firmwareVersion"] = "0.8.17";
+  document["firmwareVersion"] = "0.8.18";
   document["robotState"] = stateName();
-  addCalibrationOrigin(document["calibration"].to<JsonObject>());
   if (state == LiveRobotState::Fault && faultReason[0]) document["faultReason"] = faultReason;
   document["wirelessAuth"] = "psk-v1";
   addCapabilities(document["capabilities"].to<JsonObject>());
@@ -857,6 +808,7 @@ void sendTelemetry(uint32_t now) {
   diagnostics["robotState"] = stateName();
   if (state == LiveRobotState::Fault && faultReason[0]) diagnostics["faultReason"] = faultReason;
   diagnostics["outputsEnabled"] = servoOutputsEnabled();
+  diagnostics["benchMode"] = benchMode;
   diagnostics["imuOnline"] = imuSampleFresh(now);
   if (gImuState.has_sample) diagnostics["imuSampleAgeMs"] = imuSampleAgeMs(now);
   diagnostics["imuConsecutiveErrors"] = imuConsecutiveErrorCount();
@@ -917,6 +869,7 @@ void sendTelemetry(uint32_t now) {
   diagnostics["telemetryTxSkipped"] = telemetryTxSkipped;
   diagnostics["bodyMode"] = controlBodyMode;
   diagnostics["motionInputAwaitingCenter"] = controlAwaitingStickCenter;
+  diagnostics["legIkFailures"] = legIkFailureCount();
   diagnostics["radioControlEnabled"] = liveRobotEndpointAllowsRadioControl();
   diagnostics["crsfAcceptedFrames"] = crsfAcceptedFrameCount();
   diagnostics["crsfCrcErrors"] = crsfCrcErrorCount();
@@ -983,10 +936,7 @@ void acknowledgeCalibration(const char *action, const char *requestId, bool acce
   document["maxSpeedDegPerSec"] = kCalibrationMaxSpeedDegPerSec;
   document["persisted"] = persisted;
   if (reason) document["reason"] = reason;
-  if (includeProfile) {
-    addCalibrationProfile(document["profile"].to<JsonObject>(), servoCalibrationProfile());
-    addCalibrationOrigin(document["origin"].to<JsonObject>());
-  }
+  if (includeProfile) addCalibrationProfile(document["profile"].to<JsonObject>(), servoCalibrationProfile());
   if (includeSmoothing) addMotionSmoothingSettings(
       document["smoothing"].to<JsonObject>(), motionSmoothingSettings());
   writeDocument(document);
@@ -1012,6 +962,7 @@ void acknowledgeGait(const char *action, const char *requestId, bool accepted,
 void disableOutputs(Adafruit_PWMServoDriver &driver, LiveRobotState nextState) {
   radioControlEnabled = false;
   benchMode = false;
+  calibrationLease.revoke();
   calibrationJogActive = false;
   calibrationChannelActive = false;
   setServoOutputsEnabled(driver, false);
@@ -1065,6 +1016,8 @@ void handleSafety(JsonObjectConst command, JsonObjectConst payload,
   } else if (!strcmp(action, "arm")) {
     if (state != LiveRobotState::Disarmed) {
       acknowledge("safety", action, requestId, false, "Robot must be disarmed.");
+    } else if (benchMode) {
+      acknowledge("safety", action, requestId, false, "Exit calibration bench mode before arming.");
     } else if (!controllerSafeToArm(now) || ch_us[SA_CH_INDEX] > SA_OFF_THRESHOLD_US) {
       acknowledge("safety", action, requestId, false, "Fresh safe Boxer/ELRS link and SA-low are required.");
     } else {
@@ -1176,8 +1129,13 @@ void handleCalibration(JsonObjectConst command, JsonObjectConst payload,
     return;
   }
   if (!strcmp(action, "enter")) {
+    // Radio control can leave live PWM outputs while the robot is disarmed.
+    // Start calibration with every channel off; only an explicit jog writes
+    // the selected physical output.
+    disableOutputs(driver, LiveRobotState::Disarmed);
     radioControlEnabled = false;
     benchMode = true;
+    calibrationLease.refresh(now);
     setServoOutputsEnabled(driver, true);
     acknowledgeCalibration(action, requestId, true);
     return;
@@ -1187,10 +1145,12 @@ void handleCalibration(JsonObjectConst command, JsonObjectConst payload,
     acknowledgeCalibration(action, requestId, true);
     return;
   }
-  // Saving only writes flash (every output is turned off first), so it does not
-  // need bench mode. Requiring it made a broken bench handshake block persistence.
-  if (!benchMode && strcmp(action, "save-profile")) {
+  if (!benchMode) {
     acknowledgeCalibration(action, requestId, false, "Bench mode has not been acknowledged.");
+    return;
+  }
+  if (!strcmp(action, "keepalive")) {
+    calibrationLease.refresh(now);
     return;
   }
   if (!strcmp(action, "jog")) {
@@ -1204,7 +1164,7 @@ void handleCalibration(JsonObjectConst command, JsonObjectConst payload,
     const bool targetBounded = drivenChannel && isfinite(target) &&
         fabsf(target - servoCalibrationNeutralDeg(static_cast<uint8_t>(channel))) <= 40.0f;
     if (!drivenChannel || !validPhysicalChannel ||
-        fabsf(jog) > kCalibrationJogLimitDeg || !targetBounded) {
+        !isfinite(jog) || fabsf(jog) > kCalibrationJogLimitDeg || !targetBounded) {
       acknowledgeCalibration(action, requestId, false, "Jog exceeds channel or +/-10 degree safety bounds.");
       return;
     }
@@ -1219,6 +1179,7 @@ void handleCalibration(JsonObjectConst command, JsonObjectConst payload,
     calibrationTargetDeg = target;
     calibrationUpdatedMs = now;
     calibrationJogActive = true;
+    calibrationLease.refresh(now);
     acknowledgeCalibration(action, requestId, true);
   } else if (!strcmp(action, "save-profile")) {
     ServoCalibrationProfile profile{};
@@ -1518,8 +1479,6 @@ void liveRobotEndpointBegin(Adafruit_PWMServoDriver &driver) {
   radioControlEnabled = true;
   setServoOutputsEnabled(driver, false);
   if (!loadCalibrationProfile()) setServoCalibrationProfile(defaultServoCalibrationProfile());
-  Serial.printf("Calibration source: %s (%s)\n", calibrationSourceName(calibrationSource),
-                calibrationLoadDetail);
   if (!loadMotionSmoothingSettings()) setMotionSmoothingSettings(defaultMotionSmoothingSettings());
   if (!loadGaitProfile()) setGaitProfile(defaultGaitProfile());
   powerMonitorBegin();
@@ -1562,6 +1521,13 @@ void liveRobotEndpointLoop(uint32_t now, Adafruit_PWMServoDriver &driver) {
                          static_cast<float>(loopWindowElapsedMs);
     loopRateIterations = 0;
     loopRateWindowStartedMs = now;
+  }
+  // USB-UART hardware cannot report a removed cable. Expire bench permission
+  // before reading queued commands so a late keepalive cannot revive it.
+  if (calibrationLease.expired(now)) {
+    disableOutputs(driver, state == LiveRobotState::Armed
+        ? LiveRobotState::Watchdog : LiveRobotState::Disarmed);
+    commandOwner = LiveTransport::None;
   }
   readTransport(Serial, usbInputLine, LiveTransport::Usb, driver, now);
   if (receiverPassthroughPending) {

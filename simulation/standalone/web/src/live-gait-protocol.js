@@ -23,7 +23,8 @@ export function validLiveGaitProfile(profile) {
   return Object.entries(gaitBounds).every(([key, [minimum, maximum]]) => {
     const value = profile.settings[key];
     return typeof value === "number" && Number.isFinite(value) && value >= minimum && value <= maximum;
-  });
+  }) && profile.settings.dutyFactor + 1e-6 >=
+    Math.max(profile.settings.diagonalPhase, 1 - profile.settings.diagonalPhase) + 0.02;
 }
 
 export function validLiveGaitCommand(message) {

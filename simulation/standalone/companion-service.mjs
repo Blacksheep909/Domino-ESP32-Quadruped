@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
 import process from "node:process";
+import { closeCompanionProcess } from "./companion-process.mjs";
 
 const PORT_QUERY = [
   "-NoProfile",
@@ -67,6 +68,8 @@ export class CompanionService {
     ardupilotEntry = path.join(path.dirname(adapterEntry), "ardupilot-companion-adapter.mjs"),
     protocol = process.env.DOMINO_COMPANION_PROTOCOL || "domino",
     logger = console,
+    spawnChild = spawn,
+    closeChild = closeCompanionProcess,
   }) {
     this.firmwareService = firmwareService;
     this.relayUrl = relayUrl;
@@ -74,6 +77,10 @@ export class CompanionService {
     this.ardupilotEntry = ardupilotEntry;
     this.protocol = protocol === "ardupilot" ? "ardupilot" : "domino";
     this.logger = logger;
+    this.spawnChild = spawnChild;
+    this.closeChild = closeChild;
+    this.operations = Promise.resolve();
+    this.stopping = false;
     this.child = null;
     this.endpoint = "";
     this.transport = "";
@@ -126,13 +133,13 @@ export class CompanionService {
         throw new Error("Enter a valid MAVLink host and UDP port (1–65535).");
       }
       if (protocol !== this.protocol) {
-        this.stop();
+        await this.stop();
         this.protocol = protocol;
       }
       return this.start("wifi", `${host}:${port}`);
     }
     if (protocol !== this.protocol) {
-      this.stop();
+      await this.stop();
       this.protocol = protocol;
     }
     if (requestedTransport === "wifi") {
@@ -152,10 +159,20 @@ export class CompanionService {
   }
 
   start(transport, endpoint) {
+    return this.enqueue(() => this.startExclusive(transport, endpoint));
+  }
+
+  enqueue(operation) {
+    const result = this.operations.then(operation);
+    this.operations = result.catch(() => {});
+    return result;
+  }
+
+  async startExclusive(transport, endpoint) {
     if (this.child?.exitCode === null && this.endpoint === endpoint && this.transport === transport) {
       return { ...this.status(), started: false, reused: true };
     }
-    this.stop();
+    await this.stopExclusive();
     const ardupilot = this.protocol === "ardupilot";
     const entry = ardupilot ? this.ardupilotEntry : this.adapterEntry;
     const args = [
@@ -181,10 +198,10 @@ export class CompanionService {
     const childEnvironment = { ...process.env };
     if (process.versions.electron) childEnvironment.ELECTRON_RUN_AS_NODE = "1";
     else delete childEnvironment.ELECTRON_RUN_AS_NODE;
-    const child = spawn(process.execPath, args, {
+    const child = this.spawnChild(process.execPath, args, {
       cwd: path.dirname(entry),
       windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
       env: childEnvironment,
     });
     this.child = child;
@@ -193,7 +210,7 @@ export class CompanionService {
     child.stdout.on("data", (chunk) => this.record("stdout", chunk));
     child.stderr.on("data", (chunk) => this.record("stderr", chunk));
     child.once("error", (error) => this.record("stderr", error.message));
-    child.once("exit", (code) => {
+    child.once("close", (code) => {
       this.record(code === 0 ? "stdout" : "stderr", `Companion stopped with code ${code}.`);
       if (this.child === child) this.child = null;
     });
@@ -201,8 +218,14 @@ export class CompanionService {
   }
 
   stop() {
+    this.stopping = true;
+    return this.enqueue(() => this.stopExclusive()).finally(() => { this.stopping = false; });
+  }
+
+  async stopExclusive() {
     const child = this.child;
-    this.child = null;
-    if (child?.exitCode === null) child.kill("SIGTERM");
+    if (!child) return;
+    await this.closeChild(child, { command: { type: "companion-shutdown" } });
+    if (this.child === child) this.child = null;
   }
 }

@@ -1,5 +1,6 @@
 import { EXPERIENCE_EXPERT } from "./app-state.js";
 import { ENABLED_LIVE_VIEWS, LIVE_VIEW_COMPARE } from "./live-view-state.js";
+import { DEFAULT_CAMERA_PRESET, sanitizeCameraPreset } from "./camera-control-presets.js";
 
 export const PRESENTATION_PREFERENCES_STORAGE_KEY = "domino-presentation-preferences-v1";
 export const PRESENTATION_PREFERENCES_SCHEMA_VERSION = 1;
@@ -9,6 +10,7 @@ const defaultPreferences = () => ({
   experience: EXPERIENCE_EXPERT,
   liveView: LIVE_VIEW_COMPARE,
   calibrationFloat: true,
+  cameraPreset: DEFAULT_CAMERA_PRESET,
 });
 
 export function sanitizePresentationPreferences(candidate) {
@@ -23,6 +25,7 @@ export function sanitizePresentationPreferences(candidate) {
     calibrationFloat: typeof candidate.calibrationFloat === "boolean"
       ? candidate.calibrationFloat
       : defaults.calibrationFloat,
+    cameraPreset: sanitizeCameraPreset(candidate.cameraPreset),
   };
 }
 

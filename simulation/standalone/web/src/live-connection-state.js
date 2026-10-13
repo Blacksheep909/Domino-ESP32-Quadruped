@@ -29,6 +29,7 @@ function sanitizeAdapter(message, receivedAt) {
     capabilities: {
       telemetry: message.capabilities?.telemetry === true,
       calibration: message.capabilities?.calibration === true,
+      motionSmoothing: message.capabilities?.motionSmoothing === true,
       gaitProfiles: message.capabilities?.gaitProfiles === true,
       persistentProfiles: message.capabilities?.persistentProfiles === true,
       manualControl: message.capabilities?.manualControl === true,
@@ -67,6 +68,31 @@ export function createLiveConnectionState() {
   };
 }
 
+export function pauseLiveConnectionForUpload(state) {
+  state.phase = "uploading";
+  state.sessionId = "";
+  state.robotState = "unknown";
+  state.pendingRequestId = "";
+  state.pendingAction = "";
+  state.reconnectAdapterId = "";
+  state.reconnectAt = 0;
+  state.restartDeadlineAt = 0;
+  state.error = "";
+  state.status = "Releasing the robot connection for firmware upload…";
+}
+
+export function resumeLiveConnectionAfterUpload(state, adapterId = "", error = "", now = Date.now()) {
+  state.phase = "disconnected";
+  state.error = error;
+  state.status = error || "Firmware uploader finished. The robot port is available.";
+  if (adapterId && !error) {
+    state.selectedAdapterId = adapterId;
+    state.reconnectAdapterId = adapterId;
+    state.reconnectAttempt = 0;
+    scheduleLiveReconnect(state, "Firmware uploader finished. Restoring the read-only robot connection.", now);
+  }
+}
+
 export function scheduleLiveReconnect(state, reason, now = Date.now()) {
   if (!state?.reconnectAdapterId) return false;
   state.sessionId = "";
@@ -90,6 +116,7 @@ export function liveReconnectDue(state, now = Date.now()) {
   return Boolean(
     state?.bridgeConnected && state.phase === "reconnecting" && !state.sessionId &&
     !state.pendingRequestId && adapter && now - adapter.receivedAt <= LIVE_ADAPTER_FRESH_MS &&
+    adapter.state !== "error" &&
     now >= state.reconnectAt
   );
 }
@@ -175,6 +202,11 @@ export function acceptLiveAdapterAnnouncement(state, message, receivedAt = Date.
     state.status = `${adapter.name} reopened ${adapter.endpoint || "the physical link"}. Connect read-only when ready.`;
   } else if (state.sessionId && state.selectedAdapterId === adapter.adapterId && adapter.state === "error") {
     scheduleLiveReconnect(state, `${adapter.name} reported a connection fault.`, receivedAt);
+  } else if (state.sessionId && state.phase === "connected" &&
+             state.selectedAdapterId === adapter.adapterId && adapter.state === "available") {
+    // A short USB interruption can recover between announcements. The
+    // companion has lost its session even if no error announcement arrived.
+    scheduleLiveReconnect(state, `${adapter.name} closed the previous session.`, receivedAt);
   } else if (
     state.phase === "fault" && !state.sessionId && !state.pendingRequestId &&
     state.selectedAdapterId === adapter.adapterId && adapter.state !== "error" &&
@@ -325,7 +357,9 @@ export function acceptLiveConnectionAcknowledgement(state, message, receivedAt =
   }
   if (message.action === "discover") {
     state.phase = state.sessionId ? "connected" : "disconnected";
-    state.status = "Discovery complete. Select an adapter to continue.";
+    const count = visibleLiveAdapters(state, receivedAt).length;
+    state.status = count ? `Search finished. ${count} adapter${count === 1 ? "" : "s"} found. Select the intended robot, then Connect.`
+      : "Search finished. No compatible adapters found. Check the selected transport and companion endpoint, then try again.";
   } else if (message.action === "connect") {
     state.selectedAdapterId = message.adapterId;
     state.sessionId = message.sessionId;
@@ -337,7 +371,7 @@ export function acceptLiveConnectionAcknowledgement(state, message, receivedAt =
     state.reconnectAt = 0;
     state.reconnectReason = "";
     state.status = message.robotState === "disarmed"
-      ? "Engineering session established. Robot commands remain explicitly gated."
+      ? "Connected successfully. Robot is disarmed; review telemetry before requesting control."
       : `Connected while the robot reports ${message.robotState.toUpperCase()}. Motion commands are blocked.`;
   } else if (message.action === "restart") {
     state.phase = "restarting";
@@ -353,7 +387,7 @@ export function acceptLiveConnectionAcknowledgement(state, message, receivedAt =
     state.reconnectAttempt = 0;
     state.reconnectAt = 0;
     state.reconnectReason = "";
-    state.status = "Engineering session disconnected safely.";
+    state.status = "Disconnected successfully. Pair the robot again to read telemetry or request control.";
   }
   return true;
 }

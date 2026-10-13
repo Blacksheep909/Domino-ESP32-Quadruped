@@ -82,6 +82,14 @@ test("IK inspector telemetry reports each foot target, solve and joint delta", (
 test("higher cadence advances the gait phase faster", () => {
   const slow = createGaitLab({ ...defaultGaitLabSettings, cadenceHz: 0.5 });
   const fast = createGaitLab({ ...defaultGaitLabSettings, cadenceHz: 2 });
+  // The installed gait implementation waits for its stance transition before
+  // accepting walking input. Compare cadence after that bounded handoff.
+  for (let frame = 0; frame < 600 && slow.getTelemetry().transition !== 1; frame += 1) {
+    slow.update(1 / 120, state(), { forward: 0, turn: 0 });
+    fast.update(1 / 120, state(), { forward: 0, turn: 0 });
+  }
+  assert.equal(slow.getTelemetry().transition, 1);
+  assert.equal(fast.getTelemetry().transition, 1);
   slow.update(0.05, state(), { forward: 1, turn: 0 });
   fast.update(0.05, state(), { forward: 1, turn: 0 });
   assert.ok(fast.getTelemetry().phase > slow.getTelemetry().phase * 3.5);
@@ -125,9 +133,10 @@ test("stand and careful modes blend without a one-frame pose snap", () => {
   assert.ok(firstCarefulFrame.pose_z_mm > 279.5);
 
   let settledCareful = firstCarefulFrame;
-  for (let frame = 0; frame < 80; frame += 1) {
+  for (let frame = 0; frame < 600 && lab.getTelemetry().transition !== 1; frame += 1) {
     settledCareful = lab.update(1 / 120, careful, { forward: 0.7, turn: 0 });
   }
+  assert.equal(lab.getTelemetry().transition, 1);
   assert.ok(settledCareful.pose_z_mm < 221);
 
   const firstStandFrame = lab.update(1 / 120, stand, { forward: 0, turn: 0 });

@@ -286,6 +286,14 @@ export class LiveCompanionCore {
         });
       } else if (message.action === "disconnect" && message.sessionId === this.sessionId) {
         if (this.manualAuthority) robot.push(neutralManualCommand(now, "engineering-session-disconnected"));
+        // The physical link outlives the engineering session. Tell the robot to
+        // leave bench mode and de-energise its outputs, otherwise it keeps a
+        // stale bench session that the next connection never sees.
+        if (this.benchMode && this.robotState === "disarmed") {
+          robot.push(this.robotCommand("calibration", {
+            type: "live-calibration-command", action: "exit", requestId: `session-end-${now}`,
+          }, now));
+        }
         const sessionId = this.sessionId;
         this.sessionId = "";
         this.lastSafetyHeartbeatAt = 0;
@@ -373,7 +381,8 @@ export class LiveCompanionCore {
 
     if (message.type === "live-calibration-command" && validCalibrationCommand(message)) {
       const allowed = this.robotState === "disarmed" &&
-        (["request-profile", "request-smoothing", "save-smoothing", "enter"].includes(message.action) || this.benchMode);
+        (["request-profile", "request-smoothing", "save-smoothing", "save-profile", "enter"].includes(message.action) ||
+          this.benchMode);
       if (!allowed) {
         relay.push(this.calibrationAck(message, false, "Calibration requires disarmed robot state; writes also require acknowledged bench mode."));
       } else {

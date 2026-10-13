@@ -2,6 +2,7 @@ import { legs, standServoReference } from "./domino-config.js";
 import {
   LIVE_CALIBRATION_JOG_LIMIT_DEG,
   LIVE_CALIBRATION_MAX_SPEED_DEG_PER_SEC,
+  LIVE_CALIBRATION_NO_BENCH_ACTIONS,
 } from "./live-calibration-protocol.js";
 
 export const LIVE_CALIBRATION_SCHEMA_VERSION = 2;
@@ -9,6 +10,9 @@ export const LIVE_CALIBRATION_STORAGE_KEY = "domino-live-calibration-v2";
 export const LIVE_CALIBRATION_LEGACY_STORAGE_KEY = "domino-live-calibration-v1";
 export const LIVE_CALIBRATION_PRE_SYNC_BACKUP_KEY = "domino-live-calibration-before-robot-sync-v1";
 export const LIVE_CALIBRATION_LAST_ROBOT_KEY = "domino-live-calibration-last-robot-v1";
+// Unsaved edits or an imported file. Kept across Studio restarts so a profile is
+// never lost just because it was not written to the robot in the same session.
+export const LIVE_CALIBRATION_DRAFT_KEY = "domino-live-calibration-draft-v1";
 export const LIVE_CALIBRATION_CORRUPT_BACKUP_KEY = "domino-live-calibration-unreadable-v1";
 export { LIVE_CALIBRATION_JOG_LIMIT_DEG, LIVE_CALIBRATION_MAX_SPEED_DEG_PER_SEC };
 
@@ -419,7 +423,7 @@ export function createCalibrationBenchCommand(state, action, requestId, now = Da
     requestId: String(requestId),
     timestampMs: now,
     safety: {
-      benchModeRequired: !["request-profile", "request-smoothing", "save-smoothing"].includes(action),
+      benchModeRequired: !LIVE_CALIBRATION_NO_BENCH_ACTIONS.includes(action),
       maxSpeedDegPerSec: LIVE_CALIBRATION_MAX_SPEED_DEG_PER_SEC,
       jogLimitDeg: LIVE_CALIBRATION_JOG_LIMIT_DEG,
     },

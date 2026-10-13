@@ -1,0 +1,69 @@
+name: CI
+
+# Runs on every push and pull request. It never publishes anything; the release
+# workflow (desktop-release.yml) still only runs for version tags.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: simulation/standalone/pnpm-lock.yaml
+
+      - name: Install PlatformIO
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade platformio
+          pio pkg install --global --tool platformio/toolchain-gccmingw32
+
+      - name: Build the ESP32 firmware
+        run: pio run -e esp32dev
+
+      - name: Calibration storage host test
+        shell: pwsh
+        run: .\simulation\sil\test-calibration-storage.ps1
+
+      - name: Build firmware SIL
+        shell: pwsh
+        run: .\simulation\sil\build.ps1
+
+      - name: Firmware SIL scenario (builds the simulator, runs the gait/tilt/failsafe scenario)
+        shell: pwsh
+        run: .\simulation\sil\test.ps1
+
+      - name: Install Studio dependencies
+        working-directory: simulation/standalone
+        run: pnpm install --frozen-lockfile
+
+      - name: Studio tests
+        working-directory: simulation/standalone
+        run: pnpm test
+
+      - name: Studio production build
+        working-directory: simulation/standalone
+        run: pnpm run build

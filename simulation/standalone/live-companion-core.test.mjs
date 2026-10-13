@@ -557,3 +557,30 @@ test("the robot's calibration origin is relayed, bounded and sanitised", () => {
   assertCoreOrigin.equal(sanitize(undefined), null);
   assertCoreOrigin.ok(originCalState.createLiveCalibrationProfile());
 });
+
+// --- Companion forwarding of a flash-only calibration save ---
+test("a flash-only save is forwarded without bench mode only to firmware that supports it", () => {
+  const save = (core, benchModeRequired, id) => core.handleRelay({
+    type: "live-calibration-command", action: "save-profile", requestId: id, timestampMs: 1_050,
+    adapterId, sessionId: core.sessionId, baseSavedAt: 0,
+    profile: createLiveCalibrationProfile({ savedAt: 1_051 }),
+    selectedChannel: 0, physicalChannel: 0, jogOffsetDeg: 0, targetServoDeg: 129.87,
+    safety: { benchModeRequired, maxSpeedDegPerSec: 5, jogLimitDeg: 10 },
+  }, 1_050);
+
+  const modern = connectedCore();
+  modern.handleRobot({ ...hello(), firmwareVersion: "0.8.21" }, 1_020);
+  const forwarded = save(modern, false, "flash-1");
+  assert.equal(forwarded.robot.length, 1, "firmware 0.8.21 accepts a save with no bench mode");
+  assert.equal(forwarded.relay.length, 0);
+
+  const old = connectedCore();
+  old.handleRobot({ ...hello(), firmwareVersion: "0.8.18" }, 1_020);
+  const refused = save(old, false, "flash-2");
+  assert.equal(refused.robot.length, 0, "firmware 0.8.18 must never receive a bench-less save");
+  assert.equal(refused.relay[0].accepted, false);
+  assert.match(refused.relay[0].reason, /bench mode/i);
+
+  old.benchMode = true;
+  assert.equal(save(old, true, "flash-3").robot.length, 1, "with bench mode the old path still works");
+});

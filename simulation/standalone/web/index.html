@@ -1048,6 +1048,7 @@
             <section class="calibration-wiring-stage">
               <div class="calibration-warning"><strong>PHYSICAL OUTPUTS WILL USE THIS MAP</strong><p>Keep Domino supported, verify all 12 channel assignments in the review table, and leave the E-stop within reach.</p></div>
               <div id="live-calibration-robot-confirm-changes" class="calibration-change-summary" aria-live="polite"></div>
+              <p id="live-calibration-robot-confirm-status" class="calibration-send-blocked" role="alert" hidden></p>
               <label class="calibration-confirm"><input id="live-calibration-robot-confirm-ack" type="checkbox"><span>I reviewed the wiring map and want to persist these changes on the connected robot.</span></label>
             </section>
             <footer><button id="live-calibration-robot-confirm-cancel" type="button">CANCEL</button><span></span><button id="live-calibration-robot-confirm-send" type="button" disabled>CONFIRM &amp; SEND</button></footer>

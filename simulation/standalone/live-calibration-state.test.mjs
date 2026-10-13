@@ -775,3 +775,65 @@ test("the pre-send summary reports no changes for an identical profile and canno
   remapped.joints.find((joint) => joint.logicalChannel === 4).channel = 6;
   assertOrigin.equal(originState.calibrationChangeSummary(profile, remapped).channelChanges.length, 1);
 });
+// --- Saving to flash must not depend on bench mode, and a blocked send must say why ---
+import { firmwareSavesWithoutBench as savesWithoutBench } from "./web/src/live-calibration-protocol.js";
+
+const saveContext = (overrides = {}) => ({
+  connectionReady: true, telemetryAgeMs: 100, robotState: "disarmed", calibrationSupported: true,
+  sessionId: "s", workspaceActive: true, batteryLocked: false, pending: false, saveWithoutBench: false,
+  ...overrides,
+});
+function readySaveState() {
+  const state = originState.createLiveCalibrationState();
+  originState.acceptRobotCalibrationProfile(state, originState.createLiveCalibrationProfile({ savedAt: 1000 }), "s");
+  return state;
+}
+
+test("firmware 0.8.21 and later is recognised as saving without bench mode", () => {
+  for (const version of ["0.8.21", "0.8.22", "0.9.0", "1.0.0", "0.8.21-beta"]) assertOrigin.equal(savesWithoutBench(version), true, version);
+  for (const version of ["0.8.20", "0.8.19", "0.8.18", "0.7.99", "unknown", "", undefined, null, "test"]) assertOrigin.equal(savesWithoutBench(version), false, String(version));
+});
+
+test("old firmware still needs bench mode to save, and says so", () => {
+  const state = readySaveState();
+  state.safetyConfirmed = true;
+  const reason = originState.calibrationControlBlockReason(state, saveContext(), "save-profile");
+  assertOrigin.match(reason, /bench mode/i);
+  state.benchModeAcknowledged = true;
+  assertOrigin.equal(originState.calibrationControlBlockReason(state, saveContext(), "save-profile"), "");
+});
+
+test("supporting firmware saves without bench mode, the support checkbox or a healthy battery", () => {
+  const state = readySaveState();
+  assertOrigin.equal(state.benchModeAcknowledged, false);
+  assertOrigin.equal(state.safetyConfirmed, false);
+  assertOrigin.equal(
+    originState.calibrationControlBlockReason(state, saveContext({ saveWithoutBench: true, batteryLocked: true }), "save-profile"), "");
+  // Jogging is unaffected: it still needs all of them.
+  assertOrigin.notEqual(
+    originState.calibrationControlBlockReason(state, saveContext({ saveWithoutBench: true }), "jog"), "");
+});
+
+test("a flash-only save still requires a healthy link, a disarmed robot and a profile read", () => {
+  const state = readySaveState();
+  const ctx = (o) => saveContext({ saveWithoutBench: true, ...o });
+  assertOrigin.match(originState.calibrationControlBlockReason(state, ctx({ connectionReady: false }), "save-profile"), /Connect/);
+  assertOrigin.match(originState.calibrationControlBlockReason(state, ctx({ telemetryAgeMs: 5000 }), "save-profile"), /telemetry/i);
+  assertOrigin.match(originState.calibrationControlBlockReason(state, ctx({ robotState: "armed" }), "save-profile"), /Disarm/);
+  assertOrigin.match(originState.calibrationControlBlockReason(state, ctx({ pending: true }), "save-profile"), /Waiting/);
+  assertOrigin.match(originState.calibrationControlBlockReason(state, ctx({ sessionId: "another" }), "save-profile"), /Read the active robot profile/);
+});
+
+test("the save command states whether it needs bench mode and both forms validate", () => {
+  const state = readySaveState();
+  const plain = originState.createCalibrationBenchCommand(state, "save-profile", "a", 5000);
+  const flash = originState.createCalibrationBenchCommand(state, "save-profile", "b", 5000, null, { saveWithoutBench: true });
+  assertOrigin.equal(plain.safety.benchModeRequired, true);
+  assertOrigin.equal(flash.safety.benchModeRequired, false);
+  assertOrigin.equal(validCalibrationCommand(plain), true);
+  assertOrigin.equal(validCalibrationCommand(flash), true);
+  assertOrigin.equal(validCalibrationCommand({ ...flash, safety: { ...flash.safety, benchModeRequired: "no" } }), false);
+  // Other actions keep their fixed requirement.
+  const jog = originState.createCalibrationBenchCommand(state, "jog", "c", 5000, null, { saveWithoutBench: true });
+  assertOrigin.equal(jog.safety.benchModeRequired, true);
+});

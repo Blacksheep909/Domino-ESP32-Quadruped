@@ -13,7 +13,7 @@ The Domino robot uses a SpeedyBee Nano 2.4 GHz RX (ESP8285) on the ESP32 CRSF UA
 
 ExpressLRS stores the receiver binding UID and bind-storage mode in saved configuration. Version 3.6.4 copies a UID from the flashed image only when its `flash-discriminator` changes or when saved configuration is reset. The first custom image inserted the `guttercat` UID but retained the official image's discriminator (`1990673502`). Consequently, that write could have kept the receiver's previous UID. The full erase cleared that state and let the flashed UID take effect. [ExpressLRS 3.6.4 source](https://github.com/ExpressLRS/ExpressLRS/blob/3.6.4/src/lib/CONFIG/config.cpp)
 
-The local helper [`../tmp/configure_elrs_receiver.py`](../tmp/configure_elrs_receiver.py) now creates a separate image for any **future** ordinary update and assigns a fresh discriminator. The successfully flashed image remains unchanged. The future image passed `esptool.py image_info` with a valid ESP8266 checksum; it has **not** been flashed to the working receiver.
+The local helper `tmp/configure_elrs_receiver.py` (kept out of the repository because it patches the official SpeedyBee firmware binary, which is not stored here) now creates a separate image for any **future** ordinary update and assigns a fresh discriminator. The successfully flashed image remains unchanged. The future image passed `esptool.py image_info` with a valid ESP8266 checksum; it has **not** been flashed to the working receiver.
 
 ## Preventing another bind-mode lockout
 

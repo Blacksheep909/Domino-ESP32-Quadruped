@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { validCalibrationCommand } from "./web/src/live-calibration-protocol.js";
+import { firmwareSavesWithoutBench, validCalibrationCommand } from "./web/src/live-calibration-protocol.js";
 import { validLiveConnectionCommand } from "./web/src/live-connection-protocol.js";
 import { validLiveGaitCommand } from "./web/src/live-gait-protocol.js";
 import {
@@ -398,10 +398,17 @@ export class LiveCompanionCore {
         }
         return { relay, robot };
       }
+      // A save that declares it needs no bench mode is forwarded only to firmware
+      // that supports that; older firmware would reject it anyway.
+      const flashOnlySave = message.action === "save-profile" &&
+        message.safety?.benchModeRequired === false && firmwareSavesWithoutBench(this.firmwareVersion);
       const allowed = this.robotState === "disarmed" &&
-        (["request-profile", "request-smoothing", "save-smoothing", "enter", "exit"].includes(message.action) || this.benchMode);
+        (["request-profile", "request-smoothing", "save-smoothing", "enter", "exit"].includes(message.action) ||
+          this.benchMode || flashOnlySave);
       if (!allowed) {
-        relay.push(this.calibrationAck(message, false, "Calibration requires disarmed robot state; writes also require acknowledged bench mode."));
+        relay.push(this.calibrationAck(message, false, message.action === "save-profile"
+          ? "Saving needs bench mode on this robot's firmware. Request bench mode, or flash firmware 0.8.21 or later."
+          : "Calibration requires disarmed robot state; writes also require acknowledged bench mode."));
       } else {
         this.remember(message, "calibration", now);
         robot.push(this.robotCommand("calibration", message, now));

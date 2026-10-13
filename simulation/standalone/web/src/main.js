@@ -250,6 +250,7 @@ import {
   LIVE_CALIBRATION_CORRUPT_BACKUP_KEY,
   LIVE_CALIBRATION_LAST_ROBOT_KEY,
   calibrationChangeSummary,
+  firmwareSavesWithoutBench,
   calibrationOriginWarning,
   acceptCalibrationSaveReadback,
   acceptRobotCalibrationProfile,
@@ -3973,6 +3974,8 @@ function calibrationControlContext() {
       liveViewState.selected === LIVE_VIEW_CALIBRATION && !document.hidden,
     batteryLocked: liveBatteryControlLocked,
     pending: Boolean(calibrationPendingRequestId),
+    saveWithoutBench: firmwareSavesWithoutBench(
+      liveConnectionState.adapters[liveConnectionState.selectedAdapterId]?.robot?.firmwareVersion),
   };
 }
 
@@ -8013,11 +8016,26 @@ function renderRobotCalibrationChanges() {
   }
 }
 
+// The dialog is modal, so a refusal written to the page behind it is invisible.
+// Keep the CONFIRM & SEND button and an explanation in sync with the real gate.
+function refreshRobotCalibrationConfirmGate() {
+  const dialog = document.querySelector("#live-calibration-robot-confirm");
+  if (!dialog?.open) return "";
+  const reason = calibrationControlBlockReason(liveCalibrationState, calibrationControlContext(), "save-profile");
+  const status = document.querySelector("#live-calibration-robot-confirm-status");
+  status.hidden = !reason;
+  status.textContent = reason ? `Cannot send yet: ${reason}` : "";
+  document.querySelector("#live-calibration-robot-confirm-send").disabled =
+    !document.querySelector("#live-calibration-robot-confirm-ack").checked || Boolean(reason);
+  return reason;
+}
+
 function openRobotCalibrationConfirmation() {
   renderRobotCalibrationChanges();
   document.querySelector("#live-calibration-robot-confirm-ack").checked = false;
   document.querySelector("#live-calibration-robot-confirm-send").disabled = true;
   document.querySelector("#live-calibration-robot-confirm").showModal();
+  refreshRobotCalibrationConfirmGate();
 }
 
 function openCalibrationRestoreConfirmation(scope) {
@@ -8087,6 +8105,7 @@ function sendCalibrationCommand(action, purpose = "manual") {
     requestId,
     now,
     pendingSmoothing ? { baseUpdatedAt: motionSmoothingRobot.updatedAt, settings: pendingSmoothing } : null,
+    { saveWithoutBench: calibrationControlContext().saveWithoutBench },
   );
   if (!command) {
     if (action === "jog") calibrationBenchFeedback = "Jog is outside the selected joint's configured limits.";
@@ -8975,6 +8994,7 @@ function updateLiveComparisonUi() {
   if (liveViewState.selected === LIVE_VIEW_GAITS) renderLiveGaitUi();
   document.querySelector("#live-calibration-apply-robot").disabled = Boolean(
     calibrationControlBlockReason(liveCalibrationState, calibrationControlContext(), "save-profile"));
+  refreshRobotCalibrationConfirmGate();
   const calibrationApplyButton = document.querySelector("#live-calibration-apply-robot");
   const calibrationSaving = ["sending", "verifying"].includes(liveCalibrationState.savePhase);
   calibrationApplyButton.textContent = liveCalibrationState.savePhase === "sending" ? "SENDING…"
@@ -10193,11 +10213,15 @@ document.querySelector("#live-calibration-export-robot").addEventListener("click
   renderLiveCalibrationUi();
 });
 document.querySelector("#live-calibration-apply-robot").addEventListener("click", () => {
-  if (!liveCalibrationState.benchModeAcknowledged) return;
+  const reason = calibrationControlBlockReason(liveCalibrationState, calibrationControlContext(), "save-profile");
+  if (reason) {
+    document.querySelector("#live-calibration-review-status").textContent = `Cannot send yet: ${reason}`;
+    return;
+  }
   openRobotCalibrationConfirmation();
 });
-document.querySelector("#live-calibration-robot-confirm-ack").addEventListener("change", (event) => {
-  document.querySelector("#live-calibration-robot-confirm-send").disabled = !event.target.checked;
+document.querySelector("#live-calibration-robot-confirm-ack").addEventListener("change", () => {
+  refreshRobotCalibrationConfirmGate();
 });
 function closeRobotCalibrationConfirmation() {
   const dialog = document.querySelector("#live-calibration-robot-confirm");
@@ -10208,9 +10232,16 @@ function closeRobotCalibrationConfirmation() {
   "#live-calibration-robot-confirm-cancel",
 ].forEach((selector) => document.querySelector(selector).addEventListener("click", closeRobotCalibrationConfirmation));
 document.querySelector("#live-calibration-robot-confirm-send").addEventListener("click", () => {
-  if (!document.querySelector("#live-calibration-robot-confirm-ack").checked ||
-      !liveCalibrationState.benchModeAcknowledged ||
-      !sendCalibrationCommand("save-profile")) return;
+  if (!document.querySelector("#live-calibration-robot-confirm-ack").checked) return;
+  // Never fail silently: explain inside the dialog why nothing was sent.
+  if (refreshRobotCalibrationConfirmGate()) return;
+  if (!sendCalibrationCommand("save-profile")) {
+    const status = document.querySelector("#live-calibration-robot-confirm-status");
+    status.hidden = false;
+    status.textContent = "Cannot send yet: Studio could not hand the request to the link " +
+      "(not connected, the robot profile was not read this session, or another request is pending). Close this dialog and check the connection.";
+    return;
+  }
   closeRobotCalibrationConfirmation();
   document.querySelector("#live-calibration-review-status").textContent =
     "Waiting for the robot to confirm persistent calibration storage...";
@@ -11435,13 +11466,24 @@ function updateInput() {
 }
 
 let firmwarePollInFlight = false;
+let firmwarePollFailures = 0;
+let firmwareNextPollAt = 0;
+
+// Backoff for an unreachable firmware simulator: 250 ms doubling to 2 s. The
+// poll used to run every 23 ms regardless, which flooded the console and network
+// with failed requests whenever the simulator was not producing state.
+function firmwarePollBackoffMs(failures) {
+  return Math.min(2000, 250 * 2 ** Math.min(Math.max(failures - 1, 0), 3));
+}
 
 async function pollFirmware() {
-  if (firmwarePollInFlight) return;
+  if (firmwarePollInFlight || document.hidden || performance.now() < firmwareNextPollAt) return;
   firmwarePollInFlight = true;
   try {
     const response = await fetch(`/runtime/state.json?t=${Date.now()}`, { cache: "no-store" });
     if (!response.ok) throw new Error("Firmware state unavailable");
+    firmwarePollFailures = 0;
+    firmwareNextPollAt = 0;
     firmwareState = await response.json();
     if (!visualServoAngles && Array.isArray(firmwareState.servo_angle_deg)) {
       visualServoAngles = [...firmwareState.servo_angle_deg];
@@ -11534,6 +11576,8 @@ async function pollFirmware() {
     updateJointLegendValues();
   } catch {
     document.querySelector("#firmware-status").dataset.state = "offline";
+    firmwarePollFailures += 1;
+    firmwareNextPollAt = performance.now() + firmwarePollBackoffMs(firmwarePollFailures);
   } finally {
     firmwarePollInFlight = false;
   }

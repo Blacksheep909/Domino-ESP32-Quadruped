@@ -71,7 +71,7 @@ node node_modules/vite/bin/vite.js build
 
 cd ../sil
 .\build.ps1
-.\bin\domino_sil.exe --duration-ms 11500
+.\bin\domino_sil.exe --duration-ms 20500
 
 cd ../..
 pio run

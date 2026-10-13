@@ -50,8 +50,16 @@ constexpr uint32_t kFrameIntervalMs = 20;
 // Match the production 20 ms control loop so the rendered CAD receives every
 // commanded servo frame instead of visibly stepping at 20 Hz.
 constexpr uint32_t kTelemetryIntervalMs = 20;
-constexpr uint32_t kScenarioDurationMs = 11500;
-constexpr uint32_t kLoopPeriodMs = 12000;
+// Scenario timeline. Mode changes are deliberately slow and two-stage in the
+// firmware (land, then hand off through a neutral pose, each at least 0.35 s and
+// scaled by foot travel), and the published mode is TRANSITION until a handoff
+// finishes. The timeline leaves room for each one with the sticks centred.
+constexpr uint32_t kCarefulMotionMs = 11000;  // forward command once careful walk is active
+constexpr uint32_t kTrotRequestMs = 12000;    // SC high: careful -> trot handoff begins
+constexpr uint32_t kTrotMotionMs = 14000;     // sticks move once the handoff has finished
+constexpr uint32_t kLinkDropMs = 15500;       // link lost: failsafe stow follows
+constexpr uint32_t kScenarioDurationMs = 20500;  // failsafe stow takes ~3.5 s after the link drop
+constexpr uint32_t kLoopPeriodMs = 21000;
 constexpr int kRideHeightChannelIndex = 2;  // Boxer left-stick vertical / CRSF CH3.
 #ifndef CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
 constexpr DWORD CREATE_WAITABLE_TIMER_HIGH_RESOLUTION = 0x00000002;
@@ -531,7 +539,7 @@ bool applyScenario(uint32_t scenarioMs, int channelsUs[16]) {
   channelsUs[SC_CH_INDEX] = 1000;
   channelsUs[7] = 1000;
 
-  if (scenarioMs < 500U || scenarioMs >= 9000U) {
+  if (scenarioMs < 500U || scenarioMs >= kLinkDropMs) {
     return false;
   }
 
@@ -567,26 +575,34 @@ bool applyScenario(uint32_t scenarioMs, int channelsUs[16]) {
     }
   }
 
-  if (scenarioMs >= 6000U && scenarioMs < 7500U) {
+  // Leaving tilt hands off to stand through a slow neutral transition; the
+  // careful crawl is requested straight away and starts once it completes.
+  if (scenarioMs >= 6000U && scenarioMs < kTrotRequestMs) {
     channelsUs[SC_CH_INDEX] = 1500;
     channelsUs[7] = 1000;
-    if (scenarioMs >= 7200U) {
+    if (scenarioMs >= kCarefulMotionMs) {
       channelsUs[3] = 1600;
       channelsUs[1] = 1900;
     }
   }
 
-  if (scenarioMs >= 7500U && scenarioMs < 9000U) {
+  // Changing from the careful crawl to the trot needs a different foot
+  // schedule, so the firmware lands the feet and hands off through a neutral
+  // pose with the sticks centred. The published mode is TRANSITION until that
+  // finishes, so the sticks stay centred until the handoff is complete.
+  if (scenarioMs >= kTrotRequestMs && scenarioMs < kLinkDropMs) {
     channelsUs[SC_CH_INDEX] = 2000;
     channelsUs[7] = 1000;
-    channelsUs[3] = 1680;  // Yaw / right-stick horizontal: gentle turn.
-    channelsUs[1] = 1900;  // Right-stick vertical: forward travel.
+    if (scenarioMs >= kTrotMotionMs) {
+      channelsUs[3] = 1680;  // Yaw / right-stick horizontal: gentle turn.
+      channelsUs[1] = 1900;  // Right-stick vertical: forward travel.
+    }
   }
 
-  if (scenarioMs >= 7500U && scenarioMs < 9000U) {
-    const uint32_t heightProgressMs = scenarioMs - 7500U;
-    channelsUs[kRideHeightChannelIndex] =
-        2000 - static_cast<int>((1000U * heightProgressMs) / 1500U);
+  if (scenarioMs >= kTrotMotionMs && scenarioMs < kLinkDropMs) {
+    const uint32_t heightProgressMs = scenarioMs - kTrotMotionMs;
+    channelsUs[kRideHeightChannelIndex] = 2000 -
+        static_cast<int>((1000U * heightProgressMs) / (kLinkDropMs - kTrotMotionMs));
   }
   return true;
 }
@@ -979,13 +995,13 @@ int main(int argc, char** argv) {
                 (simServoAngleDeg(kHipChannels[leg]) - kNeutralHipDeg[leg]) < 10.0f;
       }
     }
-    if (!interactiveControl && scenarioMs >= 7500U && scenarioMs < 9000U) {
+    if (!interactiveControl && scenarioMs >= kTrotMotionMs && scenarioMs < kLinkDropMs) {
       gaitHeightTransitionStarted = gaitHeightTransitionStarted || mode == 4;
       if (gaitHeightTransitionStarted) {
         gaitHeightTransitionDropout = gaitHeightTransitionDropout || mode != 4;
       }
     }
-    sawFailsafeStow = sawFailsafeStow || (elapsedMs > 10000U && mode == 0);
+    sawFailsafeStow = sawFailsafeStow || (elapsedMs > kLinkDropMs + 1000U && mode == 0);
     const float rideHeightMm = dominoSilRideHeightMm();
     minRideHeightMm = std::min(minRideHeightMm, rideHeightMm);
     maxRideHeightMm = std::max(maxRideHeightMm, rideHeightMm);

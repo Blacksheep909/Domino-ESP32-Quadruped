@@ -148,7 +148,7 @@ pnpm test
 pnpm build
 cd ..\sil
 .\build.ps1
-.\bin\domino_sil.exe --duration-ms 11500
+.\bin\domino_sil.exe --duration-ms 20500
 ```
 
 Do not enable Wi-Fi, Bluetooth, or INA226 flags until their secrets, transport,

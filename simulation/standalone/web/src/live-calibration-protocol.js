@@ -7,6 +7,13 @@ export const LIVE_CALIBRATION_ACTIONS = Object.freeze([
   "request-profile", "request-smoothing", "save-smoothing", "enter", "exit", "jog", "save-profile",
 ]);
 
+// Actions that never energise a servo. Saving the profile only writes flash
+// (the robot turns every output off first), so it must not depend on bench mode:
+// a broken bench handshake must never make a calibration impossible to persist.
+export const LIVE_CALIBRATION_NO_BENCH_ACTIONS = Object.freeze([
+  "request-profile", "request-smoothing", "save-smoothing", "save-profile",
+]);
+
 export function validCalibrationCommand(message) {
   const envelopeValid = Boolean(
     message &&
@@ -14,7 +21,7 @@ export function validCalibrationCommand(message) {
     LIVE_CALIBRATION_ACTIONS.includes(message.action) &&
     typeof message.requestId === "string" &&
     message.requestId.length > 0 &&
-    message.safety?.benchModeRequired === !["request-profile", "request-smoothing", "save-smoothing"].includes(message.action) &&
+    message.safety?.benchModeRequired === !LIVE_CALIBRATION_NO_BENCH_ACTIONS.includes(message.action) &&
     Number(message.safety?.maxSpeedDegPerSec) > 0 &&
     Number(message.safety?.maxSpeedDegPerSec) <= LIVE_CALIBRATION_MAX_SPEED_DEG_PER_SEC &&
     Number(message.safety?.jogLimitDeg) > 0 &&

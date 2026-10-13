@@ -76,13 +76,36 @@ export function calibrationInspectionModelAngles(state, poseDeg = state?.jogOffs
 const finite = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
 
+// Verified baseline for the installed hardware: the profile read back from the
+// robot on 2026-10-10 with roll and tilt confirmed correct. `defaultDirection`
+// is the CAD basis, not what this robot's shafts need (the left hips, CH0 and
+// CH14, are mounted inverted, and the horns need neutral trims). Defaulting to
+// the CAD basis made "Restore defaults" and any fallback silently drop those.
+// Keep identical to kBaselineOffsetDeg / kBaselineDirection in
+// src/servo_calibration.cpp; a test enforces it. Keyed by logical channel.
+export const DOMINO_BASELINE_CALIBRATION = Object.freeze({
+  0: Object.freeze({ offsetDeg: 0, direction: -1 }),
+  1: Object.freeze({ offsetDeg: 4, direction: -1 }),
+  2: Object.freeze({ offsetDeg: 0, direction: -1 }),
+  3: Object.freeze({ offsetDeg: 12, direction: 1 }),
+  4: Object.freeze({ offsetDeg: 0, direction: 1 }),
+  7: Object.freeze({ offsetDeg: -6, direction: -1 }),
+  8: Object.freeze({ offsetDeg: 6, direction: -1 }),
+  9: Object.freeze({ offsetDeg: 12, direction: 1 }),
+  10: Object.freeze({ offsetDeg: -3, direction: 1 }),
+  11: Object.freeze({ offsetDeg: 12, direction: 1 }),
+  14: Object.freeze({ offsetDeg: 0, direction: -1 }),
+  15: Object.freeze({ offsetDeg: 0, direction: 1 }),
+});
+
 function defaultJointCalibration(definition) {
   const travel = definition.joint === "shoulder" ? 30 : 45;
+  const baseline = DOMINO_BASELINE_CALIBRATION[definition.channel];
   return {
     logicalChannel: definition.channel,
     channel: definition.channel,
-    offsetDeg: 0,
-    direction: definition.defaultDirection,
+    offsetDeg: baseline ? baseline.offsetDeg : 0,
+    direction: baseline ? baseline.direction : definition.defaultDirection,
     minimumDeg: -travel,
     maximumDeg: travel,
   };
@@ -199,12 +222,20 @@ export function calibrationOriginWarning(state) {
     const why = origin.source === "default-fallback"
       ? `A stored profile exists but could not be read${origin.detail ? ` (${origin.detail})` : ""}.`
       : "No saved profile was found on the robot.";
+    // Firmware that reports its origin (0.8.20+) falls back to the verified
+    // Domino baseline. Older firmware fell back to plain CAD defaults, which do
+    // not invert the left hips and break tilt, so that case stays a danger.
+    const verifiedBaseline = origin.known === true;
     return {
-      level: "danger",
-      title: "ROBOT IS RUNNING DEFAULT CALIBRATION",
+      level: verifiedBaseline ? "warning" : "danger",
+      title: verifiedBaseline
+        ? "ROBOT IS RUNNING ITS BUILT-IN BASELINE, NOT A SAVED PROFILE"
+        : "ROBOT IS RUNNING DEFAULT CALIBRATION",
       detail: state.restorableProfile
         ? `${why} Your last known Studio profile is loaded as an unsaved draft: review it, then save it to the robot.`
-        : `${why} Servo centers, directions and limits are the compiled defaults, not your calibration.`,
+        : verifiedBaseline
+          ? `${why} It is using the firmware's built-in baseline (the verified Domino profile). Send a profile to store one on the robot.`
+          : `${why} Servo centers, directions and limits are the compiled defaults, not your calibration.`,
     };
   }
   if (origin.source === "nvs-backup") {
@@ -274,6 +305,42 @@ export function calibrationProfilesMatch(left, right, includeSavedAt = true) {
         Number.isFinite(joint[key]) && Number.isFinite(other[key]) &&
         Math.abs(joint[key] - other[key]) < 0.0001);
   });
+}
+
+// What sending `draft` would change on the robot compared with the profile it
+// holds now. A direction flip changes which way a servo turns (roll and tilt
+// depend on it), so those are reported separately and prominently.
+export function calibrationChangeSummary(robotProfile, draft) {
+  const summary = { comparable: false, directionChanges: [], offsetChanges: [], limitChanges: [], channelChanges: [], total: 0 };
+  if (!robotProfile?.joints || !draft?.joints) return summary;
+  summary.comparable = true;
+  const sameNumber = (a, b) => Math.abs(Number(a) - Number(b)) < 0.0001;
+  const sign = (value) => (Number(value) < 0 ? "-" : "+");
+  const changed = new Set();
+  for (const definition of LIVE_CALIBRATION_JOINTS) {
+    const before = robotProfile.joints.find((joint) => joint.logicalChannel === definition.channel);
+    const after = draft.joints.find((joint) => joint.logicalChannel === definition.channel);
+    if (!before || !after) continue;
+    const label = `${definition.label} (CH${definition.channel})`;
+    if (before.direction !== after.direction) {
+      summary.directionChanges.push({ label, from: sign(before.direction), to: sign(after.direction) });
+      changed.add(definition.channel);
+    }
+    if (!sameNumber(before.offsetDeg, after.offsetDeg)) {
+      summary.offsetChanges.push({ label, from: Number(before.offsetDeg), to: Number(after.offsetDeg) });
+      changed.add(definition.channel);
+    }
+    if (!sameNumber(before.minimumDeg, after.minimumDeg) || !sameNumber(before.maximumDeg, after.maximumDeg)) {
+      summary.limitChanges.push({ label });
+      changed.add(definition.channel);
+    }
+    if (before.channel !== after.channel) {
+      summary.channelChanges.push({ label, from: before.channel, to: after.channel });
+      changed.add(definition.channel);
+    }
+  }
+  summary.total = changed.size;
+  return summary;
 }
 
 export function beginRobotCalibrationSave(state, profile) {

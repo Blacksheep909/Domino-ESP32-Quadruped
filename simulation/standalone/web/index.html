@@ -1047,6 +1047,7 @@
             <header><div><span>CALIBRATION / ROBOT WRITE</span><h2 id="live-calibration-robot-confirm-title">Save this profile to the robot?</h2><p>This applies and stores the channel map, neutral offsets, directions and limits on the robot now. The app verifies a separate read-back. Outputs switch off; no firmware upload is needed.</p></div><button id="live-calibration-robot-confirm-close" type="button" aria-label="Cancel robot profile write" class="studio-icon-button"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button></header>
             <section class="calibration-wiring-stage">
               <div class="calibration-warning"><strong>PHYSICAL OUTPUTS WILL USE THIS MAP</strong><p>Keep Domino supported, verify all 12 channel assignments in the review table, and leave the E-stop within reach.</p></div>
+              <div id="live-calibration-robot-confirm-changes" class="calibration-change-summary" aria-live="polite"></div>
               <label class="calibration-confirm"><input id="live-calibration-robot-confirm-ack" type="checkbox"><span>I reviewed the wiring map and want to persist these changes on the connected robot.</span></label>
             </section>
             <footer><button id="live-calibration-robot-confirm-cancel" type="button">CANCEL</button><span></span><button id="live-calibration-robot-confirm-send" type="button" disabled>CONFIRM &amp; SEND</button></footer>

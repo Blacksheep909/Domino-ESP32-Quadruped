@@ -213,25 +213,11 @@ pnpm run desktop:make
 The installer and portable build are written to `simulation/standalone/out`.
 Use `pnpm run desktop:start` in that directory for desktop development.
 
-For the local browser workflow, return to the repository root and run:
-
-```powershell
-.\simulation\standalone\launch.ps1
-```
-
-The launcher builds/starts the native simulator and local service. Open
-`http://127.0.0.1:8770`. Start both processes; a renderer alone cannot run the
-firmware simulation. Stop the source session with:
-
-```powershell
-.\simulation\standalone\stop.ps1
-```
-
 ## Common checks
 
 | Symptom | Check |
 | --- | --- |
-| Simulation pose stays in transition | Confirm the native SIL process is running and its state is updating; use the source launcher rather than starting only the Node service. |
+| Simulation pose stays in transition | Confirm the native SIL process is running and its state is updating; restart Studio so the native simulator and local service start together. |
 | Radio says offline with keyboard input | Expected: keyboard input is separate from a physical CRSF transmitter. |
 | LIVE values show waiting | Inspect PC link, selected adapter, packet freshness and advertised capabilities. |
 | Calibration/save/jog buttons are unavailable | Inspect disarmed state, bench acknowledgement and adapter support; model-only preview remains separate. |

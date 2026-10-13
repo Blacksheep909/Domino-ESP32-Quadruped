@@ -93,11 +93,11 @@ You need Node.js 20 or newer for Studio and [PlatformIO](https://platformio.org/
 # Firmware: build the ESP32 image
 pio run -e esp32dev
 
-# Studio: install, test, and run from source
+# Studio: install, test, and run the desktop app from source
 cd simulation/standalone
 npm install
 npm test
-npm start            # browser/source version at http://127.0.0.1:8770
+npm run desktop:start
 
 # Firmware software-in-the-loop check and calibration storage test
 ./simulation/sil/test.ps1

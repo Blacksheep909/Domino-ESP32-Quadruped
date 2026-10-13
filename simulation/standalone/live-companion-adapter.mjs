@@ -5,6 +5,7 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { WebSocket } from "ws";
+import { closeCompanionProcess } from "./companion-process.mjs";
 
 import {
   COMPANION_ANNOUNCE_INTERVAL_MS,
@@ -44,9 +45,10 @@ function configureSerialDevice(device, baud) {
   if (!Number.isSafeInteger(numericBaud) || numericBaud < 9_600 || numericBaud > 921_600) {
     throw new Error(`Invalid serial baud rate: ${baud}`);
   }
-  const command = process.platform === "win32"
-    ? { file: "mode.com", args: [`${device.toUpperCase()}:`, `BAUD=${numericBaud}`, "PARITY=N", "DATA=8", "STOP=1"] }
-    : { file: "stty", args: [process.platform === "darwin" ? "-f" : "-F", device, String(numericBaud), "cs8", "-cstopb", "-parenb", "raw", "-echo"] };
+  // The Windows helper sets 8-N-1 and baud itself. A second mode.com owner
+  // can fail before the bridge opens, especially during a port handover.
+  if (process.platform === "win32") return;
+  const command = { file: "stty", args: [process.platform === "darwin" ? "-f" : "-F", device, String(numericBaud), "cs8", "-cstopb", "-parenb", "raw", "-echo"] };
   const result = spawnSync(command.file, command.args, { stdio: "ignore", windowsHide: true });
   if (result.error || result.status !== 0) {
     throw new Error(`Could not configure ${device} for ${numericBaud} baud, 8-N-1.`);
@@ -75,12 +77,11 @@ function openWindowsSerialLink(device, baud, onMessage, onClose) {
   });
   child.on("error", (error) => console.error(`Robot USB bridge: ${error.message}`));
   child.on("close", closeOnce);
+  child.stdin.on("error", () => {});
+  let closing = null;
   return {
-    write: (message) => child.stdin.writable && child.stdin.write(`${JSON.stringify(message)}\n`),
-    close: () => {
-      child.stdin.end();
-      child.kill();
-    },
+    write: (message) => !closing && !closed && child.stdin.writable && child.stdin.write(`${JSON.stringify(message)}\n`),
+    close: () => closing ||= closed ? Promise.resolve() : closeCompanionProcess(child, { timeoutMs: 1500 }),
   };
 }
 
@@ -152,6 +153,13 @@ const core = new LiveCompanionCore({
 let relay;
 let robotLink;
 let shuttingDown = false;
+let robotRetryTimer;
+let robotClosing = null;
+
+function retryRobot(delayMs = 800) {
+  clearTimeout(robotRetryTimer);
+  if (!shuttingDown) robotRetryTimer = setTimeout(connectRobot, delayMs);
+}
 
 function writeRelay(message) {
   if (relay?.readyState === WebSocket.OPEN) relay.send(JSON.stringify(message));
@@ -200,12 +208,13 @@ function connectRelay() {
 }
 
 function connectRobot() {
-  if (shuttingDown || robotLink) return;
+  if (shuttingDown || robotLink || robotClosing) return;
   try {
     let openedLink;
     openedLink = openRobotLink(
       options,
       (message) => {
+        if (robotLink !== openedLink) return;
         if (message?.type === "robot-ack" && message.kind === "calibration") {
           console.log(
             `Calibration RX: ${message.action || "unknown"} / ${message.requestId || "no-request-id"} / ` +
@@ -219,23 +228,28 @@ function connectRobot() {
         if (robotLink !== openedLink) return;
         robotLink = null;
         dispatch(core.disconnectRobot(Date.now(), "physical-link-closed"));
-        if (!shuttingDown) setTimeout(connectRobot, 800);
+        retryRobot();
       },
     );
     robotLink = openedLink;
     console.log(`Companion opening ${transport.toUpperCase()} robot link at ${endpoint}`);
   } catch (error) {
     console.error(`Robot link: ${error instanceof Error ? error.message : error}`);
-    if (!shuttingDown) setTimeout(connectRobot, 800);
+    retryRobot();
   }
 }
 
-function restartRobotLink(reason = "link-restart") {
+async function restartRobotLink(reason = "link-restart") {
+  if (robotClosing || shuttingDown) return;
+  clearTimeout(robotRetryTimer);
   const previousLink = robotLink;
   robotLink = null;
   dispatch(core.disconnectRobot(Date.now(), reason));
-  try { previousLink?.close(); } catch { /* Reopening below is the recovery path. */ }
-  if (!shuttingDown) setTimeout(connectRobot, 150);
+  robotClosing = Promise.resolve().then(() => previousLink?.close());
+  try { await robotClosing; }
+  catch (error) { console.error(`Robot link close: ${error.message}`); return; }
+  finally { robotClosing = null; }
+  retryRobot(0);
   console.log(`Companion restarting ${transport.toUpperCase()} robot link at ${endpoint}`);
 }
 
@@ -245,12 +259,18 @@ connectRelay();
 setInterval(() => writeRelay(core.announcement()), COMPANION_ANNOUNCE_INTERVAL_MS);
 setInterval(() => dispatch(core.tick()), 25);
 
-function shutdown() {
+async function shutdown() {
+  if (shuttingDown) return;
   shuttingDown = true;
+  clearTimeout(robotRetryTimer);
   dispatch(core.disconnectRobot(Date.now(), "companion-shutdown"));
-  robotLink?.close();
+  try { await robotClosing; await robotLink?.close(); }
+  catch (error) { console.error(`Robot link close: ${error.message}`); process.exit(1); }
   relay?.close();
   process.exit(0);
 }
 process.once("SIGINT", shutdown);
 process.once("SIGTERM", shutdown);
+lineReader(process.stdin, (message) => {
+  if (message?.type === "companion-shutdown") shutdown();
+});

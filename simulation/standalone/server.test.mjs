@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync } from "node:fs";
+import vm from "node:vm";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -125,6 +126,27 @@ async function requestJson(url, options) {
   const response = await fetch(url, options);
   return { status: response.status, body: await response.json() };
 }
+
+test("relay retains a delayed calibration save acknowledgement throughout its physical save window", () => {
+  const source = readFileSync(path.join(standaloneRoot, "server.mjs"), "utf8");
+  const start = source.indexOf("function rememberAdapterRequest(");
+  const end = source.indexOf("function demoClientIsActive(", start);
+  const socket = {};
+  let now = 0;
+  let prune;
+  const harness = { liveAdapters: new Map([["adapter", { socket, receivedAt: 6000 }]]),
+    Date: { now: () => now }, broadcast: () => {}, setInterval: fn => { prune = fn; } };
+  vm.createContext(harness);
+  vm.runInContext(`"use strict";\n${source.slice(start, end)}`, harness);
+  harness.rememberAdapterRequest(socket, { requestId: "save", action: "save-profile", sessionId: "session" }, "calibration");
+  harness.rememberAdapterRequest(socket, { requestId: "read", action: "request-profile", sessionId: "session" }, "calibration");
+  now = 6000;
+  prune();
+  assert.equal(socket.livePendingRequests.has("read"), false);
+  assert.equal(socket.livePendingRequests.has("save"), true);
+  assert.equal(harness.consumeAdapterRequest(socket,
+    { requestId: "save", action: "save-profile", sessionId: "session" }, "calibration"), true);
+});
 
 test("running service enforces API errors, session-bound telemetry, and adapter expiry", { timeout: 18_000 }, async () => {
   const port = await freePort();

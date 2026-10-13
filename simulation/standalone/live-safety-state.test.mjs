@@ -44,6 +44,14 @@ test("a changing prerequisite cancels an in-progress hold", () => {
   assert.equal(state.armHoldStartedAt, 0);
 });
 
+test("bench calibration prevents arming and cancels a hold begun before entry", () => {
+  const state = createLiveSafetyState();
+  setLiveSafetyRobotState(state, "disarmed");
+  assert.equal(liveSafetyCanArm(state, { ...safeContext, calibrationActive: true }), false);
+  beginLiveArmHold(state, safeContext, 1000);
+  assert.equal(updateLiveArmHold(state, { ...safeContext, calibrationActive: true }, 2500).active, false);
+});
+
 test("a detected USB-only voltage blocks arming without blocking diagnostics", () => {
   const state = createLiveSafetyState();
   setLiveSafetyRobotState(state, "disarmed");

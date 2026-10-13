@@ -15,6 +15,7 @@ import { WebSocketServer } from "ws";
 import { CrsfTransmitterHidInput } from "./boxer-hid.mjs";
 import { CompanionService } from "./companion-service.mjs";
 import { FirmwareService } from "./firmware-service.mjs";
+import { FirmwareLinkCoordinator } from "./firmware-link.mjs";
 import {
   clientControlIsFresh,
   hasActiveClient,
@@ -81,12 +82,26 @@ const firmwareService = new FirmwareService({
   buildRoot: process.env.DOMINO_FIRMWARE_BUILD_ROOT || repoRoot,
   onJobFinished: (job) => {
     if (job.status === "success") appUpdateCheck?.(`firmware-${job.type}-complete`);
+    if (job.type === "upload") return firmwareLink.finish(job);
   },
 });
 const companionService = new CompanionService({
   firmwareService,
   relayUrl: `ws://127.0.0.1:${port}/control`,
   adapterEntry: path.resolve(process.env.DOMINO_COMPANION_ENTRY || path.join(here, "live-companion-adapter.mjs")),
+});
+const firmwareLink = new FirmwareLinkCoordinator({
+  firmware: firmwareService,
+  companion: companionService,
+  pairedAdapter: () => {
+    const record = liveAdapters.get("domino-physical-1");
+    return record?.socket.liveSessionId ? {
+      adapterId: "domino-physical-1", robotState: record.robotState,
+      calibrationPending: [...(record.socket.livePendingRequests?.values() || [])]
+        .some(request => request.kind === "calibration") || record.socket.liveCalibrationSavePending === true,
+    } : null;
+  },
+  notify: (state) => broadcast({ type: "firmware-link-state", ...state }),
 });
 
 export function setAppUpdateCheck(checker) {
@@ -265,11 +280,12 @@ async function handleFirmwareApi(request, response, url) {
       return;
     }
     if (request.method === "POST" && url.pathname === "/api/firmware/build") {
+      if (firmwareLink.busy) throw new Error("Wait for the firmware upload and robot reconnection to finish.");
       sendJson(response, 202, { job: firmwareService.startBuild() });
       return;
     }
     if (request.method === "POST" && url.pathname === "/api/firmware/upload") {
-      sendJson(response, 202, { job: firmwareService.startUpload(await readJsonBody(request)) });
+      sendJson(response, 202, { job: await firmwareLink.startUpload(await readJsonBody(request)) });
       return;
     }
     if (request.method === "POST" && url.pathname === "/api/firmware/cancel") {
@@ -289,6 +305,7 @@ async function handleCompanionApi(request, response, url) {
       return;
     }
     if (request.method === "POST" && url.pathname === "/api/companion/discover") {
+      if (firmwareLink.busy) throw new Error("The uploader is using the robot port. Pairing resumes after it finishes.");
       const body = await readJsonBody(request);
       sendJson(response, 200, await companionService.discover(String(body.transport || "auto"), {
         protocol: body.protocol,
@@ -298,7 +315,7 @@ async function handleCompanionApi(request, response, url) {
       return;
     }
     if (request.method === "POST" && url.pathname === "/api/companion/stop") {
-      companionService.stop();
+      await companionService.stop();
       sendJson(response, 200, companionService.status());
       return;
     }
@@ -385,6 +402,8 @@ function rememberAdapterRequest(socket, message, kind) {
     kind,
     sessionId: message.sessionId || "",
     sentAt: Date.now(),
+    timeoutMs: kind === "calibration" && ["save-profile", "save-smoothing"].includes(message.action)
+      ? 12_000 : 5_000,
   });
 }
 
@@ -413,6 +432,7 @@ function removeLiveAdapter(socket, reason = "offline") {
   socket.liveSessionId = "";
   socket.liveManualAuthority = null;
   socket.livePendingRequests?.clear();
+  socket.liveCalibrationSavePending = false;
   broadcast({
     type: "live-adapter-removed",
     adapterId,
@@ -427,7 +447,7 @@ setInterval(() => {
     if (now - receivedAt > 5_000) removeLiveAdapter(socket, "heartbeat-timeout");
     if (socket.livePendingRequests) {
       for (const [requestId, request] of socket.livePendingRequests) {
-        if (now - request.sentAt > 5_000) socket.livePendingRequests.delete(requestId);
+        if (now - request.sentAt > request.timeoutMs) socket.livePendingRequests.delete(requestId);
       }
     }
   }
@@ -514,6 +534,7 @@ sockets.on("connection", (socket) => {
   releaseClientControl(socket);
   socket.send(JSON.stringify({ type: "ready", channels, input: radioInput }));
   socket.send(JSON.stringify({ type: "live-adapter-list", adapters: liveAdapterList() }));
+  if (firmwareLink.busy) socket.send(JSON.stringify({ type: "firmware-link-state", busy: true, stage: "Firmware upload in progress" }));
   socket.on("close", () => {
     releaseClientControl(socket);
     if (activeControlSocket === socket) activeControlSocket = null;
@@ -549,12 +570,18 @@ sockets.on("connection", (socket) => {
           announcement,
           receivedAt: Date.now(),
           lastTelemetrySequence: -1,
+          robotState: existing?.robotState || "unknown",
         });
         broadcast(announcement);
         return;
       }
       if (message.type === "live-connection-command") {
         if (Buffer.byteLength(payload) > 8 * 1024 || !validLiveConnectionCommand(message)) return;
+        if ((firmwareLink.busy || companionService.stopping) && message.action !== "disconnect") {
+          sendSocket(socket, { type: "live-connection-ack", action: message.action, requestId: message.requestId,
+            adapterId: message.adapterId, accepted: false, reason: "The robot port is being released or used for firmware upload. Try again when it finishes." });
+          return;
+        }
         if (message.action === "discover") {
           for (const { socket: adapterSocket } of liveAdapters.values()) sendSocket(adapterSocket, message);
           sendSocket(socket, {
@@ -593,15 +620,30 @@ sockets.on("connection", (socket) => {
         if (message.action === "connect" && message.accepted) {
           socket.liveSessionId = message.sessionId;
           const record = liveAdapters.get(socket.liveAdapterId);
-          if (record?.socket === socket) record.lastTelemetrySequence = -1;
+          if (record?.socket === socket) {
+            record.lastTelemetrySequence = -1;
+            record.robotState = message.robotState;
+          }
         }
         if (
           message.action === "disconnect" &&
           message.accepted &&
           message.sessionId === socket.liveSessionId
         ) socket.liveSessionId = "";
-        if (message.action === "disconnect" && message.accepted) socket.liveManualAuthority = null;
+        if (message.action === "disconnect" && message.accepted) {
+          socket.liveManualAuthority = null;
+          socket.liveCalibrationSavePending = false;
+          socket.livePendingRequests?.clear();
+        }
+        const releasePort = message.action === "disconnect" && message.accepted &&
+          socket.liveAdapterId === "domino-physical-1" && companionService.status().running;
+        if (releasePort) broadcast({ type: "companion-port-state", busy: true });
         broadcast(message);
+        if (releasePort) companionService.stop().then(() => {
+          broadcast({ type: "companion-port-state", busy: false });
+        }).catch((error) => {
+          broadcast({ type: "companion-port-state", busy: false, error: error.message });
+        });
         return;
       }
       if (message.type === "live-telemetry") {
@@ -615,6 +657,7 @@ sockets.on("connection", (socket) => {
           Number(message.sequence) > record.lastTelemetrySequence
         ) {
           record.lastTelemetrySequence = Number(message.sequence);
+          if (message.robotState) record.robotState = message.robotState;
           broadcast(message);
         }
         return;
@@ -630,7 +673,8 @@ sockets.on("connection", (socket) => {
           validCalibrationCommand(message) &&
           record
         ) {
-          rememberAdapterRequest(record.socket, message, "calibration");
+          if (message.action !== "keepalive") rememberAdapterRequest(record.socket, message, "calibration");
+          if (message.action === "save-profile") record.socket.liveCalibrationSavePending = true;
           sendSocket(record.socket, message);
         }
         return;
@@ -644,7 +688,15 @@ sockets.on("connection", (socket) => {
           validCalibrationAcknowledgement(message) &&
           record?.socket === socket &&
           consumeAdapterRequest(socket, message, "calibration")
-        ) broadcast(message);
+        ) {
+          if (message.action === "save-profile" && (!message.accepted || message.persisted !== true)) {
+            socket.liveCalibrationSavePending = false;
+          }
+          if (message.action === "request-profile" && message.accepted && message.profile) {
+            socket.liveCalibrationSavePending = false;
+          }
+          broadcast(message);
+        }
         return;
       }
       if (message.type === "live-gait-command") {
@@ -834,7 +886,7 @@ export const serverReady = new Promise((resolve, reject) => {
 });
 
 export function shutdown() {
-  companionService.stop();
+  companionService.stop().catch((error) => console.error(error.message));
   radio.stop();
   server.close();
 }

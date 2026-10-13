@@ -1,10 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import vm from "node:vm";
 
 import {
   acceptRobotCalibrationProfile,
-  calibrationOriginWarning,
-  normalizeCalibrationOrigin,
+  acceptCalibrationSaveReadback,
+  beginRobotCalibrationSave,
+  acknowledgeRobotCalibrationSave,
+  calibrationControlBlockReason,
   calibrationInspectionModelAngles,
   calibrationOutputForModelChannel,
   calibrationPreviewModelAngles,
@@ -22,6 +26,8 @@ import {
   LIVE_CALIBRATION_OUTPUTS,
   parseCalibrationProfileJson,
   robotCalibrationReady,
+  resetLiveCalibrationConnection,
+  saveLocalCalibrationProfile,
   restoreCalibrationDefaults,
   restoreSelectedCalibrationJoint,
   selectCalibrationJoint,
@@ -311,26 +317,14 @@ test("active calibration readback is a valid command without bench mode", () => 
   }), false);
 });
 
-test("saving the profile does not require bench mode but jogging does", () => {
-  const state = createLiveCalibrationState();
-  acceptRobotCalibrationProfile(state, createLiveCalibrationProfile({ savedAt: 1000 }), "s");
-  const save = createCalibrationBenchCommand(state, "save-profile", "save", 2000);
-  assert.equal(save.safety.benchModeRequired, false);
-  assert.equal(validCalibrationCommand(save), true);
-  assert.equal(validCalibrationCommand({ ...save, safety: { ...save.safety, benchModeRequired: true } }), false);
-  const jog = createCalibrationBenchCommand(state, "jog", "jog", 2000);
-  assert.equal(jog.safety.benchModeRequired, true);
-});
-
 test("robot persistence commands always carry a concrete save timestamp", () => {
   const state = createLiveCalibrationState();
   assert.equal(createCalibrationBenchCommand(state, "save-profile", "unsynced", 1234), null);
   const active = createLiveCalibrationProfile({ savedAt: 1200 });
   active.joints.find((joint) => joint.logicalChannel === 0).direction = -1;
   active.joints.find((joint) => joint.logicalChannel === 14).direction = -1;
-  const accepted = acceptRobotCalibrationProfile(state, active, "session-1");
-  assert.equal(accepted.accepted, true);
-  assert.equal(accepted.adopted, true);
+  assert.deepEqual(acceptRobotCalibrationProfile(state, active, "session-1"),
+    { accepted: true, adopted: true });
   assert.equal(state.profile.joints.find((joint) => joint.logicalChannel === 0).direction, -1);
   assert.equal(robotCalibrationReady(state, "session-1"), true);
   const command = createCalibrationBenchCommand(state, "save-profile", "save-timestamp", 1234);
@@ -348,103 +342,249 @@ test("a robot readback preserves unsaved calibration edits", () => {
   updateCalibrationJoint(state, { offsetDeg: 4 });
   const active = createLiveCalibrationProfile({ savedAt: 1000 });
   active.joints.find((joint) => joint.logicalChannel === 0).direction = -1;
-  const result = acceptRobotCalibrationProfile(state, active, "session-2");
-  assert.equal(result.accepted, true);
-  assert.equal(result.adopted, false);
+  assert.deepEqual(acceptRobotCalibrationProfile(state, active, "session-2"),
+    { accepted: true, adopted: false });
   assert.equal(state.profile.joints[0].offsetDeg, 4);
   assert.equal(state.profile.joints[0].direction, 1);
   assert.equal(createCalibrationBenchCommand(state, "save-profile", "edit", 1001).baseSavedAt, 1000);
 });
 
-function ownerProfile(savedAt) {
-  const profile = createLiveCalibrationProfile({ savedAt });
-  profile.joints.find((joint) => joint.logicalChannel === 0).direction = -1;
-  profile.joints.find((joint) => joint.logicalChannel === 14).direction = -1;
-  profile.joints.find((joint) => joint.logicalChannel === 3).offsetDeg = 7;
-  return profile;
+test("disconnect resets bench permission and jog while retaining calibration work", () => {
+  const state = createLiveCalibrationState();
+  acceptRobotCalibrationProfile(state, createLiveCalibrationProfile({ savedAt: 1000 }), "before");
+  selectCalibrationStep(state, "limits");
+  selectCalibrationJoint(state, 15);
+  const map = calibrationChannelMap(state.profile);
+  [map[0], map[11]] = [map[11], map[0]];
+  updateCalibrationChannelMap(state, map);
+  updateCalibrationJoint(state, { offsetDeg: 4.5, direction: -1, minimumDeg: -20, maximumDeg: 25 });
+  state.benchModeAcknowledged = true;
+  state.safetyConfirmed = true;
+  state.jogOffsetDeg = 7;
+  const before = calibrationProfileJson(state.profile);
+  resetLiveCalibrationConnection(state);
+  assert.equal(state.benchModeAcknowledged, false);
+  assert.equal(state.jogOffsetDeg, 0);
+  assert.equal(state.step, 3);
+  assert.equal(state.selectedChannel, 15);
+  assert.equal(state.dirty, true);
+  assert.equal(calibrationProfileJson(state.profile), before);
+  assert.equal(robotCalibrationReady(state, "before"), false);
+  assert.equal(createCalibrationBenchCommand(state, "save-profile", "stale-save"), null);
+  assert.deepEqual(acceptRobotCalibrationProfile(state, createLiveCalibrationProfile({ savedAt: 2000 }), "after"),
+    { accepted: true, adopted: false });
+  assert.equal(calibrationProfileJson(state.profile), before);
+  assert.equal(robotCalibrationReady(state, "after"), true);
+});
+
+test("saving a local backup does not allow reconnect to overwrite unsent edits", () => {
+  const state = createLiveCalibrationState();
+  acceptRobotCalibrationProfile(state, createLiveCalibrationProfile({ savedAt: 1000 }), "before");
+  trimCalibrationJoint(state, 2.5);
+  const backup = saveLocalCalibrationProfile(state, 1500);
+  assert.equal(state.dirty, true);
+  assert.equal(parseCalibrationProfileJson(backup).joints[0].offsetDeg, 2.5);
+  resetLiveCalibrationConnection(state);
+  acceptRobotCalibrationProfile(state, createLiveCalibrationProfile({ savedAt: 1000 }), "after");
+  assert.equal(calibrationProfileJson(state.profile), backup);
+});
+
+// Exercise the actual browser lifecycle functions with a minimal link surface.
+// This checks cancellation/late ACK behavior beyond the pure profile reducer.
+function browserCalibrationHarness() {
+  const source = readFileSync(new URL("./web/src/main.js", import.meta.url), "utf8");
+  const functions = [
+    ["resetCalibrationLink", "resetLiveCommandPermissions"],
+    ["serviceCalibrationProfileSync", "serviceCalibrationBenchKeepalive"],
+    ["serviceCalibrationBenchKeepalive", "acceptCalibrationAcknowledgement"],
+    ["acceptCalibrationAcknowledgement", "formatDiagnosticUptime"],
+  ].map(([name, next]) => {
+    const start = source.indexOf(`function ${name}(`);
+    const end = source.indexOf(`function ${next}(`, start);
+    assert.ok(start >= 0 && end > start);
+    return source.slice(start, end);
+  }).join("\n");
+  const connection = { adapterId: "adapter", sessionId: "session" };
+  const harness = {
+    liveCalibrationState: createLiveCalibrationState(), resetLiveCalibrationConnection,
+    calibrationPendingRequestId: "enter-before-disconnect", calibrationPendingAction: "enter",
+    calibrationPendingPurpose: "manual", calibrationPendingProfile: null,
+    calibrationSyncRetryAt: 0,
+    calibrationPendingSmoothing: null, motionSmoothingRobot: null,
+    motionSmoothingRobotSessionId: "", motionSmoothingVerify: null, motionSmoothingStatus: "",
+    motionSmoothingSyncRetryAt: 0, robotCalibrationReady, forgetRobotCalibrationProfile,
+    calibrationObservedSessionId: "session", calibrationLastKeepaliveAt: 0,
+    calibrationOpenWiringAfterExit: false, calibrationRequestTimeout: 123,
+    calibrationBenchFeedback: "", liveConnectionState: {},
+    applicationState: { workspace: "real-robot" }, WORKSPACE_REAL_ROBOT: "real-robot",
+    liveViewState: { selected: "calibration" }, LIVE_VIEW_CALIBRATION: "calibration",
+    document: { hidden: false }, socket: null, WebSocket: { OPEN: 1 },
+    crypto: { randomUUID: () => "exit-request" }, createCalibrationBenchCommand,
+    calibrationSaveAdapterId: "adapter",
+    liveConnectionEnvelope: () => connection, liveConnectionIsReady: () => true,
+    liveTelemetryState: {}, liveComparisonSnapshot: () => ({ lastRobotPacketAgeMs: 1500 }),
+    updateLiveComparisonUi: () => {}, clearTimeout: () => {},
+  };
+  vm.createContext(harness);
+  // main.js is an ES module: preserve its strict semantics so an obsolete
+  // variable cannot silently become a global in this browser harness.
+  vm.runInContext(`"use strict";\n${functions}`, harness);
+  return harness;
 }
 
-test("a robot that lost its profile never overwrites the saved browser copy with defaults", () => {
-  const state = createLiveCalibrationState(ownerProfile(5000));
-  const robotDefaults = createLiveCalibrationProfile();
-  const result = acceptRobotCalibrationProfile(
-    state, robotDefaults, "session-lost", { source: "default-fallback", detail: "active2:bad-checksum" },
-  );
-  assert.equal(result.robotUsingDefaults, true);
-  assert.equal(result.restored, true);
-  assert.equal(result.adopted, false);
-  assert.equal(state.dirty, true, "restored draft must require review and an explicit save");
-  assert.equal(state.profile.joints.find((joint) => joint.logicalChannel === 0).direction, -1);
-  assert.equal(state.profile.joints.find((joint) => joint.logicalChannel === 3).offsetDeg, 7);
-  // The save is concrete and based on the robot's (default) revision.
-  const command = createCalibrationBenchCommand(state, "save-profile", "restore", 6000);
-  assert.equal(command.baseSavedAt, 0);
-  assert.equal(command.profile.savedAt, 6000);
-  assert.equal(command.profile.joints.find((joint) => joint.logicalChannel === 14).direction, -1);
-  const warning = calibrationOriginWarning(state);
-  assert.equal(warning.level, "danger");
-  assert.match(warning.detail, /active2:bad-checksum/);
-  assert.match(warning.detail, /review it, then save/);
+test("leaving calibration cancels an in-flight enter and sends exit before ignoring late ACK", () => {
+  const browser = browserCalibrationHarness();
+  const sent = [];
+  browser.socket = { readyState: 1, send: payload => sent.push(JSON.parse(payload)) };
+  updateCalibrationJoint(browser.liveCalibrationState, { offsetDeg: 12 });
+  browser.releaseCalibrationBench("Page closed");
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].action, "exit");
+  assert.equal(sent[0].sessionId, "session");
+  assert.equal(browser.calibrationPendingRequestId, "");
+  assert.equal(browser.acceptCalibrationAcknowledgement({
+    type: "live-calibration-ack", adapterId: "adapter", sessionId: "session",
+    requestId: "enter-before-disconnect", action: "enter", accepted: true,
+    benchMode: true, supportsSafeJog: true, maxSpeedDegPerSec: 5,
+  }), false);
+  assert.equal(browser.liveCalibrationState.profile.joints[0].offsetDeg, 12);
 });
 
-test("a default robot restores from the last robot-read profile when the browser copy is empty", () => {
-  const state = createLiveCalibrationState();
-  const result = acceptRobotCalibrationProfile(
-    state, createLiveCalibrationProfile(), "session-empty-browser",
-    { source: "default-empty" }, ownerProfile(4000),
-  );
-  assert.equal(result.restored, true);
-  assert.equal(state.profile.joints.find((joint) => joint.logicalChannel === 0).direction, -1);
-  assert.equal(state.restorableProfile, true);
+test("hidden, simulation, and unconfirmed support each release bench without losing the draft", () => {
+  for (const change of [
+    browser => { browser.document.hidden = true; },
+    browser => { browser.applicationState.workspace = "simulation"; },
+    browser => { browser.liveCalibrationState.safetyConfirmed = false; },
+  ]) {
+    const browser = browserCalibrationHarness();
+    browser.liveCalibrationState.benchModeAcknowledged = true;
+    browser.liveCalibrationState.safetyConfirmed = true;
+    updateCalibrationJoint(browser.liveCalibrationState, { offsetDeg: 12 });
+    const sent = [];
+    browser.socket = { readyState: 1, send: payload => sent.push(JSON.parse(payload)) };
+    change(browser);
+    assert.equal(browser.serviceCalibrationBenchKeepalive(), false);
+    assert.equal(sent[0].action, "exit");
+    assert.equal(browser.liveCalibrationState.benchModeAcknowledged, false);
+    assert.equal(browser.liveCalibrationState.profile.joints[0].offsetDeg, 12);
+  }
 });
 
-test("a default robot with no earlier saved profile adopts the defaults and still warns", () => {
+test("reboot during save preserves imported hips and verifies the write on reconnect", () => {
   const state = createLiveCalibrationState();
-  const result = acceptRobotCalibrationProfile(
-    state, createLiveCalibrationProfile(), "session-fresh", { source: "default-empty" },
-  );
-  assert.equal(result.adopted, true);
-  assert.equal(result.restored, false);
+  acceptRobotCalibrationProfile(state, createLiveCalibrationProfile({ savedAt: 1000 }), "before");
+  updateCalibrationJoint(state, { offsetDeg: 12 });
+  const command = createCalibrationBenchCommand(state, "save-profile", "save", 2000);
+  beginRobotCalibrationSave(state, command.profile);
+  acknowledgeRobotCalibrationSave(state, true, true);
+  resetLiveCalibrationConnection(state);
+  assert.equal(state.savePhase, "unconfirmed");
+  acceptRobotCalibrationProfile(state, createLiveCalibrationProfile({ savedAt: 1000 }), "after");
+  assert.equal(state.profile.joints[0].offsetDeg, 12);
+  assert.equal(state.dirty, true);
+  assert.deepEqual(acceptCalibrationSaveReadback(state, command.profile, "after"),
+    { accepted: true, matched: true, adopted: true });
+  assert.equal(state.profile.joints[0].offsetDeg, 12);
   assert.equal(state.dirty, false);
-  assert.equal(calibrationOriginWarning(state).level, "danger");
-  assert.match(calibrationOriginWarning(state).detail, /compiled defaults/);
+  assert.equal(state.savePhase, "verified");
 });
 
-test("a saved robot profile replaces the browser copy and shows no warning", () => {
-  const state = createLiveCalibrationState(ownerProfile(1000));
-  const result = acceptRobotCalibrationProfile(
-    state, ownerProfile(9000), "session-ok", { source: "nvs", savedAt: 9000 },
-  );
-  assert.equal(result.adopted, true);
-  assert.equal(result.robotUsingDefaults, false);
-  assert.equal(state.profile.savedAt, 9000);
-  assert.equal(calibrationOriginWarning(state), null);
+test("a failed save readback keeps imported hips and never labels the old robot values saved", () => {
+  const state = createLiveCalibrationState();
+  const old = createLiveCalibrationProfile({ savedAt: 1000 });
+  acceptRobotCalibrationProfile(state, old, "session");
+  updateCalibrationJoint(state, { offsetDeg: 12 });
+  const command = createCalibrationBenchCommand(state, "save-profile", "save", 2000);
+  beginRobotCalibrationSave(state, command.profile);
+  acknowledgeRobotCalibrationSave(state, true, true);
+  assert.deepEqual(acceptCalibrationSaveReadback(state, old, "session"),
+    { accepted: true, matched: false, adopted: false });
+  assert.equal(state.profile.joints[0].offsetDeg, 12);
+  assert.equal(state.dirty, true);
+  assert.equal(state.savePhase, "mismatch");
+  assert.equal(robotCalibrationReady(state, "session"), false);
 });
 
-test("backup, legacy and unreported origins are classified without false default alarms", () => {
-  const backup = createLiveCalibrationState();
-  acceptRobotCalibrationProfile(backup, ownerProfile(2000), "s", { source: "nvs-backup", detail: "active2:bad-magic" });
-  assert.equal(calibrationOriginWarning(backup).level, "warning");
-  const legacy = createLiveCalibrationState();
-  acceptRobotCalibrationProfile(legacy, ownerProfile(2000), "s", { source: "nvs-legacy" });
-  assert.equal(calibrationOriginWarning(legacy).level, "notice");
-  // Older firmware reports nothing: a saved revision is trusted, savedAt 0 is not.
-  assert.deepEqual(normalizeCalibrationOrigin(undefined, ownerProfile(3000)).usingDefaults, false);
-  assert.equal(normalizeCalibrationOrigin(undefined, createLiveCalibrationProfile()).usingDefaults, true);
-  assert.equal(normalizeCalibrationOrigin({ source: "<script>" }, ownerProfile(3000)).known, false);
-  forgetRobotCalibrationProfile(legacy);
-  assert.equal(calibrationOriginWarning(legacy), null);
+test("import rejects invalid numeric fields and preserves valid firmware hip limits", () => {
+  const valid = createLiveCalibrationProfile({ savedAt: 1000 });
+  valid.joints[0].minimumDeg = -60;
+  valid.joints[0].maximumDeg = 60;
+  assert.deepEqual(parseCalibrationProfileJson(calibrationProfileJson(valid)), valid);
+  for (const [key, value] of [["offsetDeg", 31], ["offsetDeg", "12"],
+    ["direction", 0], ["minimumDeg", -91], ["maximumDeg", 91]]) {
+    const invalid = structuredClone(valid);
+    invalid.joints[0][key] = value;
+    assert.throws(() => parseCalibrationProfileJson(JSON.stringify(invalid)));
+  }
 });
 
-test("unsaved browser edits are never replaced when the robot reports defaults", () => {
-  const state = createLiveCalibrationState(ownerProfile(5000));
-  updateCalibrationJoint(state, { offsetDeg: 4 });
-  const result = acceptRobotCalibrationProfile(
-    state, createLiveCalibrationProfile(), "session-dirty", { source: "default-fallback" },
-  );
-  assert.equal(result.adopted, false);
-  assert.equal(result.restored, false);
-  assert.equal(state.profile.joints[0].offsetDeg, 4);
+test("physical calibration blockers identify armed, stale, missing profile and unsupported states", () => {
+  const state = createLiveCalibrationState();
+  acceptRobotCalibrationProfile(state, createLiveCalibrationProfile({ savedAt: 1000 }), "session");
+  state.safetyConfirmed = true;
+  const context = { connectionReady: true, telemetryAgeMs: 0, robotState: "disarmed",
+    calibrationSupported: true, sessionId: "session", workspaceActive: true, batteryLocked: false, pending: false };
+  assert.equal(calibrationControlBlockReason(state, context), "");
+  assert.match(calibrationControlBlockReason(state, { ...context, robotState: "armed" }), /Disarm/);
+  assert.match(calibrationControlBlockReason(state, { ...context, telemetryAgeMs: 1001 }), /telemetry/);
+  assert.match(calibrationControlBlockReason(state, { ...context, calibrationSupported: false }), /support/);
+  assert.match(calibrationControlBlockReason(state, { ...context, sessionId: "other" }), /profile/);
+  assert.match(calibrationControlBlockReason(state, { ...context, batteryLocked: true }), /battery/);
+  assert.match(calibrationControlBlockReason(state, context, "jog"), /bench/);
+});
+
+test("browser disconnect cancels a pending bench request and ignores its late ACK", () => {
+  const browser = browserCalibrationHarness();
+  updateCalibrationJoint(browser.liveCalibrationState, { offsetDeg: 6 });
+  browser.liveCalibrationState.benchModeAcknowledged = true;
+  const draft = calibrationProfileJson(browser.liveCalibrationState.profile);
+  browser.resetCalibrationLink("Disconnected");
+  assert.equal(browser.calibrationPendingRequestId, "");
+  assert.equal(browser.calibrationPendingAction, "");
+  assert.equal(browser.calibrationRequestTimeout, null);
+  assert.equal(browser.acceptCalibrationAcknowledgement({
+    type: "live-calibration-ack", adapterId: "adapter", sessionId: "session",
+    requestId: "enter-before-disconnect", action: "enter", accepted: true,
+    benchMode: true, supportsSafeJog: true, maxSpeedDegPerSec: 5,
+  }), false);
+  assert.equal(browser.liveCalibrationState.benchModeAcknowledged, false);
+  assert.equal(browser.serviceCalibrationBenchKeepalive(), false);
+  assert.equal(calibrationProfileJson(browser.liveCalibrationState.profile), draft);
+});
+
+test("browser stops renewing bench permission when telemetry goes stale", () => {
+  const browser = browserCalibrationHarness();
+  updateCalibrationJoint(browser.liveCalibrationState, { offsetDeg: 3 });
+  browser.liveCalibrationState.benchModeAcknowledged = true;
+  browser.liveCalibrationState.safetyConfirmed = true;
+  browser.liveCalibrationState.jogOffsetDeg = 5;
+  assert.equal(browser.serviceCalibrationBenchKeepalive(), false);
+  assert.equal(browser.liveCalibrationState.benchModeAcknowledged, false);
+  assert.equal(browser.liveCalibrationState.jogOffsetDeg, 0);
+  assert.equal(browser.calibrationPendingRequestId, "");
+  assert.equal(browser.liveCalibrationState.profile.joints[0].offsetDeg, 3);
+  assert.equal(browser.liveCalibrationState.dirty, true);
+});
+
+test("a newly paired session resets link state and requests its robot profile", () => {
+  const browser = browserCalibrationHarness();
+  browser.calibrationObservedSessionId = "previous-session";
+  browser.liveConnectionState = {
+    selectedAdapterId: "adapter", robotState: "disarmed",
+    adapters: { adapter: { capabilities: { calibration: true } } },
+  };
+  const actions = [];
+  browser.sendCalibrationCommand = (action, purpose) => {
+    actions.push({ action, purpose });
+    return true;
+  };
+  updateCalibrationJoint(browser.liveCalibrationState, { offsetDeg: 6 });
+  const draft = calibrationProfileJson(browser.liveCalibrationState.profile);
+  browser.serviceCalibrationProfileSync();
+  assert.equal(browser.calibrationObservedSessionId, "session");
+  assert.deepEqual(actions, [{ action: "request-profile", purpose: "sync" }]);
+  assert.equal(calibrationProfileJson(browser.liveCalibrationState.profile), draft);
+  assert.equal(browser.liveCalibrationState.dirty, true);
 });
 
 test("a complete calibration save envelope fits the firmware USB receive ring", () => {

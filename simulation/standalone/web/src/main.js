@@ -246,6 +246,7 @@ import { createJointInspectionOverlay } from "./joint-inspection-overlay.js";
 import {
   acceptRobotCalibrationProfile,
   calibrationOriginWarning,
+  LIVE_CALIBRATION_DRAFT_KEY,
   LIVE_CALIBRATION_LAST_ROBOT_KEY,
   LIVE_CALIBRATION_CORRUPT_BACKUP_KEY,
   calibrationInspectionModelAngles,
@@ -785,6 +786,33 @@ try {
 const liveCalibrationState = createLiveCalibrationState(
   storedCalibrationProfile || createLiveCalibrationProfile(),
 );
+let calibrationDraftWritten = "";
+try {
+  const draftJson = localStorage.getItem(LIVE_CALIBRATION_DRAFT_KEY);
+  if (draftJson) {
+    liveCalibrationState.profile = parseCalibrationProfileJson(draftJson);
+    liveCalibrationState.dirty = true;
+    calibrationDraftWritten = draftJson;
+  }
+} catch {
+  // An unreadable draft is ignored; the robot profile remains the source of truth.
+}
+
+function persistCalibrationDraft() {
+  try {
+    if (!liveCalibrationState.dirty) {
+      if (calibrationDraftWritten) localStorage.removeItem(LIVE_CALIBRATION_DRAFT_KEY);
+      calibrationDraftWritten = "";
+      return;
+    }
+    const json = calibrationProfileJson(liveCalibrationState.profile);
+    if (json === calibrationDraftWritten) return;
+    localStorage.setItem(LIVE_CALIBRATION_DRAFT_KEY, json);
+    calibrationDraftWritten = json;
+  } catch {
+    // Storage can be unavailable or full; the draft simply stays in memory.
+  }
+}
 const MOTION_SMOOTHING_STORAGE_KEY = "domino-motion-smoothing-draft-v1";
 let storedMotionSmoothing = null;
 try {
@@ -7381,6 +7409,7 @@ function renderLiveCalibrationUi() {
   ).sort((a, b) => a - b);
   document.querySelector("#live-calibration-output-range").textContent =
     `${logicalOutputs[0].toFixed(2)}° - ${logicalOutputs[1].toFixed(2)}°`;
+  persistCalibrationDraft();
   const originWarning = calibrationOriginWarning(liveCalibrationState);
   const originBanner = document.querySelector("#live-calibration-origin-banner");
   originBanner.hidden = !originWarning;
@@ -8531,7 +8560,7 @@ function updateLiveComparisonUi() {
   if (liveViewState.selected === LIVE_VIEW_GAITS) renderLiveGaitUi();
   document.querySelector("#live-calibration-apply-robot").disabled =
     !engineeringConnected || !calibrationSupported || !calibrationProfileReady ||
-    !liveCalibrationState.benchModeAcknowledged || Boolean(calibrationPendingRequestId);
+    Boolean(calibrationPendingRequestId);
   const benchRequest = document.querySelector("#live-calibration-request-bench");
   benchRequest.disabled =
     !engineeringConnected ||
@@ -9712,7 +9741,6 @@ document.querySelector("#live-calibration-export-robot").addEventListener("click
   renderLiveCalibrationUi();
 });
 document.querySelector("#live-calibration-apply-robot").addEventListener("click", () => {
-  if (!liveCalibrationState.benchModeAcknowledged) return;
   openRobotCalibrationConfirmation();
 });
 document.querySelector("#live-calibration-robot-confirm-ack").addEventListener("change", (event) => {
@@ -9728,7 +9756,6 @@ function closeRobotCalibrationConfirmation() {
 ].forEach((selector) => document.querySelector(selector).addEventListener("click", closeRobotCalibrationConfirmation));
 document.querySelector("#live-calibration-robot-confirm-send").addEventListener("click", () => {
   if (!document.querySelector("#live-calibration-robot-confirm-ack").checked ||
-      !liveCalibrationState.benchModeAcknowledged ||
       !sendCalibrationCommand("save-profile")) return;
   closeRobotCalibrationConfirmation();
   document.querySelector("#live-calibration-review-status").textContent =
@@ -9761,7 +9788,7 @@ document.querySelector("#live-calibration-import-file").addEventListener("change
     liveCalibrationState.profile = parseCalibrationProfileJson(await file.text());
     liveCalibrationState.dirty = true;
     liveCalibrationState.jogOffsetDeg = 0;
-    status.textContent = `Imported ${file.name}. Review every joint before saving or applying.`;
+    status.textContent = `Imported ${file.name} as a draft in Studio only. It is NOT on the robot yet: review it, then press SEND TO ROBOT in Review. The draft is kept if you restart Studio.`;
   } catch (error) {
     status.textContent = error instanceof Error ? error.message : "Calibration import failed.";
   }

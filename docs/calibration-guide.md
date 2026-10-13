@@ -54,6 +54,20 @@ JSON backup before any full-chip erase or hardware replacement.
 Browser calibration schema v1 files import as the default fixed wiring map and
 are rewritten as schema v2.
 
+### Importing a profile and getting it onto the robot
+
+Importing a JSON file only loads it into Studio as a **draft**. It is not on
+the robot until you press **Send to robot** in the Review step and confirm.
+Since firmware 0.8.17 this save does **not** need bench mode, because it only
+writes flash (every output is turned off first), so a problem starting bench
+mode can no longer stop a calibration being saved. The draft is kept if you
+restart Studio, and a robot read never replaces an unsaved draft. After saving,
+Studio reads the profile back from the robot and compares it. Older firmware
+still requires bench mode for the save.
+
+Closing the Studio connection now tells the robot to leave bench mode and turn
+its outputs off, so a stale bench session no longer carries into the next one.
+
 ### How the profile is stored (firmware 0.8.16 and later)
 
 The profile lives in the ESP32's NVS flash (namespace `domino-cal`) as an

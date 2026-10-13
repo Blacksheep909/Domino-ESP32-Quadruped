@@ -410,13 +410,13 @@ test("physical request timeouts return explicit rejection acknowledgements", () 
 
 test("persistent calibration writes get a longer physical acknowledgement window", () => {
   const core = connectedCore();
-  core.benchMode = true;
+  assert.equal(core.benchMode, false, "saving must work without bench mode");
   core.handleRelay({
     type: "live-calibration-command", action: "save-profile", requestId: "save-1", timestampMs: 1_050,
     adapterId, sessionId: core.sessionId,
     baseSavedAt: 0, profile: createLiveCalibrationProfile({ savedAt: 1_051 }),
     selectedChannel: 0, physicalChannel: 0, jogOffsetDeg: 0, targetServoDeg: 129.87,
-    safety: { benchModeRequired: true, maxSpeedDegPerSec: 5, jogLimitDeg: 10 },
+    safety: { benchModeRequired: false, maxSpeedDegPerSec: 5, jogLimitDeg: 10 },
   }, 1_050);
   assert.equal(core.tick(3_051).relay.length, 0);
   const expired = core.tick(9_051);

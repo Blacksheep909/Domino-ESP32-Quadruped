@@ -311,6 +311,17 @@ test("active calibration readback is a valid command without bench mode", () => 
   }), false);
 });
 
+test("saving the profile does not require bench mode but jogging does", () => {
+  const state = createLiveCalibrationState();
+  acceptRobotCalibrationProfile(state, createLiveCalibrationProfile({ savedAt: 1000 }), "s");
+  const save = createCalibrationBenchCommand(state, "save-profile", "save", 2000);
+  assert.equal(save.safety.benchModeRequired, false);
+  assert.equal(validCalibrationCommand(save), true);
+  assert.equal(validCalibrationCommand({ ...save, safety: { ...save.safety, benchModeRequired: true } }), false);
+  const jog = createCalibrationBenchCommand(state, "jog", "jog", 2000);
+  assert.equal(jog.safety.benchModeRequired, true);
+});
+
 test("robot persistence commands always carry a concrete save timestamp", () => {
   const state = createLiveCalibrationState();
   assert.equal(createCalibrationBenchCommand(state, "save-profile", "unsynced", 1234), null);

@@ -74,6 +74,8 @@ const float* commandedModelServoAnglesDeg();
 // Use servoCalibrationPhysicalChannel() to identify the PCA9685 output used.
 const uint16_t* commandedServoPulseUs();
 uint32_t servoSafetyClipCount();
+// Failed CAD solves hold the affected leg's last valid output.
+uint32_t legIkFailureCount();
 bool commandCalibrationServoAngle(Adafruit_PWMServoDriver &driver,
                                   uint8_t logicalChannel,
                                   uint8_t physicalChannel,

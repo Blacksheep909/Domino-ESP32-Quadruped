@@ -21,7 +21,7 @@ constexpr uint32_t CRSF_TIMEOUT_MS = 1000;
 constexpr int SA_CH_INDEX = 4;
 constexpr int SA_ON_THRESHOLD_US = 1600;
 constexpr int SA_OFF_THRESHOLD_US = 1400;
-// SC is used as a 3-position mode switch (balance mode = middle).
+// SC is the 3-position walk selector: stand / careful / trot.
 // Adjust SC_CH_INDEX if your radio maps SC differently.
 constexpr int SC_CH_INDEX = 6;
 

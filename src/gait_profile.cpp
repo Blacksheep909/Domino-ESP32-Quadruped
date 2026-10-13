@@ -52,6 +52,9 @@ bool validateGaitProfile(const GaitProfile &profile) {
       bounded(settings.responseMs, 60.0f, 700.0f) &&
       bounded(settings.swingShape, 0.80f, 3.0f) &&
       bounded(settings.diagonalPhase, 0.40f, 0.60f) &&
+      // Each diagonal's swing must fit between the other's swing, with a
+      // small four-foot overlap. Bounds on either field alone cannot ensure it.
+      settings.dutyFactor >= fmaxf(settings.diagonalPhase, 1.0f - settings.diagonalPhase) + 0.02f &&
       bounded(settings.touchdownXMm, -35.0f, 10.0f) &&
       bounded(settings.maxForwardScale, 0.20f, 1.0f) &&
       bounded(settings.maxTurnScale, 0.20f, 1.0f);

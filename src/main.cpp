@@ -43,10 +43,15 @@
 #include "crsf.h"
 #include "gait_profile.h"
 #include "leg_controller.h"
+#include "motion_smoothing.h"
 #include "imu.h"
 #ifndef DOMINO_SIL
 #include "live_robot_endpoint.h"
 #include "loop_diagnostics.h"
+#endif
+
+#ifndef DOMINO_IMU_ENABLED
+#define DOMINO_IMU_ENABLED 1
 #endif
 
 enum LegIndex { LEG_FL = 0, LEG_FR = 1, LEG_BL = 2, LEG_BR = 3 };
@@ -89,7 +94,6 @@ constexpr float kNeutralY = 0.0f;
 // below at full command without changing assembly branch.
 constexpr float kNeutralZ = kNeutralHeightMm;
 constexpr uint32_t kControlIntervalMs = 20;
-constexpr float kRampSpeedMmPerSec = 120.0f;
 
 constexpr float kCloserPoseZ = 160.0f;
 
@@ -125,6 +129,12 @@ constexpr float kStickCenterUs = 1500.0f;
 constexpr float kStickHalfRangeUs = 500.0f;
 constexpr float kModeInputCenterDeadband = 0.14f;
 constexpr uint32_t kModeInputCenterHoldMs = 120;
+// These are mandatory mode-change limits, independent of optional stick
+// smoothing. Time advances by at most one control frame after a delayed loop.
+constexpr float kTransitionFootSpeedMmPerSec = 80.0f;
+constexpr float kTransitionAngleSpeedDegPerSec = 25.0f;
+constexpr float kTransitionMinimumSeconds = 0.35f;
+constexpr uint32_t kMotionCommandTimeoutMs = 250;
 
 constexpr float kMaxRollDeg = 20.0f;
 constexpr float kMaxPitchDeg = 10.0f;
@@ -161,14 +171,15 @@ constexpr bool kBalanceDebugLoggingEnabled = false;
 // First gait milestone: a deliberately slow diagonal trot. The diagonal pairs
 // use opposite phases. Each foot has a planted rearward stance followed by a
 // smooth raised return arc, with brief four-foot support overlap. Right-stick
-// vertical commands travel; right-stick horizontal commands differential
+// vertical commands travel; left-stick horizontal commands differential
 // stride for turning.
 constexpr float kGaitStickDeadband = 0.12f;
 constexpr uint32_t kGaitToggleDebounceMs = 200;
 
-// SC middle selects a statically stable four-beat crawl. Each leg owns one
-// quarter of the cycle, but swings for less than that quarter, guaranteeing
-// at least three planted feet and a short four-foot settle between steps.
+// SC middle selects a four-beat crawl. Each leg owns one quarter of the cycle,
+// but swings for less than that quarter, leaving at least three commanded
+// stance feet and a short four-foot settle. Physical balance still needs a
+// supported center of mass and actual ground contact.
 
 // Ride height configuration (stand-only, continuous CH3 command).
 // The Boxer left-stick vertical maps linearly across the CAD-validated
@@ -183,7 +194,50 @@ enum BodyMode : uint8_t {
   BODY_BALANCE = 3,
   BODY_GAIT = 4,
   BODY_CAREFUL = 5,
+  BODY_TRANSITION = 6,
 };
+
+bool isWalkingMode(BodyMode mode) {
+  return mode == BODY_GAIT || mode == BODY_CAREFUL;
+}
+
+struct LegTarget {
+  float x;
+  float y;
+  float z;
+};
+LegTarget lastLegTargets[kLegCount] = {};
+BodyMode outputMode = BODY_STOW;
+float outputHeightMm = kCloserPoseZ;
+float outputRollDeg = 0.0f;
+float outputPitchDeg = 0.0f;
+float outputYawDeg = 0.0f;
+float outputBodyX = 0.0f;
+float outputBodyY = 0.0f;
+bool outputUsesBodyPose = false;
+bool motionIkFault = false;
+
+enum TransitionStage : uint8_t { TRANSITION_NONE, TRANSITION_LAND,
+                                 TRANSITION_NEUTRAL, TRANSITION_WALK_STANCE };
+struct ModeTransition {
+  TransitionStage stage = TRANSITION_NONE;
+  LegTarget from[kLegCount] = {};
+  LegTarget to[kLegCount] = {};
+  float fromHeight = 0.0f;
+  float toHeight = 0.0f;
+  float fromRoll = 0.0f;
+  float fromPitch = 0.0f;
+  float fromYaw = 0.0f;
+  float fromBodyX = 0.0f;
+  float fromBodyY = 0.0f;
+  float seconds = 0.0f;
+  float duration = 0.0f;
+  bool bodyPose = false;
+} modeTransition;
+
+bool modeTransitionActive() {
+  return modeTransition.stage != TRANSITION_NONE;
+}
 
 enum MotionInputProfile : uint8_t {
   MOTION_INPUT_NONE = 0,
@@ -225,15 +279,21 @@ void commandLeg(Adafruit_PWMServoDriver &driver,
                 float x,
                 float y,
                 float z) {
+  const uint32_t failuresBefore = legIkFailureCount();
+#ifndef DOMINO_SIL
+  liveRobotEndpointSetExpectedFootTarget(static_cast<uint8_t>(legIndex), x, y, z);
+#endif
+  kMoveLegFns[legIndex](driver, x, y, z);
+  if (legIkFailureCount() != failuresBefore) {
+    motionIkFault = true;
+    return;
+  }
+  lastLegTargets[legIndex] = {x, y, z};
 #ifdef DOMINO_SIL
   silLegCommandX[legIndex] = x;
   silLegCommandY[legIndex] = y;
   silLegCommandZ[legIndex] = z;
 #endif
-#ifndef DOMINO_SIL
-  liveRobotEndpointSetExpectedFootTarget(static_cast<uint8_t>(legIndex), x, y, z);
-#endif
-  kMoveLegFns[legIndex](driver, x, y, z);
 }
 
 // Nominal foot positions in the body/world frame when the body is level.
@@ -279,16 +339,36 @@ float gaitPhaseRad = 0.0f;
 float gaitForwardCommand = 0.0f;
 float gaitTurnCommand = 0.0f;
 float gaitAmplitude = 0.0f;
+float gaitForwardStride = 0.0f;
+float gaitTurnStride = 0.0f;
 float gaitBodyZ = 265.0f;
+float gaitSupportZ[kLegCount] = {};
+rampFloat tiltRollRamp;
+rampFloat tiltPitchRamp;
+rampFloat tiltYawRamp;
 bool motionInputAwaitingCenter = false;
 uint32_t motionInputCenteredSinceMs = 0;
 
-float normalizeChannel(int chValueUs) {
-  const float normalized = (static_cast<float>(chValueUs) - kStickCenterUs) / kStickHalfRangeUs;
+float normalizeChannel(float chValueUs) {
+  const float normalized = (chValueUs - kStickCenterUs) / kStickHalfRangeUs;
   return constrain(normalized, -1.0f, 1.0f);
 }
 
+float applyTiltInputDeadband(float value) {
+  const MotionSmoothingSettings &smoothing = motionSmoothingSettings();
+  if (!smoothing.enabled) return value;
+  const float kTiltInputDeadband = smoothing.tiltInputDeadband;
+  const float magnitude = fabsf(value);
+  if (magnitude <= kTiltInputDeadband) return 0.0f;
+  return copysignf((magnitude - kTiltInputDeadband) /
+                       (1.0f - kTiltInputDeadband),
+                   value);
+}
+
 MotionInputProfile motionInputProfileForMode(BodyMode mode) {
+#ifndef DOMINO_SIL
+  if (mode == BODY_STAND && activeManualControl.active) return MOTION_INPUT_TILT;
+#endif
   if (mode == BODY_TILT) {
     return MOTION_INPUT_TILT;
   }
@@ -303,7 +383,11 @@ bool motionInputsAreCentered() {
   if (activeManualControl.active) {
     return fabsf(activeManualControl.roll) <= kModeInputCenterDeadband &&
            fabsf(activeManualControl.forward) <= kModeInputCenterDeadband &&
-           fabsf(activeManualControl.turn) <= kModeInputCenterDeadband;
+           fabsf(activeManualControl.turn) <= kModeInputCenterDeadband &&
+           fabsf(activeManualControl.pitch) <= kModeInputCenterDeadband &&
+           fabsf(activeManualControl.yaw) <= kModeInputCenterDeadband &&
+           fabsf(activeManualControl.bodyX) <= kModeInputCenterDeadband &&
+           fabsf(activeManualControl.bodyY) <= kModeInputCenterDeadband;
   }
 #endif
   return fabsf(normalizeChannel(ch_us[ROLL_CH_INDEX])) <= kModeInputCenterDeadband &&
@@ -320,6 +404,10 @@ void updateMotionInputInterlock(BodyMode previousMode, BodyMode nextMode, uint32
   }
 
   if (!motionInputAwaitingCenter) {
+    return;
+  }
+  if (modeTransitionActive()) {
+    motionInputCenteredSinceMs = 0;
     return;
   }
   if (!motionInputsAreCentered()) {
@@ -344,7 +432,12 @@ float readMotionChannelNormalized(int channelIndex) {
     if (channelIndex == ROLL_CH_INDEX) return activeManualControl.roll;
   }
 #endif
-  return motionInputAwaitingCenter ? 0.0f : normalizeChannel(ch_us[channelIndex]);
+  // Switches still use the more heavily filtered integer channels. Motion
+  // axes use the first CRSF filter stage; the tilt ramp limits their speed.
+  const bool commandsFresh = crsfHasReceivedFrame() &&
+      millis() - lastCrsfMs < kMotionCommandTimeoutMs;
+  return motionInputAwaitingCenter || modeTransitionActive() || !commandsFresh
+      ? 0.0f : normalizeChannel(ch_us_filt[channelIndex]);
 }
 
 float manualRollFootZOffset(float lateralMm) {
@@ -396,7 +489,7 @@ void logDebugState(uint32_t now,
 
   const float rollDeg = rollNorm * kMaxRollDeg;
   const float pitchDeg = pitchNorm * kMaxPitchDeg;
-  const float yawDeg = yawNorm * kMaxYawDeg;
+  const float yawDeg = -yawNorm * kMaxYawDeg;
 
   Serial.printf(
       "DBG t=%lu link=%d lastCrsf=%lu standCmd=%d poseReady=%d standState=%d sdDown=%d tiltCandRaw=%d "
@@ -499,6 +592,7 @@ float computeStandTargetZ(float rideHeightMm) {
 
 struct MenuInputs {
   bool haveLink = false;
+  bool motionCommandsFresh = false;
   bool failsafeActive = false;
   bool standRequested = false;
   bool tiltSwitchDown = false;
@@ -570,6 +664,15 @@ MenuInputs readMenuInputs(uint32_t now, uint32_t* lastLinkAliveMs, bool* failsaf
 
   // Continuous ride height from Boxer left-stick vertical / CRSF CH3.
   inputs.rideHeightMm = readRideHeightMm();
+
+  // Stop motion on a short command gap. The existing longer timeout still
+  // owns stow; a recovered link must pass the normal centering interlock.
+  inputs.motionCommandsFresh = hasReceivedFrame && now - lastCrsfMs < kMotionCommandTimeoutMs;
+  if (!inputs.motionCommandsFresh) {
+    inputs.tiltSwitchDown = false;
+    inputs.carefulWalkRequested = false;
+    inputs.gaitRequested = false;
+  }
 
   return inputs;
 }
@@ -670,6 +773,13 @@ void moveLegsFromBodyPose(Adafruit_PWMServoDriver &driver,
                           float rollDeg,
                           float pitchDeg,
                           float yawDeg) {
+  outputHeightMm = bodyZ - STAND_HEIGHT_Z;
+  outputRollDeg = rollDeg;
+  outputPitchDeg = pitchDeg;
+  outputYawDeg = yawDeg;
+  outputBodyX = bodyX;
+  outputBodyY = bodyY;
+  outputUsesBodyPose = true;
 #ifndef DOMINO_SIL
   LiveRobotPoseSnapshot livePose;
   livePose.rollDeg = rollDeg;
@@ -702,6 +812,10 @@ void moveLegsFromBodyPose(Adafruit_PWMServoDriver &driver,
 }
 
 void moveLegsToSitBlend(Adafruit_PWMServoDriver &driver, float commonZ, float blend) {
+  outputHeightMm = commonZ + blend * (kSitFrontZ - commonZ);
+  outputRollDeg = outputPitchDeg = outputYawDeg = 0.0f;
+  outputBodyX = outputBodyY = 0.0f;
+  outputUsesBodyPose = false;
   const float t = constrain(blend, 0.0f, 1.0f);
   for (int i = 0; i < kLegCount; ++i) {
     const bool frontLeg = (i == LEG_FL || i == LEG_FR);
@@ -726,6 +840,10 @@ void moveLegsFromBodyPoseWithZOffsets(Adafruit_PWMServoDriver &driver,
                                       float bodyY,
                                       float bodyZ,
                                       const float zOffsetsWorld[kLegCount]) {
+  outputHeightMm = bodyZ - STAND_HEIGHT_Z;
+  outputRollDeg = outputPitchDeg = outputYawDeg = 0.0f;
+  outputBodyX = outputBodyY = 0.0f;
+  outputUsesBodyPose = false;
   for (int i = 0; i < kLegCount; ++i) {
     float xLeg = 0.0f;
     float yLeg = 0.0f;
@@ -766,7 +884,19 @@ void resetGaitState() {
   gaitForwardCommand = 0.0f;
   gaitTurnCommand = 0.0f;
   gaitAmplitude = 0.0f;
+  gaitForwardStride = gaitTurnStride = 0.0f;
   gaitBodyZ = lastPoseZ;
+}
+
+void updateGaitStride(float activity, float maximumStep) {
+  // Normalizing a command near zero can flip its direction while the lift
+  // amplitude is still fading. Slew the effective stride vector itself, so
+  // release/reverse cannot collapse or reverse the whole foot stroke in a frame.
+  const float scale = activity > 0.001f ? gaitAmplitude / activity : 0.0f;
+  gaitForwardStride = approachGaitCommand(
+      gaitForwardStride, gaitForwardCommand * scale, maximumStep);
+  gaitTurnStride = approachGaitCommand(
+      gaitTurnStride, gaitTurnCommand * scale, maximumStep);
 }
 
 float halfCosine01(float value) {
@@ -834,7 +964,8 @@ void applySinusoidalGait(Adafruit_PWMServoDriver &driver, float baseZ) {
       gaitAmplitude,
       targetAmplitude,
       1.35f * commandSlewPerSec * kControlStepSeconds);
-  if (activity > 0.001f) {
+  updateGaitStride(activity, 1.35f * maximumCommandStep);
+  if (activity > 0.001f || gaitAmplitude > 0.001f) {
     const float frequencyHz = profile.cadenceHz;
     gaitPhaseRad = fmodf(gaitPhaseRad + 2.0f * kPi * frequencyHz * kControlStepSeconds,
                          2.0f * kPi);
@@ -843,16 +974,16 @@ void applySinusoidalGait(Adafruit_PWMServoDriver &driver, float baseZ) {
   }
 
   const float normalizedCycle = gaitPhaseRad / (2.0f * kPi);
-  const float commandScale = activity > 0.001f ? 1.0f / activity : 0.0f;
-  const float forwardDirection = gaitForwardCommand * commandScale;
-  const float turnDirection = gaitTurnCommand * commandScale;
+  outputHeightMm = gaitBodyZ;
+  outputRollDeg = outputPitchDeg = outputYawDeg = 0.0f;
+  outputBodyX = outputBodyY = 0.0f;
+  outputUsesBodyPose = false;
   for (int i = 0; i < kLegCount; ++i) {
     const bool diagonalA = (i == LEG_FL || i == LEG_BR);
     const bool leftLeg = (i == LEG_FL || i == LEG_BL);
     const float sideSign = leftLeg ? 1.0f : -1.0f;
-    const float halfStrideMm = gaitAmplitude * (
-        forwardDirection * profile.strideMm * 0.5f +
-        sideSign * turnDirection * profile.strideMm * 0.5f * profile.turnGain);
+    const float halfStrideMm = profile.strideMm * 0.5f * (
+        gaitForwardStride + sideSign * gaitTurnStride * profile.turnGain);
     float xOffsetMm = 0.0f;
     float zOffsetMm = 0.0f;
     sampleGaitFootPath(normalizedCycle + (diagonalA ? 0.0f : profile.diagonalPhase),
@@ -864,7 +995,8 @@ void applySinusoidalGait(Adafruit_PWMServoDriver &driver, float baseZ) {
                        &zOffsetMm);
     const float x = profile.touchdownXMm + xOffsetMm;
     const float y = sideSign * profile.stanceWidthMm;
-    const float z = gaitBodyZ + zOffsetMm + manualRollFootZOffset(y);
+    gaitSupportZ[i] = gaitBodyZ + manualRollFootZOffset(y);
+    const float z = gaitSupportZ[i] + zOffsetMm;
     commandLeg(driver, i, x, y, z);
   }
 }
@@ -891,7 +1023,8 @@ void applyCarefulWalk(Adafruit_PWMServoDriver &driver, float baseZ) {
   const float targetAmplitude = halfCosine01(activity / 0.20f) * (0.72f + 0.28f * activity);
   gaitAmplitude = approachGaitCommand(
       gaitAmplitude, targetAmplitude, 1.35f * commandSlewPerSec * kControlStepSeconds);
-  if (activity > 0.001f) {
+  updateGaitStride(activity, 1.35f * maximumCommandStep);
+  if (activity > 0.001f || gaitAmplitude > 0.001f) {
     const float frequencyHz = profile.cadenceHz;
     gaitPhaseRad = fmodf(
         gaitPhaseRad + 2.0f * kPi * frequencyHz * kControlStepSeconds, 2.0f * kPi);
@@ -900,17 +1033,17 @@ void applyCarefulWalk(Adafruit_PWMServoDriver &driver, float baseZ) {
   }
 
   const float normalizedCycle = gaitPhaseRad / (2.0f * kPi);
-  const float commandScale = activity > 0.001f ? 1.0f / activity : 0.0f;
-  const float forwardDirection = gaitForwardCommand * commandScale;
-  const float turnDirection = gaitTurnCommand * commandScale;
+  outputHeightMm = gaitBodyZ;
+  outputRollDeg = outputPitchDeg = outputYawDeg = 0.0f;
+  outputBodyX = outputBodyY = 0.0f;
+  outputUsesBodyPose = false;
   constexpr LegIndex kSwingOrder[kLegCount] = {LEG_FL, LEG_BR, LEG_FR, LEG_BL};
   for (int orderIndex = 0; orderIndex < kLegCount; ++orderIndex) {
     const LegIndex leg = kSwingOrder[orderIndex];
     const bool leftLeg = leg == LEG_FL || leg == LEG_BL;
     const float sideSign = leftLeg ? 1.0f : -1.0f;
-    const float halfStrideMm = gaitAmplitude * (
-        forwardDirection * profile.strideMm * 0.5f +
-        sideSign * turnDirection * profile.strideMm * 0.5f * profile.turnGain);
+    const float halfStrideMm = profile.strideMm * 0.5f * (
+        gaitForwardStride + sideSign * gaitTurnStride * profile.turnGain);
     float legCycle = normalizedCycle - 0.25f * static_cast<float>(orderIndex);
     legCycle -= floorf(legCycle);
     float xOffsetMm = 0.0f;
@@ -926,12 +1059,13 @@ void applyCarefulWalk(Adafruit_PWMServoDriver &driver, float baseZ) {
       const float stance = (legCycle - swingFraction) / (1.0f - swingFraction);
       xOffsetMm = halfStrideMm * (1.0f - 2.0f * stance);
     }
+    gaitSupportZ[leg] = gaitBodyZ +
+        manualRollFootZOffset(sideSign * profile.stanceWidthMm);
     commandLeg(driver,
                leg,
                profile.touchdownXMm + xOffsetMm,
                sideSign * profile.stanceWidthMm,
-               gaitBodyZ + zOffsetMm +
-                   manualRollFootZOffset(sideSign * profile.stanceWidthMm));
+               gaitSupportZ[leg] + zOffsetMm);
   }
 }
 
@@ -982,9 +1116,9 @@ void applyTiltPose(Adafruit_PWMServoDriver &driver) {
   // roll: right stick X (lean left/right)
   // pitch: right stick Y (lean forward/back)
   // yaw: left stick X (twist the body about Z)
-  const float yawNorm = readMotionChannelNormalized(YAW_CH_INDEX);
-  float rollNorm = readMotionChannelNormalized(ROLL_CH_INDEX);
-  float pitchNorm = readMotionChannelNormalized(PITCH_CH_INDEX);
+  const float yawNorm = applyTiltInputDeadband(readMotionChannelNormalized(YAW_CH_INDEX));
+  float rollNorm = applyTiltInputDeadband(readMotionChannelNormalized(ROLL_CH_INDEX));
+  float pitchNorm = applyTiltInputDeadband(readMotionChannelNormalized(PITCH_CH_INDEX));
   float yawNormLimited = yawNorm;
 
   // Keep diagonal stick commands inside one combined body-pose envelope.
@@ -999,9 +1133,19 @@ void applyTiltPose(Adafruit_PWMServoDriver &driver) {
     yawNormLimited *= scale;
   }
 
-  const float rollDeg = rollNorm * kMaxRollDeg;
-  const float pitchDeg = pitchNorm * kMaxPitchDeg;
-  const float yawDeg = yawNormLimited * kMaxYawDeg;
+  const MotionSmoothingSettings &smoothing = motionSmoothingSettings();
+  const float rollTargetDeg = rollNorm * kMaxRollDeg;
+  const float pitchTargetDeg = pitchNorm * kMaxPitchDeg;
+  // CH4/operator turn is positive to the right. Body +Y points left, so
+  // positive mathematical yaw turns left: convert only the body-pose target.
+  // Gait steering already advances the left side for positive/right input.
+  const float yawTargetDeg = -yawNormLimited * kMaxYawDeg;
+  const float rollDeg = commandWithMotionSmoothing(
+      tiltRollRamp, rollTargetDeg, smoothing.rollRateDegPerSec, smoothing.enabled);
+  const float pitchDeg = commandWithMotionSmoothing(
+      tiltPitchRamp, pitchTargetDeg, smoothing.pitchRateDegPerSec, smoothing.enabled);
+  const float yawDeg = commandWithMotionSmoothing(
+      tiltYawRamp, yawTargetDeg, smoothing.yawRateDegPerSec, smoothing.enabled);
 
 #ifdef DOMINO_SIL
   silBodyRollDeg = rollDeg;
@@ -1019,13 +1163,150 @@ void applyTiltPose(Adafruit_PWMServoDriver &driver) {
 }
 
 void enterTiltMode() {
+  tiltRollRamp.go(0.0f);
+  tiltPitchRamp.go(0.0f);
+  tiltYawRamp.go(0.0f);
   tiltModeActive = true;
   Serial.printf("Tilt mode enabled (SA=%d SD=%d)\n", ch_us[SA_CH_INDEX], ch_us[SD_CH_INDEX]);
 }
 
 void exitTiltMode() {
   tiltModeActive = false;
+  tiltRollRamp.go(0.0f);
+  tiltPitchRamp.go(0.0f);
+  tiltYawRamp.go(0.0f);
   Serial.printf("Tilt mode disabled (SA=%d SD=%d)\n", ch_us[SA_CH_INDEX], ch_us[SD_CH_INDEX]);
+}
+
+float transitionBlend(float value) {
+  const float t = constrain(value, 0.0f, 1.0f);
+  // Quintic position easing: zero slope and curvature at either endpoint.
+  return t * t * t * (10.0f + t * (-15.0f + 6.0f * t));
+}
+
+void beginTransitionStage(TransitionStage stage, const LegTarget targets[kLegCount],
+                          float height, bool bodyPose) {
+  modeTransition.stage = stage;
+  modeTransition.fromHeight = outputHeightMm;
+  modeTransition.toHeight = height;
+  modeTransition.fromRoll = outputRollDeg;
+  modeTransition.fromPitch = outputPitchDeg;
+  modeTransition.fromYaw = outputYawDeg;
+  modeTransition.fromBodyX = outputBodyX;
+  modeTransition.fromBodyY = outputBodyY;
+  modeTransition.bodyPose = bodyPose;
+  modeTransition.seconds = 0.0f;
+  float distance = fabsf(height - outputHeightMm);
+  for (int i = 0; i < kLegCount; ++i) {
+    modeTransition.from[i] = lastLegTargets[i];
+    modeTransition.to[i] = targets[i];
+    const LegTarget &from = modeTransition.from[i];
+    const LegTarget &to = targets[i];
+    distance = fmaxf(distance, sqrtf((to.x - from.x) * (to.x - from.x) +
+                                    (to.y - from.y) * (to.y - from.y) +
+                                    (to.z - from.z) * (to.z - from.z)));
+  }
+  const float angle = fmaxf(fabsf(outputRollDeg),
+      fmaxf(fabsf(outputPitchDeg), fabsf(outputYawDeg)));
+  // 1.875 is the peak slope of the quintic blend. Body rotations have a
+  // curved endpoint path; the additional margin bounds its sampled speed.
+  modeTransition.duration = fmaxf(kTransitionMinimumSeconds,
+      fmaxf(2.5f * distance / kTransitionFootSpeedMmPerSec,
+            1.875f * angle / kTransitionAngleSpeedDegPerSec));
+  motionInputAwaitingCenter = true;
+  motionInputCenteredSinceMs = 0;
+  gaitForwardCommand = gaitTurnCommand = gaitAmplitude = 0.0f;
+  gaitForwardStride = gaitTurnStride = 0.0f;
+}
+
+void beginNeutralTransition(BodyMode requestedMode, float rideHeight) {
+  // Stow returns to level at the current height before lowering; it must not
+  // first raise a low robot to the radio's standing height on link loss.
+  const float height = requestedMode == BODY_STOW ? outputHeightMm
+      : computeStandTargetZ(rideHeight);
+  LegTarget targets[kLegCount];
+  for (int i = 0; i < kLegCount; ++i) {
+    bodyKinematicsSimple(static_cast<LegIndex>(i), 0.0f, 0.0f,
+                         height + STAND_HEIGHT_Z, 0.0f, 0.0f, 0.0f,
+                         &targets[i].x, &targets[i].y, &targets[i].z);
+  }
+  beginTransitionStage(TRANSITION_NEUTRAL, targets, height, outputUsesBodyPose);
+}
+
+void beginModeTransition(BodyMode requestedMode, float rideHeight) {
+  if (isWalkingMode(outputMode)) {
+    // Freeze fore/aft and lateral coordinates while lowered feet regain
+    // support. Never recenter a lifted foot and collapse the body together.
+    LegTarget targets[kLegCount];
+    for (int i = 0; i < kLegCount; ++i) {
+      targets[i] = lastLegTargets[i];
+      // Use the last emitted support plane, even if a LIVE roll command or
+      // its deadman changes on this frame. Landing must not lift planted feet.
+      targets[i].z = fmaxf(lastLegTargets[i].z, gaitSupportZ[i]);
+    }
+    beginTransitionStage(TRANSITION_LAND, targets, gaitBodyZ, false);
+  } else {
+    beginNeutralTransition(requestedMode, rideHeight);
+  }
+}
+
+bool applyModeTransition(Adafruit_PWMServoDriver &driver,
+                         BodyMode requestedMode, float rideHeight) {
+  if (!modeTransitionActive()) return false;
+  modeTransition.seconds += static_cast<float>(kControlIntervalMs) / 1000.0f;
+  const float t = transitionBlend(modeTransition.seconds / modeTransition.duration);
+  const float height = modeTransition.fromHeight +
+      t * (modeTransition.toHeight - modeTransition.fromHeight);
+  if (modeTransition.bodyPose) {
+    moveLegsFromBodyPose(driver, (1.0f - t) * modeTransition.fromBodyX,
+                        (1.0f - t) * modeTransition.fromBodyY, height + STAND_HEIGHT_Z,
+                        (1.0f - t) * modeTransition.fromRoll,
+                        (1.0f - t) * modeTransition.fromPitch,
+                        (1.0f - t) * modeTransition.fromYaw);
+  } else {
+    outputHeightMm = height;
+    outputRollDeg = outputPitchDeg = outputYawDeg = 0.0f;
+    outputBodyX = outputBodyY = 0.0f;
+    outputUsesBodyPose = false;
+    for (int i = 0; i < kLegCount; ++i) {
+      const LegTarget &from = modeTransition.from[i];
+      const LegTarget &to = modeTransition.to[i];
+      commandLeg(driver, i, from.x + t * (to.x - from.x),
+                  from.y + t * (to.y - from.y), from.z + t * (to.z - from.z));
+    }
+  }
+  lastPoseZ = outputHeightMm;
+  if (modeTransition.seconds < modeTransition.duration) return true;
+
+  // Re-read the requested mode at stage boundaries. Rapid toggles replace the
+  // pending destination without restarting a trajectory from an old pose.
+  if (modeTransition.stage == TRANSITION_LAND) {
+    beginNeutralTransition(requestedMode, rideHeight);
+  } else if (modeTransition.stage == TRANSITION_NEUTRAL &&
+             requestedMode != BODY_STOW && fabsf(outputHeightMm - rideHeight) > 0.5f) {
+    beginNeutralTransition(requestedMode, rideHeight);
+  } else if (modeTransition.stage == TRANSITION_NEUTRAL && isWalkingMode(requestedMode)) {
+    const GaitProfileSettings &profile = gaitProfile().settings;
+    const float gaitHeight = fminf(outputHeightMm, profile.bodyHeightMm);
+    LegTarget targets[kLegCount];
+    for (int i = 0; i < kLegCount; ++i) {
+      const float side = (i == LEG_FL || i == LEG_BL) ? 1.0f : -1.0f;
+      targets[i] = {profile.touchdownXMm, side * profile.stanceWidthMm, gaitHeight};
+    }
+    beginTransitionStage(TRANSITION_WALK_STANCE, targets, gaitHeight, false);
+  } else if (modeTransition.stage == TRANSITION_WALK_STANCE && !isWalkingMode(requestedMode)) {
+    beginNeutralTransition(requestedMode, rideHeight);
+  } else {
+    modeTransition.stage = TRANSITION_NONE;
+    outputMode = requestedMode;
+    resetGaitState();
+    tiltRollRamp.go(0.0f);
+    tiltPitchRamp.go(0.0f);
+    tiltYawRamp.go(0.0f);
+    motionInputAwaitingCenter = motionInputProfileForMode(outputMode) != MOTION_INPUT_NONE;
+    motionInputCenteredSinceMs = 0;
+  }
+  return true;
 }
 }  // namespace
 
@@ -1049,13 +1330,14 @@ void setup() {
 #endif
   Wire.begin();
 #ifndef DOMINO_SIL
-  // The IMU and servo driver share Wire. A sensor bus fault must not hold
-  // the control loop at the library's default transaction timeout.
+  // Keep servo-bus transactions bounded if a device stops responding.
   Wire.setClock(100000);
   Wire.setTimeOut(20);
 #endif
 
+#if DOMINO_IMU_ENABLED
   imuInit();
+#endif
 
 #ifndef DOMINO_SIL
   Serial2.setRxBufferSize(CRSF_RX_BUFFER_BYTES);
@@ -1072,8 +1354,15 @@ void setup() {
   liveRobotEndpointBegin(pca);
 #endif
 
-  zRamp.setSpeed(kRampSpeedMmPerSec);
+  const MotionSmoothingSettings &smoothing = motionSmoothingSettings();
+  zRamp.setSpeed(smoothing.heightRateMmPerSec);
   zRamp.go(kCloserPoseZ);
+  tiltRollRamp.setSpeed(smoothing.rollRateDegPerSec);
+  tiltPitchRamp.setSpeed(smoothing.pitchRateDegPerSec);
+  tiltYawRamp.setSpeed(smoothing.yawRateDegPerSec);
+  tiltRollRamp.go(0.0f);
+  tiltPitchRamp.go(0.0f);
+  tiltYawRamp.go(0.0f);
   lastPoseZ = kCloserPoseZ;
   sitBlend = 1.0f;
   moveLegsToSitBlend(pca, lastPoseZ, sitBlend);
@@ -1114,6 +1403,7 @@ void loop() {
     lastUartOverflowCount = uartOverflowCount;
   }
 #endif
+#if DOMINO_IMU_ENABLED
   // Refresh IMU sample; failures simply leave the previous values.
   {
 #ifndef DOMINO_SIL
@@ -1121,6 +1411,7 @@ void loop() {
 #endif
     (void)imuReadSample();
   }
+#endif
   // A delayed UART or I2C read must not make the remainder of this pass use
   // a timestamp captured before the delay.
   now = millis();
@@ -1131,6 +1422,9 @@ void loop() {
   }
   if (liveRobotEndpointReceiverPassthroughActive()) return;
   activeManualControl = liveRobotEndpointManualControl();
+  // A transport read may take time; schedule the servo pass against the
+  // current clock rather than the timestamp captured before that read.
+  now = millis();
 #endif
 
   // 1) Read current RC "menu inputs" (switches, link status).
@@ -1151,6 +1445,25 @@ void loop() {
         (kRideHeightMaxMm - kRideHeightMinMm);
   }
 #endif
+  if (motionIkFault) {
+    // Stop further gait/tilt requests after an unreachable target. Re-arm
+    // requires a valid neutral stand with both motion switches off.
+    inputs.tiltSwitchDown = false;
+    inputs.carefulWalkRequested = inputs.gaitRequested = false;
+    inputs.balanceRequested = false;
+    if (!modeTransitionActive() && outputMode == BODY_STAND &&
+        ch_us[SC_CH_INDEX] < SC_CAREFUL_MIN_US && ch_us[SD_CH_INDEX] <= SD_OFF_THRESHOLD_US &&
+        motionInputsAreCentered()) {
+      bool neutral = fabsf(outputHeightMm - inputs.rideHeightMm) < 0.5f;
+      for (int i = 0; i < kLegCount; ++i) {
+        const float side = (i == LEG_FL || i == LEG_BL) ? 1.0f : -1.0f;
+        neutral = neutral && fabsf(lastLegTargets[i].x - COMMAND_NEUTRAL_FOOT_X_FROM_HIP) < 0.5f &&
+            fabsf(lastLegTargets[i].y - side * COMMAND_NEUTRAL_FOOT_Y_FROM_HIP) < 0.5f &&
+            fabsf(lastLegTargets[i].z - inputs.rideHeightMm) < 0.5f;
+      }
+      if (neutral) motionIkFault = false;
+    }
+  }
   menuState.linkAlive = inputs.haveLink;
   menuState.failsafeActive = inputs.failsafeActive;
 
@@ -1221,7 +1534,7 @@ void loop() {
   }
 
   const bool tiltCandidateRaw = desiredTiltActive;
-  const bool tiltCandidateFiltered =
+  const bool tiltCandidateFiltered = inputs.motionCommandsFresh &&
       applySwitchDebounce(tiltModeActive, tiltCandidateRaw, now, &tiltDebounce, kTiltToggleDebounceMs);
   if (tiltCandidateFiltered && !tiltModeActive) {
     enterTiltMode();
@@ -1247,7 +1560,7 @@ void loop() {
       !inputs.tiltSwitchDown &&
       !tiltModeActive &&
       (walkWasActive || standPoseReady) &&
-      !inputs.failsafeActive;
+      !inputs.failsafeActive && inputs.motionCommandsFresh;
   bool walkCandidateFiltered =
       applySwitchDebounce(walkWasActive,
                           walkCandidateRaw,
@@ -1255,11 +1568,13 @@ void loop() {
                           &gaitDebounce,
                           kGaitToggleDebounceMs);
   if ((!manualOwnsMotion && ch_us[SD_CH_INDEX] >= SD_ON_THRESHOLD_US) ||
-      inputs.tiltSwitchDown || tiltModeActive || inputs.failsafeActive) {
+      inputs.tiltSwitchDown || tiltModeActive || inputs.failsafeActive ||
+      !inputs.motionCommandsFresh) {
     walkCandidateFiltered = false;
   }
   if (walkCandidateFiltered && menuState.mode == BODY_STAND) {
-    menuState.mode = inputs.gaitRequested ? BODY_GAIT : BODY_CAREFUL;
+    menuState.mode = walkRequested
+        ? (inputs.gaitRequested ? BODY_GAIT : BODY_CAREFUL) : previousMode;
   }
 
   // 7) Balance mode: only allowed when standing (not stow, tilt, or gait),
@@ -1270,8 +1585,8 @@ void loop() {
   }
   updateMotionInputInterlock(previousMode, menuState.mode, now);
 #ifndef DOMINO_SIL
-  liveRobotEndpointSetControlState(static_cast<uint8_t>(menuState.mode),
-                                  motionInputAwaitingCenter);
+  liveRobotEndpointSetControlState(static_cast<uint8_t>(
+      modeTransitionActive() ? BODY_TRANSITION : outputMode), motionInputAwaitingCenter);
 #endif
   // Reset balance reference when entering or leaving balance mode.
   if (previousMode != BODY_BALANCE && menuState.mode == BODY_BALANCE) {
@@ -1289,18 +1604,14 @@ void loop() {
   }
   const bool walkingNow = menuState.mode == BODY_GAIT || menuState.mode == BODY_CAREFUL;
   if (!walkWasActive && walkingNow) {
-    resetGaitState();
     Serial.printf("Entering walk mode=%d (SC=%d, SD=%d)\n",
                   static_cast<int>(menuState.mode),
                   ch_us[SC_CH_INDEX],
                   ch_us[SD_CH_INDEX]);
   } else if (walkWasActive && !walkingNow) {
-    resetGaitState();
     Serial.printf("Exiting walk mode (newMode=%d)\n", static_cast<int>(menuState.mode));
   } else if (walkWasActive && walkingNow && previousMode != menuState.mode) {
-    // Careful and trot use the same stick semantics. Preserve phase and
-    // filtered commands so moving SC through the two walk positions does not
-    // stop and restart the legs mid-stride.
+    // A different foot schedule requires landing and a neutral handoff.
     Serial.printf("Changing walk mode=%d (SC=%d)\n",
                   static_cast<int>(menuState.mode), ch_us[SC_CH_INDEX]);
   }
@@ -1319,7 +1630,45 @@ void loop() {
     ScopedLoopStage controlStage(LoopStage::Control);
 #endif
     lastControlMs = now;
-    const float rampZ = zRamp.update();
+#ifndef DOMINO_SIL
+    if (liveRobotEndpointCalibrationOwnsOutputs() ||
+        !liveRobotEndpointAllowsRadioControl()) return;
+    if (!servoOutputsEnabled()) setServoOutputsEnabled(pca, true);
+#endif
+    const bool bodyPoseDisplaced = fabsf(outputRollDeg) + fabsf(outputPitchDeg) +
+        fabsf(outputYawDeg) + fabsf(outputBodyX) + fabsf(outputBodyY) > 0.05f;
+#ifndef DOMINO_SIL
+    const bool manualPoseReleased = !activeManualControl.active || !activeManualControl.deadman;
+#else
+    constexpr bool manualPoseReleased = false;
+#endif
+    const bool returnManualPose = outputMode == BODY_STAND && bodyPoseDisplaced &&
+        (manualPoseReleased || !inputs.motionCommandsFresh);
+    if (!modeTransitionActive() && (outputMode != menuState.mode || returnManualPose ||
+                                    (motionIkFault && bodyPoseDisplaced))) {
+      if (motionInputProfileForMode(outputMode) != MOTION_INPUT_NONE ||
+          isWalkingMode(menuState.mode) || outputMode == BODY_BALANCE || bodyPoseDisplaced) {
+        beginModeTransition(menuState.mode, menuState.rideHeightMm);
+      } else {
+        outputMode = menuState.mode;
+        if (outputMode == BODY_TILT) {
+          tiltRollRamp.go(0.0f);
+          tiltPitchRamp.go(0.0f);
+          tiltYawRamp.go(0.0f);
+        }
+      }
+    }
+    if (applyModeTransition(pca, menuState.mode, menuState.rideHeightMm)) {
+      // Keep the height ramp anchored to the pose actually emitted, including
+      // the gait's lower body height. Its old stand value cannot leak through
+      // on the first frame after a handoff.
+      zRamp.go(lastPoseZ);
+      sitBlend = 0.0f;
+      return;
+    }
+    const MotionSmoothingSettings &smoothing = motionSmoothingSettings();
+    const float rampZ = commandWithMotionSmoothing(
+        zRamp, currentTargetZ, smoothing.heightRateMmPerSec, true);
     lastPoseZ = rampZ;
     const float sitBlendTarget = (menuState.mode == BODY_STOW) ? 1.0f : 0.0f;
     const float sitBlendStep = kSitBlendSpeedPerSec * (static_cast<float>(kControlIntervalMs) / 1000.0f);
@@ -1328,16 +1677,6 @@ void loop() {
     } else if (sitBlend > sitBlendTarget) {
       sitBlend = fmaxf(sitBlendTarget, sitBlend - sitBlendStep);
     }
-
-#ifndef DOMINO_SIL
-    // The physical CRSF receiver remains a complete standalone control path.
-    // Pause it only when LIVE calibration owns one servo or an explicit LIVE
-    // safety action has inhibited radio output. Read-only USB must never be a
-    // prerequisite for ordinary SA/SC/SD control.
-    if (liveRobotEndpointCalibrationOwnsOutputs() ||
-        !liveRobotEndpointAllowsRadioControl()) return;
-    if (!servoOutputsEnabled()) setServoOutputsEnabled(pca, true);
-#endif
 
     if (menuState.mode == BODY_TILT) {
       applyTiltPose(pca);
@@ -1373,7 +1712,8 @@ void loop() {
       float bodyX = 0.0f;
       float bodyY = 0.0f;
 #ifndef DOMINO_SIL
-      if (activeManualControl.active && activeManualControl.deadman) {
+      if (activeManualControl.active && activeManualControl.deadman && !motionIkFault &&
+          inputs.motionCommandsFresh && !motionInputAwaitingCenter) {
         rollDeg = activeManualControl.roll * kMaxRollDeg;
         pitchDeg = activeManualControl.pitch * kManualMaxPitchDeg;
         yawDeg = activeManualControl.yaw * kManualMaxYawDeg;
@@ -1507,21 +1847,25 @@ void loop() {
 // Desktop simulation instrumentation. These accessors expose only state that
 // the native monitor needs; production ESP32 builds do not contain them.
 extern "C" int dominoSilBodyMode() {
-  return static_cast<int>(menuState.mode);
+  return static_cast<int>(modeTransitionActive() ? BODY_TRANSITION : outputMode);
 }
 
+extern "C" int dominoSilRequestedMode() { return static_cast<int>(menuState.mode); }
+extern "C" int dominoSilTransitionStage() { return static_cast<int>(modeTransition.stage); }
+
 extern "C" float dominoSilTargetZ() {
+  if (modeTransitionActive()) return modeTransition.toHeight;
   return (menuState.mode == BODY_GAIT || menuState.mode == BODY_CAREFUL)
              ? fminf(currentTargetZ, gaitProfile().settings.bodyHeightMm)
              : currentTargetZ;
 }
 
 extern "C" float dominoSilPoseZ() {
-  return (menuState.mode == BODY_GAIT || menuState.mode == BODY_CAREFUL) ? gaitBodyZ : lastPoseZ;
+  return outputHeightMm;
 }
 
 extern "C" bool dominoSilTiltActive() {
-  return tiltModeActive;
+  return !modeTransitionActive() && outputMode == BODY_TILT;
 }
 
 extern "C" float dominoSilRideHeightMm() {
@@ -1529,11 +1873,11 @@ extern "C" float dominoSilRideHeightMm() {
 }
 
 extern "C" bool dominoSilGaitActive() {
-  return menuState.mode == BODY_GAIT || menuState.mode == BODY_CAREFUL;
+  return !modeTransitionActive() && isWalkingMode(outputMode);
 }
 
 extern "C" bool dominoSilMotionInputArmed() {
-  return !motionInputAwaitingCenter;
+  return !modeTransitionActive() && !motionInputAwaitingCenter;
 }
 
 extern "C" float dominoSilGaitPhaseRad() {
@@ -1561,14 +1905,14 @@ extern "C" float dominoSilLegCommandZ(int legIndex) {
 }
 
 extern "C" float dominoSilBodyRollDeg() {
-  return silBodyRollDeg;
+  return outputRollDeg;
 }
 
 extern "C" float dominoSilBodyPitchDeg() {
-  return silBodyPitchDeg;
+  return outputPitchDeg;
 }
 
 extern "C" float dominoSilBodyYawDeg() {
-  return silBodyYawDeg;
+  return outputYawDeg;
 }
 #endif

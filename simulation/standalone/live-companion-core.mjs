@@ -163,6 +163,7 @@ export class LiveCompanionCore {
     this.capabilities = {
       telemetry: false,
       calibration: false,
+      motionSmoothing: false,
       gaitProfiles: false,
       persistentProfiles: false,
       manualControl: false,
@@ -189,6 +190,7 @@ export class LiveCompanionCore {
     this.lastManualFrameAt = 0;
     this.lastManualSequence = -1;
     this.benchMode = false;
+    this.bootId = undefined;
   }
 
   announcement(now = Date.now()) {
@@ -225,6 +227,12 @@ export class LiveCompanionCore {
   disconnectRobot(now = Date.now(), reason = "robot-link-closed") {
     const robot = [];
     if (this.manualAuthority) robot.push(neutralManualCommand(now, reason));
+    if (this.benchMode || [...this.pending.values()].some((entry) => entry.kind === "calibration" && entry.action === "enter")) {
+      robot.push({
+        type: "companion-command", protocol: DOMINO_ROBOT_LINK_PROTOCOL, kind: "calibration",
+        action: "exit", requestId: randomUUID(), timestampMs: now,
+      });
+    }
     this.robotConnected = false;
     this.lastRobotMessageAt = 0;
     this.lastTelemetryAt = 0;
@@ -237,6 +245,7 @@ export class LiveCompanionCore {
     this.lastSafetyHeartbeatSequence = -1;
     this.manualAuthority = null;
     this.benchMode = false;
+    this.bootId = undefined;
     return { relay: [], robot };
   }
 
@@ -251,6 +260,8 @@ export class LiveCompanionCore {
       if (message.action === "connect") {
         const accepted = this.robotFresh(now) && robotStates.has(this.robotState) && this.robotState !== "unknown";
         if (accepted) {
+          this.pending.clear();
+          this.benchMode = false;
           this.sessionId = randomUUID();
           this.lastSafetyHeartbeatAt = 0;
           this.lastSafetyHeartbeatSequence = -1;
@@ -268,6 +279,11 @@ export class LiveCompanionCore {
         });
       } else if (message.action === "disconnect" && message.sessionId === this.sessionId) {
         if (this.manualAuthority) robot.push(neutralManualCommand(now, "engineering-session-disconnected"));
+        robot.push({
+          type: "companion-command", protocol: DOMINO_ROBOT_LINK_PROTOCOL, kind: "calibration",
+          action: "exit", requestId: randomUUID(), timestampMs: now,
+        });
+        this.pending.clear();
         const sessionId = this.sessionId;
         this.sessionId = "";
         this.lastSafetyHeartbeatAt = 0;
@@ -285,6 +301,10 @@ export class LiveCompanionCore {
 
     if (message.type === "live-safety-command" && validLiveSafetyCommand(message)) {
       let reason = "";
+      if (message.action === "arm" && (this.benchMode ||
+          [...this.pending.values()].some(entry => entry.kind === "calibration" && entry.action === "enter"))) {
+        reason = "Exit calibration bench mode before arming.";
+      }
       if (message.action === "arm" && this.robotState !== "disarmed") reason = "Robot must report disarmed before arming.";
       if (message.action === "arm" && !this.telemetryFresh(now)) reason = "Fresh physical telemetry is required before arming.";
       if (message.action === "arm" && !this.driveLinkReady(now)) reason = "A fresh failsafe-clear CRSF/ELRS link is required before arming.";
@@ -354,8 +374,15 @@ export class LiveCompanionCore {
     }
 
     if (message.type === "live-calibration-command" && validCalibrationCommand(message)) {
+      if (message.action === "keepalive") {
+        const ageMs = now - Number(message.timestampMs);
+        if (this.robotFresh(now) && this.robotState === "disarmed" && this.benchMode && ageMs >= 0 && ageMs <= 2_000) {
+          robot.push(this.robotCommand("calibration", message, now));
+        }
+        return { relay, robot };
+      }
       const allowed = this.robotState === "disarmed" &&
-        (["request-profile", "enter"].includes(message.action) || this.benchMode);
+        (["request-profile", "request-smoothing", "save-smoothing", "enter", "exit"].includes(message.action) || this.benchMode);
       if (!allowed) {
         relay.push(this.calibrationAck(message, false, "Calibration requires disarmed robot state; writes also require acknowledged bench mode."));
       } else {
@@ -476,6 +503,12 @@ export class LiveCompanionCore {
       ? normalizeRobotTelemetryClock(message, now)
       : message;
     if (validRobotTelemetry(normalizedTelemetry, now)) {
+      const bootId = normalizedTelemetry.diagnostics?.bootId;
+      if (bootId !== undefined && this.bootId !== undefined && bootId !== this.bootId) {
+        this.benchMode = false;
+        this.pending.clear();
+      }
+      if (bootId !== undefined) this.bootId = bootId;
       this.robotConnected = true;
       this.lastRobotMessageAt = now;
       this.robotState = normalizedTelemetry.robotState;
@@ -498,6 +531,9 @@ export class LiveCompanionCore {
         if (navigationState.navigation) this.navigation = navigationState.navigation;
       }
       this.lastTelemetryAt = now;
+      if (normalizedTelemetry.diagnostics?.benchMode === false || this.robotState !== "disarmed") {
+        this.benchMode = false;
+      }
       if (this.sessionId) {
         relay.push({
           type: "live-telemetry", adapterId: this.adapterId, sessionId: this.sessionId,
@@ -552,7 +588,7 @@ export class LiveCompanionCore {
         relay.push(this.manualAuthorityAck(pending.message, accepted, reason, pending));
       } else if (message.kind === "calibration") {
         if (accepted && message.action === "enter") this.benchMode = true;
-        if (message.action === "exit") this.benchMode = false;
+        if (message.action === "exit" || message.benchMode === false) this.benchMode = false;
         relay.push(this.calibrationAck(pending.message, accepted, reason, message.profile, message));
       } else if (message.kind === "gait") {
         relay.push(this.gaitAck(pending.message, accepted, reason, message.profile));
@@ -593,7 +629,7 @@ export class LiveCompanionCore {
     }
     for (const [requestId, pending] of this.pending) {
       const timeoutMs = ["calibration", "gait"].includes(pending.kind) &&
-        ["save-profile", "apply-profile", "revert-profile"].includes(pending.action)
+        ["save-profile", "save-smoothing", "apply-profile", "revert-profile"].includes(pending.action)
         ? COMPANION_PERSISTENCE_ACK_TIMEOUT_MS
         : COMPANION_COMMAND_ACK_TIMEOUT_MS;
       if (now - pending.sentAt <= timeoutMs) continue;
@@ -639,6 +675,8 @@ export class LiveCompanionCore {
       ...(Number(physical?.maxSpeedDegPerSec) > 0 && Number(physical?.maxSpeedDegPerSec) <= 5
         ? { maxSpeedDegPerSec: Number(physical.maxSpeedDegPerSec) } : {}),
       ...(typeof physical?.persisted === "boolean" ? { persisted: physical.persisted } : {}),
+      ...(physical?.smoothing && typeof physical.smoothing === "object"
+        ? { smoothing: physical.smoothing } : {}),
     };
   }
 

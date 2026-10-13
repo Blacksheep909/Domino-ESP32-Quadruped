@@ -2,14 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { DOMINO_ROBOT_LINK_PROTOCOL, LiveCompanionCore } from "./live-companion-core.mjs";
-import { createLiveCalibrationProfile } from "./web/src/live-calibration-state.js";
+import { createCalibrationBenchCommand, createLiveCalibrationProfile, createLiveCalibrationState } from "./web/src/live-calibration-state.js";
+import { validCalibrationCommand } from "./web/src/live-calibration-protocol.js";
+import { DEFAULT_MOTION_SMOOTHING } from "./web/src/live-motion-smoothing-state.js";
 import { createLiveGaitProfile } from "./web/src/live-gait-state.js";
 
 const adapterId = "adapter-test";
 const hello = (robotState = "disarmed") => ({
   type: "robot-hello", protocol: DOMINO_ROBOT_LINK_PROTOCOL,
   robotId: "domino-test", robotName: "Domino test", firmwareVersion: "test", robotState,
-  capabilities: { telemetry: true, calibration: true, gaitProfiles: true, persistentProfiles: true, manualControl: true },
+  capabilities: { telemetry: true, calibration: true, motionSmoothing: true, gaitProfiles: true, persistentProfiles: true, manualControl: true },
   gaitProfile: { schemaVersion: 2, robot: "domino-test", name: "Robot safe" },
 });
 const pose = (timestampMs) => ({
@@ -161,6 +163,23 @@ test("arming is rejected without a fresh healthy controller link", () => {
   assert.equal(result.robot.length, 0);
 });
 
+test("active bench permission and a pending bench entry both block arming", () => {
+  for (const pending of [false, true]) {
+    const core = connectedCore();
+    if (pending) core.pending.set("bench", { kind: "calibration", action: "enter", sentAt: 1000 });
+    else core.benchMode = true;
+    const result = core.handleRelay({
+      type: "live-safety-command", action: "arm", requestId: "arm", timestampMs: 1050,
+      adapterId, sessionId: core.sessionId,
+      safety: { holdMs: 1500, requiresDisarmed: true, requiresFreshTelemetry: true,
+        requiresDriveLink: true, watchdogMs: 400 },
+    }, 1050);
+    assert.equal(result.relay[0].accepted, false);
+    assert.match(result.relay[0].reason, /calibration/);
+    assert.equal(result.robot.length, 0);
+  }
+});
+
 test("physical acknowledgements gate safety state and heartbeat responses", () => {
   const core = connectedCore();
   const command = {
@@ -306,6 +325,121 @@ test("physical calibration safety and persistence evidence reaches the wizard", 
   assert.equal(result.relay[0].persisted, false);
 });
 
+test("Pair disconnect exits physical bench mode and prevents a late enter acknowledgement from carrying over", () => {
+  const core = connectedCore();
+  const oldSessionId = core.sessionId;
+  const enter = {
+    type: "live-calibration-command", action: "enter", requestId: "cal-enter-disconnect",
+    adapterId, sessionId: oldSessionId,
+    safety: { benchModeRequired: true, maxSpeedDegPerSec: 5, jogLimitDeg: 10 },
+  };
+  core.handleRelay(enter, 1_050);
+  const disconnected = core.handleRelay({
+    type: "live-connection-command", action: "disconnect", requestId: "disconnect-cal",
+    timestampMs: 1_060, adapterId, sessionId: oldSessionId,
+  }, 1_060);
+  assert.equal(disconnected.robot[0].kind, "calibration");
+  assert.equal(disconnected.robot[0].action, "exit");
+  assert.notEqual(disconnected.robot[0].requestId, enter.requestId);
+  assert.equal(core.pending.size, 0);
+  assert.equal(core.benchMode, false);
+  const lateEnter = core.handleRobot({
+    protocol: DOMINO_ROBOT_LINK_PROTOCOL, type: "robot-ack", kind: "calibration",
+    action: "enter", requestId: enter.requestId, accepted: true, robotState: "disarmed", benchMode: true,
+  }, 1_070);
+  assert.equal(lateEnter.relay.length, 0);
+  assert.equal(core.benchMode, false);
+
+  const reconnected = core.handleRelay({
+    type: "live-connection-command", action: "connect", requestId: "connect-again",
+    timestampMs: 1_080, adapterId, transport: "wifi",
+    safety: { readOnlyHandshake: true, commandsBlockedUntilStateKnown: true },
+  }, 1_080);
+  assert.equal(reconnected.relay[0].accepted, true);
+  for (const action of ["jog", "save-profile"]) {
+    const request = action === "jog"
+      ? {
+          type: "live-calibration-command", action, requestId: `reconnect-${action}`,
+          adapterId, sessionId: core.sessionId, timestampMs: 1_090,
+          selectedChannel: 0, physicalChannel: 0, targetServoDeg: 135,
+          safety: { benchModeRequired: true, maxSpeedDegPerSec: 5, jogLimitDeg: 10 },
+        }
+      : {
+          type: "live-calibration-command", action, requestId: `reconnect-${action}`,
+          adapterId, sessionId: core.sessionId, timestampMs: 1_090, baseSavedAt: 0,
+          profile: createLiveCalibrationProfile({ savedAt: 1 }), selectedChannel: 0,
+          physicalChannel: 0, jogOffsetDeg: 0, targetServoDeg: 135,
+          safety: { benchModeRequired: true, maxSpeedDegPerSec: 5, jogLimitDeg: 10 },
+        };
+    const rejected = core.handleRelay(request, 1_090);
+    assert.equal(rejected.relay[0].accepted, false);
+    assert.equal(rejected.robot.length, 0);
+  }
+});
+
+test("robot link shutdown sends bench exit while the transport is still writable", () => {
+  const core = connectedCore();
+  core.benchMode = true;
+  const disconnected = core.disconnectRobot(1_050, "robot-link-closed");
+  assert.equal(disconnected.robot[0].kind, "calibration");
+  assert.equal(disconnected.robot[0].action, "exit");
+  assert.ok(disconnected.robot[0].requestId);
+  assert.equal(core.sessionId, "");
+  assert.equal(core.benchMode, false);
+});
+
+test("calibration keepalive is bounded, untracked, and requires fresh acknowledged bench state", () => {
+  const core = connectedCore();
+  core.benchMode = true;
+  const request = {
+    type: "live-calibration-command", action: "keepalive", requestId: "cal-keepalive",
+    timestampMs: 1_050, adapterId, sessionId: core.sessionId,
+    safety: { benchModeRequired: true, maxSpeedDegPerSec: 5, jogLimitDeg: 10 },
+  };
+  assert.equal(core.handleRelay(request, 1_050).robot[0].action, "keepalive");
+  assert.equal(core.pending.size, 0);
+  assert.equal(core.handleRelay({ ...request, timestampMs: 1_051 }, 1_050).robot.length, 0);
+  assert.equal(core.handleRelay({ ...request, timestampMs: 1_050 }, 3_051).robot.length, 0);
+  assert.equal(core.handleRelay({ ...request, sessionId: "stale-session" }, 1_050).robot.length, 0);
+  core.benchMode = false;
+  assert.equal(core.handleRelay(request, 1_050).robot.length, 0);
+});
+
+test("calibration save acknowledgement and reboot telemetry clear bench mode and pending requests", () => {
+  const core = connectedCore();
+  const initialBoot = telemetry(1_040);
+  initialBoot.diagnostics = { robotState: "disarmed", bootId: "old-boot", benchMode: false };
+  core.handleRobot(initialBoot, 1_040);
+  core.benchMode = true;
+  const request = {
+    type: "live-calibration-command", action: "save-profile", requestId: "cal-save-bench-off",
+    timestampMs: 1_050, adapterId, sessionId: core.sessionId, baseSavedAt: 0,
+    profile: createLiveCalibrationProfile({ savedAt: 1 }), selectedChannel: 0,
+    physicalChannel: 0, jogOffsetDeg: 0, targetServoDeg: 135,
+    safety: { benchModeRequired: true, maxSpeedDegPerSec: 5, jogLimitDeg: 10 },
+  };
+  core.handleRelay(request, 1_050);
+  const ack = core.handleRobot({
+    protocol: DOMINO_ROBOT_LINK_PROTOCOL, type: "robot-ack", kind: "calibration",
+    action: "save-profile", requestId: request.requestId, accepted: true, robotState: "disarmed", benchMode: false,
+  }, 1_060);
+  assert.equal(ack.relay[0].accepted, true);
+  assert.equal(core.benchMode, false);
+
+  core.benchMode = true;
+  core.handleRelay({
+    type: "live-calibration-command", action: "enter", requestId: "cal-enter-before-reboot",
+    adapterId, sessionId: core.sessionId,
+    safety: { benchModeRequired: true, maxSpeedDegPerSec: 5, jogLimitDeg: 10 },
+  }, 1_070);
+  const restarted = telemetry(1_080);
+  restarted.diagnostics = { robotState: "disarmed", bootId: "new-boot", benchMode: true };
+  core.handleRobot(restarted, 1_080);
+  assert.equal(core.benchMode, false);
+  assert.equal(core.pending.size, 0);
+  assert.ok(core.sessionId);
+});
+
 test("active calibration readback returns robot profile without entering bench mode", () => {
   const core = connectedCore();
   const profile = createLiveCalibrationProfile();
@@ -326,6 +460,50 @@ test("active calibration readback returns robot profile without entering bench m
   assert.equal(core.benchMode, false);
   core.robotState = "armed";
   assert.equal(core.handleRelay({ ...request, requestId: "armed-read" }, 1_070).relay[0].accepted, false);
+});
+
+test("motion smoothing is bounded, saved separately, and read back while disarmed", () => {
+  const core = connectedCore();
+  const state = createLiveCalibrationState();
+  const envelope = { adapterId, sessionId: core.sessionId };
+  const request = {
+    ...createCalibrationBenchCommand(state, "request-smoothing", "smooth-read", 1_050),
+    ...envelope,
+  };
+  assert.equal(validCalibrationCommand(request), true);
+  assert.equal(core.handleRelay(request, 1_050).robot[0].action, "request-smoothing");
+  assert.equal(core.benchMode, false);
+  const read = core.handleRobot({
+    protocol: DOMINO_ROBOT_LINK_PROTOCOL, type: "robot-ack", kind: "calibration",
+    action: "request-smoothing", requestId: "smooth-read", accepted: true,
+    robotState: "disarmed", benchMode: false, smoothing: DEFAULT_MOTION_SMOOTHING,
+  }, 1_060);
+  assert.deepEqual(read.relay[0].smoothing, DEFAULT_MOTION_SMOOTHING);
+
+  const tuned = { ...DEFAULT_MOTION_SMOOTHING, updatedAt: 1_080, enabled: false, rollRateDegPerSec: 140 };
+  const save = {
+    ...createCalibrationBenchCommand(state, "save-smoothing", "smooth-save", 1_080,
+      { baseUpdatedAt: 0, settings: tuned }),
+    ...envelope,
+  };
+  assert.equal(validCalibrationCommand(save), true);
+  const forwarded = core.handleRelay(save, 1_080).robot[0].payload.smoothing;
+  assert.equal(forwarded.rollRateDegPerSec, 140);
+  assert.equal(forwarded.enabled, false);
+  const saved = core.handleRobot({
+    protocol: DOMINO_ROBOT_LINK_PROTOCOL, type: "robot-ack", kind: "calibration",
+    action: "save-smoothing", requestId: "smooth-save", accepted: true,
+    robotState: "disarmed", benchMode: false, persisted: true,
+  }, 1_090);
+  assert.equal(saved.relay[0].persisted, true);
+  assert.equal(core.benchMode, false);
+
+  const unsafe = { ...save, requestId: "too-fast", smoothing: { ...tuned, yawRateDegPerSec: 999 } };
+  assert.equal(validCalibrationCommand(unsafe), false);
+  assert.equal(validCalibrationCommand({ ...save, smoothing: { ...tuned, enabled: 0 } }), false);
+  assert.equal(validCalibrationCommand({ ...save, smoothing: { ...tuned, schemaVersion: 1 } }), false);
+  core.robotState = "armed";
+  assert.equal(core.handleRelay({ ...save, requestId: "armed-save" }, 1_100).relay[0].accepted, false);
 });
 
 test("physical request timeouts return explicit rejection acknowledgements", () => {

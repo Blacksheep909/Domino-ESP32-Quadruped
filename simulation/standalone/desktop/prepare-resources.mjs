@@ -38,6 +38,7 @@ for (const entry of ["platformio.ini", "src", "include", "lib"]) {
   if (existsSync(source)) cpSync(source, path.join(outputRoot, "firmware", entry), { recursive: true });
 }
 for (const entry of [
+  "companion-process.mjs",
   "live-companion-adapter.mjs",
   "ardupilot-companion-adapter.mjs",
   "live-companion-core.mjs",

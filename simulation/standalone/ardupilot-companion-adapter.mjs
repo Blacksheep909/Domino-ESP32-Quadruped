@@ -3,6 +3,7 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { WebSocket } from "ws";
+import { createInterface } from "node:readline";
 
 import {
   DOMINO_ROBOT_LINK_PROTOCOL,
@@ -954,6 +955,9 @@ Optional: --relay ws://127.0.0.1:8770/control --adapter-id ardupilot-mavlink-1`)
   const shutdown = () => { bridge.stop(); process.exit(0); };
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);
+  createInterface({ input: process.stdin }).on("line", (line) => {
+    try { if (JSON.parse(line)?.type === "companion-shutdown") shutdown(); } catch { /* Local control pipe only. */ }
+  });
 }
 
 if (process.argv[1] && path.resolve(fileURLToPath(import.meta.url)) === path.resolve(process.argv[1])) {

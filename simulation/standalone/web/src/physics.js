@@ -600,6 +600,12 @@ export async function createDominoPhysics(options = {}) {
     });
   }
 
+  function usesTiltSupport(firmwareState) {
+    return firmwareState?.mode === "TILT" ||
+      (firmwareState?.mode === "TRANSITION" && firmwareState?.transition_stage === 2 &&
+       tiltPlanarAnchor !== null);
+  }
+
   function driveBodyHeight(firmwareState) {
     const legCommands = firmwareState?.leg_command_xyz_mm;
     if (!Array.isArray(legCommands) || legCommands.length !== 4) return;
@@ -612,7 +618,7 @@ export async function createDominoPhysics(options = {}) {
       ? firmwarePoseZ / 1000
       : averageFootReach;
     const nominalBodyHeight = commandedReach + BODY_HEIGHT_FROM_FOOT_REACH_OFFSET;
-    commandedBodyHeight = firmwareState?.mode === "TILT" && tiltHeightReference
+    commandedBodyHeight = usesTiltSupport(firmwareState) && tiltHeightReference
       ? tiltHeightReference.baseHeight +
         (commandedReach - tiltHeightReference.commandedReach)
       : nominalBodyHeight;
@@ -629,7 +635,7 @@ export async function createDominoPhysics(options = {}) {
   }
 
   function driveBodyPlanarPosition(firmwareState) {
-    if (firmwareState?.mode !== "TILT" || !tiltPlanarAnchor) return;
+    if (!usesTiltSupport(firmwareState) || !tiltPlanarAnchor) return;
     const translation = base.translation();
     const velocity = base.linvel();
     const correction = new THREE.Vector3(
@@ -646,7 +652,7 @@ export async function createDominoPhysics(options = {}) {
   }
 
   function driveFootPlanarAnchors(firmwareState) {
-    if (firmwareState?.mode !== "TILT" || !tiltFootAnchors) return;
+    if (!usesTiltSupport(firmwareState) || !tiltFootAnchors) return;
     legRuntimes.forEach((runtime, index) => {
       const anchor = tiltFootAnchors[index];
       applyFootPlanarHold(
@@ -796,7 +802,7 @@ export async function createDominoPhysics(options = {}) {
       rotation.w,
     );
 
-    if (firmwareState?.mode === "TILT") {
+    if (usesTiltSupport(firmwareState)) {
       const requestedDelta = targetBodyQuaternion(firmwareState);
       if (!requestedDelta) return;
       const requestedTarget = tiltReferenceQuaternion.clone()
@@ -877,7 +883,7 @@ export async function createDominoPhysics(options = {}) {
     setTargets(firmwareState, visualLegs, servoReference);
     const mode = firmwareState?.mode || null;
     const modeChanged = mode !== previousMode;
-    if (modeChanged) {
+    if (modeChanged && !usesTiltSupport(firmwareState)) {
       // Foot holds are rate-limited, so carrying the previous mode's force
       // into the next controller produces a visible kick. Every mode owns a
       // fresh set of anchors and force history.
@@ -904,7 +910,7 @@ export async function createDominoPhysics(options = {}) {
               0,
             ) / tiltFootAnchors.length,
       };
-    } else if (mode !== "TILT") {
+    } else if (!usesTiltSupport(firmwareState)) {
       tiltPlanarAnchor = null;
       tiltFootAnchors = null;
       tiltHeightReference = null;
@@ -924,7 +930,7 @@ export async function createDominoPhysics(options = {}) {
       gaitFootAnchors = Array(LEG_SPECS.length).fill(null);
       gaitHeadingForward = null;
     }
-    if (mode !== "TILT" && !isWalkingMode(mode)) {
+    if (!usesTiltSupport(firmwareState) && !isWalkingMode(mode)) {
       clearPlanarHoldForces();
     }
     previousMode = mode;

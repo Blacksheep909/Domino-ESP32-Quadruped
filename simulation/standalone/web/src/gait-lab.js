@@ -135,6 +135,19 @@ function smooth01(value) {
   return 0.5 - 0.5 * Math.cos(Math.PI * t);
 }
 
+function transitionEase(value) {
+  const t = clamp(value, 0, 1);
+  return t ** 3 * (10 + t * (-15 + 6 * t));
+}
+
+function transitionDuration(source, target) {
+  const distance = Math.max(0, ...target.leg_command_xyz_mm.map((command, index) =>
+    Math.hypot(...command.map((value, axis) =>
+      value - (source.leg_command_xyz_mm?.[index]?.[axis] ?? value)))));
+  const angle = Math.max(0, ...(source.body_pose_rpy_deg || [0, 0, 0]).map(Math.abs));
+  return Math.max(0.35, 2.5 * distance / 80, 1.875 * angle / 25);
+}
+
 function approach(current, target, blend) {
   return current + (target - current) * blend;
 }
@@ -153,8 +166,8 @@ function mixVector(source, target, blend) {
 }
 
 function mixMotionState(baseState, sourceState, targetState, blend) {
-  const amount = smooth01(clamp(blend, 0, 1));
-  return {
+  const amount = transitionEase(blend);
+  const output = {
     ...baseState,
     servo_angle_deg: mixVector(
       sourceState.servo_angle_deg,
@@ -175,6 +188,21 @@ function mixMotionState(baseState, sourceState, targetState, blend) {
     gait_command: targetState.gait_command,
     gait_lab: { ...targetState.gait_lab, transition: amount },
   };
+  // Solve the blended endpoints. Interpolating angles independently would
+  // give the renderer a different foot path from the one used by physics.
+  for (const leg of legs) {
+    const upper = (output.servo_angle_deg[leg.channels.upper] - standServoReference[leg.channels.upper]) /
+      leg.directions.upper;
+    const lower = (output.servo_angle_deg[leg.channels.lower] - standServoReference[leg.channels.lower]) /
+      leg.directions.lower;
+    const solved = solveCadEndpoint(leg, output.leg_command_xyz_mm[COMMAND_INDEX[leg.label]], { upper, lower });
+    if (!solved.reachable) continue;
+    for (const joint of ["shoulder", "upper", "lower"]) {
+      const channel = leg.channels[joint];
+      output.servo_angle_deg[channel] = standServoReference[channel] + leg.directions[joint] * solved[joint];
+    }
+  }
+  return output;
 }
 
 function transformedFoot(points, solution) {
@@ -305,6 +333,8 @@ export function sanitizeGaitLabSettings(candidate = {}) {
     );
   });
   settings.enabled = settings.enabled !== false;
+  settings.dutyFactor = Math.max(settings.dutyFactor,
+    Math.max(settings.diagonalPhase, 1 - settings.diagonalPhase) + 0.02);
   settings.preset = Object.hasOwn(gaitLabPresets, settings.preset) ? settings.preset : "custom";
   return settings;
 }
@@ -320,6 +350,10 @@ export function createGaitLab(initialSettings = {}) {
   let lastGaitState = null;
   let lastOutputState = null;
   let activeMode = null;
+  let recovery = null;
+  let nativeWasTransitioning = false;
+  let waitForNative = false;
+  let handoffMode = null;
   const seeds = Object.fromEntries(legs.map((leg) => [leg.label, { upper: 0, lower: 0 }]));
   let telemetry = { active: false, phase: 0, speedMmPerSec: 0, stanceCount: 4, reachableCount: 4, legDetails: [] };
 
@@ -331,9 +365,74 @@ export function createGaitLab(initialSettings = {}) {
     if (!sourceState) return sourceState;
     const delta = clamp(Number(deltaSeconds) || 0, 0, 0.05);
     const responseSeconds = Math.max(0.06, settings.responseMs / 1000);
-    const transitionSeconds = Math.max(0.4, responseSeconds * 1.5);
+    let transitionSeconds = Math.max(0.4, responseSeconds * 1.5);
     const walking = sourceState.mode === "GAIT" || sourceState.mode === "CAREFUL";
     const active = settings.enabled && walking && !sourceState.tilt_active;
+    const nativeTransitioning = sourceState.transition_active === true;
+    const pendingMode = nativeTransitioning ? sourceState.requested_mode : sourceState.mode;
+    const nativeTransitionStarted = nativeTransitioning && !nativeWasTransitioning;
+    nativeWasTransitioning = nativeTransitioning;
+
+    function beginRecovery(stage, from) {
+      const landing = stage === "land";
+      const height = landing || pendingMode === "STOW" ? from.pose_z_mm
+        : Number(sourceState.ride_height_mm ?? sourceState.pose_z_mm);
+      const target = {
+        ...sourceState,
+        mode: "TRANSITION",
+        body_pose_rpy_deg: [0, 0, 0],
+        pose_z_mm: height,
+        target_z_mm: height,
+        leg_command_xyz_mm: from.leg_command_xyz_mm.map((command, index) =>
+          landing ? [command[0], command[1], height]
+            : [COMMAND_X_MM, index === 0 || index === 2 ? COMMAND_Y_MM : -COMMAND_Y_MM, height]),
+      };
+      recovery = { stage, from, target, elapsed: 0, duration: transitionDuration(from, target) };
+    }
+
+    const switchingGait = activeMode !== null && activeMode !== sourceState.mode;
+    const leavingTilt = active && lastOutputState?.mode === "TILT" && handoffMode !== sourceState.mode;
+    if (!recovery && (switchingGait || leavingTilt || nativeTransitionStarted)) {
+      const from = lastOutputState || sourceState;
+      beginRecovery(activeMode !== null ? "land" : "neutral", from);
+      activeMode = null;
+      phase = filteredForward = filteredTurn = 0;
+      transitionFromState = null;
+      transitionProgress = 0;
+      handoffMode = null;
+    }
+    if (recovery) {
+      recovery.elapsed += delta;
+      const output = mixMotionState(sourceState, recovery.from, recovery.target,
+        recovery.elapsed / recovery.duration);
+      output.mode = "TRANSITION";
+      output.transition_active = true;
+      output.requested_mode = pendingMode;
+      output.transition_stage = recovery.stage === "land" ? 1 : 2;
+      output.tilt_active = output.gait_active = false;
+      output.motion_input_armed = false;
+      output.gait_command = [0, 0];
+      telemetry = { ...telemetry, active: false, speedMmPerSec: 0, transition: 0 };
+      output.gait_lab = telemetry;
+      lastOutputState = output;
+      if (recovery.elapsed >= recovery.duration) {
+        if (recovery.stage === "land") {
+          beginRecovery("neutral", output);
+        } else if (pendingMode !== "STOW" &&
+                   Math.abs(output.pose_z_mm - Number(sourceState.ride_height_mm ?? sourceState.pose_z_mm)) > 0.5) {
+          beginRecovery("neutral", output);
+        } else {
+          recovery = null;
+          handoffMode = pendingMode;
+          waitForNative = nativeTransitioning;
+          transitionFromState = output;
+          transitionProgress = 0;
+        }
+      }
+      return output;
+    }
+    if (waitForNative && nativeTransitioning) return lastOutputState;
+    waitForNative = false;
     if (!active) {
       if (activeMode !== null) {
         transitionFromState = lastOutputState || lastGaitState || sourceState;
@@ -341,6 +440,7 @@ export function createGaitLab(initialSettings = {}) {
         activeMode = null;
       }
       if (transitionFromState && transitionProgress < 1) {
+        transitionSeconds = Math.max(transitionSeconds, transitionDuration(transitionFromState, sourceState));
         transitionProgress = Math.min(1, transitionProgress + delta / transitionSeconds);
         telemetry = {
           ...telemetry,
@@ -380,19 +480,31 @@ export function createGaitLab(initialSettings = {}) {
       transitionFromState = lastOutputState || sourceState;
       transitionProgress = 0;
       activeMode = sourceState.mode;
-      // Careful and trot share the same command axes. Keeping their phase
-      // continuous avoids snapping all four endpoints back to cycle zero
-      // when SC moves between the two walking positions.
       if (enteringWalk) phase = 0;
     }
+    const stanceTarget = {
+      ...sourceState,
+      body_pose_rpy_deg: [0, 0, 0],
+      leg_command_xyz_mm: Array.from({ length: 4 }, (_, index) => [
+        settings.touchdownXMm,
+        (index === 0 || index === 2 ? 1 : -1) * settings.stanceWidthMm,
+        Math.min(Number(sourceState.ride_height_mm ?? sourceState.pose_z_mm), settings.bodyHeightMm),
+      ]),
+    };
+    transitionSeconds = Math.max(transitionSeconds,
+      transitionDuration(transitionFromState || sourceState, stanceTarget));
     transitionProgress = Math.min(1, transitionProgress + delta / transitionSeconds);
     const settingsBlend = 1 - Math.exp(-delta / Math.max(0.12, motionSettings.responseMs / 1000));
     gaitLabControls.forEach(({ key }) => {
       motionSettings[key] = approach(motionSettings[key], settings[key], settingsBlend);
     });
     const blend = 1 - Math.exp(-delta / responseSeconds);
-    filteredForward = approach(filteredForward, clamp(Number(input.forward) || 0, -1, 1) * motionSettings.maxForwardScale, blend);
-    filteredTurn = approach(filteredTurn, clamp(Number(input.turn) || 0, -1, 1) * motionSettings.maxTurnScale, blend);
+    const motionAllowed = sourceState.motion_input_armed !== false &&
+      sourceState.link_alive !== false && !sourceState.transition_active && transitionProgress >= 1;
+    filteredForward = approach(filteredForward, motionAllowed
+      ? clamp(Number(input.forward) || 0, -1, 1) * motionSettings.maxForwardScale : 0, blend);
+    filteredTurn = approach(filteredTurn, motionAllowed
+      ? clamp(Number(input.turn) || 0, -1, 1) * motionSettings.maxTurnScale : 0, blend);
     const activity = clamp(Math.hypot(filteredForward, filteredTurn), 0, 1);
     if (activity > 0.02) {
       phase = wrap01(
@@ -414,6 +526,7 @@ export function createGaitLab(initialSettings = {}) {
     let stanceCount = 0;
     let reachableCount = 0;
     const legDetails = [];
+    const bodyHeight = Math.min(Number(sourceState.ride_height_mm ?? sourceState.pose_z_mm), motionSettings.bodyHeightMm);
 
     for (const leg of legs) {
       const left = leg.label.endsWith("L");
@@ -447,7 +560,7 @@ export function createGaitLab(initialSettings = {}) {
       const command = [
         motionSettings.touchdownXMm + foot.x,
         side * motionSettings.stanceWidthMm,
-        motionSettings.bodyHeightMm + foot.z,
+        bodyHeight + foot.z,
       ];
       commands[COMMAND_INDEX[leg.label]] = command;
       const solved = solveCadEndpoint(leg, command, seeds[leg.label]);
@@ -488,9 +601,9 @@ export function createGaitLab(initialSettings = {}) {
       ...sourceState,
       servo_angle_deg: servoAngles,
       leg_command_xyz_mm: commands,
-      pose_z_mm: motionSettings.bodyHeightMm,
-      target_z_mm: motionSettings.bodyHeightMm,
-      ride_height_mm: motionSettings.bodyHeightMm,
+      body_pose_rpy_deg: [0, 0, 0],
+      pose_z_mm: bodyHeight,
+      target_z_mm: bodyHeight,
       gait_phase_rad: phase * TWO_PI,
       gait_command: [filteredForward, filteredTurn],
       gait_lab: telemetry,
@@ -529,6 +642,9 @@ export function createGaitLab(initialSettings = {}) {
       lastGaitState = null;
       lastOutputState = null;
       activeMode = null;
+      recovery = null;
+      nativeWasTransitioning = waitForNative = false;
+      handoffMode = null;
       Object.values(seeds).forEach((seed) => {
         seed.upper = 0;
         seed.lower = 0;

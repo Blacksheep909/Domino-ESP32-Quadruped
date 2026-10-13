@@ -44,6 +44,19 @@ browser cache. Unsaved browser edits are kept for review. When a saved browser
 copy differs from the robot, Studio keeps the previous copy under **Load previous
 browser copy** before showing the robot values.
 
+During the current Studio session, disconnecting, reconnecting, or resetting
+the robot keeps calibration edits, the selected joint, and the wizard step.
+**Save browser copy** backs up those edits locally; they remain changes to
+review and send to the robot, so reconnect readback cannot overwrite them.
+Temporary jog displacement is reset when communication is lost.
+
+Disconnecting from **Pair Robot** sends a bench-mode exit to the firmware.
+Studio renews bench permission every 500 ms while calibration is active. If
+USB is removed or communication stops, firmware disables outputs and leaves
+bench mode after two seconds without renewal. Reconnect and request bench mode
+again before jogging; pairing alone does not restore bench permission. This
+disconnect timeout requires both the updated Studio app and firmware.
+
 Before a profile can be sent, Studio must have read the current robot profile
 in that session. Firmware 0.8.15 and later require the read profile's `savedAt`
 revision on every write and reject a stale Studio draft. A successful save is

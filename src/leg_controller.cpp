@@ -3,7 +3,6 @@
 
 #include "leg_controller.h"
 
-#include "ik.h"
 #include "servo_calibration.h"
 #ifndef DOMINO_SIL
 #include "loop_diagnostics.h"
@@ -11,17 +10,10 @@
 
 namespace {
 constexpr float kServoCenterDeg = 135.0f;
-// IK theta2/theta3 describe the virtual 160/153 mm leg, while Domino's two
-// physical servo arms drive the CAD four-bar linkage. These neutral-preserving
-// gains were solved against the rendered STL hole centers and foot endpoint.
-// The exported closure mesh orders its two holes opposite to the URDF's
-// parent/child naming, so calibration must follow the physical mesh pivots.
-// Keeping the neutral terms explicit means the proven 280 mm stand pulse is
-// unchanged while the full 160 mm sit remains within +/-45 degrees.
+// Retain the original virtual-chain neutral angles as the calibration basis;
+// motion deltas are solved only against the measured CAD four-bar linkage.
 constexpr float kNeutralTheta2Deg = -36.628307f;
 constexpr float kNeutralTheta3Deg = 31.397787f;
-constexpr float kUpperCadDriveGain = 0.66f;
-constexpr float kLowerCadDriveGain = 1.32f;
 constexpr float kNeutralCommandXmm = -15.75f;
 constexpr float kNeutralCommandYmm = 38.0f;
 constexpr float kNeutralCommandZmm = 280.0f;
@@ -97,12 +89,23 @@ constexpr CadGeometry kLeftCad{
 
 float gCadUpperSeedDeg[kLegCount] = {};
 float gCadLowerSeedDeg[kLegCount] = {};
+uint32_t gLegIkFailureCount = 0;
 float gCommandedServoAnglesDeg[kPcaChannelCount] = {};
 float gCommandedModelServoAnglesDeg[kPcaChannelCount] = {};
 uint16_t gCommandedServoPulseUs[kPcaChannelCount] = {};
+uint16_t gLastWrittenPulseUs[kPcaChannelCount] = {};
+uint32_t gLastWrittenAtMs[kPcaChannelCount] = {};
+bool gWrittenPulseValid[kPcaChannelCount] = {};
 bool gServoOutputsEnabled = false;
 uint32_t gServoSafetyClipCount = 0;
 ServoCalibrationProfile gServoCalibration = defaultServoCalibrationProfile();
+constexpr uint32_t kServoWriteRefreshMs = 250;
+
+void invalidateServoWriteCache() {
+  for (uint8_t channel = 0; channel < kPcaChannelCount; ++channel) {
+    gWrittenPulseValid[channel] = false;
+  }
+}
 
 struct ServoAngleLimit {
   float minDeg;
@@ -435,14 +438,22 @@ void write270(Adafruit_PWMServoDriver &driver, uint8_t logicalChannel, float ang
         servoCalibrationModelAngle(gServoCalibration, logicalChannel, safeAngle);
     gCommandedServoPulseUs[logicalChannel] = pulseUs;
   }
-#ifdef DOMINO_SIL
-  driver.writeMicroseconds(physicalChannel, pulseUs);
-#else
-  if (gServoOutputsEnabled) {
-    ScopedLoopStage stage(LoopStage::ServoWrite);
-    driver.writeMicroseconds(physicalChannel, pulseUs);
-  }
+#ifndef DOMINO_SIL
+  if (!gServoOutputsEnabled) return;
 #endif
+  // PCA9685 keeps generating the last pulse without another I2C write. Retry
+  // unchanged values periodically in case an earlier bus transaction failed.
+  const uint32_t nowMs = millis();
+  if (gWrittenPulseValid[physicalChannel] &&
+      gLastWrittenPulseUs[physicalChannel] == pulseUs &&
+      nowMs - gLastWrittenAtMs[physicalChannel] < kServoWriteRefreshMs) return;
+#ifndef DOMINO_SIL
+  ScopedLoopStage stage(LoopStage::ServoWrite);
+#endif
+  driver.writeMicroseconds(physicalChannel, pulseUs);
+  gLastWrittenPulseUs[physicalChannel] = pulseUs;
+  gLastWrittenAtMs[physicalChannel] = nowMs;
+  gWrittenPulseValid[physicalChannel] = true;
 }
 
 // Leg channel assignments:
@@ -519,6 +530,10 @@ const LegConfig BL_leg{
 }  // namespace
 
 void moveLeg(const LegConfig &leg, Adafruit_PWMServoDriver &driver, float x, float y, float z) {
+  if (!isfinite(x) || !isfinite(y) || !isfinite(z)) {
+    ++gLegIkFailureCount;
+    return;
+  }
   float shoulderDelta = 0.0f;
   float upperDelta = 0.0f;
   float lowerDelta = 0.0f;
@@ -531,18 +546,11 @@ void moveLeg(const LegConfig &leg, Adafruit_PWMServoDriver &driver, float x, flo
       &upperDelta,
       &lowerDelta);
 
-  if (!cadSolved) {
-    // Retain the old virtual-chain mapping as a bounded fallback if a target is
-    // outside the measured four-bar workspace or the numerical solve becomes
-    // singular. Normal stand, sit, and tilt poses use the CAD inverse above.
-    float theta1 = 0.0f;
-    float theta2 = 0.0f;
-    float theta3 = 0.0f;
-    IK(x, y * static_cast<float>(leg.lateralDir), z, &theta1, &theta2, &theta3);
-    // Match the CAD solver's outward-positive canonical hip coordinate.
-    shoulderDelta = theta1;
-    upperDelta = kUpperCadDriveGain * (theta2 - kNeutralTheta2Deg);
-    lowerDelta = kLowerCadDriveGain * (theta3 - kNeutralTheta3Deg);
+  if (!cadSolved || !isfinite(shoulderDelta) || !isfinite(upperDelta) || !isfinite(lowerDelta)) {
+    // A different linkage model is not a safe recovery for a failed CAD
+    // inverse. PCA9685 holds the last valid pulses for this leg instead.
+    ++gLegIkFailureCount;
+    return;
   }
 
   const float hipAngle =
@@ -597,12 +605,15 @@ void moveLegFL(Adafruit_PWMServoDriver &driver, float x, float y, float z) { mov
 void moveLegBR(Adafruit_PWMServoDriver &driver, float x, float y, float z) { moveLeg(BR_leg, driver, x, y, z); }
 void moveLegBL(Adafruit_PWMServoDriver &driver, float x, float y, float z) { moveLeg(BL_leg, driver, x, y, z); }
 
+uint32_t legIkFailureCount() { return gLegIkFailureCount; }
+
 // Stub: future body pose handling (keep feet fixed, move body)
 void setBodyPose(const BodyPose & /*pose*/, Adafruit_PWMServoDriver & /*driver*/) {
   // Intentionally empty for now.
 }
 
 void setServoOutputsEnabled(Adafruit_PWMServoDriver &driver, bool enabled) {
+  if (gServoOutputsEnabled != enabled || !enabled) invalidateServoWriteCache();
   gServoOutputsEnabled = enabled;
 #ifdef DOMINO_SIL
   (void)driver;
@@ -637,11 +648,15 @@ bool commandCalibrationServoAngle(Adafruit_PWMServoDriver &driver,
       servoCalibrationModelAngle(gServoCalibration, logicalChannel, safeAngle);
   gCommandedServoPulseUs[logicalChannel] = pulseUs;
   driver.writeMicroseconds(physicalChannel, pulseUs);
+  gLastWrittenPulseUs[physicalChannel] = pulseUs;
+  gLastWrittenAtMs[physicalChannel] = millis();
+  gWrittenPulseValid[physicalChannel] = true;
   return true;
 }
 
 void disableServoOutputPhysicalChannel(Adafruit_PWMServoDriver &driver, uint8_t physicalChannel) {
   if (physicalChannel >= kPcaChannelCount) return;
+  gWrittenPulseValid[physicalChannel] = false;
 #ifndef DOMINO_SIL
   driver.setPWM(physicalChannel, 0, 4096);
 #else
@@ -652,6 +667,7 @@ void disableServoOutputPhysicalChannel(Adafruit_PWMServoDriver &driver, uint8_t 
 bool setServoCalibrationProfile(const ServoCalibrationProfile &profile) {
   if (!validateServoCalibrationProfile(profile)) return false;
   gServoCalibration = profile;
+  invalidateServoWriteCache();
   return true;
 }
 

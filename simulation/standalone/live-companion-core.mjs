@@ -112,6 +112,23 @@ function normalizeRobotTelemetryClock(message, receivedAt) {
   };
 }
 
+const calibrationSources = new Set([
+  "default-empty", "default-fallback", "nvs", "nvs-backup", "nvs-legacy",
+]);
+
+// Firmware reports which stored record produced the active profile. Relay only
+// this bounded shape so the UI can warn when the robot is running defaults.
+export function sanitizeCalibrationOrigin(origin) {
+  if (!origin || typeof origin !== "object" || !calibrationSources.has(origin.source)) return null;
+  const savedAt = Number(origin.savedAt);
+  return {
+    source: origin.source,
+    usingDefaults: origin.source.startsWith("default-"),
+    savedAt: Number.isSafeInteger(savedAt) && savedAt >= 0 ? savedAt : 0,
+    ...(boundedString(origin.detail, 96) ? { detail: origin.detail } : {}),
+  };
+}
+
 function validRobotAcknowledgement(message) {
   return Boolean(
     message?.type === "robot-ack" &&
@@ -675,6 +692,8 @@ export class LiveCompanionCore {
       ...(Number(physical?.maxSpeedDegPerSec) > 0 && Number(physical?.maxSpeedDegPerSec) <= 5
         ? { maxSpeedDegPerSec: Number(physical.maxSpeedDegPerSec) } : {}),
       ...(typeof physical?.persisted === "boolean" ? { persisted: physical.persisted } : {}),
+      ...(sanitizeCalibrationOrigin(physical?.origin)
+        ? { origin: sanitizeCalibrationOrigin(physical.origin) } : {}),
       ...(physical?.smoothing && typeof physical.smoothing === "object"
         ? { smoothing: physical.smoothing } : {}),
     };

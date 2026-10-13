@@ -247,6 +247,9 @@ import { createLiveSessionRepository } from "./live-session-storage.js";
 import { advanceCalibrationSweep, calibrationBoxGapMm, jointTravelMetrics, nudgeCalibrationInspectionPose } from "./live-calibration-inspection.js";
 import { createJointInspectionOverlay } from "./joint-inspection-overlay.js";
 import {
+  LIVE_CALIBRATION_CORRUPT_BACKUP_KEY,
+  LIVE_CALIBRATION_LAST_ROBOT_KEY,
+  calibrationOriginWarning,
   acceptCalibrationSaveReadback,
   acceptRobotCalibrationProfile,
   acknowledgeRobotCalibrationSave,
@@ -792,6 +795,15 @@ try {
     }
   }
 } catch {
+  // An unreadable stored profile may still be recoverable by hand; keep the
+  // raw text instead of silently destroying the owner's only browser copy.
+  try {
+    const unreadable = localStorage.getItem(LIVE_CALIBRATION_STORAGE_KEY) ||
+      localStorage.getItem(LIVE_CALIBRATION_LEGACY_STORAGE_KEY);
+    if (unreadable) localStorage.setItem(LIVE_CALIBRATION_CORRUPT_BACKUP_KEY, unreadable);
+  } catch {
+    // Storage may be unavailable or full.
+  }
   localStorage.removeItem(LIVE_CALIBRATION_STORAGE_KEY);
   localStorage.removeItem(LIVE_CALIBRATION_LEGACY_STORAGE_KEY);
 }
@@ -7618,6 +7630,14 @@ function renderLiveCalibrationUi() {
   ).sort((a, b) => a - b);
   document.querySelector("#live-calibration-output-range").textContent =
     `${logicalOutputs[0].toFixed(2)}° - ${logicalOutputs[1].toFixed(2)}°`;
+  const originWarning = calibrationOriginWarning(liveCalibrationState);
+  const originBanner = document.querySelector("#live-calibration-origin-banner");
+  originBanner.hidden = !originWarning;
+  if (originWarning) {
+    originBanner.dataset.level = originWarning.level;
+    document.querySelector("#live-calibration-origin-title").textContent = originWarning.title;
+    document.querySelector("#live-calibration-origin-detail").textContent = originWarning.detail;
+  }
   const savedAt = liveCalibrationState.profile.savedAt;
   document.querySelector("#live-calibration-save-state").textContent = liveCalibrationState.savePhase === "sending"
     ? "SENDING PROFILE"
@@ -8232,9 +8252,26 @@ function acceptCalibrationAcknowledgement(message) {
         const before = calibrationProfileJson(liveCalibrationState.profile);
         const previousSavedAt = liveCalibrationState.profile.savedAt;
         const verifying = purpose === "verify" && liveCalibrationState.saveExpectedProfile;
+        let lastKnownGood = null;
+        try {
+          const storedGood = localStorage.getItem(LIVE_CALIBRATION_LAST_ROBOT_KEY);
+          lastKnownGood = storedGood ? parseCalibrationProfileJson(storedGood) : null;
+        } catch {
+          lastKnownGood = null;
+        }
         const result = verifying
           ? acceptCalibrationSaveReadback(liveCalibrationState, activeProfile, connection.sessionId)
-          : acceptRobotCalibrationProfile(liveCalibrationState, activeProfile, connection.sessionId);
+          : acceptRobotCalibrationProfile(
+            liveCalibrationState, activeProfile, connection.sessionId, message.origin, lastKnownGood);
+        try {
+          // Keep the newest profile read from a robot that was NOT on defaults, so
+          // a robot that later loses its flash copy can be restored from it.
+          if (!verifying && !result.robotUsingDefaults && Number(activeProfile.savedAt) > 0) {
+            localStorage.setItem(LIVE_CALIBRATION_LAST_ROBOT_KEY, calibrationProfileJson(activeProfile));
+          }
+        } catch {
+          // Storage can be unavailable; the robot remains the source of truth.
+        }
         if (result.adopted) {
           const activeJson = calibrationProfileJson(liveCalibrationState.profile);
           try {
@@ -8256,9 +8293,13 @@ function acceptCalibrationAcknowledgement(message) {
           showAppToast(result.matched ? "Robot calibration saved and verified. Outputs off." : "Calibration read-back differs. Draft kept.",
             result.matched ? "success" : "warning", 4200);
         } else {
-          status.textContent = result.adopted
-            ? "Active robot calibration loaded. Offsets map the physical servos to the CAD neutral; CAD foot geometry stays the same."
-            : "Active robot profile read separately. Your browser draft was kept; Review shows both.";
+          status.textContent = result.restored
+            ? "Robot is on DEFAULT calibration. Your last known profile is loaded as an unsaved draft - review it, then send it to the robot."
+            : result.robotUsingDefaults
+              ? "Robot is on DEFAULT calibration and Studio has no earlier saved profile to restore."
+              : result.adopted
+                ? "Active robot calibration loaded. Offsets map the physical servos to the CAD neutral; CAD foot geometry stays the same."
+                : "Active robot profile read separately. Your browser draft was kept; Review shows both.";
         }
       } catch {
         status.textContent = "The robot returned an invalid calibration profile. Saving remains locked.";

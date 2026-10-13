@@ -772,7 +772,7 @@ void sendHello(bool bestEffort = false) {
   document["type"] = "robot-hello";
   document["robotId"] = "domino-esp32-quadruped";
   document["robotName"] = "Domino";
-  document["firmwareVersion"] = "0.8.20";
+  document["firmwareVersion"] = "0.8.21";
   document["robotState"] = stateName();
   addCalibrationOrigin(document["calibration"].to<JsonObject>());
   if (state == LiveRobotState::Fault && faultReason[0]) document["faultReason"] = faultReason;
@@ -1204,7 +1204,10 @@ void handleCalibration(JsonObjectConst command, JsonObjectConst payload,
     acknowledgeCalibration(action, requestId, true);
     return;
   }
-  if (!benchMode) {
+  // Saving only writes flash (every output is turned off first), so it does not
+  // need bench mode. Requiring it let a broken bench handshake make a calibration
+  // impossible to persist. Jogging and keepalives still require bench mode.
+  if (!benchMode && strcmp(action, "save-profile")) {
     acknowledgeCalibration(action, requestId, false, "Bench mode has not been acknowledged.");
     return;
   }

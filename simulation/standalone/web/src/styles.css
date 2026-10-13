@@ -4171,6 +4171,10 @@ body[data-workspace="real-robot"] #telemetry-panel:has(#joint-legend:not([hidden
 :root[data-theme="dark"] .calibration-change-summary > div[data-tone="danger"] { background: #43201a; color: #f6cfc7; }
 :root[data-theme="dark"] .calibration-change-summary > div[data-tone="warning"] { background: #3a2f12; color: #f2e2b0; }
 
+.calibration-send-blocked { margin: 8px 0; padding: 8px 10px; border-left: 4px solid #b8432f; border-radius: 5px; background: #fbe6e1; color: #5c1d12; font-size: 12px; line-height: 1.4; }
+.calibration-send-blocked[hidden] { display: none; }
+:root[data-theme="dark"] .calibration-send-blocked { background: #43201a; color: #f6cfc7; }
+
 .calibration-origin-banner[hidden] { display: none; }
 .calibration-origin-banner strong { font: 750 11px/1.2 "Cascadia Mono", Consolas, monospace; letter-spacing: 0.06em; }
 .calibration-origin-banner p { margin: 0; font-size: 12px; line-height: 1.45; }

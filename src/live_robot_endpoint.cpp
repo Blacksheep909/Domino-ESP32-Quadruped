@@ -52,10 +52,12 @@
 #endif
 
 #include "crsf.h"
+#include "calibration_lease.h"
 #include "gait_profile.h"
 #include "imu.h"
 #include "leg_controller.h"
 #include "loop_diagnostics.h"
+#include "motion_smoothing.h"
 #include "power_monitor.h"
 #include "power_fault_guard.h"
 
@@ -70,6 +72,8 @@ constexpr float kCalibrationMaxSpeedDegPerSec = 5.0f;
 constexpr float kCalibrationJogLimitDeg = 10.0f;
 constexpr uint32_t kCalibrationMagic = 0x4443414c;  // DCAL
 constexpr char kCalibrationNamespace[] = "domino-cal";
+constexpr uint32_t kSmoothingMagic = 0x44534d4f;  // DSMO
+constexpr char kSmoothingNamespace[] = "domino-smooth";
 constexpr uint32_t kGaitMagic = 0x44474149;  // DGAI
 constexpr char kGaitNamespace[] = "domino-gait";
 constexpr uint32_t kTransportOwnerIdleMs = 2000;
@@ -127,6 +131,7 @@ uint32_t bootId = 0;
 uint8_t controlBodyMode = 0;
 bool controlAwaitingStickCenter = false;
 bool benchMode = false;
+CalibrationLease calibrationLease;
 bool receiverPassthroughPending = false;
 bool receiverPassthroughActive = false;
 String usbInputLine;
@@ -153,6 +158,30 @@ char faultReason[96] = {};
 struct StoredCalibrationProfile {
   uint32_t magic;
   ServoCalibrationProfile profile;
+  uint32_t checksum;
+};
+
+struct StoredMotionSmoothingSettings {
+  uint32_t magic;
+  MotionSmoothingSettings settings;
+  uint32_t checksum;
+};
+
+// Firmware 0.2.27 stored schema v1 without the enable switch. Preserve the
+// original binary layout so an update retains the user's tuned rates.
+struct MotionSmoothingSettingsV1 {
+  uint16_t schemaVersion;
+  uint64_t updatedAt;
+  float heightRateMmPerSec;
+  float rollRateDegPerSec;
+  float pitchRateDegPerSec;
+  float yawRateDegPerSec;
+  float tiltInputDeadband;
+};
+
+struct StoredMotionSmoothingSettingsV1 {
+  uint32_t magic;
+  MotionSmoothingSettingsV1 settings;
   uint32_t checksum;
 };
 
@@ -252,6 +281,79 @@ bool persistCalibrationProfile(const ServoCalibrationProfile &profile) {
   const bool exactMatch = verifiedRead && storedProfileValid(verified) &&
       memcmp(&verified, &candidate, sizeof(candidate)) == 0;
   return exactMatch && setServoCalibrationProfile(profile);
+}
+
+StoredMotionSmoothingSettings storedSmoothingFor(const MotionSmoothingSettings &settings) {
+  StoredMotionSmoothingSettings stored{};
+  stored.magic = kSmoothingMagic;
+  stored.settings = settings;
+  stored.checksum = checksumBytes(
+      reinterpret_cast<const uint8_t *>(&stored.settings), sizeof(stored.settings));
+  return stored;
+}
+
+bool storedSmoothingValid(const StoredMotionSmoothingSettings &stored) {
+  return stored.magic == kSmoothingMagic &&
+         stored.checksum == checksumBytes(
+             reinterpret_cast<const uint8_t *>(&stored.settings), sizeof(stored.settings)) &&
+         validateMotionSmoothingSettings(stored.settings);
+}
+
+bool migrateStoredSmoothingV1(const StoredMotionSmoothingSettingsV1 &stored,
+                              MotionSmoothingSettings *migrated) {
+  if (!migrated || stored.magic != kSmoothingMagic ||
+      stored.settings.schemaVersion != 1 ||
+      stored.checksum != checksumBytes(
+          reinterpret_cast<const uint8_t *>(&stored.settings), sizeof(stored.settings))) return false;
+  MotionSmoothingSettings settings = defaultMotionSmoothingSettings();
+  settings.updatedAt = stored.settings.updatedAt;
+  settings.heightRateMmPerSec = stored.settings.heightRateMmPerSec;
+  settings.rollRateDegPerSec = stored.settings.rollRateDegPerSec;
+  settings.pitchRateDegPerSec = stored.settings.pitchRateDegPerSec;
+  settings.yawRateDegPerSec = stored.settings.yawRateDegPerSec;
+  settings.tiltInputDeadband = stored.settings.tiltInputDeadband;
+  if (!validateMotionSmoothingSettings(settings)) return false;
+  *migrated = settings;
+  return true;
+}
+
+bool loadMotionSmoothingSettings() {
+  Preferences preferences;
+  if (!preferences.begin(kSmoothingNamespace, true)) return false;
+  const size_t length = preferences.getBytesLength("active");
+  StoredMotionSmoothingSettings stored{};
+  if (length == sizeof(stored) &&
+      preferences.getBytes("active", &stored, sizeof(stored)) == sizeof(stored) &&
+      storedSmoothingValid(stored)) {
+    preferences.end();
+    return setMotionSmoothingSettings(stored.settings);
+  }
+  StoredMotionSmoothingSettingsV1 legacy{};
+  MotionSmoothingSettings migrated{};
+  const bool read = length == sizeof(legacy) &&
+      preferences.getBytes("active", &legacy, sizeof(legacy)) == sizeof(legacy) &&
+      migrateStoredSmoothingV1(legacy, &migrated);
+  preferences.end();
+  return read && setMotionSmoothingSettings(migrated);
+}
+
+bool persistMotionSmoothingSettings(const MotionSmoothingSettings &settings) {
+  if (!validateMotionSmoothingSettings(settings)) return false;
+  const StoredMotionSmoothingSettings candidate = storedSmoothingFor(settings);
+  Preferences writer;
+  if (!writer.begin(kSmoothingNamespace, false)) return false;
+  const bool written = writer.putBytes("active", &candidate, sizeof(candidate)) == sizeof(candidate);
+  writer.end();
+  if (!written) return false;
+
+  Preferences verifier;
+  if (!verifier.begin(kSmoothingNamespace, true)) return false;
+  StoredMotionSmoothingSettings verified{};
+  const bool read = verifier.getBytes("active", &verified, sizeof(verified)) == sizeof(verified);
+  verifier.end();
+  return read && storedSmoothingValid(verified) &&
+         memcmp(&candidate, &verified, sizeof(candidate)) == 0 &&
+         setMotionSmoothingSettings(settings);
 }
 
 StoredGaitProfile storedGaitFor(const GaitProfile &profile) {
@@ -455,6 +557,11 @@ bool parseCalibrationProfile(JsonObjectConst source, ServoCalibrationProfile *pr
   candidate.savedAt = source["savedAt"] | static_cast<uint64_t>(0);
   uint8_t index = 0;
   for (JsonObjectConst joint : joints) {
+    // Validate before narrowing: 256 must not wrap to channel 0, nor 257
+    // become direction +1. Rejected imports leave the active NVS untouched.
+    if (!joint["logicalChannel"].is<uint8_t>() || !joint["channel"].is<uint8_t>() ||
+        !joint["direction"].is<int>() ||
+        (joint["direction"].as<int>() != -1 && joint["direction"].as<int>() != 1)) return false;
     candidate.joints[index++] = {
         static_cast<uint8_t>(joint["logicalChannel"] | 255),
         static_cast<uint8_t>(joint["channel"] | 255),
@@ -483,6 +590,37 @@ void addCalibrationProfile(JsonObject target, const ServoCalibrationProfile &pro
     item["minimumDeg"] = joint.minimumDeg;
     item["maximumDeg"] = joint.maximumDeg;
   }
+}
+
+bool parseMotionSmoothingSettings(JsonObjectConst source, MotionSmoothingSettings *settings) {
+  if (!settings || source.isNull() ||
+      (source["schemaVersion"] | 0) != DOMINO_MOTION_SMOOTHING_SCHEMA_VERSION ||
+      strcmp(source["robot"] | "", "domino-esp32-quadruped") ||
+      !source["enabled"].is<bool>()) return false;
+  MotionSmoothingSettings candidate{};
+  candidate.schemaVersion = DOMINO_MOTION_SMOOTHING_SCHEMA_VERSION;
+  candidate.updatedAt = source["updatedAt"] | static_cast<uint64_t>(0);
+  candidate.heightRateMmPerSec = source["heightRateMmPerSec"] | NAN;
+  candidate.rollRateDegPerSec = source["rollRateDegPerSec"] | NAN;
+  candidate.pitchRateDegPerSec = source["pitchRateDegPerSec"] | NAN;
+  candidate.yawRateDegPerSec = source["yawRateDegPerSec"] | NAN;
+  candidate.tiltInputDeadband = source["tiltInputDeadband"] | NAN;
+  candidate.enabled = source["enabled"].as<bool>();
+  if (!validateMotionSmoothingSettings(candidate)) return false;
+  *settings = candidate;
+  return true;
+}
+
+void addMotionSmoothingSettings(JsonObject target, const MotionSmoothingSettings &settings) {
+  target["schemaVersion"] = settings.schemaVersion;
+  target["robot"] = "domino-esp32-quadruped";
+  target["updatedAt"] = settings.updatedAt;
+  target["heightRateMmPerSec"] = settings.heightRateMmPerSec;
+  target["rollRateDegPerSec"] = settings.rollRateDegPerSec;
+  target["pitchRateDegPerSec"] = settings.pitchRateDegPerSec;
+  target["yawRateDegPerSec"] = settings.yawRateDegPerSec;
+  target["tiltInputDeadband"] = settings.tiltInputDeadband;
+  target["enabled"] = settings.enabled;
 }
 
 const char* stateName() {
@@ -532,6 +670,7 @@ void writeDocument(JsonDocument &document, bool bestEffort = false) {
 void addCapabilities(JsonObject capabilities) {
   capabilities["telemetry"] = true;
   capabilities["calibration"] = true;
+  capabilities["motionSmoothing"] = true;
   capabilities["gaitProfiles"] = true;
   capabilities["persistentProfiles"] = true;
   capabilities["persistentGaitProfiles"] = true;
@@ -578,7 +717,7 @@ void sendHello(bool bestEffort = false) {
   document["type"] = "robot-hello";
   document["robotId"] = "domino-esp32-quadruped";
   document["robotName"] = "Domino";
-  document["firmwareVersion"] = "0.8.15";
+  document["firmwareVersion"] = "0.8.18";
   document["robotState"] = stateName();
   if (state == LiveRobotState::Fault && faultReason[0]) document["faultReason"] = faultReason;
   document["wirelessAuth"] = "psk-v1";
@@ -669,6 +808,7 @@ void sendTelemetry(uint32_t now) {
   diagnostics["robotState"] = stateName();
   if (state == LiveRobotState::Fault && faultReason[0]) diagnostics["faultReason"] = faultReason;
   diagnostics["outputsEnabled"] = servoOutputsEnabled();
+  diagnostics["benchMode"] = benchMode;
   diagnostics["imuOnline"] = imuSampleFresh(now);
   if (gImuState.has_sample) diagnostics["imuSampleAgeMs"] = imuSampleAgeMs(now);
   diagnostics["imuConsecutiveErrors"] = imuConsecutiveErrorCount();
@@ -729,6 +869,7 @@ void sendTelemetry(uint32_t now) {
   diagnostics["telemetryTxSkipped"] = telemetryTxSkipped;
   diagnostics["bodyMode"] = controlBodyMode;
   diagnostics["motionInputAwaitingCenter"] = controlAwaitingStickCenter;
+  diagnostics["legIkFailures"] = legIkFailureCount();
   diagnostics["radioControlEnabled"] = liveRobotEndpointAllowsRadioControl();
   diagnostics["crsfAcceptedFrames"] = crsfAcceptedFrameCount();
   diagnostics["crsfCrcErrors"] = crsfCrcErrorCount();
@@ -781,7 +922,7 @@ void acknowledge(const char *kind, const char *action, const char *requestId,
 
 void acknowledgeCalibration(const char *action, const char *requestId, bool accepted,
                             const char *reason = nullptr, bool persisted = false,
-                            bool includeProfile = false) {
+                            bool includeProfile = false, bool includeSmoothing = false) {
   JsonDocument document;
   document["protocol"] = kProtocol;
   document["type"] = "robot-ack";
@@ -796,6 +937,8 @@ void acknowledgeCalibration(const char *action, const char *requestId, bool acce
   document["persisted"] = persisted;
   if (reason) document["reason"] = reason;
   if (includeProfile) addCalibrationProfile(document["profile"].to<JsonObject>(), servoCalibrationProfile());
+  if (includeSmoothing) addMotionSmoothingSettings(
+      document["smoothing"].to<JsonObject>(), motionSmoothingSettings());
   writeDocument(document);
 }
 
@@ -819,6 +962,7 @@ void acknowledgeGait(const char *action, const char *requestId, bool accepted,
 void disableOutputs(Adafruit_PWMServoDriver &driver, LiveRobotState nextState) {
   radioControlEnabled = false;
   benchMode = false;
+  calibrationLease.revoke();
   calibrationJogActive = false;
   calibrationChannelActive = false;
   setServoOutputsEnabled(driver, false);
@@ -872,6 +1016,8 @@ void handleSafety(JsonObjectConst command, JsonObjectConst payload,
   } else if (!strcmp(action, "arm")) {
     if (state != LiveRobotState::Disarmed) {
       acknowledge("safety", action, requestId, false, "Robot must be disarmed.");
+    } else if (benchMode) {
+      acknowledge("safety", action, requestId, false, "Exit calibration bench mode before arming.");
     } else if (!controllerSafeToArm(now) || ch_us[SA_CH_INDEX] > SA_OFF_THRESHOLD_US) {
       acknowledge("safety", action, requestId, false, "Fresh safe Boxer/ELRS link and SA-low are required.");
     } else {
@@ -958,9 +1104,38 @@ void handleCalibration(JsonObjectConst command, JsonObjectConst payload,
     acknowledgeCalibration(action, requestId, true, nullptr, false, true);
     return;
   }
+  if (!strcmp(action, "request-smoothing")) {
+    acknowledgeCalibration(action, requestId, true, nullptr, false, false, true);
+    return;
+  }
+  if (!strcmp(action, "save-smoothing")) {
+    MotionSmoothingSettings candidate{};
+    if (benchMode || servoOutputsEnabled()) {
+      acknowledgeCalibration(action, requestId, false,
+                             "Leave bench mode and disable every servo output before saving smoothing.");
+    } else if (!parseMotionSmoothingSettings(payload["smoothing"].as<JsonObjectConst>(),
+                                             &candidate)) {
+      acknowledgeCalibration(action, requestId, false, "Smoothing settings are outside safe bounds.");
+    } else if (payload["baseUpdatedAt"].isNull() ||
+               payload["baseUpdatedAt"].as<uint64_t>() != motionSmoothingSettings().updatedAt ||
+               candidate.updatedAt <= motionSmoothingSettings().updatedAt) {
+      acknowledgeCalibration(action, requestId, false,
+                             "Robot smoothing changed. Read the active settings before saving.");
+    } else if (!persistMotionSmoothingSettings(candidate)) {
+      acknowledgeCalibration(action, requestId, false, "NVS verification failed; previous smoothing remains active.");
+    } else {
+      acknowledgeCalibration(action, requestId, true, nullptr, true);
+    }
+    return;
+  }
   if (!strcmp(action, "enter")) {
+    // Radio control can leave live PWM outputs while the robot is disarmed.
+    // Start calibration with every channel off; only an explicit jog writes
+    // the selected physical output.
+    disableOutputs(driver, LiveRobotState::Disarmed);
     radioControlEnabled = false;
     benchMode = true;
+    calibrationLease.refresh(now);
     setServoOutputsEnabled(driver, true);
     acknowledgeCalibration(action, requestId, true);
     return;
@@ -974,6 +1149,10 @@ void handleCalibration(JsonObjectConst command, JsonObjectConst payload,
     acknowledgeCalibration(action, requestId, false, "Bench mode has not been acknowledged.");
     return;
   }
+  if (!strcmp(action, "keepalive")) {
+    calibrationLease.refresh(now);
+    return;
+  }
   if (!strcmp(action, "jog")) {
     const int channel = payload["selectedChannel"] | -1;
     const int physicalChannel = payload["physicalChannel"] | -1;
@@ -985,7 +1164,7 @@ void handleCalibration(JsonObjectConst command, JsonObjectConst payload,
     const bool targetBounded = drivenChannel && isfinite(target) &&
         fabsf(target - servoCalibrationNeutralDeg(static_cast<uint8_t>(channel))) <= 40.0f;
     if (!drivenChannel || !validPhysicalChannel ||
-        fabsf(jog) > kCalibrationJogLimitDeg || !targetBounded) {
+        !isfinite(jog) || fabsf(jog) > kCalibrationJogLimitDeg || !targetBounded) {
       acknowledgeCalibration(action, requestId, false, "Jog exceeds channel or +/-10 degree safety bounds.");
       return;
     }
@@ -1000,6 +1179,7 @@ void handleCalibration(JsonObjectConst command, JsonObjectConst payload,
     calibrationTargetDeg = target;
     calibrationUpdatedMs = now;
     calibrationJogActive = true;
+    calibrationLease.refresh(now);
     acknowledgeCalibration(action, requestId, true);
   } else if (!strcmp(action, "save-profile")) {
     ServoCalibrationProfile profile{};
@@ -1299,6 +1479,7 @@ void liveRobotEndpointBegin(Adafruit_PWMServoDriver &driver) {
   radioControlEnabled = true;
   setServoOutputsEnabled(driver, false);
   if (!loadCalibrationProfile()) setServoCalibrationProfile(defaultServoCalibrationProfile());
+  if (!loadMotionSmoothingSettings()) setMotionSmoothingSettings(defaultMotionSmoothingSettings());
   if (!loadGaitProfile()) setGaitProfile(defaultGaitProfile());
   powerMonitorBegin();
   loopRateWindowStartedMs = millis();
@@ -1340,6 +1521,13 @@ void liveRobotEndpointLoop(uint32_t now, Adafruit_PWMServoDriver &driver) {
                          static_cast<float>(loopWindowElapsedMs);
     loopRateIterations = 0;
     loopRateWindowStartedMs = now;
+  }
+  // USB-UART hardware cannot report a removed cable. Expire bench permission
+  // before reading queued commands so a late keepalive cannot revive it.
+  if (calibrationLease.expired(now)) {
+    disableOutputs(driver, state == LiveRobotState::Armed
+        ? LiveRobotState::Watchdog : LiveRobotState::Disarmed);
+    commandOwner = LiveTransport::None;
   }
   readTransport(Serial, usbInputLine, LiveTransport::Usb, driver, now);
   if (receiverPassthroughPending) {

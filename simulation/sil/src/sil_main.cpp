@@ -16,10 +16,13 @@
 #include "gait_profile.h"
 #include "leg_controller.h"
 #include "manual_control_guard.h"
+#include "calibration_lease.h"
+#include "motion_smoothing.h"
 #include "power_monitor_math.h"
 #include "power_fault_guard.h"
 #include "sim_pwm.h"
 #include "servo_calibration.h"
+#include "Ramp.h"
 
 void setup();
 void loop();
@@ -155,6 +158,31 @@ bool validateGaitProfiles() {
   return accepted && outOfBoundsRejected && nonFiniteRejected && restored;
 }
 
+bool validateMotionSmoothingBypass() {
+  const MotionSmoothingSettings original = motionSmoothingSettings();
+  MotionSmoothingSettings settings = defaultMotionSmoothingSettings();
+  settings.enabled = false;
+  const bool disabledAccepted = setMotionSmoothingSettings(settings) &&
+      !motionSmoothingSettings().enabled;
+  settings.schemaVersion = 1;
+  const bool oldSchemaRejected = !validateMotionSmoothingSettings(settings);
+  simSetTimeUs(0);
+  rampFloat ramp;
+  ramp.go(0.0f);
+  simAdvanceTimeUs(20000);
+  const float limited = commandWithMotionSmoothing(ramp, 16.0f, 180.0f, true);
+  simAdvanceTimeUs(20000);
+  const float direct = commandWithMotionSmoothing(ramp, 16.0f, 180.0f, false);
+  simAdvanceTimeUs(20000);
+  const float resumed = commandWithMotionSmoothing(ramp, 0.0f, 180.0f, true);
+  const bool restored = setMotionSmoothingSettings(original);
+  const bool passed = disabledAccepted && oldSchemaRejected && restored &&
+      fabsf(limited - 3.6f) < 0.01f && fabsf(direct - 16.0f) < 0.01f &&
+      fabsf(resumed - 12.4f) < 0.01f;
+  if (!passed) std::cerr << "FAIL: smoothing switch bypass or restart behavior failed\n";
+  return passed;
+}
+
 bool validateManualControlGuard() {
   ManualControlGuard guard;
   const bool granted = guard.grant("sil-authority-token", 1000, 100);
@@ -226,6 +254,26 @@ bool validatePowerFaultGuard() {
   const bool passed = transientIgnored && recoveredWindowReset && sustainedTrip &&
       badRecoveryRejected && recovered && disarmedCannotTrip;
   if (!passed) std::cerr << "FAIL: low-voltage fault latch or recovery hysteresis failed\n";
+  return passed;
+}
+
+bool validateCalibrationLease() {
+  CalibrationLease lease;
+  const bool inactive = !lease.expired(0) && !lease.expired(5000);
+  lease.refresh(0);
+  const bool initialWindow = !lease.expired(CalibrationLease::kTimeoutMs - 1) &&
+      lease.expired(CalibrationLease::kTimeoutMs);
+  lease.refresh(2500);
+  const bool renewalRestartsWindow = !lease.expired(2500 + CalibrationLease::kTimeoutMs - 1) &&
+      lease.expired(2500 + CalibrationLease::kTimeoutMs);
+  lease.revoke();
+  const bool revoked = !lease.expired(10000);
+
+  CalibrationLease rolloverLease;
+  rolloverLease.refresh(UINT32_MAX - 999U);
+  const bool rolloverSafe = !rolloverLease.expired(999U) && rolloverLease.expired(1000U);
+  const bool passed = inactive && initialWindow && renewalRestartsWindow && revoked && rolloverSafe;
+  if (!passed) std::cerr << "FAIL: calibration lease timeout, renewal, revoke, or wraparound failed\n";
   return passed;
 }
 
@@ -390,17 +438,59 @@ bool validateCalibratedHipDirection() {
   for (int leg = 0; leg < 4; ++leg) {
     movers[leg](driver, -15.75f, neutralY[leg], 280.0f);
     const float neutral = commandedServoAnglesDeg()[hips[leg]];
-    // The owner verified same-axis physical hip motion with left directions
-    // inverted. Cover both CAD IK and deliberately unreachable X (fallback).
-    for (const float x : {-15.75f, 1000.0f}) {
-      movers[leg](driver, x, neutralY[leg] - 40.0f, 280.0f);
-      passed = passed && commandedServoAnglesDeg()[hips[leg]] < neutral - 5.0f;
-      movers[leg](driver, x, neutralY[leg] + 40.0f, 280.0f);
-      passed = passed && commandedServoAnglesDeg()[hips[leg]] > neutral + 5.0f;
-    }
+    // Canonical outward-positive CAD hip motion maps through each active
+    // calibration direction. Left channels are inverted for the installed
+    // shafts; verify both directions using reachable CAD targets.
+    movers[leg](driver, -15.75f, neutralY[leg] - 40.0f, 280.0f);
+    const float inward = commandedServoAnglesDeg()[hips[leg]];
+    passed = passed && inward < neutral - 5.0f;
+    movers[leg](driver, -15.75f, neutralY[leg] + 40.0f, 280.0f);
+    const float outward = commandedServoAnglesDeg()[hips[leg]];
+    passed = passed && outward > neutral + 5.0f;
+
+    // The production inverse has no fallback pose: an unreachable target
+    // must hold the last valid command and count the IK failure.
+    const uint32_t failuresBefore = legIkFailureCount();
+    movers[leg](driver, 1000.0f, neutralY[leg], 280.0f);
+    passed = passed && legIkFailureCount() == failuresBefore + 1 &&
+        fabsf(commandedServoAnglesDeg()[hips[leg]] - outward) < 0.001f;
   }
   setServoCalibrationProfile(defaultServoCalibrationProfile());
-  if (!passed) std::cerr << "FAIL: calibrated CAD/fallback hip shaft directions disagree\n";
+  if (!passed) std::cerr << "FAIL: calibrated CAD hip direction or invalid-target hold behavior failed\n";
+  return passed;
+}
+
+bool validateServoWriteReuse() {
+  Adafruit_PWMServoDriver driver;
+  setServoCalibrationProfile(defaultServoCalibrationProfile());
+  setServoOutputsEnabled(driver, true);
+  moveLegFR(driver, -15.75f, -38.0f, 280.0f);
+  constexpr uint8_t kChannels[3] = {3, 4, 15};
+  uint32_t firstWrites[3] = {};
+  for (int index = 0; index < 3; ++index) {
+    firstWrites[index] = simServoWriteCount(kChannels[index]);
+  }
+
+  moveLegFR(driver, -15.75f, -38.0f, 280.0f);
+  bool passed = true;
+  for (int index = 0; index < 3; ++index) {
+    passed = passed && simServoWriteCount(kChannels[index]) == firstWrites[index];
+  }
+
+  simAdvanceTimeUs(250000);
+  moveLegFR(driver, -15.75f, -38.0f, 280.0f);
+  for (int index = 0; index < 3; ++index) {
+    passed = passed && simServoWriteCount(kChannels[index]) == firstWrites[index] + 1;
+  }
+
+  setServoOutputsEnabled(driver, false);
+  setServoOutputsEnabled(driver, true);
+  moveLegFR(driver, -15.75f, -38.0f, 280.0f);
+  for (int index = 0; index < 3; ++index) {
+    passed = passed && simServoWriteCount(kChannels[index]) == firstWrites[index] + 2;
+  }
+  setServoOutputsEnabled(driver, false);
+  if (!passed) std::cerr << "FAIL: unchanged PCA writes or re-enable refresh\n";
   return passed;
 }
 
@@ -740,11 +830,14 @@ int main(int argc, char** argv) {
                                     : RealtimePacer{NULL, LARGE_INTEGER(), 0};
   const bool calibrationMathPassed = validateCalibrationMath();
   const bool gaitProfilesPassed = validateGaitProfiles();
+  const bool smoothingBypassPassed = validateMotionSmoothingBypass();
   const bool manualControlPassed = validateManualControlGuard();
   const bool powerMonitorMathPassed = validatePowerMonitorMath();
   const bool powerFaultGuardPassed = validatePowerFaultGuard();
+  const bool calibrationLeasePassed = validateCalibrationLease();
   const bool crsfBurstPassed = validateCrsfBurstRecovery();
   const bool fallbackHipDirectionPassed = validateCalibratedHipDirection();
+  const bool servoWriteReusePassed = validateServoWriteReuse();
   simSetTimeUs(0);
   simResetServoOutputs();
   setup();
@@ -773,6 +866,10 @@ int main(int argc, char** argv) {
   bool carefulSupportViolation = false;
   bool sawCarefulSwing = false;
   bool sawFailsafeStow = false;
+  bool tiltSlewViolation = false;
+  bool tiltRollSampleValid = false;
+  float lastTiltRollDeg = 0.0f;
+  uint32_t lastTiltRollChangeMs = 0;
   float gaitMinX = 10000.0f;
   float gaitMaxX = -10000.0f;
   float gaitMaxLiftMm = 0.0f;
@@ -801,6 +898,21 @@ int main(int argc, char** argv) {
 
     loop();
     const int mode = dominoSilBodyMode();
+    if (mode == 2) {
+      const float rollDeg = dominoSilBodyRollDeg();
+      if (tiltRollSampleValid && fabsf(rollDeg - lastTiltRollDeg) > 0.001f) {
+        const float maximumChange = 180.0f *
+            static_cast<float>(elapsedMs - lastTiltRollChangeMs) / 1000.0f + 0.05f;
+        tiltSlewViolation = tiltSlewViolation ||
+            fabsf(rollDeg - lastTiltRollDeg) > maximumChange;
+        lastTiltRollChangeMs = elapsedMs;
+      }
+      if (!tiltRollSampleValid) lastTiltRollChangeMs = elapsedMs;
+      lastTiltRollDeg = rollDeg;
+      tiltRollSampleValid = true;
+    } else {
+      tiltRollSampleValid = false;
+    }
     sawStand = sawStand || mode == 1;
     sawTilt = sawTilt || mode == 2;
     sawGait = sawGait || mode == 4;
@@ -911,8 +1023,11 @@ int main(int argc, char** argv) {
     return 0;
   }
 
-  const bool passed = calibrationMathPassed && gaitProfilesPassed && manualControlPassed &&
-      powerMonitorMathPassed && powerFaultGuardPassed && crsfBurstPassed && fallbackHipDirectionPassed &&
+  if (tiltSlewViolation) std::cerr << "FAIL: tilt roll exceeded its commanded slew rate\n";
+  const bool passed = calibrationMathPassed && gaitProfilesPassed && smoothingBypassPassed &&
+      manualControlPassed &&
+      powerMonitorMathPassed && powerFaultGuardPassed && calibrationLeasePassed && crsfBurstPassed && fallbackHipDirectionPassed &&
+      servoWriteReusePassed && !tiltSlewViolation &&
       validateOutputs(sawStand, sawTilt, sawGait, sawCareful,
                                       gaitTiltInterlockViolation,
                                       motionInputInterlockViolation,

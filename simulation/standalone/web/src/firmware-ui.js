@@ -1,3 +1,5 @@
+import { showStudioButtonResult } from "./studio-action-feedback.js";
+
 const formatBytes = (bytes) => {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -56,6 +58,7 @@ export function initializeFirmwareWorkspace() {
   let selectedFile = null;
   let pollTimer = null;
   let busy = false;
+  let busyAction = "";
 
   const packageIsBuilt = () => Boolean(
     latestStatus?.lastBuild?.ok &&
@@ -67,6 +70,16 @@ export function initializeFirmwareWorkspace() {
     elements.build.disabled = busy || jobRunning || !latestStatus?.toolchain?.available;
     elements.upload.disabled = busy || jobRunning || !packageIsBuilt() || !elements.confirmation.checked;
     elements.cancel.disabled = !jobRunning;
+    const building = busyAction === "build" || (jobRunning && latestStatus?.job?.type === "build");
+    const uploading = busyAction === "upload" || (jobRunning && latestStatus?.job?.type === "upload");
+    elements.build.textContent = building ? "BUILDING…" : "BUILD & VALIDATE";
+    elements.upload.textContent = uploading ? "UPLOADING…" : "UPLOAD TO ESP32";
+    elements.build.setAttribute("aria-busy", String(building));
+    elements.upload.setAttribute("aria-busy", String(uploading));
+  }
+
+  function actionFeedback(message, state) {
+    if (state === "error") elements.jobStage.textContent = message;
   }
 
   async function reviewFile(filePath) {
@@ -127,8 +140,11 @@ export function initializeFirmwareWorkspace() {
       elements.jobStage.textContent = job.stage;
       elements.jobPercent.textContent = `${Math.round(job.progress)}%`;
       elements.progress.style.width = `${job.progress}%`;
-      elements.console.textContent = formatLog(job.logs);
-      elements.console.scrollTop = elements.console.scrollHeight;
+      const log = formatLog(job.logs);
+      if (elements.console.textContent !== log) {
+        elements.console.textContent = log;
+        elements.console.scrollTop = elements.console.scrollHeight;
+      }
       elements.state.textContent = job.status === "success" ? "READY" : job.status.toUpperCase();
       elements.state.dataset.state = job.status;
     } else {
@@ -154,21 +170,32 @@ export function initializeFirmwareWorkspace() {
 
   async function refreshPorts() {
     elements.refreshPorts.disabled = true;
+    elements.refreshPorts.textContent = "SCANNING…";
+    elements.refreshPorts.setAttribute("aria-busy", "true");
+    actionFeedback("Searching for USB serial ports…", "waiting");
     const current = elements.port.value;
     try {
       const { ports } = await api("/api/firmware/ports");
       elements.port.replaceChildren(new Option("AUTO DETECT", ""), ...ports.map((device) =>
         new Option(`${device.port} / ${device.description}`, device.port)));
       if ([...elements.port.options].some((option) => option.value === current)) elements.port.value = current;
+      actionFeedback(ports.length ? `Port list refreshed. ${ports.length} serial port${ports.length === 1 ? "" : "s"} found.`
+        : "Search finished. No USB serial ports found; connect the ESP32 and refresh again.", ports.length ? "success" : "info");
     } catch (error) {
       elements.jobStage.textContent = error.message;
+      actionFeedback(`Port search failed: ${error.message}`, "error");
     } finally {
       elements.refreshPorts.disabled = false;
+      elements.refreshPorts.textContent = "REFRESH PORTS";
+      elements.refreshPorts.setAttribute("aria-busy", "false");
     }
   }
 
   async function runAction(path, body) {
+    if (busy) return;
     busy = true;
+    busyAction = path.split("/").at(-1);
+    actionFeedback(busyAction === "cancel" ? "Requesting job cancellation…" : `Requesting firmware ${busyAction}…`, "waiting");
     updateActionState();
     try {
       await api(path, { method: "POST", body: body ? JSON.stringify(body) : undefined });
@@ -177,8 +204,10 @@ export function initializeFirmwareWorkspace() {
       elements.jobStage.textContent = error.message;
       elements.state.textContent = "ACTION BLOCKED";
       elements.state.dataset.state = "failed";
+      actionFeedback(`Firmware ${busyAction} could not start: ${error.message}`, "error");
     } finally {
       busy = false;
+      busyAction = "";
       updateActionState();
     }
   }
@@ -206,8 +235,11 @@ export function initializeFirmwareWorkspace() {
   }));
   elements.cancel.addEventListener("click", () => runAction("/api/firmware/cancel"));
   elements.copy.addEventListener("click", async () => {
-    await navigator.clipboard.writeText(elements.console.textContent);
-    elements.copy.textContent = "COPIED";
-    setTimeout(() => { elements.copy.textContent = "COPY"; }, 1200);
+    try {
+      await navigator.clipboard.writeText(elements.console.textContent);
+      showStudioButtonResult(elements.copy, "COPIED ✓");
+    } catch {
+      actionFeedback("The log could not be copied. Select the text in the log to copy it manually.", "error");
+    }
   });
 }

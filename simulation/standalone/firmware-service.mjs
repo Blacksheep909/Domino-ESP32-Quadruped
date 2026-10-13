@@ -233,12 +233,20 @@ export class FirmwareService {
     return this.startJob("build", ["run", "-e", "esp32dev"]);
   }
 
-  startUpload({ confirmation, port } = {}) {
+  validateUpload({ confirmation } = {}) {
     if (confirmation !== "BOOT HELD") throw new Error("Confirm that BOOT is held before uploading.");
+    if (!this.platformio) throw new Error("PlatformIO is not installed or could not be located.");
+    if (["running", "cancelling"].includes(this.job?.status)) throw new Error("Another firmware job is already running.");
     const currentPackage = this.package();
     if (!this.lastBuild?.ok || this.lastBuild.packageHash !== currentPackage.hash) {
       throw new Error("Build this exact firmware package before uploading it.");
     }
+    return currentPackage;
+  }
+
+  startUpload(options = {}) {
+    const currentPackage = this.validateUpload(options);
+    const { port } = options;
     const args = ["run", "-e", "esp32dev", "-t", "upload"];
     if (port) args.push("--upload-port", String(port));
     return this.startJob("upload", args, currentPackage);

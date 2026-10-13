@@ -64,6 +64,7 @@ export function liveSafetyCanArm(state, context) {
     context?.connectionReady === true &&
     context?.telemetryFresh === true &&
     context?.driveLinkAlive === true &&
+    context?.calibrationActive !== true &&
     context?.batteryDetected !== false
   );
 }

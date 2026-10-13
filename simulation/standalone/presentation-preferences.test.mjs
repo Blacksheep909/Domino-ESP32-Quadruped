@@ -22,6 +22,7 @@ test("round-trips only safe presentation preferences", () => {
     experience: "expert",
     liveView: "diagnostics",
     calibrationFloat: false,
+    cameraPreset: "studio",
   });
   assert.equal(Object.hasOwn(restored, "robotState"), false);
   assert.equal(Object.hasOwn(restored, "authorityToken"), false);
@@ -34,6 +35,7 @@ test("malformed and unsupported preferences fail back to safe presentation defau
     experience: "expert",
     liveView: "compare",
     calibrationFloat: true,
+    cameraPreset: "studio",
   };
   assert.deepEqual(parsePresentationPreferencesJson("not json"), expected);
   assert.deepEqual(sanitizePresentationPreferences({ schemaVersion: 9, experience: "expert" }), expected);

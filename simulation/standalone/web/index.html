@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Domino Virtual Lab</title>
+    <script type="module" src="/src/main.js"></script>
   </head>
   <body data-workspace="simulation">
     <canvas id="scene" aria-label="Domino 3D robot viewport"></canvas>
@@ -26,13 +27,11 @@
         <span id="firmware-status" class="simulation-only" data-state="offline">FIRMWARE</span>
         <span id="link-status" class="simulation-only" data-state="offline">CONTROLLER</span>
         <span id="physics-status" class="simulation-only" data-state="offline">PHYSICS</span>
-        <span id="real-drive-status" class="real-robot-only" data-state="offline">DRIVE LINK</span>
-        <button id="real-engineering-status" class="real-robot-only pc-link-status live-header-link-status" type="button" aria-haspopup="dialog" data-state="offline" title="Open the robot connection manager">PC LINK</button>
         <button id="live-connection-open" class="live-connection-open real-robot-only" type="button" aria-haspopup="dialog" title="Find and pair this PC with Domino">PAIR ROBOT</button>
         <span id="real-battery-status" class="real-robot-only live-header-battery" data-state="unavailable" title="Measured robot battery voltage">BAT --.- V</span>
-        <span id="real-safety-status" class="real-robot-only" data-state="safe">DISARMED</span>
+        <span id="real-safety-status" class="real-robot-only" data-state="offline">DISCONNECTED</span>
         <button id="live-global-estop" class="real-robot-only live-global-estop" type="button" title="Latch the robot emergency stop" disabled>E-STOP</button>
-        <button id="shortcuts-open" class="utility-button" type="button" aria-haspopup="dialog" title="Show keyboard shortcuts (?)">?</button>
+        <button id="shortcuts-open" class="utility-button" type="button" aria-haspopup="dialog" aria-label="Open Studio help" title="Guides, keyboard shortcuts and camera controls (?)">?</button>
         <button id="fullscreen-toggle" class="utility-button" type="button" aria-pressed="false" title="Enter fullscreen (F)">⛶</button>
         <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false" title="Switch to dark theme">
           <span id="theme-icon" aria-hidden="true">&#9788;</span>
@@ -91,6 +90,7 @@
             <button id="live-camera-connect" type="button">CONNECT</button>
             <button id="live-camera-clear" class="live-camera-clear" type="button" title="Forget the saved camera URL">CLEAR</button>
           </div>
+          <p id="live-camera-action-status" role="status" aria-live="polite" hidden></p>
           <div class="live-camera-telemetry"><span id="live-camera-telemetry-state" data-state="waiting">TELEMETRY / WAITING</span><span id="live-camera-telemetry-age">AGE --</span></div>
           <div class="live-camera-actions">
             <button id="live-camera-snapshot" type="button" disabled>SNAPSHOT</button>
@@ -162,7 +162,7 @@
           <input id="gait-lab-enabled" type="checkbox" checked>
           <span>OVERRIDE</span>
         </label>
-        <button id="gait-lab-close" type="button" aria-label="Close gait tuning" title="Close gait tuning">&times;</button>
+        <button id="gait-lab-close" type="button" aria-label="Close gait tuning" title="Close gait tuning" class="studio-icon-button"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
       </div>
       <div class="gait-preset-row" role="group" aria-label="Gait presets">
         <button type="button" data-gait-preset="stable">STABLE</button>
@@ -206,7 +206,7 @@
     <div id="gait-setting-info" class="gait-setting-info simulation-only" role="dialog" aria-modal="false" aria-labelledby="gait-setting-info-title" hidden>
       <div>
         <strong id="gait-setting-info-title">GAIT SETTINGS</strong>
-        <button id="gait-setting-info-close" type="button" aria-label="Close setting information" title="Close">&times;</button>
+        <button id="gait-setting-info-close" type="button" aria-label="Close setting information" title="Close" class="studio-icon-button"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
       </div>
       <dl id="gait-setting-info-list"></dl>
     </div>
@@ -288,7 +288,7 @@
 
     <div id="gamepad-setup" class="gamepad-setup simulation-only" role="dialog" aria-modal="true" aria-labelledby="gamepad-setup-title" hidden>
       <form>
-        <header><div><span>INPUT / CONTROLLER</span><h2 id="gamepad-setup-title">Controller mapping</h2><p id="gamepad-setup-device">Connect a gamepad to configure it.</p></div><button id="gamepad-setup-close" type="button" aria-label="Close controller mapping">&times;</button></header>
+        <header><div><span>INPUT / CONTROLLER</span><h2 id="gamepad-setup-title">Controller mapping</h2><p id="gamepad-setup-device">Connect a gamepad to configure it.</p></div><button id="gamepad-setup-close" type="button" aria-label="Close controller mapping" class="studio-icon-button"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button></header>
         <div class="gamepad-map-grid">
           <label>ROLL AXIS <select id="gamepad-map-roll"></select><span><input id="gamepad-invert-roll" type="checkbox"> INVERT</span></label>
           <label>FORWARD AXIS <select id="gamepad-map-forward"></select><span><input id="gamepad-invert-forward" type="checkbox"> INVERT</span></label>
@@ -308,6 +308,7 @@
           </div>
         </section>
         <p class="gamepad-map-note">Deadzone removes stick drift. Higher response curves soften movement near centre while preserving full travel. Settings are saved for this exact controller name; CRSF radios keep direct channel mapping.</p>
+        <p id="gamepad-map-status" role="status" aria-live="polite" hidden></p>
         <footer><button id="gamepad-map-default" type="button">RESTORE DEFAULT</button><button id="gamepad-map-save" type="submit">SAVE MAPPING</button></footer>
       </form>
     </div>
@@ -320,7 +321,7 @@
             <h2 id="project-dialog-title">Project bundle</h2>
             <p>Move robot-specific tuning between machines without exporting a live connection or safety state.</p>
           </div>
-          <button id="project-dialog-close" type="button" aria-label="Close project bundle">&times;</button>
+          <button id="project-dialog-close" type="button" aria-label="Close project bundle" class="studio-icon-button"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
         </header>
         <label class="project-name-field">
           <span>PROJECT NAME</span>
@@ -349,33 +350,50 @@
       </section>
     </div>
 
-    <div id="shortcuts-dialog" class="utility-dialog" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title" hidden>
-      <section class="utility-dialog-shell">
+    <dialog id="shortcuts-dialog" class="utility-dialog studio-help-dialog" aria-labelledby="shortcuts-title" hidden>
+      <section class="utility-dialog-shell studio-help-shell">
         <header>
           <div>
-            <span>DOMINO / QUICK REFERENCE</span>
-            <h2 id="shortcuts-title">Keyboard shortcuts</h2>
-            <p>Shortcuts are disabled while typing in a field. Press <kbd>?</kbd> any time to reopen this guide.</p>
+            <span>QUADRUPED STUDIO / HELP</span>
+            <h2 id="shortcuts-title">Studio guide</h2>
+            <p>Help with setup, simulation and your robot.</p>
           </div>
-          <button id="shortcuts-close" type="button" aria-label="Close keyboard shortcuts">&times;</button>
+          <button id="shortcuts-close" type="button" aria-label="Close Studio help" class="studio-icon-button"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
         </header>
-        <div class="shortcut-grid" aria-label="Available keyboard shortcuts">
-          <div><kbd>SPACE</kbd><span>Stand / sit in Simulation</span></div>
-          <div><kbd>T</kbd><span>Toggle tilt</span></div>
-          <div><kbd>G</kbd><span>Cycle stand / careful / trot</span></div>
-          <div><kbd>R</kbd><span>Reset the simulation</span></div>
-          <div><kbd>0</kbd><span>Open Simulation</span></div>
-          <div><kbd>1–7</kbd><span>Open a LIVE engineering view</span></div>
-          <div><kbd>DELETE</kbd><span>Remove a focused route waypoint</span></div>
-          <div><kbd>ARROWS</kbd><span>Nudge a focused waypoint; Shift moves 5 m</span></div>
-          <div><kbd>M</kbd><span>Open guarded LIVE manual control</span></div>
-          <div><kbd>H</kbd><span>Collapse / expand the autonomous HUD</span></div>
-          <div><kbd>F</kbd><span>Toggle fullscreen</span></div>
-          <div><kbd>?</kbd><span>Open this guide</span></div>
+        <div class="studio-help-tabs" role="tablist" aria-label="Studio help sections">
+          <button id="help-guides-tab" type="button" role="tab" data-help-tab="guides" aria-selected="true" aria-controls="help-guides-panel">GUIDES</button>
+          <button id="help-keys-tab" type="button" role="tab" data-help-tab="keys" aria-selected="false" aria-controls="help-keys-panel" tabindex="-1">KEYBINDS</button>
+          <button id="help-camera-tab" type="button" role="tab" data-help-tab="camera" aria-selected="false" aria-controls="help-camera-panel" tabindex="-1">CAMERA</button>
         </div>
-        <footer><button id="shortcuts-done" type="button">DONE</button></footer>
+        <div id="help-guides-panel" class="help-guides-layout" role="tabpanel" data-help-panel="guides" aria-labelledby="help-guides-tab">
+          <div class="help-sidebar">
+            <label for="studio-help-search">FIND A GUIDE</label>
+            <input id="studio-help-search" type="search" placeholder="Search menus, JSON, links…" autocomplete="off">
+            <span id="studio-help-search-count" role="status"></span>
+            <select id="studio-help-guide-select" class="help-mobile-chooser" aria-label="Choose a guide"></select>
+            <div id="studio-help-navigation" role="navigation" aria-label="Studio guides"></div>
+          </div>
+          <article id="studio-help-article" class="help-article" tabindex="-1"></article>
+        </div>
+        <div id="help-keys-panel" class="help-reference-panel" role="tabpanel" data-help-panel="keys" aria-labelledby="help-keys-tab" hidden>
+          <h3>Keyboard shortcuts</h3>
+          <p>These shortcuts work when you aren't typing in a field or using a dialog.</p>
+          <div class="help-table-wrap"><table class="help-keybinds-table"><thead><tr><th>KEY</th><th>ACTION</th><th>WHERE</th></tr></thead><tbody id="studio-keybinds-body"></tbody></table></div>
+        </div>
+        <div id="help-camera-panel" class="help-reference-panel" role="tabpanel" data-help-panel="camera" aria-labelledby="help-camera-tab" hidden>
+          <h3>Camera controls</h3>
+          <p>Choose the mouse controls you're used to. The preset applies to all 3D views.</p>
+          <label class="help-camera-select" for="studio-camera-preset"><span>NAVIGATION PRESET</span><select id="studio-camera-preset"></select></label>
+          <p id="studio-camera-selected" class="help-camera-selected" role="status"></p>
+          <dl id="studio-camera-bindings" class="help-camera-bindings"></dl>
+          <p class="help-camera-note">Middle means pressing the scroll wheel while dragging. On Mac, Command can substitute for Ctrl. On touch screens, one finger orbits and two fingers pan / pinch to zoom.</p>
+          <h4>Find a useful view</h4>
+          <ol class="help-steps"><li>Click X, Y or Z on the axis gizmo for an orthographic inspection view. Click the same axis again for its opposite side.</li><li>Orbit to return to perspective. Pan and zoom keep the axis view flat.</li><li>Click the home icon or RESET VIEW to recenter without resetting the robot. Calibration also offers FOCUS JOINT and FULL ROBOT.</li></ol>
+          <a id="studio-camera-source" class="help-source-link" target="_blank" rel="noreferrer" hidden>Navigation reference</a>
+        </div>
+        <footer><span>Available offline. Menu links take you to the controls.</span><button id="shortcuts-done" type="button">DONE</button></footer>
       </section>
-    </div>
+    </dialog>
 
     <main id="real-workspace" class="real-robot-only" aria-label="Live robot digital twin" hidden>
       <nav class="live-toolbar" aria-label="Live robot tools">
@@ -561,6 +579,7 @@
               <button id="live-data-clear" type="button" disabled>CLEAR DATA</button>
               <button id="live-data-back" type="button">BACK TO LIVE</button>
             </div>
+            <p id="live-recording-action-status" role="status" aria-live="polite" hidden></p>
           </section>
           <section class="live-data-card live-data-dashboard-card">
             <header><span>GRAPH DASHBOARD</span><div><strong>DRAG GRIP TO REORDER · DRAG GRAPH TO ZOOM</strong><button id="live-data-add-graph" type="button">+ GRAPH</button></div></header>
@@ -843,10 +862,6 @@
           <div><span>LIVE / CALIBRATION</span><h1 id="live-calibration-title">Servo calibration</h1><p>A guided, joint-by-joint setup for neutral offsets, direction and safe mechanical limits.</p></div>
           <div class="live-page-status"><span id="live-calibration-link-state" data-state="offline">ROBOT NOT READY</span><strong id="live-calibration-save-state">UNSAVED DRAFT</strong></div>
         </header>
-        <div id="live-calibration-origin-banner" class="calibration-origin-banner" data-level="notice" role="alert" hidden>
-          <strong id="live-calibration-origin-title"></strong>
-          <p id="live-calibration-origin-detail"></p>
-        </div>
         <div class="calibration-preview-caption">
           <span>JOINT INSPECTION / CAD PREVIEW</span>
           <strong id="live-calibration-preview-caption">FL HIP / PHYSICAL TRIM +0.0&deg; / TEST JOG +0.0&deg;</strong>
@@ -865,6 +880,10 @@
           <div class="calibration-inspection-clearance"><span>CAD PROXIMITY SCREEN</span><strong id="live-calibration-inspect-clearance" data-state="unknown">LOADING MODEL</strong><small id="live-calibration-inspect-clearance-detail">Checks model bounds near the chassis and other legs. Verify real hardware, wiring and flex on the bench.</small></div>
         </div>
 
+        <section id="live-calibration-sync-status" class="calibration-sync-status" data-state="draft" aria-label="Calibration save and verification" role="status">
+          <div><strong id="live-calibration-sync-title">Calibration in Studio</strong><p id="live-calibration-sync-copy">Send to robot applies and saves calibration on the robot. No firmware upload is needed.</p></div>
+          <div class="calibration-sync-actions"><button id="live-calibration-read-robot" type="button" disabled>READ ROBOT</button><button id="live-calibration-use-robot" type="button" disabled>USE ROBOT VALUES</button></div>
+        </section>
         <div class="live-calibration-layout">
           <aside class="calibration-step-rail" aria-label="Calibration steps">
             <button type="button" data-calibration-step="0" aria-current="step"><span>01</span><strong>SAFETY</strong><small>Prepare the bench</small></button>
@@ -931,7 +950,7 @@
 
             <section class="calibration-panel" data-calibration-panel="4" hidden>
               <div class="calibration-panel-heading"><span>STEP 5 OF 5</span><h2>Review and save</h2><p>Export the browser draft or read the active profile from a connected, disarmed robot.</p></div>
-              <div class="calibration-review-table-wrap"><table><thead><tr><th>JOINT</th><th>CH</th><th>OFFSET</th><th>DIRECTION</th><th>MIN</th><th>MAX</th></tr></thead><tbody id="live-calibration-review-body"></tbody></table></div>
+              <div class="calibration-review-table-wrap"><table><thead><tr><th>JOINT</th><th>CH</th><th>DRAFT TRIM</th><th>DIRECTION</th><th>MIN</th><th>MAX</th><th>ON ROBOT / CH · DIR · TRIM · TRAVEL</th></tr></thead><tbody id="live-calibration-review-body"></tbody></table></div>
               <section class="calibration-smoothing" aria-labelledby="live-calibration-smoothing-title">
                 <div class="calibration-smoothing-heading"><div><span>MOTION RESPONSE / RAMP</span><h3 id="live-calibration-smoothing-title">Shape the command before it reaches IK</h3><p>Ramp limits the speed of a pose change. It is not PID or measured servo feedback. Slower rates soften sudden moves but take longer to reach the target.</p></div><div class="calibration-smoothing-heading-actions"><span class="calibration-smoothing-badge">LIVE DRAFT PREVIEW</span><label class="calibration-smoothing-switch" for="live-calibration-smoothing-enabled"><span><strong>MOTION SMOOTHING</strong><small>Ramp + center deadband</small></span><input id="live-calibration-smoothing-enabled" type="checkbox" role="switch" checked><b id="live-calibration-smoothing-enabled-label">ON</b></label></div></div>
                 <p id="live-calibration-smoothing-mode-note" class="calibration-smoothing-mode-note">Ramp and center deadband are active in this draft.</p>
@@ -986,7 +1005,7 @@
                 <button id="live-calibration-apply-robot" type="button" disabled>SEND TO ROBOT</button>
                 <input id="live-calibration-import-file" type="file" accept="application/json,.json" hidden>
               </div>
-              <p id="live-calibration-review-status" class="calibration-inline-status">Robot apply is locked until the engineering adapter confirms bench mode and persistent calibration support.</p>
+              <p id="live-calibration-review-status" class="calibration-inline-status" role="status">Send to robot applies and saves this profile on the robot, then verifies a separate read-back. A browser copy stays on this PC. No firmware upload is needed.</p>
             </section>
 
             <footer class="calibration-wizard-footer">
@@ -999,7 +1018,7 @@
 
         <dialog id="live-calibration-wiring-dialog" class="calibration-dialog" aria-labelledby="live-calibration-wiring-title">
           <div class="calibration-dialog-shell">
-            <header><div><span>CALIBRATION / WIRING</span><h2 id="live-calibration-wiring-title">Assign physical servo channels</h2><p>Choose the PCA9685 output physically connected to each logical joint. Every assignment must be unique.</p></div><button id="live-calibration-wiring-close" type="button" aria-label="Close channel map editor">&times;</button></header>
+            <header><div><span>CALIBRATION / WIRING</span><h2 id="live-calibration-wiring-title">Assign physical servo channels</h2><p>Choose the PCA9685 output physically connected to each logical joint. Every assignment must be unique.</p></div><button id="live-calibration-wiring-close" type="button" aria-label="Close channel map editor" class="studio-icon-button"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button></header>
             <section id="live-calibration-wiring-edit" class="calibration-wiring-stage">
               <div id="live-calibration-wiring-list" class="calibration-wiring-list"></div>
               <p id="live-calibration-wiring-error" class="calibration-dialog-status" aria-live="polite"></p>
@@ -1021,7 +1040,7 @@
 
         <dialog id="live-calibration-robot-confirm" class="calibration-dialog calibration-robot-confirm" aria-labelledby="live-calibration-robot-confirm-title">
           <div class="calibration-dialog-shell">
-            <header><div><span>CALIBRATION / ROBOT WRITE</span><h2 id="live-calibration-robot-confirm-title">Save this profile to the robot?</h2><p>This replaces the robot's persistent channel map, neutral offsets, directions, and mechanical limits.</p></div><button id="live-calibration-robot-confirm-close" type="button" aria-label="Cancel robot profile write">&times;</button></header>
+            <header><div><span>CALIBRATION / ROBOT WRITE</span><h2 id="live-calibration-robot-confirm-title">Save this profile to the robot?</h2><p>This applies and stores the channel map, neutral offsets, directions and limits on the robot now. The app verifies a separate read-back. Outputs switch off; no firmware upload is needed.</p></div><button id="live-calibration-robot-confirm-close" type="button" aria-label="Cancel robot profile write" class="studio-icon-button"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button></header>
             <section class="calibration-wiring-stage">
               <div class="calibration-warning"><strong>PHYSICAL OUTPUTS WILL USE THIS MAP</strong><p>Keep Domino supported, verify all 12 channel assignments in the review table, and leave the E-stop within reach.</p></div>
               <label class="calibration-confirm"><input id="live-calibration-robot-confirm-ack" type="checkbox"><span>I reviewed the wiring map and want to persist these changes on the connected robot.</span></label>
@@ -1032,7 +1051,7 @@
 
         <dialog id="live-calibration-restore-confirm" class="calibration-dialog calibration-robot-confirm" aria-labelledby="live-calibration-restore-title">
           <div class="calibration-dialog-shell">
-            <header><div><span>CALIBRATION / LOCAL DRAFT</span><h2 id="live-calibration-restore-title">Restore calibration defaults?</h2><p id="live-calibration-restore-copy">Review the affected settings before changing the local calibration draft.</p></div><button id="live-calibration-restore-close" type="button" aria-label="Cancel calibration restore">&times;</button></header>
+            <header><div><span>CALIBRATION / LOCAL DRAFT</span><h2 id="live-calibration-restore-title">Restore calibration defaults?</h2><p id="live-calibration-restore-copy">Review the affected settings before changing the local calibration draft.</p></div><button id="live-calibration-restore-close" type="button" aria-label="Cancel calibration restore" class="studio-icon-button"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button></header>
             <section class="calibration-wiring-stage">
               <div class="calibration-warning"><strong>THIS DOES NOT MOVE OR WRITE THE ROBOT</strong><p>The restored values remain a local draft until you explicitly save a browser copy or send the complete profile to a bench-mode robot.</p></div>
               <label id="live-calibration-restore-wiring-option" class="calibration-confirm"><input id="live-calibration-restore-wiring" type="checkbox"><span>Also restore the compiled PCA9685 channel map. Leave this off to preserve the robot's physical wiring.</span></label>
@@ -1227,7 +1246,7 @@
           </div>
           <div class="live-connection-header-actions">
             <span id="live-connection-phase" data-state="offline">DISCONNECTED</span>
-            <button id="live-connection-close" type="button" aria-label="Close robot connection manager">&times;</button>
+            <button id="live-connection-close" type="button" aria-label="Close robot connection manager" class="studio-icon-button"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
           </div>
         </header>
 
@@ -1272,7 +1291,7 @@
         </div>
 
         <footer>
-          <p id="live-connection-status" role="status">Choose a transport and search for a compatible Domino adapter.</p>
+          <p id="live-connection-status" role="status" aria-live="polite" aria-atomic="true">Choose a transport and search for a compatible Domino adapter.</p>
           <div>
             <button id="live-connection-restart" type="button" hidden>RESTART LINK</button>
             <button id="live-connection-disconnect" type="button" disabled>DISCONNECT</button>
@@ -1286,7 +1305,7 @@
       <form method="dialog" class="live-manual-shell">
         <header>
           <div><span>LIVE / GUARDED CONTROL</span><h2 id="live-manual-title">Browser manual control</h2></div>
-          <button id="live-manual-close" type="submit" aria-label="Close manual control">×</button>
+          <button id="live-manual-close" type="submit" aria-label="Close manual control" class="studio-icon-button"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
         </header>
         <section class="live-manual-state">
           <div><span>AUTHORITY</span><strong id="live-manual-phase">UNAVAILABLE</strong></div>
@@ -1353,7 +1372,7 @@
           </div>
           <div class="firmware-header-actions">
             <span id="firmware-package-state" class="firmware-state-pill" data-state="loading">CHECKING</span>
-            <button id="firmware-deploy-close" class="firmware-icon-button" type="button" aria-label="Close firmware deployment" title="Close">&times;</button>
+            <button id="firmware-deploy-close" class="studio-icon-button firmware-icon-button" type="button" aria-label="Close firmware deployment" title="Close"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
           </div>
         </header>
 
@@ -1395,7 +1414,7 @@
                 <span>UPLOAD PORT</span>
                 <select id="firmware-port-select"><option value="">AUTO DETECT</option></select>
               </label>
-              <button id="firmware-refresh-ports" class="firmware-secondary-action" type="button">REFRESH PORTS</button>
+          <button id="firmware-refresh-ports" class="firmware-secondary-action" type="button">REFRESH PORTS</button>
               <ol class="firmware-boot-guide">
                 <li>Connect Domino's ESP32 over USB.</li>
                 <li>Press and hold the <b>BOOT</b> button.</li>
@@ -1444,8 +1463,7 @@
       <button type="button" data-axis="-Z" aria-label="View from negative Z" title="View from -Z">-Z</button>
     </div>
 
-    <div id="toast-region" class="toast-region" role="status" aria-live="polite" aria-atomic="true"></div>
+    <div id="toast-region" class="toast-region" popover="manual" aria-label="Notifications"></div>
 
-    <script type="module" src="/src/main.js"></script>
   </body>
 </html>

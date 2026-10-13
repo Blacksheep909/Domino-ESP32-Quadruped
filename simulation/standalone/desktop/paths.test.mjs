@@ -1,8 +1,18 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
 import { resolveDesktopPaths } from "./paths.mjs";
+
+test("desktop package includes the service dependency modules", () => {
+  const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+  for (const module of ["companion-process.mjs", "firmware-link.mjs"]) {
+    assert.ok(manifest.build.files.includes(module), `${module} must ship with the desktop app`);
+  }
+  const prepareSource = readFileSync(new URL("./prepare-resources.mjs", import.meta.url), "utf8");
+  assert.ok(prepareSource.includes('"companion-process.mjs"'), "offline companion must include its process helper");
+});
 
 test("development paths use the checked-out repository and private user runtime", () => {
   const paths = resolveDesktopPaths({

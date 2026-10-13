@@ -28,38 +28,59 @@ public static class DominoSerialBridge
             port.WriteTimeout = 500;
             port.DtrEnable = false;
             port.RtsEnable = false;
+            port.Handshake = Handshake.None;
             port.Open();
 
-            var running = true;
-            var reader = new Thread(() =>
+            int running = 1;
+            int failed = 0;
+            // Keep the blocking stdin read in a background thread. A USB read
+            // failure must close the port even if Studio sends no more input.
+            var writer = new Thread(() =>
             {
-                while (running)
+                try
+                {
+                    string command;
+                    while (Interlocked.CompareExchange(ref running, 1, 1) == 1 &&
+                           (command = Console.In.ReadLine()) != null)
+                    {
+                        if (command.Length != 0) port.WriteLine(command);
+                    }
+                }
+                catch (Exception error)
+                {
+                    Console.Error.WriteLine(error.Message);
+                    Interlocked.Exchange(ref failed, 1);
+                }
+                finally { Interlocked.Exchange(ref running, 0); }
+            });
+            writer.IsBackground = true;
+            writer.Start();
+
+            try
+            {
+                while (Interlocked.CompareExchange(ref running, 1, 1) == 1)
                 {
                     try
                     {
-                        var line = port.ReadLine().TrimEnd('\r');
-                        Console.Out.WriteLine(line);
+                        Console.Out.WriteLine(port.ReadLine().TrimEnd('\r'));
                         Console.Out.Flush();
                     }
                     catch (TimeoutException) { }
-                    catch (InvalidOperationException) { break; }
-                    catch (IOException) { break; }
                 }
-            });
-            reader.IsBackground = true;
-            reader.Start();
-
-            string command;
-            while ((command = Console.In.ReadLine()) != null)
-            {
-                if (command.Length == 0) continue;
-                port.WriteLine(command);
             }
-
-            running = false;
-            reader.Join(750);
+            catch (Exception error)
+            {
+                Console.Error.WriteLine(error.Message);
+                Interlocked.Exchange(ref failed, 1);
+            }
+            finally
+            {
+                Interlocked.Exchange(ref running, 0);
+                port.Close();
+                writer.Join(750);
+            }
+            return failed;
         }
-        return 0;
     }
 }
 '@

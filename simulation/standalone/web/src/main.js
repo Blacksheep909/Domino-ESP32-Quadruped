@@ -46,6 +46,7 @@ import {
 import { contactSurfaceError, createDominoPhysics } from "./physics.js";
 import { environmentBallSpecs, logSpecs, terrainSpecs } from "./course-config.js";
 import { createVoronoiTerrain } from "./voronoi-terrain.js";
+import { CLOSE_ICON, setCloseIcon } from "./studio-icons.js";
 import { initializeFirmwareWorkspace } from "./firmware-ui.js";
 import {
   createApplicationState,
@@ -111,6 +112,8 @@ import {
   liveReconnectDue,
   markLiveConnectionPending,
   pruneLiveAdapters,
+  pauseLiveConnectionForUpload,
+  resumeLiveConnectionAfterUpload,
   removeLiveAdapter,
   selectLiveAdapter,
   setLiveConnectionBridge,
@@ -244,16 +247,18 @@ import { createLiveSessionRepository } from "./live-session-storage.js";
 import { advanceCalibrationSweep, calibrationBoxGapMm, jointTravelMetrics, nudgeCalibrationInspectionPose } from "./live-calibration-inspection.js";
 import { createJointInspectionOverlay } from "./joint-inspection-overlay.js";
 import {
+  acceptCalibrationSaveReadback,
   acceptRobotCalibrationProfile,
-  calibrationOriginWarning,
-  LIVE_CALIBRATION_DRAFT_KEY,
-  LIVE_CALIBRATION_LAST_ROBOT_KEY,
-  LIVE_CALIBRATION_CORRUPT_BACKUP_KEY,
+  acknowledgeRobotCalibrationSave,
+  beginRobotCalibrationSave,
+  calibrationDraftJson,
+  calibrationControlBlockReason,
   calibrationInspectionModelAngles,
   calibrationOutputForModelChannel,
   calibrationChannelMap,
   calibrationChannelMapIssues,
   calibrationProfileJson,
+  calibrationProfilesMatch,
   createCalibrationBenchCommand,
   createLiveCalibrationProfile,
   createLiveCalibrationState,
@@ -261,13 +266,17 @@ import {
   jogCalibrationJoint,
   LIVE_CALIBRATION_JOINTS,
   LIVE_CALIBRATION_OUTPUTS,
+  LIVE_CALIBRATION_DRAFT_STORAGE_KEY,
   LIVE_CALIBRATION_LEGACY_STORAGE_KEY,
   LIVE_CALIBRATION_PRE_SYNC_BACKUP_KEY,
   LIVE_CALIBRATION_STEPS,
   LIVE_CALIBRATION_STORAGE_KEY,
   parseCalibrationProfileJson,
   robotCalibrationReady,
+  resetLiveCalibrationConnection,
+  saveLocalCalibrationProfile,
   restoreCalibrationDefaults,
+  restoreCalibrationDraft,
   restoreSelectedCalibrationJoint,
   selectCalibrationJoint,
   selectCalibrationStep,
@@ -309,6 +318,11 @@ import {
   presentationPreferencesJson,
   PRESENTATION_PREFERENCES_STORAGE_KEY,
 } from "./presentation-preferences.js";
+import { CAMERA_CONTROL_PRESETS, cameraGestureAction, orbitMouseAction, sanitizeCameraPreset } from "./camera-control-presets.js";
+import { createStudioHelp } from "./studio-help.js";
+import { studioConnectionFeedback, studioConnectionNotice } from "./studio-connection-feedback.js";
+import { createStudioNotifications } from "./studio-notifications.js";
+import { setStudioActionFeedback, showStudioButtonResult } from "./studio-action-feedback.js";
 import {
   createDominoProjectBundle,
   parseProjectBundleJson,
@@ -324,6 +338,9 @@ import {
 } from "./navigation-plan-library.js";
 import "./styles.css";
 import "./theme.css";
+import "./studio-help.css";
+import "./joint-inspection-overlay.css";
+import "./studio-chrome.css";
 
 initializeFirmwareWorkspace();
 
@@ -356,8 +373,11 @@ try {
   // Presentation preferences are optional; safety state is never restored here.
 }
 const applicationState = createApplicationState({ experience: presentationPreferences.experience });
+let cameraControlPreset = presentationPreferences.cameraPreset;
 const liveTelemetryState = createLiveTelemetryState();
 const liveConnectionState = createLiveConnectionState();
+let firmwareLinkBusy = false;
+let companionPortBusy = false;
 const liveSafetyState = createLiveSafetyState();
 const liveManualState = createLiveManualControlState();
 const liveControllerState = createLiveControllerState();
@@ -605,6 +625,7 @@ function saveLiveNavigationPlanToLibrary() {
   if (input) input.value = liveNavigationPlanLibrary[0]?.name || name;
   liveNavigationState.lastCommandStatus = `Saved local route plan “${liveNavigationPlanLibrary[0]?.name || name}”. No vehicle command was sent.`;
   updateLiveComparisonUi();
+  showAppActionResult(`Route “${liveNavigationPlanLibrary[0]?.name || name}” saved on this PC.`, "success", null, "#live-nav-library-save");
 }
 
 function openLiveNavigationPlanFromLibrary() {
@@ -771,48 +792,19 @@ try {
     }
   }
 } catch {
-  // An unreadable stored profile may still be recoverable by hand; keep the
-  // raw text instead of silently destroying the owner's only browser copy.
-  try {
-    const unreadable = localStorage.getItem(LIVE_CALIBRATION_STORAGE_KEY) ||
-      localStorage.getItem(LIVE_CALIBRATION_LEGACY_STORAGE_KEY);
-    if (unreadable) localStorage.setItem(LIVE_CALIBRATION_CORRUPT_BACKUP_KEY, unreadable);
-  } catch {
-    // Storage may be unavailable or full.
-  }
   localStorage.removeItem(LIVE_CALIBRATION_STORAGE_KEY);
   localStorage.removeItem(LIVE_CALIBRATION_LEGACY_STORAGE_KEY);
 }
 const liveCalibrationState = createLiveCalibrationState(
   storedCalibrationProfile || createLiveCalibrationProfile(),
 );
-let calibrationDraftWritten = "";
 try {
-  const draftJson = localStorage.getItem(LIVE_CALIBRATION_DRAFT_KEY);
-  if (draftJson) {
-    liveCalibrationState.profile = parseCalibrationProfileJson(draftJson);
-    liveCalibrationState.dirty = true;
-    calibrationDraftWritten = draftJson;
-  }
+  restoreCalibrationDraft(liveCalibrationState, localStorage.getItem(LIVE_CALIBRATION_DRAFT_STORAGE_KEY));
 } catch {
-  // An unreadable draft is ignored; the robot profile remains the source of truth.
+  // A damaged draft must not prevent loading the last valid browser copy.
+  localStorage.removeItem(LIVE_CALIBRATION_DRAFT_STORAGE_KEY);
 }
-
-function persistCalibrationDraft() {
-  try {
-    if (!liveCalibrationState.dirty) {
-      if (calibrationDraftWritten) localStorage.removeItem(LIVE_CALIBRATION_DRAFT_KEY);
-      calibrationDraftWritten = "";
-      return;
-    }
-    const json = calibrationProfileJson(liveCalibrationState.profile);
-    if (json === calibrationDraftWritten) return;
-    localStorage.setItem(LIVE_CALIBRATION_DRAFT_KEY, json);
-    calibrationDraftWritten = json;
-  } catch {
-    // Storage can be unavailable or full; the draft simply stays in memory.
-  }
-}
+let calibrationStoredDraftJson = undefined;
 const MOTION_SMOOTHING_STORAGE_KEY = "domino-motion-smoothing-draft-v1";
 let storedMotionSmoothing = null;
 try {
@@ -844,13 +836,13 @@ let calibrationPendingAction = "";
 let calibrationPendingPurpose = "";
 let calibrationPendingProfile = null;
 let calibrationPendingSmoothing = null;
-let calibrationVerifyProfile = null;
+let calibrationSaveAdapterId = "";
 let calibrationSyncRetryAt = 0;
 let calibrationObservedSessionId = "";
 let calibrationRequestTimeout = null;
 let calibrationBenchFeedback = "";
-let calibrationBenchDesired = false;
-let calibrationRecoverySessionId = "";
+let calibrationRobotBootId = null;
+let calibrationLastKeepaliveAt = 0;
 let calibrationFloatEnabled = presentationPreferences.calibrationFloat;
 let calibrationChannelDraft = null;
 let calibrationWiringStage = "edit";
@@ -862,11 +854,17 @@ let calibrationInspectionDirection = 1;
 let calibrationInspectionCameraTween = null;
 let calibrationInspectionLastReadoutAt = 0;
 let liveConnectionRequestTimeout = null;
+let liveCompanionDiscovering = false;
+let previousStudioConnectionFeedback = null;
 let liveSafetyRequestTimeout = null;
 let liveManualRequestTimeout = null;
 let liveDiagnosticFilter = "all";
 let liveNavigationPendingTimeout = null;
 const realWorkspace = document.querySelector("#real-workspace");
+new ResizeObserver(([entry]) => {
+  const height = entry.target.getBoundingClientRect().height;
+  document.body.style.setProperty("--calibration-sync-height", `${height}px`);
+}).observe(document.querySelector("#live-calibration-sync-status"));
 const workspaceButtons = {
   [WORKSPACE_SIMULATION]: document.querySelector("#workspace-simulation"),
   [WORKSPACE_REAL_ROBOT]: document.querySelector("#workspace-real-robot"),
@@ -914,22 +912,16 @@ try {
   autonomyHudCollapsed = false;
 }
 
-function showAppToast(message, tone = "info", durationMs = 2800) {
-  const region = document.querySelector("#toast-region");
-  if (!region || !message) return;
-  // Keep transient status messages from turning into a panel of their own when
-  // users move quickly between LIVE workspaces.
-  region.replaceChildren();
-  const toast = document.createElement("div");
-  toast.className = "app-toast";
-  toast.dataset.tone = tone;
-  toast.textContent = message;
-  region.append(toast);
-  requestAnimationFrame(() => toast.classList.add("is-visible"));
-  window.setTimeout(() => {
-    toast.classList.remove("is-visible");
-    window.setTimeout(() => toast.remove(), 180);
-  }, durationMs);
+const studioNotifications = createStudioNotifications(document.querySelector("#toast-region"));
+
+function showAppToast(message, tone = "info", durationMs = 3600, key = "") {
+  studioNotifications.show(message, tone, durationMs, key);
+}
+
+function showAppActionResult(message, state = "success", outputSelector = null, buttonSelector = null, notification = message) {
+  if (outputSelector) setStudioActionFeedback(document.querySelector(outputSelector), message, state);
+  if (buttonSelector) showStudioButtonResult(document.querySelector(buttonSelector), state === "success" ? "SAVED ✓" : "NOT SAVED", state);
+  showAppToast(notification, state === "error" ? "error" : state, 4200);
 }
 
 function setAutonomyHudCollapsed(collapsed, persist = true) {
@@ -1049,7 +1041,8 @@ function renderLiveCameraPanel() {
   yaw.textContent = `${liveCameraState.yawDeg >= 0 ? "+" : ""}${liveCameraState.yawDeg.toFixed(1)}°`;
   pitch.textContent = `${liveCameraState.pitchDeg >= 0 ? "+" : ""}${liveCameraState.pitchDeg.toFixed(1)}°`;
   fov.textContent = `${Math.round(liveCameraState.fovDeg)}°`;
-  connect.textContent = liveCameraState.connected || liveCameraState.connecting ? "DISCONNECT" : liveCameraState.error ? "RETRY" : "CONNECT";
+  connect.textContent = liveCameraState.connecting ? "CANCEL CONNECT" : liveCameraState.connected ? "DISCONNECT" : liveCameraState.error ? "RETRY" : "CONNECT";
+  connect.setAttribute("aria-busy", String(liveCameraState.connecting));
   connect.title = liveCameraState.connected || liveCameraState.connecting
     ? "Disconnect the configured robot camera stream"
     : liveCameraState.error
@@ -1063,8 +1056,10 @@ function renderLiveCameraPanel() {
   placeholder.hidden = liveCameraState.connected;
   const placeholderTitle = placeholder.querySelector("strong");
   const placeholderCopy = placeholder.querySelector("span");
-  if (placeholderTitle) placeholderTitle.textContent = liveCameraState.error ? "STREAM UNAVAILABLE" : "NO CAMERA STREAM";
-  if (placeholderCopy) placeholderCopy.textContent = liveCameraState.error
+  if (placeholderTitle) placeholderTitle.textContent = liveCameraState.connecting ? "CONNECTING CAMERA…" : liveCameraState.error ? "STREAM UNAVAILABLE" : "NO CAMERA STREAM";
+  if (placeholderCopy) placeholderCopy.textContent = liveCameraState.connecting
+    ? "Waiting for the first image. Use CANCEL CONNECT to stop."
+    : liveCameraState.error
     ? "Check the URL and robot network, then press RETRY."
     : "Enter an HTTP/MJPEG image stream from the robot.";
   const telemetryAgeMs = liveCameraState.telemetryAt === null ? null : Math.max(0, Date.now() - liveCameraState.telemetryAt);
@@ -1097,6 +1092,12 @@ function disconnectLiveCamera() {
   renderLiveCameraPanel();
 }
 
+function cameraActionFeedback(message, state = "info") {
+  const output = document.querySelector("#live-camera-action-status");
+  output.hidden = false;
+  setStudioActionFeedback(output, message, state);
+}
+
 function clearLiveCameraUrl() {
   disconnectLiveCamera();
   const input = document.querySelector("#live-camera-url");
@@ -1104,22 +1105,30 @@ function clearLiveCameraUrl() {
   try {
     localStorage.removeItem(LIVE_CAMERA_URL_STORAGE_KEY);
   } catch {
-    // Clearing remains effective for this session when storage is unavailable.
+    cameraActionFeedback("Camera URL cleared for this session. Browser storage could not be updated.", "warning");
+    renderLiveCameraPanel();
+    input?.focus();
+    return;
   }
   renderLiveCameraPanel();
   input?.focus();
+  cameraActionFeedback("Saved camera URL cleared.", "success");
   showAppToast("Saved camera URL cleared.", "info");
 }
 
 function connectLiveCamera() {
   if (liveCameraState.connected || liveCameraState.connecting) {
+    const wasConnecting = liveCameraState.connecting;
     disconnectLiveCamera();
+    cameraActionFeedback(wasConnecting ? "Camera connection cancelled." : "Camera disconnected.");
+    showAppToast(wasConnecting ? "Camera connection cancelled." : "Camera disconnected.", "info");
     return;
   }
   const input = document.querySelector("#live-camera-url");
   const image = document.querySelector("#live-camera-image");
   const url = input?.value.trim();
   if (!input || !image || !url) {
+    cameraActionFeedback("Enter an HTTP or MJPEG image-stream URL before connecting.", "warning");
     showAppToast("Enter the robot camera HTTP or MJPEG stream URL.", "warning");
     input?.focus();
     return;
@@ -1127,22 +1136,30 @@ function connectLiveCamera() {
   try {
     const parsed = new URL(url, window.location.href);
     if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error("Unsupported camera protocol");
-    localStorage.setItem(LIVE_CAMERA_URL_STORAGE_KEY, parsed.href);
+    try { localStorage.setItem(LIVE_CAMERA_URL_STORAGE_KEY, parsed.href); } catch {
+      showAppToast("Camera URL could not be saved on this PC. Connecting for this session only.", "warning");
+    }
     const requestId = ++liveCameraRequestId;
     if (liveCameraConnectTimeout !== null) window.clearTimeout(liveCameraConnectTimeout);
     liveCameraConnectTimeout = null;
     liveCameraState.connected = false;
     liveCameraState.connecting = true;
     liveCameraState.error = false;
+    cameraActionFeedback("Connecting… waiting for the first image.", "waiting");
     image.onload = () => {
       if (requestId !== liveCameraRequestId) return;
       if (liveCameraConnectTimeout !== null) window.clearTimeout(liveCameraConnectTimeout);
       liveCameraConnectTimeout = null;
+      const firstImage = liveCameraState.connecting;
       liveCameraState.connected = true;
       liveCameraState.connecting = false;
       liveCameraState.error = false;
       liveCameraState.updatedAt = Date.now();
       renderLiveCameraPanel();
+      if (firstImage) {
+        cameraActionFeedback("Connected — image received.", "success");
+        showAppToast("Camera connected — image received.", "success");
+      }
     };
     image.onerror = () => {
       if (requestId !== liveCameraRequestId) return;
@@ -1152,6 +1169,7 @@ function connectLiveCamera() {
       liveCameraState.connecting = false;
       liveCameraState.error = true;
       renderLiveCameraPanel();
+      cameraActionFeedback("Connection failed. Check the URL and robot network, then retry.", "error");
       showAppToast("Camera stream could not be opened. Check the URL and robot network.", "error");
     };
     image.src = parsed.href;
@@ -1166,9 +1184,11 @@ function connectLiveCamera() {
       liveCameraState.error = true;
       renderLiveCameraPanel();
       showAppToast("Camera stream timed out. Check the URL and robot network.", "error");
+      cameraActionFeedback("Connection timed out. Check the URL and network, then retry.", "error");
     }, 10_000);
     renderLiveCameraPanel();
   } catch {
+    cameraActionFeedback("Use an HTTP or HTTPS image-stream URL.", "warning");
     showAppToast("Use an HTTP or HTTPS camera stream URL.", "warning");
     input.focus();
   }
@@ -1235,7 +1255,8 @@ function updateFullscreenButton() {
   const active = Boolean(document.fullscreenElement) || desktopWindowFullscreen;
   button.setAttribute("aria-pressed", String(active));
   button.title = active ? "Exit fullscreen (F)" : "Enter fullscreen (F)";
-  button.textContent = active ? "×" : "⛶";
+  if (active) setCloseIcon(button);
+  else { button.classList.remove("studio-icon-button"); button.textContent = "⛶"; }
 }
 
 async function toggleFullscreen() {
@@ -1270,13 +1291,20 @@ function persistPresentationPreferences() {
       experience: applicationState.experience,
       liveView: liveViewState.selected,
       calibrationFloat: calibrationFloatEnabled,
+      cameraPreset: cameraControlPreset,
     }));
+    return true;
   } catch {
     // The application remains fully usable when browser storage is unavailable.
+    return false;
   }
 }
 
 function applyWorkspace(workspace) {
+  if (workspace !== WORKSPACE_REAL_ROBOT &&
+      (liveCalibrationState.benchModeAcknowledged || calibrationPendingAction === "enter")) {
+    releaseCalibrationBench("Leaving LIVE closed bench mode. Your calibration draft was kept.");
+  }
   if (workspace !== WORKSPACE_REAL_ROBOT && liveManualState.authorityToken) {
     releaseLiveManualControl("Leaving LIVE released browser-control authority.");
   }
@@ -1347,7 +1375,9 @@ function applyLiveView(view) {
     controls.enabled = true;
     closeCalibrationWiringDialog();
     closeRobotCalibrationConfirmation();
-    if (liveCalibrationState.benchModeAcknowledged) sendCalibrationCommand("exit");
+    if (liveCalibrationState.benchModeAcknowledged || calibrationPendingAction === "enter") {
+      releaseCalibrationBench("Leaving calibration closed bench mode. Your draft was kept.");
+    }
     liveCalibrationState.benchModeAcknowledged = false;
     liveCalibrationState.jogOffsetDeg = 0;
     liveExpectedServoAngles = [...standServoReference];
@@ -1429,28 +1459,63 @@ function applyExperience(experience, persist = true) {
 applyExperience(applicationState.experience, false);
 
 const shortcutsDialog = document.querySelector("#shortcuts-dialog");
-const shortcutsDone = document.querySelector("#shortcuts-done");
-let shortcutsOpener = null;
+const studioHelp = createStudioHelp({
+  getContext: () => applicationState.workspace === WORKSPACE_REAL_ROBOT ? liveViewState.selected : "simulation",
+  getCameraPreset: () => cameraControlPreset,
+  onCameraChange: (preset) => {
+    cameraControlPreset = sanitizeCameraPreset(preset);
+    const saved = persistPresentationPreferences();
+    renderCalibrationInspectionUi();
+    return saved;
+  },
+  onNavigate: (destination) => {
+    const target = typeof destination === "string" ? destination : destination.view;
+    if (["simulation", "tuning", "controller", "inspection"].includes(target)) {
+      applyWorkspace(WORKSPACE_SIMULATION);
+      if (target === "tuning") setGaitLabPanelOpen(true);
+      if (target === "controller") document.querySelector("#gamepad-setup-open").click();
+      if (target === "inspection" && document.querySelector("#joints-button").getAttribute("aria-pressed") !== "true") {
+        document.querySelector("#joints-button").click();
+      }
+    } else if (target === "project") {
+      openProjectDialog();
+    } else {
+      applyWorkspace(WORKSPACE_REAL_ROBOT);
+      if (target === "connection") document.querySelector("#live-connection-open").click();
+      else if (target === "firmware") document.querySelector("#firmware-deploy-button").click();
+      else if (target === "manual") document.querySelector("#live-manual-open").click();
+      else {
+        applyLiveView(target === "smoothing" ? LIVE_VIEW_CALIBRATION : target);
+        if (["calibration", "smoothing"].includes(target)) {
+          selectCalibrationStep(liveCalibrationState, destination.step || "review");
+          renderLiveCalibrationUi();
+        }
+      }
+    }
+    const focusId = destination.focus || (target === "smoothing" ? "live-calibration-smoothing-title" : null);
+    if (focusId) requestAnimationFrame(() => {
+      const control = document.getElementById(focusId);
+      control?.scrollIntoView({ block: "center" });
+      if (control?.matches("input, button, select")) control.focus({ preventScroll: true });
+    });
+  },
+});
 
-function openShortcuts(opener = null) {
-  if (!shortcutsDialog) return;
-  shortcutsOpener = opener || document.activeElement;
-  shortcutsDialog.hidden = false;
-  shortcutsDone?.focus();
+function openShortcuts(opener = null, guideId = null) {
+  studioHelp.open(opener, guideId);
 }
 
 function closeShortcuts() {
-  if (!shortcutsDialog) return;
-  shortcutsDialog.hidden = true;
-  if (shortcutsOpener && typeof shortcutsOpener.focus === "function") shortcutsOpener.focus();
-  shortcutsOpener = null;
+  studioHelp.close();
 }
-
-document.querySelector("#shortcuts-open")?.addEventListener("click", (event) => openShortcuts(event.currentTarget));
-document.querySelector("#shortcuts-close")?.addEventListener("click", closeShortcuts);
-shortcutsDone?.addEventListener("click", closeShortcuts);
-shortcutsDialog?.addEventListener("click", (event) => {
-  if (event.target === shortcutsDialog) closeShortcuts();
+document.querySelectorAll(".live-page-heading, .live-compare-page-heading").forEach((heading) => {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "context-guide-button";
+  button.textContent = "GUIDE";
+  button.title = "Open the step-by-step guide for this menu";
+  button.addEventListener("click", () => openShortcuts(button));
+  heading.querySelector(".live-page-status")?.prepend(button);
 });
 document.querySelector("#hud-toggle")?.addEventListener("click", () => setAutonomyHudCollapsed(!autonomyHudCollapsed));
 document.querySelector("#live-camera-connect")?.addEventListener("click", connectLiveCamera);
@@ -1531,6 +1596,7 @@ window.addEventListener("keydown", (event) => {
     openShortcuts();
     return;
   }
+  if (event.ctrlKey || event.metaKey || event.altKey) return;
   const key = event.key.toLowerCase();
   if (key === "m") {
     if (applicationState.workspace !== WORKSPACE_REAL_ROBOT) return;
@@ -1605,10 +1671,6 @@ document.querySelector("#live-connection-open").addEventListener("click", () => 
   renderLiveConnectionUi();
   if (!liveConnectionDialog.open) liveConnectionDialog.showModal();
 });
-document.querySelector("#real-engineering-status").addEventListener("click", () => {
-  renderLiveConnectionUi();
-  if (!liveConnectionDialog.open) liveConnectionDialog.showModal();
-});
 document.querySelector("#live-connection-close").addEventListener("click", () => liveConnectionDialog.close());
 document.querySelectorAll("[data-live-transport]").forEach((button) => {
   button.addEventListener("click", () => {
@@ -1617,12 +1679,17 @@ document.querySelectorAll("[data-live-transport]").forEach((button) => {
   });
 });
 document.querySelector("#live-connection-discover").addEventListener("click", async () => {
+  if (liveCompanionDiscovering || liveConnectionState.pendingRequestId) return;
   const transport = liveConnectionState.transportFilter;
   const protocol = liveCompanionProtocol.value;
+  liveCompanionDiscovering = true;
+  renderLiveConnectionUi();
+  updateLiveComparisonUi();
   try {
     const response = await fetch("/api/companion/discover", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(10_000),
       body: JSON.stringify({
         transport,
         protocol,
@@ -1634,20 +1701,33 @@ document.querySelector("#live-connection-discover").addEventListener("click", as
     });
     const result = await response.json();
     if (!response.ok || result.reason) throw new Error(result.reason || result.error || "The companion service could not start.");
+    // The process starting is earlier than its first robot announcement.
+    // Keep Search pending during that bounded startup window so an empty
+    // relay snapshot cannot finish the search just before the device appears.
+    if (result.running && visibleLiveAdapters(liveConnectionState).length === 0) {
+      const deadline = Date.now() + 1500;
+      await new Promise((resolve) => {
+        const check = () => {
+          if (!liveConnectionState.bridgeConnected || visibleLiveAdapters(liveConnectionState).length || Date.now() >= deadline) resolve();
+          else window.setTimeout(check, 50);
+        };
+        check();
+      });
+    }
   } catch (error) {
     if (protocol === "ardupilot") {
-      showAppToast(error instanceof Error ? error.message : "MAVLink UDP could not start.", "warning");
+      liveConnectionState.error = error instanceof Error ? error.message : "MAVLink UDP could not start.";
+      liveConnectionState.status = liveConnectionState.error;
+      showAppToast(liveConnectionState.error, "warning");
       return;
     }
     // Discovery also covers separately managed Wi-Fi/Bluetooth companions, so
     // a local service failure must not suppress the normal relay search.
+  } finally {
+    liveCompanionDiscovering = false;
+    renderLiveConnectionUi();
   }
   sendLiveConnectionRequest("discover");
-  setTimeout(() => {
-    if (liveConnectionState.phase === "discovering" && !liveConnectionState.pendingRequestId) {
-      sendLiveConnectionRequest("discover");
-    }
-  }, 900);
 });
 document.querySelector("#live-adapter-list").addEventListener("click", (event) => {
   const button = event.target.closest("[data-adapter-id]");
@@ -1831,7 +1911,8 @@ const robotCameraAnchor = new THREE.Vector3();
 const defaultCameraOffset = new THREE.Vector3(1.05, 0.40, 1.02);
 const LIVE_CAMERA_ANCHOR_Y = 0.26;
 const SIMULATION_CAMERA_ANCHOR_Y = 0.32;
-let middleButtonPanning = false;
+let cameraPanningButton = null;
+const cameraTouchPointers = new Set();
 
 function cameraAnchorY() {
   if (floatModeEnabled) return robotWorld.position.y;
@@ -1967,19 +2048,35 @@ cameraAxes.forEach((axis) => {
   });
 });
 renderer.domElement.addEventListener("pointerdown", (event) => {
+  if (event.pointerType === "touch") {
+    cameraTouchPointers.add(event.pointerId);
+    cameraPanningButton = "touch";
+    if (calibrationInspectionCameraTween) {
+      calibrationInspectionCameraTween = null;
+      controls.enabled = true;
+    }
+    if (!cameraSnap && cameraTouchPointers.size === 1) usePerspectiveCamera();
+    return;
+  }
+  const action = cameraGestureAction(cameraControlPreset, event);
+  const orbitAction = orbitMouseAction(action, event);
+  const button = ["LEFT", "MIDDLE", "RIGHT"][event.button];
+  if (button) controls.mouseButtons[button] = orbitAction ? THREE.MOUSE[orbitAction] : -1;
   if (calibrationInspectionCameraTween) {
     calibrationInspectionCameraTween = null;
     controls.enabled = true;
   }
   cameraGizmo.dataset.view = "";
-  // Orthographic OrbitControls support panning. Only rotation gestures leave
-  // an axis inspection view; middle-button target movement stays orthographic.
-  if (!cameraSnap && event.button !== 1) usePerspectiveCamera();
-  if (event.button === 1) middleButtonPanning = true;
+  // Pan and zoom retain an orthographic inspection view in every preset.
+  if (!cameraSnap && action === "orbit") usePerspectiveCamera();
+  if (action === "pan") cameraPanningButton = event.button;
 }, { capture: true });
-function finishMiddleButtonPan(event) {
-  if (event.button !== 1 || !middleButtonPanning) return;
-  middleButtonPanning = false;
+function finishCameraPan(event) {
+  if (event.pointerType === "touch") {
+    cameraTouchPointers.delete(event.pointerId);
+    if (cameraTouchPointers.size || cameraPanningButton !== "touch") return;
+  } else if (event.button !== cameraPanningButton) return;
+  cameraPanningButton = null;
   robotCameraAnchor.set(
     robotWorld.position.x,
     cameraAnchorY(),
@@ -1987,10 +2084,8 @@ function finishMiddleButtonPan(event) {
   );
   cameraTargetOffset.copy(controls.target).sub(robotCameraAnchor);
 }
-window.addEventListener("pointerup", finishMiddleButtonPan, { capture: true });
-window.addEventListener("pointercancel", () => {
-  middleButtonPanning = false;
-});
+window.addEventListener("pointerup", finishCameraPan, { capture: true });
+window.addEventListener("pointercancel", finishCameraPan, { capture: true });
 
 function updateCameraSnap(now) {
   if (!cameraSnap) return false;
@@ -3649,6 +3744,18 @@ function ingestLiveTelemetry(packet, receivedAt = Date.now()) {
   const accepted = acceptLiveTelemetryPacket(liveTelemetryState, packet, receivedAt);
   observeLiveDiagnosticPacket(liveDiagnosticsState, packet, accepted, receivedAt);
   if (accepted) {
+    const bootId = packet.diagnostics?.bootId;
+    if (Number.isInteger(bootId)) {
+      if (calibrationRobotBootId !== null && calibrationRobotBootId !== bootId) {
+        resetCalibrationLink("Robot restarted. Your calibration edits were kept; request bench mode again.");
+      }
+      calibrationRobotBootId = bootId;
+    }
+    if (liveCalibrationState.benchModeAcknowledged &&
+        (packet.diagnostics?.benchMode === false ||
+         (packet.diagnostics?.robotState && packet.diagnostics.robotState !== "disarmed"))) {
+      resetCalibrationLink("Robot closed bench mode. Your calibration edits were kept; request bench mode again.");
+    }
     acceptLiveControllerTelemetry(liveControllerState, packet, receivedAt);
     let gaitStateChanged = false;
     if (packet.gaitProfile) {
@@ -3686,23 +3793,7 @@ function connectControlBridge() {
     lockLiveSafetyState(liveSafetyState, "The local bridge disconnected. Robot-side outputs must fail safe.");
     revokeLiveManualControl(liveManualState, "The local bridge disconnected. Browser authority was revoked.");
     bridgeInput = { connected: false, channels: null };
-    liveCalibrationState.benchModeAcknowledged = false;
-    forgetRobotCalibrationProfile(liveCalibrationState);
-    calibrationPendingRequestId = "";
-    calibrationPendingAction = "";
-    calibrationPendingPurpose = "";
-    calibrationPendingProfile = null;
-    calibrationPendingSmoothing = null;
-    calibrationVerifyProfile = null;
-    motionSmoothingRobot = null;
-    motionSmoothingRobotSessionId = "";
-    motionSmoothingVerify = null;
-    motionSmoothingStatus = "Connect a disarmed robot to read its active smoothing settings.";
-    calibrationSyncRetryAt = 0;
-    calibrationObservedSessionId = "";
-    calibrationBenchFeedback = "PC link disconnected. Reconnect before requesting bench mode.";
-    clearTimeout(calibrationRequestTimeout);
-    calibrationRequestTimeout = null;
+    resetCalibrationLink("PC link disconnected. Your calibration edits were kept; request bench mode after reconnecting.");
     liveGaitState.pendingRequestId = "";
     liveGaitState.pendingAction = "";
     liveGaitState.persistentApplySupported = false;
@@ -3740,11 +3831,8 @@ function connectControlBridge() {
       }
       if (message.type === "live-adapter-removed") {
         removeLiveAdapter(liveConnectionState, message.adapterId, message.reason);
-        forgetRobotCalibrationProfile(liveCalibrationState);
-        calibrationVerifyProfile = null;
-        calibrationSyncRetryAt = 0;
+        resetCalibrationLink("Robot adapter disconnected. Your calibration edits were kept; request bench mode after reconnecting.");
         lockLiveSafetyState(liveSafetyState, "The adapter heartbeat was lost. Robot-side outputs must fail safe.");
-        liveCalibrationState.benchModeAcknowledged = false;
         liveGaitState.persistentApplySupported = false;
         revokeLiveManualControl(liveManualState, "The robot adapter disappeared. Browser authority was revoked.");
         resetNativeNavigationRunner(liveNativeNavigationState);
@@ -3756,6 +3844,29 @@ function connectControlBridge() {
         liveNavigationState.lastCommandStatus = "The navigation adapter disappeared. Autonomous commands remain blocked.";
         clearTimeout(liveNavigationPendingTimeout);
         liveNavigationPendingTimeout = null;
+        renderLiveConnectionUi();
+      }
+      if (message.type === "firmware-link-state") {
+        firmwareLinkBusy = message.busy === true;
+        if (firmwareLinkBusy) {
+          clearTimeout(liveConnectionRequestTimeout);
+          pauseLiveConnectionForUpload(liveConnectionState);
+          lockLiveSafetyState(liveSafetyState, "Firmware upload in progress.");
+          revokeLiveManualControl(liveManualState, "Firmware upload in progress.");
+          resetNativeNavigationRunner(liveNativeNavigationState);
+          resetLiveCommandPermissions("Firmware upload in progress.");
+          showAppToast("Releasing the robot connection for firmware upload…", "pending", 0);
+        } else {
+          resumeLiveConnectionAfterUpload(liveConnectionState, message.adapterId, message.error);
+          showAppToast(message.error || (message.adapterId ? "Uploader finished. Reconnecting to the robot…" : "Uploader finished. Robot port available."), message.error ? "warning" : "info");
+        }
+        renderLiveConnectionUi();
+        renderLiveSafetyUi();
+        updateLiveComparisonUi();
+      }
+      if (message.type === "companion-port-state") {
+        companionPortBusy = message.busy === true;
+        showAppToast(companionPortBusy ? "Disconnecting and releasing the robot port…" : message.error || "Disconnected. Robot port available for upload.", companionPortBusy ? "pending" : message.error ? "warning" : "success", companionPortBusy ? 0 : 3600);
         renderLiveConnectionUi();
       }
       if (message.type === "live-connection-ack") {
@@ -3806,9 +3917,54 @@ function formatPacketAge(age) {
   return `${(age / 1_000).toFixed(1)} s`;
 }
 
+function resetCalibrationLink(reason) {
+  resetLiveCalibrationConnection(liveCalibrationState);
+  calibrationPendingRequestId = "";
+  calibrationPendingAction = "";
+  calibrationPendingPurpose = "";
+  calibrationPendingProfile = null;
+  calibrationPendingSmoothing = null;
+  motionSmoothingRobot = null;
+  motionSmoothingRobotSessionId = "";
+  motionSmoothingVerify = null;
+  motionSmoothingStatus = "Connect a disarmed robot to read its active smoothing settings.";
+  calibrationSyncRetryAt = 0;
+  calibrationObservedSessionId = "";
+  calibrationLastKeepaliveAt = 0;
+  calibrationOpenWiringAfterExit = false;
+  clearTimeout(calibrationRequestTimeout);
+  calibrationRequestTimeout = null;
+  if (reason) calibrationBenchFeedback = reason;
+}
+
+function releaseCalibrationBench(reason) {
+  const connection = liveConnectionEnvelope(liveConnectionState);
+  if ((liveCalibrationState.benchModeAcknowledged || calibrationPendingAction === "enter") &&
+      connection && socket?.readyState === WebSocket.OPEN) {
+    // An exit must bypass a pending enter/jog/save. Its ACK is deliberately
+    // untracked so a cancelled request cannot restore permission later.
+    const command = createCalibrationBenchCommand(liveCalibrationState, "exit", crypto.randomUUID());
+    socket.send(JSON.stringify({ ...command, ...connection }));
+  }
+  resetCalibrationLink(reason);
+}
+
+function calibrationControlContext() {
+  return {
+    connectionReady: liveConnectionIsReady(liveConnectionState),
+    telemetryAgeMs: liveComparisonSnapshot(liveTelemetryState).lastRobotPacketAgeMs,
+    robotState: liveConnectionState.robotState,
+    calibrationSupported: liveConnectionState.adapters[liveConnectionState.selectedAdapterId]?.capabilities.calibration === true,
+    sessionId: liveConnectionState.sessionId,
+    workspaceActive: applicationState.workspace === WORKSPACE_REAL_ROBOT &&
+      liveViewState.selected === LIVE_VIEW_CALIBRATION && !document.hidden,
+    batteryLocked: liveBatteryControlLocked,
+    pending: Boolean(calibrationPendingRequestId),
+  };
+}
+
 function resetLiveCommandPermissions(reason) {
-  liveCalibrationState.benchModeAcknowledged = false;
-  forgetRobotCalibrationProfile(liveCalibrationState);
+  resetCalibrationLink(reason);
   liveGaitState.persistentApplySupported = false;
   if (reason) liveGaitState.status = reason;
 }
@@ -3869,6 +4025,7 @@ function liveSafetyContext() {
     connectionReady: liveConnectionIsReady(liveConnectionState),
     telemetryFresh: snapshot.expectedFresh && snapshot.measuredFresh,
     driveLinkAlive: controller.linkReady,
+    calibrationActive: liveCalibrationState.benchModeAcknowledged || calibrationPendingAction === "enter",
     batteryDetected: !Number.isFinite(voltageV) || deriveLiveBatteryState(voltageV).packDetected,
   };
 }
@@ -4099,6 +4256,7 @@ setInterval(sendLiveSafetyHeartbeat, LIVE_SAFETY_HEARTBEAT_INTERVAL_MS);
 
 function renderLiveConnectionUi() {
   const now = Date.now();
+  const portBusy = firmwareLinkBusy || companionPortBusy;
   const connected = liveConnectionIsReady(liveConnectionState, now);
   const adapters = visibleLiveAdapters(liveConnectionState, now);
   const selected = liveConnectionState.adapters[liveConnectionState.selectedAdapterId] || null;
@@ -4108,11 +4266,23 @@ function renderLiveConnectionUi() {
   const phase = document.querySelector("#live-connection-phase");
   phase.textContent = liveConnectionState.phase.toUpperCase();
   phase.dataset.state = connected ? "connected" : liveConnectionState.phase;
+  const pendingAction = liveConnectionState.pendingAction;
+  const connectButton = document.querySelector("#live-connection-connect");
+  connectButton.textContent = pendingAction === "connect" ? "CONNECTING…" : "CONNECT READ-ONLY";
+  connectButton.setAttribute("aria-busy", String(pendingAction === "connect"));
+  const discoverButton = document.querySelector("#live-connection-discover");
+  const discovering = liveCompanionDiscovering || pendingAction === "discover";
+  discoverButton.textContent = discovering ? "SEARCHING…" : "SEARCH FOR ADAPTERS";
+  discoverButton.setAttribute("aria-busy", String(discovering));
   const connectionStatus = liveConnectionStatus(liveConnectionState, now);
-  document.querySelector("#live-connection-status").textContent = liveCompanionProtocol.value === "ardupilot"
+  const statusMessage = liveCompanionDiscovering ? "Searching for adapters… please wait for the results."
+    : liveCompanionProtocol.value === "ardupilot"
     && connectionStatus === "Choose a transport and search for a compatible Domino adapter."
     ? "Enter the MAVLink host and port, then search for an ArduPilot heartbeat."
     : connectionStatus;
+  setStudioActionFeedback(document.querySelector("#live-connection-status"), statusMessage,
+    connectionFault || liveConnectionState.error ? "error" : discovering || pendingAction ? "waiting"
+      : connected ? "success" : "info");
 
   document.querySelectorAll("[data-live-transport]").forEach((button) => {
     button.setAttribute("aria-pressed", String(button.dataset.liveTransport === liveConnectionState.transportFilter));
@@ -4161,7 +4331,7 @@ function renderLiveConnectionUi() {
   });
 
   document.querySelector("#live-connection-discover").disabled =
-    !liveConnectionState.bridgeConnected || reconnecting || restarting || Boolean(liveConnectionState.pendingRequestId || liveConnectionState.sessionId);
+    liveCompanionDiscovering || !liveConnectionState.bridgeConnected || reconnecting || restarting || Boolean(liveConnectionState.pendingRequestId || liveConnectionState.sessionId);
   document.querySelector("#live-connection-connect").disabled =
     !liveConnectionState.bridgeConnected || !selected || selected.state === "error" || reconnecting || restarting || Boolean(liveConnectionState.pendingRequestId || liveConnectionState.sessionId);
   const restartButton = document.querySelector("#live-connection-restart");
@@ -4169,29 +4339,45 @@ function renderLiveConnectionUi() {
   restartButton.textContent = restarting ? "RESTARTING..." : `RESTART ${selected?.transport?.toUpperCase() || "LINK"}`;
   restartButton.disabled = restarting || !liveConnectionState.bridgeConnected || !selected || Boolean(liveConnectionState.pendingRequestId || liveConnectionState.sessionId);
   const disconnectButton = document.querySelector("#live-connection-disconnect");
-  disconnectButton.textContent = reconnecting ? "CANCEL RETRY" : connectionFault ? "CLEAR FAULT" : "DISCONNECT";
+  disconnectButton.textContent = pendingAction === "disconnect" ? "DISCONNECTING…"
+    : reconnecting ? "CANCEL RETRY" : connectionFault ? "CLEAR FAULT" : "DISCONNECT";
+  disconnectButton.setAttribute("aria-busy", String(pendingAction === "disconnect"));
   disconnectButton.disabled =
     (!connected && !reconnecting && !connectionFault) ||
     (liveSafetyState.robotState === "armed" && !connectionFault) ||
     Boolean(liveConnectionState.pendingRequestId);
 
   const openButton = document.querySelector("#live-connection-open");
-  openButton.textContent = connected ? "MANAGE LINK" : "PAIR ROBOT";
+  openButton.textContent = portBusy ? (firmwareLinkBusy ? "UPLOADING…" : "DISCONNECTING…")
+    : pendingAction === "disconnect" ? "DISCONNECTING…"
+      : pendingAction === "connect" || reconnecting || restarting ? "CONNECTING…" : connected ? "MANAGE LINK" : "PAIR ROBOT";
   openButton.title = connected
     ? "Inspect or disconnect the active PC link"
     : connectionFault
       ? `Connection fault: ${liveConnectionState.error || "open the manager to recover"}`
       : "Find and pair this PC with Domino";
-  openButton.dataset.state = connected ? "connected" : connectionFault ? "fault" : "ready";
+  openButton.dataset.state = portBusy || pendingAction || reconnecting || restarting ? "busy" : connected ? "connected" : connectionFault ? "fault" : "ready";
+  if (portBusy) {
+    document.querySelectorAll("#live-connection-dialog button:not(#live-connection-close)").forEach((button) => { button.disabled = true; });
+  }
   renderLiveManualUi();
   if (liveViewState.selected === LIVE_VIEW_GAITS) renderLiveGaitUi();
 }
 
 function sendLiveConnectionRequest(action) {
-  if (socket?.readyState !== WebSocket.OPEN) return false;
+  if (firmwareLinkBusy || companionPortBusy) return false;
+  if (socket?.readyState !== WebSocket.OPEN) {
+    setStudioActionFeedback(document.querySelector("#live-connection-status"),
+      "The Studio server is unavailable. Reconnect to the server before trying again.", "error");
+    showAppToast("Connection request could not be sent: Studio server unavailable.", "warning");
+    return false;
+  }
   const requestId = crypto.randomUUID();
   const command = createLiveConnectionCommand(liveConnectionState, action, requestId);
   if (!command) return false;
+  if (action === "disconnect") {
+    resetCalibrationLink("PC link disconnect requested. Your calibration edits were kept.");
+  }
   markLiveConnectionPending(liveConnectionState, command);
   socket.send(JSON.stringify(command));
   clearTimeout(liveConnectionRequestTimeout);
@@ -4206,14 +4392,16 @@ function sendLiveConnectionRequest(action) {
     updateLiveComparisonUi();
   }, 4_000);
   renderLiveConnectionUi();
+  updateLiveComparisonUi();
   return true;
 }
 
 function serviceLiveReconnect() {
+  if (firmwareLinkBusy || companionPortBusy) return;
   expireLiveLinkRestart(liveConnectionState);
   if (liveReconnectDue(liveConnectionState)) sendLiveConnectionRequest("connect");
   serviceCalibrationProfileSync();
-  serviceCalibrationBenchRecovery();
+  serviceCalibrationBenchKeepalive();
   if (liveConnectionState.phase === "reconnecting" || liveConnectionState.phase === "restarting") renderLiveConnectionUi();
 }
 
@@ -6141,7 +6329,7 @@ function renderLiveWaypointList(navigation = liveNavigationSnapshot(liveTelemetr
     ).ready;
     const localSummary = waypoint.local ? `LOCAL N ${waypoint.local.northM.toFixed(1)} / E ${waypoint.local.eastM.toFixed(1)} M` : "GPS REFERENCE";
     row.innerHTML = `
-      <div class="live-waypoint-heading"><strong>WP ${String(index + 1).padStart(2, "0")}</strong><span>${escapeNavigationHtml(waypoint.label || "Waypoint")} / ${localSummary}</span><div><button type="button" data-waypoint-action="direct" ${dominoDirectReady ? "" : "disabled"} title="Drive only to this waypoint with Domino's guarded controller">DRIVE</button><button type="button" data-waypoint-action="goto" ${guidedReady && hasCoordinate ? "" : "disabled"} title="Send this waypoint as an ArduPilot Guided target">GUIDE</button><button type="button" data-waypoint-action="streetview" ${waypointCanOpenStreetView ? "" : "disabled"} title="Open Street View at this waypoint">VIEW</button><button type="button" data-waypoint-action="up" title="Move waypoint up">↑</button><button type="button" data-waypoint-action="down" title="Move waypoint down">↓</button><button type="button" data-waypoint-action="duplicate" title="Duplicate waypoint">⧉</button><button type="button" data-waypoint-action="remove" title="Remove waypoint">×</button></div></div>
+      <div class="live-waypoint-heading"><strong>WP ${String(index + 1).padStart(2, "0")}</strong><span>${escapeNavigationHtml(waypoint.label || "Waypoint")} / ${localSummary}</span><div><button type="button" data-waypoint-action="direct" ${dominoDirectReady ? "" : "disabled"} title="Drive only to this waypoint with Domino's guarded controller">DRIVE</button><button type="button" data-waypoint-action="goto" ${guidedReady && hasCoordinate ? "" : "disabled"} title="Send this waypoint as an ArduPilot Guided target">GUIDE</button><button type="button" data-waypoint-action="streetview" ${waypointCanOpenStreetView ? "" : "disabled"} title="Open Street View at this waypoint">VIEW</button><button type="button" data-waypoint-action="up" title="Move waypoint up">↑</button><button type="button" data-waypoint-action="down" title="Move waypoint down">↓</button><button type="button" data-waypoint-action="duplicate" title="Duplicate waypoint">⧉</button><button type="button" data-waypoint-action="remove" class="studio-icon-button" title="Remove waypoint" aria-label="Remove waypoint">${CLOSE_ICON}</button></div></div>
       <label class="live-waypoint-label-field"><span>LABEL</span><input data-waypoint-field="label" type="text" maxlength="64" autocomplete="off" value="${escapeNavigationHtml(waypoint.label || `WP ${index + 1}`)}" placeholder="Waypoint name"></label>
       <label><span>LAT</span><input data-waypoint-field="lat" type="number" step="0.000001" min="-90" max="90" value="${hasCoordinate ? Number(waypoint.lat).toFixed(6) : ""}" ${hasCoordinate ? "" : "disabled"}></label>
       <label><span>LON</span><input data-waypoint-field="lon" type="number" step="0.000001" min="-180" max="180" value="${hasCoordinate ? Number(waypoint.lon).toFixed(6) : ""}" ${hasCoordinate ? "" : "disabled"}></label>
@@ -6673,6 +6861,8 @@ function createLiveDataGraphElement(graph) {
     if (index >= 0) liveDataGraphs.splice(index, 1);
     renderLiveDataDashboardStructure();
   });
+  setCloseIcon(remove);
+  remove.setAttribute("aria-label", "Remove this graph");
   const back = button("BACK", "Return to the previous zoom", () => {
     graph.zoom = graph.zoomHistory.pop() || null;
     renderLiveDataDashboardCharts();
@@ -7188,6 +7378,9 @@ function renderCalibrationReview() {
       (candidate) => candidate.logicalChannel === definition.channel,
     );
     const row = body.insertRow();
+    const robotJoint = liveCalibrationState.robotProfile?.joints.find(
+      (candidate) => candidate.logicalChannel === definition.channel,
+    );
     [
       definition.label.toUpperCase(),
       String(joint.channel),
@@ -7195,10 +7388,14 @@ function renderCalibrationReview() {
       joint.direction === -1 ? "INVERTED" : "NORMAL",
       formatCalibrationDegrees(joint.minimumDeg, 0),
       formatCalibrationDegrees(joint.maximumDeg, 0),
+      robotJoint ? `CH ${robotJoint.channel} · ${robotJoint.direction === -1 ? "INVERTED" : "NORMAL"}\n${formatCalibrationDegrees(robotJoint.offsetDeg)} / ${formatCalibrationDegrees(robotJoint.minimumDeg, 1)}…${formatCalibrationDegrees(robotJoint.maximumDeg, 1)}` : "NOT READ",
     ].forEach((value) => {
       const cell = row.insertCell();
       cell.textContent = value;
     });
+    row.lastElementChild.title = robotJoint
+      ? `Last robot read: CH ${robotJoint.channel}, ${robotJoint.direction === -1 ? "inverted" : "normal"}, trim and travel shown. Re-read after reconnecting.`
+      : "Connect and read the robot's active calibration.";
   });
 }
 
@@ -7338,15 +7535,27 @@ function renderMotionSmoothingUi() {
   const activeKnown = ready && motionSmoothingRobot &&
     motionSmoothingRobotSessionId === connection.sessionId;
   renderMotionSmoothingPreview(activeKnown ? motionSmoothingRobot : null);
-  document.querySelector("#live-calibration-smoothing-read").disabled = !ready || Boolean(calibrationPendingRequestId);
+  const readButton = document.querySelector("#live-calibration-smoothing-read");
+  readButton.disabled = !ready || Boolean(calibrationPendingRequestId);
+  readButton.textContent = calibrationPendingAction === "request-smoothing" ? "READING…" : "READ ROBOT";
+  readButton.setAttribute("aria-busy", String(calibrationPendingAction === "request-smoothing"));
   document.querySelector("#live-calibration-smoothing-defaults").disabled =
     calibrationPendingAction === "save-smoothing";
   document.querySelector("#live-calibration-smoothing-save").disabled =
     !activeKnown || !motionSmoothingDirty || liveCalibrationState.benchModeAcknowledged ||
     Boolean(calibrationPendingRequestId) || liveBatteryControlLocked;
-  document.querySelector("#live-calibration-smoothing-status").textContent = adapter && !adapter.capabilities.motionSmoothing
+  const saveButton = document.querySelector("#live-calibration-smoothing-save");
+  const saving = calibrationPendingAction === "save-smoothing";
+  const verifying = Boolean(motionSmoothingVerify && calibrationPendingAction === "request-smoothing");
+  saveButton.textContent = saving ? "SAVING…" : verifying ? "VERIFYING SAVE…" : "SAVE TO ROBOT";
+  saveButton.setAttribute("aria-busy", String(saving || verifying));
+  const statusMessage = adapter && !adapter.capabilities.motionSmoothing
     ? "Update the robot firmware and reconnect to enable motion smoothing readback."
     : motionSmoothingStatus;
+  setStudioActionFeedback(document.querySelector("#live-calibration-smoothing-status"), statusMessage,
+    saving || calibrationPendingAction === "request-smoothing" ? "waiting"
+      : /rejected|failed|differs|timed out|needs an update/i.test(statusMessage) ? "error"
+        : /save verified|readback matches/i.test(statusMessage) ? "success" : "info");
 }
 
 function renderLiveCalibrationUi() {
@@ -7409,21 +7618,12 @@ function renderLiveCalibrationUi() {
   ).sort((a, b) => a - b);
   document.querySelector("#live-calibration-output-range").textContent =
     `${logicalOutputs[0].toFixed(2)}° - ${logicalOutputs[1].toFixed(2)}°`;
-  persistCalibrationDraft();
-  const originWarning = calibrationOriginWarning(liveCalibrationState);
-  const originBanner = document.querySelector("#live-calibration-origin-banner");
-  originBanner.hidden = !originWarning;
-  if (originWarning) {
-    originBanner.dataset.level = originWarning.level;
-    document.querySelector("#live-calibration-origin-title").textContent = originWarning.title;
-    document.querySelector("#live-calibration-origin-detail").textContent = originWarning.detail;
-  }
   const savedAt = liveCalibrationState.profile.savedAt;
-  document.querySelector("#live-calibration-save-state").textContent = liveCalibrationState.dirty
-    ? "UNSAVED CHANGES"
-    : savedAt
-      ? `SAVED ${new Date(savedAt).toLocaleTimeString()}`
-      : "UNSAVED DRAFT";
+  document.querySelector("#live-calibration-save-state").textContent = liveCalibrationState.savePhase === "sending"
+    ? "SENDING PROFILE"
+    : liveCalibrationState.savePhase === "verifying" ? "VERIFYING ROBOT SAVE"
+      : liveCalibrationState.dirty ? "BROWSER DRAFT / NOT APPLIED"
+        : savedAt ? `ROBOT PROFILE / ${new Date(savedAt).toLocaleTimeString()}` : "DEFAULT DRAFT";
   const channelIssues = calibrationChannelMapIssues(calibrationChannelMap(liveCalibrationState.profile));
   document.querySelector("#live-calibration-wiring-summary").textContent = channelIssues.length > 0
     ? "MAP NEEDS ATTENTION"
@@ -7435,8 +7635,65 @@ function renderLiveCalibrationUi() {
     !localStorage.getItem(LIVE_CALIBRATION_PRE_SYNC_BACKUP_KEY);
   renderCalibrationJointMap();
   renderCalibrationReview();
+  renderCalibrationSyncStatus();
+  persistCalibrationDraft();
   renderMotionSmoothingUi();
   renderCalibrationInspectionUi();
+}
+
+function persistCalibrationDraft() {
+  const contents = calibrationDraftJson(liveCalibrationState);
+  if (contents === calibrationStoredDraftJson) return;
+  try {
+    if (contents) localStorage.setItem(LIVE_CALIBRATION_DRAFT_STORAGE_KEY, contents);
+    else localStorage.removeItem(LIVE_CALIBRATION_DRAFT_STORAGE_KEY);
+    calibrationStoredDraftJson = contents;
+  } catch {
+    // Export remains available if this browser cannot keep a local draft.
+  }
+}
+
+function renderCalibrationSyncStatus() {
+  const ready = robotCalibrationReady(liveCalibrationState, liveConnectionState.sessionId);
+  const phase = liveCalibrationState.savePhase;
+  const banner = document.querySelector("#live-calibration-sync-status");
+  let title = liveCalibrationState.dirty ? "Browser draft kept — not applied to the robot" : "Calibration in Studio";
+  let copy = "Import or edit a profile, then use Send to robot to apply and save it. A browser copy only saves on this PC.";
+  let tone = "draft";
+  if (phase === "sending" || phase === "verifying") {
+    title = phase === "sending" ? "Sending calibration to the robot…" : "Stored on robot — verifying the values…";
+    copy = "Your draft stays visible until a separate read-back confirms every joint. Servo outputs are switched off during the save.";
+    tone = "waiting";
+  } else if (phase === "mismatch") {
+    title = "Robot read-back differs — your draft has been kept";
+    copy = "Compare DRAFT and ON ROBOT in Review. Read robot again before retrying the save, or use its values explicitly.";
+    tone = "warning";
+  } else if (phase === "unconfirmed" || phase === "rejected") {
+    title = phase === "rejected" ? "Calibration save rejected — draft kept" : "Robot save not yet confirmed — draft kept";
+    copy = "Read robot when connected and disarmed to check its active profile. The app will not assume that a timed-out save succeeded.";
+    tone = "warning";
+  } else if (ready && !liveCalibrationState.dirty) {
+    title = phase === "verified" ? "Calibration saved and verified on the robot" : "Active robot calibration loaded";
+    copy = phase === "verified"
+      ? "It is active now and survives a restart. No firmware upload is needed. Outputs are off; request bench mode again for a joint jog, or return to Compare to arm."
+      : "Studio is showing the profile read from this robot. Offsets correct physical servo centers; they do not change the CAD foot geometry.";
+    tone = "verified";
+  } else if (ready && liveCalibrationState.dirty) {
+    copy = "The robot's active values were read separately. Your imported or edited draft stays visible; Review shows both. Send to robot applies and saves the draft without a firmware upload.";
+  } else if (liveCalibrationState.robotProfile) {
+    copy = "Showing the last known profile or local draft. Connect and read robot to confirm what is active; saved servo telemetry is not a new foot measurement.";
+  }
+  banner.dataset.state = tone;
+  const titleElement = document.querySelector("#live-calibration-sync-title");
+  const copyElement = document.querySelector("#live-calibration-sync-copy");
+  if (titleElement.textContent !== title) titleElement.textContent = title;
+  if (copyElement.textContent !== copy) copyElement.textContent = copy;
+  const readButton = document.querySelector("#live-calibration-read-robot");
+  readButton.textContent = calibrationPendingAction === "request-profile" ? "READING…" : "READ ROBOT";
+  readButton.setAttribute("aria-busy", String(calibrationPendingAction === "request-profile"));
+  readButton.disabled = Boolean(calibrationPendingRequestId) ||
+    !liveConnectionIsReady(liveConnectionState) || liveConnectionState.robotState !== "disarmed";
+  document.querySelector("#live-calibration-use-robot").disabled = !ready || Boolean(calibrationPendingRequestId);
 }
 
 function calibrationInspectionTargetDeg() {
@@ -7450,6 +7707,10 @@ function renderCalibrationInspectionUi() {
   const definition = selectedCalibrationDefinition();
   const joint = selectedCalibrationJoint();
   if (!definition || !joint) return;
+  const preset = CAMERA_CONTROL_PRESETS.find(({ id }) => id === cameraControlPreset);
+  const cameraHint = document.querySelector(".calibration-inspection-actions > span");
+  cameraHint.textContent = `${preset.orbit.toUpperCase()} TO ORBIT · DOUBLE-CLICK A PART TO SELECT`;
+  cameraHint.title = `${preset.label}: orbit — ${preset.orbit}; pan — ${preset.pan}; zoom — ${preset.zoom}`;
   const mechanicalTravel = definition.joint === "shoulder" ? 30 : 90;
   if (calibrationInspectionMode !== "jog") {
     calibrationInspectionPoseDeg = THREE.MathUtils.clamp(
@@ -7731,6 +7992,14 @@ function sendCalibrationCommand(action, purpose = "manual") {
   const connection = liveConnectionEnvelope(liveConnectionState);
   const smoothingAction = ["request-smoothing", "save-smoothing"].includes(action);
   const adapter = liveConnectionState.adapters[liveConnectionState.selectedAdapterId];
+  if (["enter", "jog", "save-profile"].includes(action)) {
+    const reason = calibrationControlBlockReason(liveCalibrationState, calibrationControlContext(), action);
+    if (reason) {
+      calibrationBenchFeedback = reason;
+      updateLiveComparisonUi();
+      return false;
+    }
+  }
   if (socket?.readyState !== WebSocket.OPEN || !connection || !liveConnectionIsReady(liveConnectionState) ||
       calibrationPendingRequestId ||
       (smoothingAction && (adapter?.capabilities.motionSmoothing !== true ||
@@ -7754,16 +8023,23 @@ function sendCalibrationCommand(action, purpose = "manual") {
     now,
     pendingSmoothing ? { baseUpdatedAt: motionSmoothingRobot.updatedAt, settings: pendingSmoothing } : null,
   );
-  if (!command) return false;
+  if (!command) {
+    if (action === "jog") calibrationBenchFeedback = "Jog is outside the selected joint's configured limits.";
+    return false;
+  }
   Object.assign(command, connection);
   calibrationPendingRequestId = requestId;
   calibrationPendingAction = action;
   calibrationPendingPurpose = purpose;
   calibrationPendingProfile = action === "save-profile" ? command.profile : null;
   calibrationPendingSmoothing = pendingSmoothing;
+  if (action === "save-profile") {
+    beginRobotCalibrationSave(liveCalibrationState, command.profile);
+    calibrationSaveAdapterId = connection.adapterId;
+    persistCalibrationDraft();
+    renderCalibrationSyncStatus();
+  }
   if (action === "enter") {
-    calibrationBenchDesired = true;
-    calibrationRecoverySessionId = connection.sessionId;
     calibrationBenchFeedback = "Request sent. Waiting for the robot over the live link...";
   }
   socket.send(JSON.stringify(command));
@@ -7776,22 +8052,35 @@ function sendCalibrationCommand(action, purpose = "manual") {
     calibrationPendingPurpose = "";
     calibrationPendingProfile = null;
     calibrationPendingSmoothing = null;
+    if (action === "save-profile" || (action === "request-profile" && purpose === "verify")) {
+      liveCalibrationState.savePhase = "unconfirmed";
+      forgetRobotCalibrationProfile(liveCalibrationState);
+      calibrationSyncRetryAt = 0;
+    }
     if (action === "request-profile") calibrationSyncRetryAt = Date.now() + 5_000;
     if (action === "request-smoothing") motionSmoothingSyncRetryAt = Date.now() + 5_000;
     if (smoothingAction) {
-      motionSmoothingStatus = "Robot acknowledgement timed out. The active settings were not assumed to change.";
+      if (action === "save-smoothing") {
+        motionSmoothingVerify = pendingSmoothing;
+        motionSmoothingRobotSessionId = "";
+        motionSmoothingSyncRetryAt = 0;
+      }
+      motionSmoothingStatus = "Robot acknowledgement timed out. Your draft was kept; read the robot to confirm what is active.";
+      showAppActionResult(motionSmoothingStatus, "error", "#live-calibration-smoothing-status");
       renderMotionSmoothingUi();
       return;
     }
     if (action !== "request-profile") {
       liveCalibrationState.benchModeAcknowledged = false;
       calibrationBenchFeedback =
-        "No reply after 3 seconds. The robot remains locked; check the USB link, then press Try again.";
+        `No reply after ${requestTimeoutMs / 1000} seconds. Movement is locked; check the link, then read the robot before retrying.`;
     }
-    document.querySelector("#live-calibration-review-status").textContent = action === "request-profile"
+    const statusMessage = action === "request-profile"
       ? "The robot did not return its active profile. The browser draft was not exported as robot data."
       : "The robot did not acknowledge the calibration request. Physical movement remains locked.";
+    showAppActionResult(statusMessage, "error", "#live-calibration-review-status");
     updateLiveComparisonUi();
+    renderLiveCalibrationUi();
   }, requestTimeoutMs);
   return true;
 }
@@ -7799,14 +8088,28 @@ function sendCalibrationCommand(action, purpose = "manual") {
 function serviceCalibrationProfileSync() {
   const connection = liveConnectionEnvelope(liveConnectionState);
   if ((connection?.sessionId || "") !== calibrationObservedSessionId) {
+    resetCalibrationLink("PC link changed. Your calibration edits were kept; request bench mode again.");
     calibrationObservedSessionId = connection?.sessionId || "";
     calibrationSyncRetryAt = 0;
     motionSmoothingSyncRetryAt = 0;
     motionSmoothingRobot = null;
     motionSmoothingRobotSessionId = "";
     motionSmoothingVerify = null;
-    motionSmoothingStatus = "Reading active smoothing settings from the connected robot...";
-    calibrationVerifyProfile = null;
+    motionSmoothingStatus = connection
+      ? "Waiting to read smoothing settings while the robot is disarmed."
+      : "Robot disconnected. Reconnect to read its active smoothing settings; your draft is kept.";
+    if (calibrationPendingRequestId) {
+      clearTimeout(calibrationRequestTimeout);
+      calibrationPendingRequestId = "";
+      calibrationPendingAction = "";
+      calibrationPendingPurpose = "";
+      calibrationPendingProfile = null;
+      calibrationPendingSmoothing = null;
+    }
+    if (["sending", "verifying"].includes(liveCalibrationState.savePhase)) {
+      liveCalibrationState.savePhase = "unconfirmed";
+      liveCalibrationState.dirty = true;
+    }
     forgetRobotCalibrationProfile(liveCalibrationState);
   }
   const adapter = liveConnectionState.adapters[liveConnectionState.selectedAdapterId];
@@ -7815,7 +8118,8 @@ function serviceCalibrationProfileSync() {
       adapter?.capabilities?.calibration !== true || calibrationPendingRequestId) return;
   if (!robotCalibrationReady(liveCalibrationState, connection.sessionId)) {
     if (Date.now() >= calibrationSyncRetryAt &&
-        sendCalibrationCommand("request-profile", calibrationVerifyProfile ? "verify" : "sync")) {
+        sendCalibrationCommand("request-profile",
+          liveCalibrationState.saveExpectedProfile && calibrationSaveAdapterId === connection.adapterId ? "verify" : "sync")) {
       calibrationSyncRetryAt = Date.now() + 5_000;
     }
     return;
@@ -7825,25 +8129,35 @@ function serviceCalibrationProfileSync() {
       Date.now() >= motionSmoothingSyncRetryAt &&
       sendCalibrationCommand("request-smoothing", motionSmoothingVerify ? "verify" : "sync")) {
     motionSmoothingSyncRetryAt = Date.now() + 5_000;
+    motionSmoothingStatus = motionSmoothingVerify
+      ? "Robot stored smoothing. Reading it back to verify the values..."
+      : "Reading active smoothing settings from the connected robot...";
   }
 }
 
-function serviceCalibrationBenchRecovery() {
+function serviceCalibrationBenchKeepalive() {
   const connection = liveConnectionEnvelope(liveConnectionState);
-  if (
-    !calibrationBenchDesired ||
-    liveViewState.selected !== LIVE_VIEW_CALIBRATION ||
-    !liveCalibrationState.safetyConfirmed ||
-    liveCalibrationState.benchModeAcknowledged ||
-    calibrationPendingRequestId ||
-    socket?.readyState !== WebSocket.OPEN ||
-    !connection ||
-    liveConnectionState.robotState !== "disarmed" ||
-    calibrationRecoverySessionId === connection.sessionId
-  ) return false;
-  calibrationBenchFeedback =
-    "The PC link reconnected during calibration. Reconfirming bench mode; no servo command is being sent.";
-  return sendCalibrationCommand("enter");
+  if (!liveCalibrationState.benchModeAcknowledged) return false;
+  if (applicationState.workspace !== WORKSPACE_REAL_ROBOT ||
+      liveViewState.selected !== LIVE_VIEW_CALIBRATION || document.hidden ||
+      !liveCalibrationState.safetyConfirmed) {
+    releaseCalibrationBench("Calibration control was released. Your draft was kept; request bench mode again.");
+    updateLiveComparisonUi();
+    return false;
+  }
+  const age = liveComparisonSnapshot(liveTelemetryState).lastRobotPacketAgeMs;
+  if (!liveConnectionIsReady(liveConnectionState) || age === null || age > 1_000) {
+    resetCalibrationLink("Robot communication was lost. Your calibration edits were kept; request bench mode after reconnecting.");
+    updateLiveComparisonUi();
+    return false;
+  }
+  if (liveViewState.selected !== LIVE_VIEW_CALIBRATION ||
+      !liveCalibrationState.safetyConfirmed || socket?.readyState !== WebSocket.OPEN ||
+      !connection || Date.now() - calibrationLastKeepaliveAt < 500) return false;
+  const command = createCalibrationBenchCommand(liveCalibrationState, "keepalive", crypto.randomUUID());
+  socket.send(JSON.stringify({ ...command, ...connection }));
+  calibrationLastKeepaliveAt = Date.now();
+  return true;
 }
 
 function acceptCalibrationAcknowledgement(message) {
@@ -7875,10 +8189,19 @@ function acceptCalibrationAcknowledgement(message) {
           ? "Robot readback matches the saved smoothing settings."
           : "Robot readback differs from the requested smoothing settings. Review before motion.";
         if (matches) {
-          motionSmoothingLocal = active;
-          motionSmoothingDirty = false;
-          localStorage.removeItem(MOTION_SMOOTHING_STORAGE_KEY);
+          const draftUnchanged = motionSmoothingLocal.enabled === motionSmoothingVerify.enabled &&
+            MOTION_SMOOTHING_FIELDS.every(({ key }) =>
+              Math.abs(motionSmoothingLocal[key] - motionSmoothingVerify[key]) < 0.0001);
+          if (draftUnchanged) {
+            motionSmoothingLocal = active;
+            motionSmoothingDirty = false;
+            try { localStorage.removeItem(MOTION_SMOOTHING_STORAGE_KEY); } catch { /* Robot readback remains valid. */ }
+          } else {
+            motionSmoothingDirty = true;
+            motionSmoothingStatus = "Robot save verified. Your newer browser edits were kept and have not been saved.";
+          }
         }
+        showAppActionResult(motionSmoothingStatus, matches ? "success" : "error", "#live-calibration-smoothing-status");
         motionSmoothingVerify = null;
       } else if (!motionSmoothingDirty) {
         motionSmoothingLocal = active;
@@ -7906,87 +8229,76 @@ function acceptCalibrationAcknowledgement(message) {
       try {
         const activeProfile = parseCalibrationProfileJson(JSON.stringify(message.profile));
         if (purpose === "export") downloadCalibrationJson(activeProfile, "robot-active");
-        if (purpose === "verify" && calibrationVerifyProfile &&
-            calibrationProfileJson(activeProfile) !== calibrationProfileJson(calibrationVerifyProfile)) {
-          status.textContent = "Robot readback differs from the saved calibration. Inspect the profile before moving the robot.";
-          liveCalibrationState.dirty = true;
-          forgetRobotCalibrationProfile(liveCalibrationState);
-          calibrationSyncRetryAt = Number.POSITIVE_INFINITY;
-        } else {
-          const before = calibrationProfileJson(liveCalibrationState.profile);
-          const previousSavedAt = liveCalibrationState.profile.savedAt;
-          let lastKnownGood = null;
+        const before = calibrationProfileJson(liveCalibrationState.profile);
+        const previousSavedAt = liveCalibrationState.profile.savedAt;
+        const verifying = purpose === "verify" && liveCalibrationState.saveExpectedProfile;
+        const result = verifying
+          ? acceptCalibrationSaveReadback(liveCalibrationState, activeProfile, connection.sessionId)
+          : acceptRobotCalibrationProfile(liveCalibrationState, activeProfile, connection.sessionId);
+        if (result.adopted) {
+          const activeJson = calibrationProfileJson(liveCalibrationState.profile);
           try {
-            const stored = localStorage.getItem(LIVE_CALIBRATION_LAST_ROBOT_KEY);
-            lastKnownGood = stored ? parseCalibrationProfileJson(stored) : null;
-          } catch {
-            lastKnownGood = null;
-          }
-          const result = acceptRobotCalibrationProfile(
-            liveCalibrationState, activeProfile, connection.sessionId, message.origin, lastKnownGood,
-          );
-          try {
-            if (result.adopted) {
-              const activeJson = calibrationProfileJson(liveCalibrationState.profile);
-              if (before !== activeJson && previousSavedAt !== null) {
-                localStorage.setItem(LIVE_CALIBRATION_PRE_SYNC_BACKUP_KEY, before);
-              }
-              localStorage.setItem(LIVE_CALIBRATION_STORAGE_KEY, activeJson);
+            if (before !== activeJson && previousSavedAt !== null) {
+              localStorage.setItem(LIVE_CALIBRATION_PRE_SYNC_BACKUP_KEY, before);
             }
-            // Keep the newest profile read from a robot that was NOT on
-            // defaults, so a robot that later loses its flash copy can be restored.
-            if (!result.robotUsingDefaults && Number(activeProfile.savedAt) > 0) {
-              localStorage.setItem(LIVE_CALIBRATION_LAST_ROBOT_KEY, calibrationProfileJson(activeProfile));
-            }
+            localStorage.setItem(LIVE_CALIBRATION_STORAGE_KEY, activeJson);
           } catch {
-            // Storage can be unavailable; the robot remains the source of truth.
+            showAppToast("Robot values read successfully. Browser backup is unavailable; export JSON to keep a copy.", "warning");
           }
-          status.textContent = result.restored
-            ? "Robot is on DEFAULT calibration. Your last known profile is loaded as an unsaved draft - review it, then save it to the robot."
-            : result.robotUsingDefaults
-              ? "Robot is on DEFAULT calibration and Studio has no earlier saved profile to restore."
-              : result.adopted
-                ? "Robot calibration loaded. Saved servo centers and directions are active in Studio."
-                : "Robot calibration read. Your unsaved browser edits were kept for review.";
         }
-        calibrationVerifyProfile = null;
+        if (verifying) {
+          calibrationSyncRetryAt = result.matched ? 0 : Number.POSITIVE_INFINITY;
+          status.textContent = result.matched
+            ? result.adopted
+              ? "Saved and verified on robot. Calibration is active and survives reboot; no firmware upload is needed. Outputs are off — request bench mode again to jog."
+              : "The sent profile was saved and verified. Newer browser edits were kept and have not been applied."
+            : "Robot read-back differs from the sent profile. Your draft was kept. Compare ON ROBOT values, then read again before retrying.";
+          showAppToast(result.matched ? "Robot calibration saved and verified. Outputs off." : "Calibration read-back differs. Draft kept.",
+            result.matched ? "success" : "warning", 4200);
+        } else {
+          status.textContent = result.adopted
+            ? "Active robot calibration loaded. Offsets map the physical servos to the CAD neutral; CAD foot geometry stays the same."
+            : "Active robot profile read separately. Your browser draft was kept; Review shows both.";
+        }
       } catch {
         status.textContent = "The robot returned an invalid calibration profile. Saving remains locked.";
+        if (purpose === "verify") liveCalibrationState.savePhase = "unconfirmed";
       }
     } else {
       status.textContent = `Robot profile readback failed${message.reason ? `: ${message.reason}` : "."}`;
+      if (purpose === "verify") liveCalibrationState.savePhase = "unconfirmed";
     }
+    setStudioActionFeedback(status, status.textContent,
+      /invalid|failed|differs/i.test(status.textContent) ? "error" : "success");
   } else if (message.action === "enter") {
     liveCalibrationState.benchModeAcknowledged = Boolean(
       accepted &&
       message.benchMode === true &&
       message.supportsSafeJog === true &&
+      Number(message.maxSpeedDegPerSec) > 0 &&
       Number(message.maxSpeedDegPerSec) <= 5,
     );
     calibrationBenchFeedback = liveCalibrationState.benchModeAcknowledged
       ? "Robot acknowledged bench mode. No servo moves until you issue a joint jog."
       : `Robot refused bench mode${message.reason ? `: ${message.reason}` : "."}`;
+    if (!liveCalibrationState.benchModeAcknowledged) releaseCalibrationBench(calibrationBenchFeedback);
+  } else if (message.action === "jog") {
+    calibrationBenchFeedback = accepted
+      ? "Robot accepted the joint target. Motion remains limited to 5°/s."
+      : `Robot rejected the jog${message.reason ? `: ${message.reason}` : "."}`;
+    if (!accepted) releaseCalibrationBench(calibrationBenchFeedback + " Bench mode was closed; your trim edits were kept.");
   } else if (message.action === "exit") {
     liveCalibrationState.benchModeAcknowledged = false;
-    if (accepted) calibrationBenchDesired = false;
     calibrationBenchFeedback = accepted
       ? "Bench mode closed and servo outputs disabled."
       : `Robot refused to close bench mode${message.reason ? `: ${message.reason}` : "."}`;
   } else if (message.action === "save-profile") {
     const status = document.querySelector("#live-calibration-review-status");
-    if (accepted && message.persisted === true && pendingProfile) {
-      liveCalibrationState.benchModeAcknowledged = false;
-      calibrationBenchDesired = false;
-      liveCalibrationState.profile = createLiveCalibrationProfile(pendingProfile);
-      liveCalibrationState.dirty = false;
-      calibrationVerifyProfile = pendingProfile;
-      forgetRobotCalibrationProfile(liveCalibrationState);
-      calibrationSyncRetryAt = 0;
-    } else {
-      liveCalibrationState.dirty = true;
-      forgetRobotCalibrationProfile(liveCalibrationState);
-      calibrationSyncRetryAt = 0;
-    }
+    acknowledgeRobotCalibrationSave(liveCalibrationState, accepted, message.persisted === true);
+    calibrationSyncRetryAt = 0;
+    calibrationBenchFeedback = accepted && message.persisted === true
+      ? "Calibration save closed bench mode. Outputs are off; request bench mode again before a physical jog."
+      : "Calibration save was not confirmed. Physical jog is locked; read the robot before retrying.";
     status.textContent = accepted && message.persisted === true
       ? "Robot stored the calibration. Reading it back to verify the saved centers and directions..."
       : `Robot rejected calibration save${message.reason ? `: ${message.reason}` : "."}`;
@@ -7999,6 +8311,9 @@ function acceptCalibrationAcknowledgement(message) {
   clearTimeout(calibrationRequestTimeout);
   calibrationRequestTimeout = null;
   renderLiveCalibrationUi();
+  if (message.action === "save-profile" && liveCalibrationState.savePhase === "verifying") {
+    sendCalibrationCommand("request-profile", "verify");
+  }
   if (message.action === "save-smoothing" && motionSmoothingVerify) {
     sendCalibrationCommand("request-smoothing", "verify");
   }
@@ -8040,8 +8355,9 @@ function persistLiveGaitLibrary(selectedName = "") {
     name,
     sanitizeGaitLabSettings(profile.settings),
   ]));
-  persistGaitProfiles();
+  const saved = persistGaitProfiles();
   syncGaitProfileUi(selectedName);
+  return saved;
 }
 
 function syncLiveGaitLibrary(selectedName = "") {
@@ -8164,7 +8480,8 @@ function renderLiveGaitUi() {
   const adapter = liveConnectionState.adapters[liveConnectionState.selectedAdapterId];
   const gaitLinkReady = liveConnectionIsReady(liveConnectionState) && adapter?.capabilities.gaitProfiles === true;
   liveGaitPreviewLab.setSettings(liveGaitState.draft.settings);
-  document.querySelector("#live-gait-name").value = liveGaitState.draft.name;
+  const nameInput = document.querySelector("#live-gait-name");
+  if (document.activeElement !== nameInput) nameInput.value = liveGaitState.draft.name;
   document.querySelector("#live-gait-profile-title").textContent = liveGaitState.draft.name.toUpperCase();
   document.querySelector("#live-gait-draft-state").textContent = liveGaitState.dirty
     ? "UNSAVED DRAFT"
@@ -8194,7 +8511,11 @@ function renderLiveGaitUi() {
   document.querySelector("#live-gait-apply-state").textContent = liveGaitState.pendingRequestId
     ? `WAITING / ${liveGaitState.pendingAction.toUpperCase()}`
     : liveGaitCanApply(liveGaitState) ? "DISARMED / READY TO APPLY" : "PREVIEW ONLY";
-  document.querySelector("#live-gait-status").textContent = liveGaitState.status;
+  const gaitStatus = document.querySelector("#live-gait-status");
+  if (gaitStatus.textContent !== liveGaitState.status) {
+    setStudioActionFeedback(gaitStatus, liveGaitState.status,
+      liveGaitState.pendingRequestId ? "waiting" : "info");
+  }
   document.querySelector("#live-gait-apply").disabled =
     liveBatteryControlLocked || !gaitLinkReady || !liveGaitCanApplyDraft(liveGaitState);
   document.querySelector("#live-gait-use-robot").disabled = !gaitLinkReady || !liveGaitState.robotProfile || Boolean(liveGaitState.pendingRequestId);
@@ -8535,6 +8856,13 @@ function updateLiveComparisonUi() {
     renderLiveConnectionUi();
   }
   const snapshot = liveComparisonSnapshot(liveTelemetryState);
+  const feedback = studioConnectionFeedback(firmwareLinkBusy
+    ? { ...liveConnectionState, phase: "uploading" } : companionPortBusy
+      ? { ...liveConnectionState, phase: "releasing" } : liveCompanionDiscovering
+        ? { ...liveConnectionState, phase: "discovering" } : liveConnectionState, snapshot.lastRobotPacketAgeMs);
+  const notice = studioConnectionNotice(previousStudioConnectionFeedback, feedback);
+  if (notice) showAppToast(notice.message, notice.tone, notice.durationMs ?? 4200, "robot-link");
+  previousStudioConnectionFeedback = feedback;
   const sessionConnected = liveConnectionIsReady(liveConnectionState);
   const connectionAdapter = liveConnectionState.adapters[liveConnectionState.selectedAdapterId];
   const calibrationSupported = sessionConnected && connectionAdapter?.capabilities.calibration === true;
@@ -8557,18 +8885,19 @@ function updateLiveComparisonUi() {
       : "ROBOT NOT READY";
   calibrationLinkOutput.dataset.state = liveCalibrationState.benchModeAcknowledged ? "online" : "offline";
   if (liveViewState.selected === LIVE_VIEW_CALIBRATION) renderMotionSmoothingUi();
+  renderCalibrationSyncStatus();
   if (liveViewState.selected === LIVE_VIEW_GAITS) renderLiveGaitUi();
-  document.querySelector("#live-calibration-apply-robot").disabled =
-    !engineeringConnected || !calibrationSupported || !calibrationProfileReady ||
-    Boolean(calibrationPendingRequestId);
+  document.querySelector("#live-calibration-apply-robot").disabled = Boolean(
+    calibrationControlBlockReason(liveCalibrationState, calibrationControlContext(), "save-profile"));
+  const calibrationApplyButton = document.querySelector("#live-calibration-apply-robot");
+  const calibrationSaving = ["sending", "verifying"].includes(liveCalibrationState.savePhase);
+  calibrationApplyButton.textContent = liveCalibrationState.savePhase === "sending" ? "SENDING…"
+    : liveCalibrationState.savePhase === "verifying" ? "VERIFYING SAVE…" : "SEND TO ROBOT";
+  calibrationApplyButton.setAttribute("aria-busy", String(calibrationSaving));
   const benchRequest = document.querySelector("#live-calibration-request-bench");
-  benchRequest.disabled =
-    !engineeringConnected ||
-    !calibrationSupported ||
-    !calibrationProfileReady ||
-    !liveCalibrationState.safetyConfirmed ||
-    liveCalibrationState.benchModeAcknowledged ||
-    Boolean(calibrationPendingRequestId);
+  const benchBlockReason = calibrationControlBlockReason(liveCalibrationState, calibrationControlContext());
+  benchRequest.disabled = Boolean(benchBlockReason);
+  benchRequest.title = benchBlockReason || "Request permission from the disarmed robot for bounded servo jogging.";
   benchRequest.textContent = calibrationPendingAction === "enter"
     ? "WAITING FOR ROBOT"
     : liveCalibrationState.benchModeAcknowledged
@@ -8582,11 +8911,12 @@ function updateLiveComparisonUi() {
       : calibrationPendingAction === "enter"
         ? "LOCKED - WAITING FOR ROBOT ACKNOWLEDGEMENT"
         : "LOCKED - BENCH MODE NOT ACKNOWLEDGED";
-  document.querySelector("#live-calibration-bench-feedback").textContent = calibrationBenchFeedback;
-  const physicalJogReady = engineeringConnected &&
-    calibrationSupported &&
-    liveCalibrationState.safetyConfirmed &&
-    liveCalibrationState.benchModeAcknowledged;
+  document.querySelector("#live-calibration-bench-feedback").textContent =
+    !liveCalibrationState.benchModeAcknowledged && benchBlockReason
+      ? /rejected|refused|No reply/i.test(calibrationBenchFeedback)
+        ? `${calibrationBenchFeedback} ${benchBlockReason}` : benchBlockReason
+      : calibrationBenchFeedback;
+  const physicalJogReady = !calibrationControlBlockReason(liveCalibrationState, calibrationControlContext(), "jog");
   document.querySelectorAll("[data-calibration-trim]").forEach((control) => {
     control.disabled = !physicalJogReady || Boolean(calibrationPendingRequestId);
     control.title = physicalJogReady
@@ -8603,11 +8933,8 @@ function updateLiveComparisonUi() {
   });
   const enablePhysicalJog = document.querySelector("#live-calibration-enable-jog");
   enablePhysicalJog.hidden = physicalJogReady;
-  enablePhysicalJog.disabled =
-    !engineeringConnected ||
-    !calibrationSupported ||
-    !liveCalibrationState.safetyConfirmed ||
-    Boolean(calibrationPendingRequestId);
+  enablePhysicalJog.disabled = Boolean(benchBlockReason);
+  enablePhysicalJog.title = benchRequest.title;
   enablePhysicalJog.textContent = calibrationPendingAction === "enter"
     ? "WAITING FOR ROBOT"
     : "ENABLE PHYSICAL JOG";
@@ -8623,27 +8950,11 @@ function updateLiveComparisonUi() {
   document.querySelector("#live-packet-age").textContent = formatPacketAge(
     snapshot.lastRobotPacketAgeMs,
   );
-  const engineeringBadge = document.querySelector("#real-engineering-status");
-  engineeringBadge.dataset.state = engineeringConnected ? "online" : "offline";
-  engineeringBadge.textContent = "PC LINK";
-  engineeringBadge.title = !sessionConnected
-    ? "No PC link"
-    : engineeringConnected
-      ? `Session ${liveConnectionState.sessionId.slice(0, 12)} / telemetry ${formatPacketAge(snapshot.lastRobotPacketAgeMs)} old`
-      : "PC link connected but telemetry is stale";
-  engineeringBadge.setAttribute("aria-label", engineeringConnected ? "Manage active PC link" : "Open robot connection manager");
-
   const controllerSnapshot = liveControllerSnapshot(liveControllerState);
   const driveConnected = engineeringConnected && controllerSnapshot.linkReady;
   const driveOutput = document.querySelector("#live-drive-link");
   driveOutput.textContent = driveConnected ? "CONNECTED" : "OFFLINE";
   driveOutput.dataset.state = driveConnected ? "connected" : "disconnected";
-  const driveBadge = document.querySelector("#real-drive-status");
-  driveBadge.dataset.state = driveConnected ? "online" : "offline";
-  driveBadge.title = driveConnected
-    ? `Robot reports ${controllerSnapshot.telemetry.packetRateHz.toFixed(0)} Hz CRSF / ELRS frames from ${controllerSnapshot.telemetry.transmitterName}, ${controllerSnapshot.telemetry.linkQualityPercent.toFixed(0)}% link quality`
-    : "Robot has not reported a fresh, failsafe-clear CRSF / ELRS control frame";
-
   const robotState = sessionConnected ? liveSafetyState.robotState : "disconnected";
   document.querySelector("#live-robot-safety-state").textContent = robotState.toUpperCase();
   document.querySelector("#live-robot-safety-copy").textContent = !sessionConnected
@@ -8659,7 +8970,7 @@ function updateLiveComparisonUi() {
           : `The robot reports ${robotState}. Physical commands remain blocked.`;
   const safetyBadge = document.querySelector("#real-safety-status");
   safetyBadge.textContent = robotState.toUpperCase();
-  safetyBadge.dataset.state = robotState === "disarmed" || robotState === "disconnected" ? "safe" : "offline";
+  safetyBadge.dataset.state = robotState === "armed" ? "armed" : ["fault", "estopped", "watchdog"].includes(robotState) ? "fault" : "neutral";
   setLiveStreamState("#live-expected-state", snapshot.expectedFresh);
   setLiveStreamState("#live-measured-state", snapshot.measuredFresh);
   document.querySelector("#live-time-alignment").textContent = snapshot.alignmentMs === null
@@ -8801,17 +9112,32 @@ function updateLiveComparisonUi() {
 
 function toggleLiveRecording() {
   const snapshot = liveComparisonSnapshot(liveTelemetryState);
+  const status = document.querySelector("#live-recording-action-status");
+  status.hidden = false;
   if (liveSessionState.status === "recording") {
     stopLiveSession(liveSessionState);
     const entry = archiveLiveSession(liveSessionArchive, liveSessionState, `live-${liveSessionState.stoppedAt}`);
     if (entry) {
-      liveSessionRepository.save(entry).catch(() => {
+      setStudioActionFeedback(status, "Recording stopped. Saving the session on this PC…", "waiting");
+      liveSessionRepository.save(entry).then((saved) => {
+        if (!saved) liveSessionStorageState = "unavailable";
+        showAppActionResult(saved ? "Recording saved on this PC. Open Sessions to review it."
+          : "Recording kept in memory. Browser storage is unavailable; export JSON to keep it.",
+        saved ? "success" : "warning", "#live-recording-action-status");
+        renderLiveSessionArchive();
+      }).catch(() => {
         liveSessionStorageState = "unavailable";
+        showAppActionResult("The recording could not be saved on this PC. Export JSON before closing Studio.", "error", "#live-recording-action-status");
         renderLiveSessionArchive();
       });
+    } else {
+      showAppActionResult("Recording stopped without any samples to save.", "info", "#live-recording-action-status");
     }
   } else if (snapshot.expectedFresh) {
     startLiveSession(liveSessionState);
+    showAppActionResult("Recording started. Stop recording to save the session on this PC.", "info", "#live-recording-action-status");
+  } else {
+    showAppActionResult("Recording cannot start until fresh robot telemetry is available.", "error", "#live-recording-action-status");
   }
   updateLiveComparisonUi();
 }
@@ -9505,8 +9831,11 @@ document.querySelectorAll("[data-calibration-step]").forEach((button) => {
 });
 document.querySelector("#live-calibration-safety-confirm").addEventListener("change", (event) => {
   liveCalibrationState.safetyConfirmed = event.target.checked;
-  if (!liveCalibrationState.safetyConfirmed) calibrationBenchDesired = false;
+  if (!event.target.checked && (liveCalibrationState.benchModeAcknowledged || calibrationPendingAction === "enter")) {
+    releaseCalibrationBench("Safety confirmation was withdrawn. Bench mode closed; your draft was kept.");
+  }
   renderLiveCalibrationUi();
+  updateLiveComparisonUi();
 });
 document.querySelector("#live-calibration-request-bench").addEventListener("click", () => {
   if (!liveCalibrationState.safetyConfirmed || !sendCalibrationCommand("enter")) return;
@@ -9704,6 +10033,9 @@ document.querySelector("#live-calibration-restore-ack").addEventListener("change
   document.querySelector("#live-calibration-restore-confirm-button").disabled = !event.target.checked;
 });
 document.querySelector("#live-calibration-restore-confirm-button").addEventListener("click", () => {
+  if (liveCalibrationState.benchModeAcknowledged || calibrationPendingAction === "enter") {
+    releaseCalibrationBench("Restoring defaults closed bench mode. Review the draft before requesting physical control again.");
+  }
   const restoreWiring = calibrationRestoreScope === "all" &&
     document.querySelector("#live-calibration-restore-wiring").checked;
   const restored = calibrationRestoreScope === "all"
@@ -9722,14 +10054,48 @@ document.querySelector("#live-calibration-restore-confirm-button").addEventListe
   "#live-calibration-restore-cancel",
 ].forEach((selector) => document.querySelector(selector).addEventListener("click", closeCalibrationRestoreConfirmation));
 document.querySelector("#live-calibration-save-browser").addEventListener("click", () => {
-  liveCalibrationState.profile.savedAt = Date.now();
-  localStorage.setItem(
-    LIVE_CALIBRATION_STORAGE_KEY,
-    calibrationProfileJson(liveCalibrationState.profile),
-  );
+  try {
+    localStorage.setItem(LIVE_CALIBRATION_STORAGE_KEY, calibrationProfileJson(liveCalibrationState.profile));
+  } catch {
+    showAppActionResult("Browser copy could not be saved. Your draft is still open; export JSON to keep a backup.",
+      "error", "#live-calibration-review-status", "#live-calibration-save-browser");
+    return;
+  }
+  liveCalibrationState.dirty = !robotCalibrationReady(liveCalibrationState, liveConnectionState.sessionId) ||
+    !calibrationProfilesMatch(liveCalibrationState.profile, liveCalibrationState.robotProfile, false);
+  showAppActionResult("Browser copy saved on this PC. Use Send to robot to apply and save the calibration there.",
+    "success", "#live-calibration-review-status", "#live-calibration-save-browser", "Calibration saved on this PC.");
+  renderLiveCalibrationUi();
+});
+document.querySelector("#live-calibration-read-robot").addEventListener("click", () => {
+  liveCalibrationState.saveExpectedProfile = null;
+  liveCalibrationState.saveDraftProfile = null;
+  liveCalibrationState.savePhase = "idle";
+  const sent = sendCalibrationCommand("request-profile", "sync");
+  setStudioActionFeedback(document.querySelector("#live-calibration-review-status"), sent
+    ? "Reading active robot calibration. Your draft stays visible."
+    : "Connect and disarm the robot to read calibration.", sent ? "waiting" : "error");
+  renderLiveCalibrationUi();
+});
+document.querySelector("#live-calibration-use-robot").addEventListener("click", () => {
+  if (!robotCalibrationReady(liveCalibrationState, liveConnectionState.sessionId) || calibrationPendingRequestId) return;
+  try {
+    localStorage.setItem(LIVE_CALIBRATION_PRE_SYNC_BACKUP_KEY, calibrationProfileJson(liveCalibrationState.profile));
+  } catch {
+    showAppActionResult("Your draft could not be backed up on this PC. Export it before replacing it with robot values.", "error", "#live-calibration-review-status");
+    return;
+  }
+  if (liveCalibrationState.benchModeAcknowledged) {
+    releaseCalibrationBench("Loading robot values closed bench mode. Your previous draft was backed up.");
+  }
+  liveCalibrationState.profile = createLiveCalibrationProfile(liveCalibrationState.robotProfile);
   liveCalibrationState.dirty = false;
-  document.querySelector("#live-calibration-review-status").textContent =
-    "Browser copy saved. Export JSON as the portable backup for this physical robot.";
+  liveCalibrationState.jogOffsetDeg = 0;
+  liveCalibrationState.savePhase = "idle";
+  liveCalibrationState.saveExpectedProfile = null;
+  liveCalibrationState.saveDraftProfile = null;
+  try { localStorage.setItem(LIVE_CALIBRATION_STORAGE_KEY, calibrationProfileJson(liveCalibrationState.profile)); } catch { /* Readback is held in memory. */ }
+  showAppActionResult("Using the active robot values. Your previous draft is available in Load previous browser copy.", "success", "#live-calibration-review-status");
   renderLiveCalibrationUi();
 });
 document.querySelector("#live-calibration-export").addEventListener("click", () => downloadCalibrationJson());
@@ -9741,6 +10107,7 @@ document.querySelector("#live-calibration-export-robot").addEventListener("click
   renderLiveCalibrationUi();
 });
 document.querySelector("#live-calibration-apply-robot").addEventListener("click", () => {
+  if (!liveCalibrationState.benchModeAcknowledged) return;
   openRobotCalibrationConfirmation();
 });
 document.querySelector("#live-calibration-robot-confirm-ack").addEventListener("change", (event) => {
@@ -9756,6 +10123,7 @@ function closeRobotCalibrationConfirmation() {
 ].forEach((selector) => document.querySelector(selector).addEventListener("click", closeRobotCalibrationConfirmation));
 document.querySelector("#live-calibration-robot-confirm-send").addEventListener("click", () => {
   if (!document.querySelector("#live-calibration-robot-confirm-ack").checked ||
+      !liveCalibrationState.benchModeAcknowledged ||
       !sendCalibrationCommand("save-profile")) return;
   closeRobotCalibrationConfirmation();
   document.querySelector("#live-calibration-review-status").textContent =
@@ -9769,7 +10137,11 @@ document.querySelector("#live-calibration-restore-browser-copy").addEventListene
   const stored = localStorage.getItem(LIVE_CALIBRATION_PRE_SYNC_BACKUP_KEY);
   if (!stored) return;
   try {
-    liveCalibrationState.profile = parseCalibrationProfileJson(stored);
+    const profile = parseCalibrationProfileJson(stored);
+    if (liveCalibrationState.benchModeAcknowledged || calibrationPendingAction === "enter") {
+      releaseCalibrationBench("Loading a browser copy closed bench mode. Review it before requesting physical control again.");
+    }
+    liveCalibrationState.profile = profile;
     liveCalibrationState.dirty = true;
     liveCalibrationState.jogOffsetDeg = 0;
     document.querySelector("#live-calibration-review-status").textContent =
@@ -9785,10 +10157,15 @@ document.querySelector("#live-calibration-import-file").addEventListener("change
   if (!file) return;
   const status = document.querySelector("#live-calibration-review-status");
   try {
-    liveCalibrationState.profile = parseCalibrationProfileJson(await file.text());
+    const profile = parseCalibrationProfileJson(await file.text());
+    if (liveCalibrationState.benchModeAcknowledged || calibrationPendingAction === "enter") {
+      releaseCalibrationBench("Importing calibration closed bench mode. Review the draft before requesting physical control again.");
+    }
+    liveCalibrationState.profile = profile;
     liveCalibrationState.dirty = true;
     liveCalibrationState.jogOffsetDeg = 0;
-    status.textContent = `Imported ${file.name} as a draft in Studio only. It is NOT on the robot yet: review it, then press SEND TO ROBOT in Review. The draft is kept if you restart Studio.`;
+    status.textContent = `Imported ${file.name} as a browser draft. Send to robot applies and saves it immediately after verification; no firmware upload is needed.`;
+    showAppToast("Calibration JSON imported. Draft kept until a verified robot save.", "info", 4200);
   } catch (error) {
     status.textContent = error instanceof Error ? error.message : "Calibration import failed.";
   }
@@ -9808,7 +10185,7 @@ document.querySelector("#live-gait-load").addEventListener("click", () => {
   liveGaitState.status = `Opened ${profile.name} from the shared Simulation/LIVE library.`;
   renderLiveGaitUi();
 });
-document.querySelector("#live-gait-name").addEventListener("change", (event) => {
+document.querySelector("#live-gait-name").addEventListener("input", (event) => {
   const name = event.target.value.trim().slice(0, 32) || "Untitled gait";
   liveGaitState.draft.name = name;
   liveGaitState.dirty = true;
@@ -9822,12 +10199,14 @@ document.querySelector("#live-gait-save").addEventListener("click", () => {
     updatedAt: Date.now(),
     source: "live",
   }, name);
-  liveGaitState.dirty = false;
   liveGaitLibrary[name] = liveGaitState.draft;
   liveGaitState.selectedLibraryName = name;
-  persistLiveGaitLibrary(name);
-  liveGaitState.status = `${name} saved to the shared Simulation/LIVE profile library.`;
+  const saved = persistLiveGaitLibrary(name);
+  liveGaitState.dirty = !saved;
+  liveGaitState.status = saved ? `${name} saved on this PC in the shared Simulation/LIVE profile library.`
+    : "The profile could not be saved because browser storage is unavailable. Your draft is still open.";
   renderLiveGaitUi();
+  showAppActionResult(liveGaitState.status, saved ? "success" : "error", "#live-gait-status", "#live-gait-save");
 });
 document.querySelector("#live-gait-import").addEventListener("click", () => {
   document.querySelector("#live-gait-import-file").click();
@@ -10365,6 +10744,7 @@ document.querySelector("#gait-profile-save").addEventListener("click", () => {
   input.value = name;
   syncGaitProfileUi(name);
   setGaitProfileStatus(`SAVED ${name}`, "ok");
+  showAppActionResult(`Gait config “${name}” saved on this PC.`, "success", "#gait-profile-status", "#gait-profile-save");
 });
 document.querySelector("#gait-profile-load").addEventListener("click", () => {
   const name = selectedGaitProfileName();
@@ -10555,7 +10935,6 @@ function applyImportedProject(bundle, fileName) {
   liveCalibrationState.safetyConfirmed = false;
   liveCalibrationState.benchModeAcknowledged = false;
   liveCalibrationState.dirty = true;
-  calibrationBenchDesired = false;
   calibrationPendingRequestId = "";
   calibrationPendingAction = "";
   calibrationBenchFeedback = "Project calibration loaded locally. Robot storage was not changed.";
@@ -10733,9 +11112,20 @@ document.querySelector("#gamepad-setup-close").addEventListener("click", () => {
 document.querySelector("#gamepad-map-default").addEventListener("click", () => {
   const gamepad = activeGamepad();
   if (!gamepad) return;
-  delete gamepadMappings[gamepad.id];
-  localStorage.setItem(GAMEPAD_MAPPING_STORAGE_KEY, JSON.stringify(gamepadMappings));
+  const nextMappings = { ...gamepadMappings };
+  delete nextMappings[gamepad.id];
+  try {
+    localStorage.setItem(GAMEPAD_MAPPING_STORAGE_KEY, JSON.stringify(nextMappings));
+  } catch {
+    const status = document.querySelector("#gamepad-map-status");
+    status.hidden = false;
+    showAppActionResult("Default mapping could not be saved. Browser storage is unavailable.", "error", "#gamepad-map-status");
+    return;
+  }
+  gamepadMappings = nextMappings;
   renderGamepadMappingDialog();
+  document.querySelector("#gamepad-map-status").hidden = false;
+  showAppActionResult("Default controller mapping restored and saved on this PC.", "success", "#gamepad-map-status");
 });
 document.querySelector("#gamepad-map-deadzone").addEventListener("input", (event) => {
   document.querySelector("#gamepad-map-deadzone-value").textContent = Number(event.currentTarget.value).toFixed(2);
@@ -10747,7 +11137,7 @@ document.querySelector("#gamepad-setup form").addEventListener("submit", (event)
   event.preventDefault();
   const gamepad = activeGamepad();
   if (!gamepad || identifyInputDevice(gamepad).family === "crsf-radio") return;
-  gamepadMappings[gamepad.id] = sanitizeGamepadMapping({
+  const mapping = sanitizeGamepadMapping({
     rollAxis: Number(document.querySelector("#gamepad-map-roll").value),
     forwardAxis: Number(document.querySelector("#gamepad-map-forward").value),
     turnAxis: Number(document.querySelector("#gamepad-map-turn").value),
@@ -10760,8 +11150,17 @@ document.querySelector("#gamepad-setup form").addEventListener("submit", (event)
     deadzone: Number(document.querySelector("#gamepad-map-deadzone").value),
     responseCurve: Number(document.querySelector("#gamepad-map-response").value),
   });
-  localStorage.setItem(GAMEPAD_MAPPING_STORAGE_KEY, JSON.stringify(gamepadMappings));
+  const nextMappings = { ...gamepadMappings, [gamepad.id]: mapping };
+  try {
+    localStorage.setItem(GAMEPAD_MAPPING_STORAGE_KEY, JSON.stringify(nextMappings));
+  } catch {
+    document.querySelector("#gamepad-map-status").hidden = false;
+    showAppActionResult("Controller mapping could not be saved. Your changes are still open.", "error", "#gamepad-map-status", "#gamepad-map-save");
+    return;
+  }
+  gamepadMappings = nextMappings;
   document.querySelector("#gamepad-setup").hidden = true;
+  showAppActionResult("Controller mapping saved on this PC.");
 });
 function pressedOnce(gamepad, index, action) {
   const key = `${gamepad.index}:${index}`;
@@ -10991,6 +11390,7 @@ async function pollFirmware() {
       `${effectiveCommandedHeightMm.toFixed(0)} mm`;
     const requestedStanding = manualStandOverride ?? standRequested;
     const poseTransitionPending =
+      firmwareState.transition_active === true || effectiveFirmwareState?.transition_active === true ||
       Math.abs(firmwareState.pose_z_mm - firmwareState.target_z_mm) > 0.5;
     const transitionPending = requestedStanding === sitting || poseTransitionPending;
     const walkBlockedByTilt =
@@ -11766,7 +12166,7 @@ function animate(now) {
     cameraAnchorY(),
     robotWorld.position.z,
   );
-  if (!middleButtonPanning) {
+  if (cameraPanningButton === null) {
     desiredControlsTarget.copy(robotCameraAnchor).add(cameraTargetOffset);
     controls.target.lerp(desiredControlsTarget, 0.08);
     camera.position.add(controls.target).sub(previousControlsTarget);
@@ -11814,6 +12214,9 @@ function resize() {
 window.addEventListener("resize", resize);
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
+    if (liveCalibrationState.benchModeAcknowledged || calibrationPendingAction === "enter") {
+      releaseCalibrationBench("Studio was hidden. Bench mode closed; your draft was kept.");
+    }
     if (nativeNavigationRunnerIsActive(liveNativeNavigationState)) {
       haltLiveNativeNavigation("Browser control was released because this tab is no longer visible.", true);
     }

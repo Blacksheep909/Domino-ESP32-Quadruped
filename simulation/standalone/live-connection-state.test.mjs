@@ -90,6 +90,29 @@ test("telemetry must match the selected adapter and negotiated session", () => {
   assert.equal(telemetryBelongsToLiveConnection(state, { adapterId: "other", sessionId: "session-a" }, 1_040), false);
 });
 
+test("a brief physical disconnect cannot leave Studio paired to a lost companion session", () => {
+  const state = createLiveConnectionState();
+  setLiveConnectionBridge(state, true, 1000);
+  acceptLiveAdapterAnnouncement(state, announcement(), 1000);
+  const command = createLiveConnectionCommand(state, "connect", "connect-short-loss", 1010);
+  markLiveConnectionPending(state, command);
+  acceptLiveConnectionAcknowledgement(state, {
+    type: "live-connection-ack", action: "connect", requestId: command.requestId,
+    accepted: true, adapterId: command.adapterId, sessionId: "lost-session", robotState: "disarmed",
+  }, 1020);
+  acceptLiveAdapterAnnouncement(state, { ...announcement(1100), state: "connected" }, 1100);
+  assert.equal(liveConnectionIsReady(state, 1110), true);
+  // The adapter recovered before its next announcement, so no error was seen.
+  acceptLiveAdapterAnnouncement(state, announcement(2000), 2000);
+  assert.equal(state.sessionId, "");
+  assert.equal(state.phase, "reconnecting");
+  assert.equal(liveConnectionIsReady(state, 2000), false);
+  assert.equal(telemetryBelongsToLiveConnection(state, {
+    adapterId: command.adapterId, sessionId: "lost-session",
+  }, 2000), false);
+  assert.equal(state.reconnectAdapterId, command.adapterId);
+});
+
 test("the relay telemetry contract rejects malformed packets before broadcast", () => {
   const pose = {
     timestampMs: 1_000,

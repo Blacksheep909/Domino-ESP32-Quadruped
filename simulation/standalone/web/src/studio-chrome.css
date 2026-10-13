@@ -1,0 +1,83 @@
+/* A centred geometric icon avoids the font baseline of the × character. */
+button.studio-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  padding: 0 !important;
+  min-width: 30px;
+  width: 34px;
+  height: 34px;
+  line-height: 1;
+}
+button.studio-icon-button svg { display: block; width: 18px; height: 18px; flex: 0 0 18px; pointer-events: none; }
+#toast-region button.studio-icon-button { min-width: 24px; width: 24px; height: 24px; }
+#toast-region button.studio-icon-button svg { width: 16px; height: 16px; flex-basis: 16px; }
+.live-waypoint-heading button.studio-icon-button { width: 28px; min-width: 28px; height: 28px; }
+
+body[data-workspace="real-robot"] > header .status { align-items: center; gap: 8px; }
+body[data-workspace="real-robot"] > header .status :is(#firmware-deploy-button, #live-connection-open) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 0 12px;
+  color: var(--ui-text);
+  background: var(--ui-field);
+  border: 1px solid var(--ui-border);
+  border-radius: 5px;
+  box-shadow: none;
+  font: 700 10px/1 Consolas, monospace;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+body[data-workspace="real-robot"] > header .status :is(#firmware-deploy-button, #live-connection-open):hover {
+  background: var(--ui-raised);
+  border-color: var(--ui-muted);
+}
+body[data-workspace="real-robot"] > header #live-connection-open::before {
+  content: "";
+  flex: 0 0 6px;
+  width: 6px;
+  height: 6px;
+  border: 1px solid var(--ui-muted);
+  border-radius: 50%;
+  background: transparent;
+}
+body[data-workspace="real-robot"] > header #live-connection-open[data-state="connected"]::before { background: var(--ui-accent); border-color: var(--ui-accent); }
+body[data-workspace="real-robot"] > header #live-connection-open[data-state="fault"]::before { background: var(--ui-danger); border-color: var(--ui-danger); }
+body[data-workspace="real-robot"] > header #live-connection-open[data-state="busy"]::before { border: 2px solid var(--ui-muted); border-right-color: transparent; width: 10px; height: 10px; flex-basis: 10px; animation: studio-action-spin 900ms linear infinite; }
+body[data-workspace="real-robot"] > header .status :is(#real-battery-status, #real-safety-status) {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 5px;
+  color: var(--ui-muted);
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  font: 600 10px/1 Consolas, monospace;
+  white-space: nowrap;
+}
+body[data-workspace="real-robot"] > header #real-battery-status[data-state="warning"] { color: var(--ui-warning); }
+body[data-workspace="real-robot"] > header #real-battery-status[data-state="critical"],
+body[data-workspace="real-robot"] > header #real-safety-status[data-state="fault"] { color: var(--ui-danger); }
+body[data-workspace="real-robot"] > header #real-safety-status[data-state="armed"] { color: var(--ui-warning); }
+body[data-workspace="real-robot"] > header .status .live-global-estop { min-height: 32px; padding: 0 11px; border-radius: 5px; }
+body[data-workspace="real-robot"] > header .status #live-global-estop:disabled { color: var(--ui-muted); background: var(--ui-field); border-color: var(--ui-border); opacity: .65; }
+body[data-workspace="real-robot"] > header .status :is(.utility-button, .theme-toggle) { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; min-width: 32px; padding: 0; color: var(--ui-muted); background: transparent; border-color: var(--ui-border); }
+body[data-workspace="real-robot"] > header #shortcuts-open { margin-left: 5px; }
+@media (max-width: 1350px) { body[data-workspace="real-robot"] > header .brand span { display: none; } }
+@media (max-width: 1000px) {
+  body[data-workspace="real-robot"] > header { gap: 10px; padding-inline: 12px; }
+  body[data-workspace="real-robot"] > header .status { gap: 5px; }
+  body[data-workspace="real-robot"] > header #project-open { max-width: 140px; }
+}
+@media (max-width: 900px) {
+  body[data-workspace="real-robot"] > header { justify-content: flex-start; overflow-x: auto; scrollbar-width: thin; }
+  body[data-workspace="real-robot"] > header > * { flex-shrink: 0; }
+  body[data-workspace="real-robot"] > header .status :is(#real-battery-status, #real-safety-status) { flex-shrink: 0; }
+}
+@media (prefers-reduced-motion: reduce) { body[data-workspace="real-robot"] > header #live-connection-open[data-state="busy"]::before { animation: none; } }

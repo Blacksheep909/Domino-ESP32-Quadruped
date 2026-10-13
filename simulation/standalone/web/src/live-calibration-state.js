@@ -2,18 +2,13 @@ import { legs, standServoReference } from "./domino-config.js";
 import {
   LIVE_CALIBRATION_JOG_LIMIT_DEG,
   LIVE_CALIBRATION_MAX_SPEED_DEG_PER_SEC,
-  LIVE_CALIBRATION_NO_BENCH_ACTIONS,
 } from "./live-calibration-protocol.js";
 
 export const LIVE_CALIBRATION_SCHEMA_VERSION = 2;
 export const LIVE_CALIBRATION_STORAGE_KEY = "domino-live-calibration-v2";
 export const LIVE_CALIBRATION_LEGACY_STORAGE_KEY = "domino-live-calibration-v1";
 export const LIVE_CALIBRATION_PRE_SYNC_BACKUP_KEY = "domino-live-calibration-before-robot-sync-v1";
-export const LIVE_CALIBRATION_LAST_ROBOT_KEY = "domino-live-calibration-last-robot-v1";
-// Unsaved edits or an imported file. Kept across Studio restarts so a profile is
-// never lost just because it was not written to the robot in the same session.
-export const LIVE_CALIBRATION_DRAFT_KEY = "domino-live-calibration-draft-v1";
-export const LIVE_CALIBRATION_CORRUPT_BACKUP_KEY = "domino-live-calibration-unreadable-v1";
+export const LIVE_CALIBRATION_DRAFT_STORAGE_KEY = "domino-live-calibration-draft-v1";
 export { LIVE_CALIBRATION_JOG_LIMIT_DEG, LIVE_CALIBRATION_MAX_SPEED_DEG_PER_SEC };
 
 export const LIVE_CALIBRATION_STEPS = Object.freeze([
@@ -92,6 +87,11 @@ function defaultJointCalibration(definition) {
 }
 
 export function createLiveCalibrationProfile(candidate = {}) {
+  // Preserve complete, validated profiles exactly, including valid firmware
+  // travel limits wider than the editor's conservative hip bounds.
+  if (candidate.schemaVersion && candidate.robot && Array.isArray(candidate.joints)) {
+    try { return parseCalibrationProfileJson(JSON.stringify(candidate)); } catch { /* Sanitize internal candidates below. */ }
+  }
   const supplied = Array.isArray(candidate.joints) ? candidate.joints : [];
   const suppliedByLogicalChannel = new Map(supplied.map((joint) => [
     Number(joint?.logicalChannel ?? joint?.channel),
@@ -138,8 +138,10 @@ export function createLiveCalibrationState(profile = createLiveCalibrationProfil
     profile: createLiveCalibrationProfile(profile),
     robotProfileSessionId: "",
     robotProfileSavedAt: null,
-    robotOrigin: null,
-    restorableProfile: false,
+    robotProfile: null,
+    savePhase: "idle",
+    saveExpectedProfile: null,
+    saveDraftProfile: null,
   };
 }
 
@@ -147,100 +149,123 @@ export function forgetRobotCalibrationProfile(state) {
   if (!state) return;
   state.robotProfileSessionId = "";
   state.robotProfileSavedAt = null;
-  state.robotOrigin = null;
-  state.restorableProfile = false;
 }
 
-const DEFAULT_ORIGIN_SOURCES = new Set(["default-empty", "default-fallback"]);
-const KNOWN_ORIGIN_SOURCES = new Set([...DEFAULT_ORIGIN_SOURCES, "nvs", "nvs-backup", "nvs-legacy"]);
-
-// Firmware >= 0.8.16 reports which stored record produced the active profile.
-// Older firmware sends nothing, in which case `known` is false and a profile
-// with savedAt === 0 is still treated as the compiled default.
-export function normalizeCalibrationOrigin(origin, profile = null) {
-  const source = KNOWN_ORIGIN_SOURCES.has(origin?.source) ? origin.source : "";
-  const savedAt = profile?.savedAt ?? origin?.savedAt ?? 0;
-  const usingDefaults = source
-    ? DEFAULT_ORIGIN_SOURCES.has(source)
-    : !(Number.isFinite(Number(savedAt)) && Number(savedAt) > 0);
-  return {
-    known: Boolean(source),
-    source: source || (usingDefaults ? "default-unreported" : "nvs-unreported"),
-    usingDefaults,
-    detail: typeof origin?.detail === "string" ? origin.detail.slice(0, 96) : "",
-  };
+export function resetLiveCalibrationConnection(state) {
+  if (!state) return;
+  state.benchModeAcknowledged = false;
+  state.jogOffsetDeg = 0;
+  if (["sending", "verifying"].includes(state.savePhase)) state.savePhase = "unconfirmed";
+  forgetRobotCalibrationProfile(state);
 }
 
-export function calibrationOriginWarning(state) {
-  const origin = state?.robotOrigin;
-  if (!origin) return null;
-  if (origin.usingDefaults) {
-    const why = origin.source === "default-fallback"
-      ? `A stored profile exists but could not be read${origin.detail ? ` (${origin.detail})` : ""}.`
-      : "No saved profile was found on the robot.";
-    return {
-      level: "danger",
-      title: "ROBOT IS RUNNING DEFAULT CALIBRATION",
-      detail: state.restorableProfile
-        ? `${why} Your last known Studio profile is loaded as an unsaved draft: review it, then save it to the robot.`
-        : `${why} Servo centers, directions and limits are the compiled defaults, not your calibration.`,
-    };
-  }
-  if (origin.source === "nvs-backup") {
-    return {
-      level: "warning",
-      title: "ROBOT RECOVERED ITS PREVIOUS PROFILE",
-      detail: `The newest stored profile was unreadable${origin.detail ? ` (${origin.detail})` : ""}; the robot is using its previous backup. Review and save to refresh it.`,
-    };
-  }
-  if (origin.source === "nvs-legacy") {
-    return {
-      level: "notice",
-      title: "ROBOT PROFILE IS IN THE OLD FORMAT",
-      detail: "Save the profile once to upgrade it to the versioned format with a backup copy.",
-    };
-  }
-  return null;
+export function saveLocalCalibrationProfile(state, now = Date.now()) {
+  state.profile.savedAt = now;
+  // A browser backup does not make edits synchronized with robot NVS.
+  // Keep the dirty flag so reconnect readback cannot replace this draft.
+  return calibrationProfileJson(state.profile);
 }
 
-// `lastKnownGood` is the newest profile previously read from a robot that was
-// NOT on defaults. It lets a robot that lost its flash profile be restored
-// without trusting an overwritten browser copy.
-export function acceptRobotCalibrationProfile(state, profile, sessionId, origin = null, lastKnownGood = null) {
+export function acceptRobotCalibrationProfile(state, profile, sessionId) {
   if (!state || !sessionId) return { accepted: false, adopted: false };
   const active = parseCalibrationProfileJson(JSON.stringify(profile));
-  const robotOrigin = normalizeCalibrationOrigin(origin, active);
-  state.robotOrigin = robotOrigin;
-  state.restorableProfile = false;
-  let adopted = !state.dirty;
-  let restored = false;
-  if (robotOrigin.usingDefaults && !state.dirty) {
-    // The robot lost its profile. Never overwrite a previously saved browser
-    // copy with defaults; keep it (or the last robot-read copy) as an unsaved
-    // draft so one review-and-save restores the robot.
-    const localSaved = Number(state.profile?.savedAt) > 0 ? state.profile : null;
-    const candidate = localSaved || (lastKnownGood && Number(lastKnownGood.savedAt) > 0 ? lastKnownGood : null);
-    if (candidate) {
-      state.profile = parseCalibrationProfileJson(JSON.stringify(candidate));
-      state.dirty = true;
-      state.restorableProfile = true;
-      state.jogOffsetDeg = 0;
-      adopted = false;
-      restored = true;
-    }
-  }
+  const adopted = !state.dirty;
   if (adopted) {
     state.profile = active;
     state.jogOffsetDeg = 0;
   }
   state.robotProfileSessionId = sessionId;
   state.robotProfileSavedAt = active.savedAt ?? 0;
-  return { accepted: true, adopted, restored, robotUsingDefaults: robotOrigin.usingDefaults };
+  state.robotProfile = active;
+  return { accepted: true, adopted };
+}
+
+// ESP32 stores angles as float32. Compare their values, rather than serialized
+// JSON text, without treating a different revision or channel map as a match.
+export function calibrationProfilesMatch(left, right, includeSavedAt = true) {
+  if (!left || !right || left.schemaVersion !== right.schemaVersion || left.robot !== right.robot ||
+      (includeSavedAt && left.savedAt !== right.savedAt) ||
+      !Array.isArray(left.joints) || !Array.isArray(right.joints) ||
+      left.joints.length !== 12 || right.joints.length !== 12) return false;
+  return left.joints.every((joint) => {
+    const other = right.joints.find((candidate) => candidate.logicalChannel === joint.logicalChannel);
+    return other && joint.channel === other.channel && joint.direction === other.direction &&
+      ["offsetDeg", "minimumDeg", "maximumDeg"].every((key) =>
+        Number.isFinite(joint[key]) && Number.isFinite(other[key]) &&
+        Math.abs(joint[key] - other[key]) < 0.0001);
+  });
+}
+
+export function beginRobotCalibrationSave(state, profile) {
+  state.saveDraftProfile = createLiveCalibrationProfile(state.profile);
+  state.saveExpectedProfile = createLiveCalibrationProfile(profile);
+  state.savePhase = "sending";
+  state.dirty = true;
+}
+
+export function acknowledgeRobotCalibrationSave(state, accepted, persisted) {
+  state.benchModeAcknowledged = false;
+  state.dirty = true;
+  state.savePhase = accepted && persisted && state.saveExpectedProfile ? "verifying" : "rejected";
+  forgetRobotCalibrationProfile(state);
+}
+
+export function acceptCalibrationSaveReadback(state, profile, sessionId) {
+  const active = parseCalibrationProfileJson(JSON.stringify(profile));
+  if (!state.saveExpectedProfile || !sessionId) return { accepted: false, matched: false, adopted: false };
+  const matched = calibrationProfilesMatch(active, state.saveExpectedProfile);
+  const draftUnchanged = calibrationProfilesMatch(state.profile, state.saveDraftProfile, false);
+  // Keep the imported draft through the compact save ACK, readback, retries and
+  // reconnects. Edits made while the request was in flight belong to the user.
+  state.dirty = true;
+  acceptRobotCalibrationProfile(state, active, sessionId);
+  const adopted = matched && draftUnchanged;
+  if (adopted) {
+    state.profile = active;
+    state.jogOffsetDeg = 0;
+    state.dirty = false;
+  }
+  state.savePhase = matched ? "verified" : "mismatch";
+  if (matched) {
+    state.saveExpectedProfile = null;
+    state.saveDraftProfile = null;
+  } else {
+    forgetRobotCalibrationProfile(state);
+  }
+  return { accepted: true, matched, adopted };
+}
+
+export function calibrationDraftJson(state) {
+  return state?.dirty ? calibrationProfileJson(state.profile) : null;
+}
+
+export function restoreCalibrationDraft(state, contents) {
+  if (!contents) return false;
+  state.profile = parseCalibrationProfileJson(contents);
+  state.dirty = true;
+  return true;
 }
 
 export function robotCalibrationReady(state, sessionId) {
   return Boolean(state && sessionId && state.robotProfileSessionId === sessionId &&
     Number.isSafeInteger(state.robotProfileSavedAt) && state.robotProfileSavedAt >= 0);
+}
+
+export function calibrationControlBlockReason(state, context, action = "enter") {
+  if (!context.connectionReady) return "Connect the robot before requesting physical calibration.";
+  if (!Number.isFinite(context.telemetryAgeMs) || context.telemetryAgeMs > 1000 || context.telemetryAgeMs < 0) {
+    return "Waiting for fresh robot telemetry.";
+  }
+  if (context.robotState !== "disarmed") return "Disarm the robot before physical calibration.";
+  if (!context.calibrationSupported) return "This robot adapter does not support calibration.";
+  if (!robotCalibrationReady(state, context.sessionId)) return "Read the active robot profile before physical calibration.";
+  if (!state.safetyConfirmed) return "Confirm that the robot is supported before requesting bench mode.";
+  if (!context.workspaceActive) return "Open the LIVE calibration page to request physical calibration.";
+  if (context.batteryLocked) return "Robot battery is too low for physical calibration.";
+  if (context.pending) return "Waiting for the current robot calibration request.";
+  if (action === "enter" && state.benchModeAcknowledged) return "Bench mode is already acknowledged.";
+  if (action !== "enter" && !state.benchModeAcknowledged) return "Request bench mode before sending physical calibration commands.";
+  return "";
 }
 
 export function selectCalibrationStep(state, step) {
@@ -301,11 +326,16 @@ export function restoreCalibrationDefaults(state, restoreChannelMap = false) {
 
 export function jogCalibrationJoint(state, incrementDeg) {
   if (!state) return false;
+  const joint = state.profile?.joints?.find(candidate => candidate.logicalChannel === state.selectedChannel);
+  if (!joint) return false;
+  const minimum = Math.max(-LIVE_CALIBRATION_JOG_LIMIT_DEG, joint.minimumDeg);
+  const maximum = Math.min(LIVE_CALIBRATION_JOG_LIMIT_DEG, joint.maximumDeg);
+  if (minimum > maximum) return false;
   const increment = finite(incrementDeg, 0);
   state.jogOffsetDeg = clamp(
     state.jogOffsetDeg + increment,
-    -LIVE_CALIBRATION_JOG_LIMIT_DEG,
-    LIVE_CALIBRATION_JOG_LIMIT_DEG,
+    minimum,
+    maximum,
   );
   return true;
 }
@@ -366,7 +396,24 @@ export function parseCalibrationProfileJson(text) {
   });
   const issues = calibrationChannelMapIssues(requestedMap);
   if (issues.length > 0) throw new Error(issues[0]);
-  return createLiveCalibrationProfile(candidate);
+  if (candidate.savedAt !== null && candidate.savedAt !== undefined &&
+      (!Number.isSafeInteger(candidate.savedAt) || candidate.savedAt < 0)) {
+    throw new Error("Calibration revision must be a nonnegative whole number.");
+  }
+  const joints = LIVE_CALIBRATION_JOINTS.map(definition => {
+    const joint = candidate.joints.find(source => (source.logicalChannel ?? source.channel) === definition.channel);
+    if (!joint || !Number.isInteger(joint.channel) ||
+        (joint.direction !== -1 && joint.direction !== 1) ||
+        ![joint.offsetDeg, joint.minimumDeg, joint.maximumDeg].every(Number.isFinite) ||
+        Math.abs(joint.offsetDeg) > 30 || joint.minimumDeg < -90 || joint.minimumDeg > 89 ||
+        joint.maximumDeg > 90 || joint.maximumDeg < joint.minimumDeg + 1) {
+      throw new Error(`Invalid calibration values for ${definition.label}. Values were not imported.`);
+    }
+    return { logicalChannel: definition.channel, channel: joint.channel, offsetDeg: joint.offsetDeg,
+      direction: joint.direction, minimumDeg: joint.minimumDeg, maximumDeg: joint.maximumDeg };
+  });
+  return { schemaVersion: LIVE_CALIBRATION_SCHEMA_VERSION, robot: candidate.robot,
+    savedAt: candidate.savedAt ?? null, joints };
 }
 
 export function calibrationChannelMap(profile) {
@@ -409,11 +456,12 @@ export function updateCalibrationChannelMap(state, channelMap) {
 }
 
 export function createCalibrationBenchCommand(state, action, requestId, now = Date.now(), smoothing = null) {
-  const allowedActions = ["request-profile", "request-smoothing", "save-smoothing", "enter", "exit", "jog", "save-profile"];
+  const allowedActions = ["request-profile", "request-smoothing", "save-smoothing", "enter", "exit", "jog", "save-profile", "keepalive"];
   if (!state || !allowedActions.includes(action)) return null;
   if (action === "save-profile" && !robotCalibrationReady(state, state.robotProfileSessionId)) return null;
   const joint = state.profile.joints.find((candidate) => candidate.logicalChannel === state.selectedChannel);
   if (!joint) return null;
+  if (action === "jog" && (state.jogOffsetDeg < joint.minimumDeg || state.jogOffsetDeg > joint.maximumDeg)) return null;
   const persistedProfile = action === "save-profile"
     ? createLiveCalibrationProfile({ ...state.profile, savedAt: Math.max(now, state.robotProfileSavedAt + 1) })
     : undefined;
@@ -423,7 +471,7 @@ export function createCalibrationBenchCommand(state, action, requestId, now = Da
     requestId: String(requestId),
     timestampMs: now,
     safety: {
-      benchModeRequired: !LIVE_CALIBRATION_NO_BENCH_ACTIONS.includes(action),
+      benchModeRequired: !["request-profile", "request-smoothing", "save-smoothing"].includes(action),
       maxSpeedDegPerSec: LIVE_CALIBRATION_MAX_SPEED_DEG_PER_SEC,
       jogLimitDeg: LIVE_CALIBRATION_JOG_LIMIT_DEG,
     },

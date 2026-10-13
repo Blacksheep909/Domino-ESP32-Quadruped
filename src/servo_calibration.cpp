@@ -17,6 +17,25 @@ constexpr int8_t kDefaultDirection[DOMINO_SERVO_CHANNEL_COUNT] = {
     -1, 1, 1, 1, 0, 0, 1, 1,
 };
 
+// Verified baseline for the installed Domino hardware: the profile read back from
+// the robot on 2026-10-10 with roll and tilt confirmed correct. kDefaultDirection
+// above is the CAD basis, NOT what this robot's shafts need: the left hips
+// (CH0 and CH14) are mounted inverted and the horns need small neutral trims.
+// Using the CAD basis as the profile default made every reset or fallback
+// silently drop those, which broke tilt. Indexed by channel; the matching
+// Studio table is DOMINO_BASELINE_CALIBRATION in live-calibration-state.js and
+// a test keeps the two identical.
+constexpr float kBaselineOffsetDeg[DOMINO_SERVO_CHANNEL_COUNT] = {
+    0.0f, 4.0f, 0.0f, 12.0f,
+    0.0f, 0.0f, 0.0f, -6.0f,
+    6.0f, 12.0f, -3.0f, 12.0f,
+    0.0f, 0.0f, 0.0f, 0.0f,
+};
+constexpr int8_t kBaselineDirection[DOMINO_SERVO_CHANNEL_COUNT] = {
+    -1, -1, -1, 1, 1, 0, 0, -1,
+    -1, 1, 1, 1, 0, 0, -1, 1,
+};
+
 bool finite(float value) { return isfinite(value); }
 bool hipChannel(uint8_t channel) {
   return channel == 0 || channel == 3 || channel == 9 || channel == 14;
@@ -29,7 +48,8 @@ ServoCalibrationProfile defaultServoCalibrationProfile() {
   for (uint8_t index = 0; index < DOMINO_DRIVEN_JOINT_COUNT; ++index) {
     const uint8_t channel = kChannels[index];
     const float travel = hipChannel(channel) ? 30.0f : 45.0f;
-    profile.joints[index] = {channel, channel, 0.0f, kDefaultDirection[channel], -travel, travel};
+    profile.joints[index] = {channel, channel, kBaselineOffsetDeg[channel],
+                             kBaselineDirection[channel], -travel, travel};
   }
   return profile;
 }

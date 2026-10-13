@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
 import {
+  DOMINO_BASELINE_CALIBRATION,
   acceptRobotCalibrationProfile,
   acceptCalibrationSaveReadback,
   beginRobotCalibrationSave,
@@ -100,18 +101,57 @@ test("creates one bounded calibration record for every driven Domino joint", () 
   );
 });
 
-test("all four physical hip servos share the same normal direction", () => {
+test("the CAD basis has one hip direction, but the installed baseline inverts the left hips", () => {
   const hips = LIVE_CALIBRATION_JOINTS.filter((joint) => joint.joint === "shoulder");
   assert.deepEqual(hips.map((joint) => joint.leg).sort(), ["BL", "BR", "FL", "FR"]);
-  assert.ok(hips.every((joint) => joint.defaultDirection === 1));
+  assert.ok(hips.every((joint) => joint.defaultDirection === 1), "CAD basis is canonical");
 
+  // The robot's left hip shafts (CH0 front-left, CH14 back-left) are mounted
+  // inverted. Defaulting to the CAD basis lost this and broke tilt.
   const profile = createLiveCalibrationProfile();
+  const direction = (channel) => profile.joints.find((joint) => joint.logicalChannel === channel).direction;
+  assert.equal(direction(0), -1);
+  assert.equal(direction(14), -1);
+  assert.equal(direction(3), 1);
+  assert.equal(direction(9), 1);
   const hipChannels = new Set(hips.map((joint) => joint.channel));
   assert.ok(profile.joints
     .filter((joint) => hipChannels.has(joint.logicalChannel))
-    .every((joint) => joint.direction === 1
-      && joint.minimumDeg === -30
-      && joint.maximumDeg === 30));
+    .every((joint) => joint.minimumDeg === -30 && joint.maximumDeg === 30));
+});
+
+test("the Studio baseline is exactly the verified profile and matches the firmware table", () => {
+  const good = parseCalibrationProfileJson(JSON.stringify({
+    schemaVersion: 2, robot: "domino-esp32-quadruped", savedAt: 1791620392254,
+    joints: [[0, 0, -1], [1, 4, -1], [2, 0, -1], [3, 12, 1], [4, 0, 1], [15, 0, 1],
+      [14, 0, -1], [7, -6, -1], [8, 6, -1], [9, 12, 1], [10, -3, 1], [11, 12, 1]]
+      .map(([channel, offsetDeg, direction]) => ({
+        logicalChannel: channel, channel, offsetDeg, direction,
+        minimumDeg: LIVE_CALIBRATION_JOINTS.find((j) => j.channel === channel).joint === "shoulder" ? -30 : -45,
+        maximumDeg: LIVE_CALIBRATION_JOINTS.find((j) => j.channel === channel).joint === "shoulder" ? 30 : 45,
+      })),
+  }));
+  const defaults = createLiveCalibrationProfile();
+  for (const joint of good.joints) {
+    const actual = defaults.joints.find((candidate) => candidate.logicalChannel === joint.logicalChannel);
+    assert.equal(actual.offsetDeg, joint.offsetDeg, `offset ch${joint.logicalChannel}`);
+    assert.equal(actual.direction, joint.direction, `direction ch${joint.logicalChannel}`);
+    assert.equal(actual.channel, joint.channel, `channel ch${joint.logicalChannel}`);
+  }
+
+  // The same numbers must be compiled into the firmware default profile.
+  const source = readFileSync(new URL("../../src/servo_calibration.cpp", import.meta.url), "utf8");
+  const table = (name) => source
+    .match(new RegExp(`${name}\\[[^\\]]*\\]\\s*=\\s*\\{([^}]*)\\}`))[1]
+    .split(",").map((entry) => entry.trim().replace(/f$/, "")).filter(Boolean).map(Number);
+  const offsets = table("kBaselineOffsetDeg");
+  const directions = table("kBaselineDirection");
+  assert.equal(offsets.length, 16);
+  assert.equal(directions.length, 16);
+  for (const joint of defaults.joints) {
+    assert.equal(offsets[joint.logicalChannel], joint.offsetDeg, `firmware offset ch${joint.logicalChannel}`);
+    assert.equal(directions[joint.logicalChannel], joint.direction, `firmware direction ch${joint.logicalChannel}`);
+  }
 });
 
 test("selects wizard steps and joints without accepting unknown values", () => {
@@ -152,10 +192,10 @@ test("restores one joint without changing its physical servo assignment", () => 
   state.jogOffsetDeg = 4;
   assert.equal(restoreSelectedCalibrationJoint(state), true);
   const joint = state.profile.joints.find((candidate) => candidate.logicalChannel === state.selectedChannel);
-  const definition = LIVE_CALIBRATION_JOINTS.find((candidate) => candidate.channel === state.selectedChannel);
+  const baseline = DOMINO_BASELINE_CALIBRATION[state.selectedChannel];
   assert.equal(joint.channel, remapped[0]);
-  assert.equal(joint.offsetDeg, 0);
-  assert.equal(joint.direction, definition.defaultDirection);
+  assert.equal(joint.offsetDeg, baseline.offsetDeg);
+  assert.equal(joint.direction, baseline.direction);
   assert.equal(joint.minimumDeg, -30);
   assert.equal(joint.maximumDeg, 30);
   assert.equal(state.jogOffsetDeg, 0);
@@ -176,7 +216,9 @@ test("restores all tuning defaults while resetting wiring only when requested", 
   );
   assert.ok(state.profile.joints.every((joint) => {
     const travel = hipChannels.has(joint.logicalChannel) ? 30 : 45;
-    return joint.offsetDeg === 0
+    const baseline = DOMINO_BASELINE_CALIBRATION[joint.logicalChannel];
+    return joint.offsetDeg === baseline.offsetDeg
+      && joint.direction === baseline.direction
       && joint.minimumDeg === -travel
       && joint.maximumDeg === travel;
   }));
@@ -222,7 +264,10 @@ test("preview jogging is limited and only changes the selected servo", () => {
   jogCalibrationJoint(state, 100);
   const preview = calibrationPreviewServoAngles(state);
   assert.equal(state.jogOffsetDeg, LIVE_CALIBRATION_JOG_LIMIT_DEG);
-  assert.equal(preview[state.selectedChannel] - baseline[state.selectedChannel], LIVE_CALIBRATION_JOG_LIMIT_DEG);
+  // The servo moves by the joint's direction times the jog (inverted hips go the other way).
+  const direction = state.profile.joints.find((joint) => joint.logicalChannel === state.selectedChannel).direction;
+  assert.equal(preview[state.selectedChannel] - baseline[state.selectedChannel],
+    direction * LIVE_CALIBRATION_JOG_LIMIT_DEG);
   assert.equal(preview.filter((angle, channel) => angle !== baseline[channel]).length, 1);
 });
 
@@ -342,12 +387,13 @@ test("a robot readback preserves unsaved calibration edits", () => {
   const state = createLiveCalibrationState();
   updateCalibrationJoint(state, { offsetDeg: 4 });
   const active = createLiveCalibrationProfile({ savedAt: 1000 });
-  active.joints.find((joint) => joint.logicalChannel === 0).direction = -1;
+  // The robot reports the opposite of the baseline hip direction (-1); the draft must win.
+  active.joints.find((joint) => joint.logicalChannel === 0).direction = 1;
   const readback = acceptRobotCalibrationProfile(state, active, "session-2");
   assert.deepEqual({ accepted: readback.accepted, adopted: readback.adopted },
     { accepted: true, adopted: false });
   assert.equal(state.profile.joints[0].offsetDeg, 4);
-  assert.equal(state.profile.joints[0].direction, 1);
+  assert.equal(state.profile.joints[0].direction, -1);
   assert.equal(createCalibrationBenchCommand(state, "save-profile", "edit", 1001).baseSavedAt, 1000);
 });
 
@@ -633,7 +679,7 @@ test("a robot that lost its profile never overwrites the saved browser copy with
   assertOrigin.equal(state.profile.joints.find((joint) => joint.logicalChannel === 0).direction, -1);
   assertOrigin.equal(state.profile.joints.find((joint) => joint.logicalChannel === 3).offsetDeg, 7);
   const warning = originState.calibrationOriginWarning(state);
-  assertOrigin.equal(warning.level, "danger");
+  assertOrigin.equal(warning.level, "warning", "reporting firmware falls back to the verified baseline");
   assertOrigin.match(warning.detail, /active2:bad-checksum/);
   assertOrigin.match(warning.detail, /review it, then save/);
 });
@@ -656,8 +702,15 @@ test("a default robot with no earlier saved profile adopts the defaults and stil
   );
   assertOrigin.equal(result.adopted, true);
   assertOrigin.equal(result.restored, false);
-  assertOrigin.equal(originState.calibrationOriginWarning(state).level, "danger");
-  assertOrigin.match(originState.calibrationOriginWarning(state).detail, /compiled defaults/);
+  assertOrigin.equal(originState.calibrationOriginWarning(state).level, "warning");
+  assertOrigin.match(originState.calibrationOriginWarning(state).detail, /built-in baseline/);
+
+  // Firmware that cannot report its origin (0.8.18 and earlier) falls back to
+  // plain CAD defaults, which do not invert the left hips: that stays a danger.
+  const legacy = originState.createLiveCalibrationState();
+  originState.acceptRobotCalibrationProfile(legacy, originState.createLiveCalibrationProfile(), "old-firmware");
+  assertOrigin.equal(originState.calibrationOriginWarning(legacy).level, "danger");
+  assertOrigin.match(originState.calibrationOriginWarning(legacy).detail, /compiled defaults/);
 });
 
 test("a saved robot profile replaces the browser copy and shows no warning", () => {
@@ -695,4 +748,30 @@ test("unsaved browser edits are never replaced when the robot reports defaults",
   assertOrigin.equal(result.adopted, false);
   assertOrigin.equal(result.restored, false);
   assertOrigin.equal(state.profile.joints[0].offsetDeg, 4);
+});
+
+// --- Pre-send change summary: tonight's mistake (sending a defaults-based draft over the good profile) must be loud ---
+test("the pre-send summary flags hip direction flips and zeroed trims against the robot's profile", () => {
+  const robot = originState.createLiveCalibrationProfile();           // the verified baseline
+  const draft = originState.createLiveCalibrationProfile();
+  for (const joint of draft.joints) {
+    joint.offsetDeg = 0;                                              // restore-defaults style draft
+    joint.direction = [0, 14].includes(joint.logicalChannel) ? 1 : joint.direction;
+  }
+  const summary = originState.calibrationChangeSummary(robot, draft);
+  assertOrigin.equal(summary.comparable, true);
+  assertOrigin.deepEqual(summary.directionChanges.map((c) => c.label.match(/CH\d+/)[0]).sort(), ["CH0", "CH14"]);
+  assertOrigin.equal(summary.directionChanges.find((c) => /CH0\)/.test(c.label)).from, "-");
+  assertOrigin.equal(summary.directionChanges.find((c) => /CH0\)/.test(c.label)).to, "+");
+  assertOrigin.ok(summary.offsetChanges.length >= 5, "the baseline trims being zeroed is listed");
+  assertOrigin.ok(summary.total >= 7);
+});
+
+test("the pre-send summary reports no changes for an identical profile and cannot compare without a robot read", () => {
+  const profile = originState.createLiveCalibrationProfile();
+  assertOrigin.equal(originState.calibrationChangeSummary(profile, originState.createLiveCalibrationProfile()).total, 0);
+  assertOrigin.equal(originState.calibrationChangeSummary(null, profile).comparable, false);
+  const remapped = originState.createLiveCalibrationProfile();
+  remapped.joints.find((joint) => joint.logicalChannel === 4).channel = 6;
+  assertOrigin.equal(originState.calibrationChangeSummary(profile, remapped).channelChanges.length, 1);
 });

@@ -58,8 +58,20 @@ constexpr DWORD CREATE_WAITABLE_TIMER_HIGH_RESOLUTION = 0x00000002;
 #endif
 constexpr uint8_t kServoChannels[12] = {0, 1, 2, 3, 4, 15, 14, 7, 8, 9, 10, 11};
 
-bool validateCalibrationMath() {
+// Zero trims and the canonical CAD directions: the neutral reference the
+// transform tests below are written against. The compiled default profile is
+// the installed robot's verified baseline instead (inverted left hips, trims).
+ServoCalibrationProfile cadBasisProfile() {
   ServoCalibrationProfile profile = defaultServoCalibrationProfile();
+  for (ServoCalibrationJoint &joint : profile.joints) {
+    joint.offsetDeg = 0.0f;
+    joint.direction = servoCalibrationDefaultDirection(joint.logicalChannel);
+  }
+  return profile;
+}
+
+bool validateCalibrationMath() {
+  ServoCalibrationProfile profile = cadBasisProfile();
   if (!validateServoCalibrationProfile(profile)) {
     std::cerr << "FAIL: default servo calibration profile is invalid\n";
     return false;
@@ -109,13 +121,15 @@ bool validateCalibrationMath() {
   const bool runtimeRouted = profileActivated &&
                              simServoWriteCount(15) > 0 &&
                              simServoWriteCount(0) == 0;
-  ServoCalibrationProfile clippedProfile = defaultServoCalibrationProfile();
+  ServoCalibrationProfile clippedProfile = cadBasisProfile();
   clippedProfile.joints[0].offsetDeg = 30.0f;
   setServoCalibrationProfile(clippedProfile);
   commandCalibrationServoAngle(calibrationDriver, 0, 0, 170.0f);
   const bool hardLimitVisible = fabsf(commandedServoAnglesDeg()[0] - 156.0f) < 0.001f &&
       fabsf(commandedModelServoAnglesDeg()[0] - 126.0f) < 0.001f;
-  setServoCalibrationProfile(defaultServoCalibrationProfile());
+  // The pure-kinematics scenarios below compare raw servo commands with the
+  // CAD neutral pose, so they run on the CAD basis rather than the baseline.
+  setServoCalibrationProfile(cadBasisProfile());
   simResetServoOutputs();
   profile.joints[1].channel = profile.joints[0].channel;
   const bool duplicateRejected = !validateServoCalibrationProfile(profile);
@@ -428,9 +442,17 @@ bool validateCalibratedHipDirection() {
   const MoveLeg movers[4] = {moveLegFL, moveLegFR, moveLegBL, moveLegBR};
   const uint8_t hips[4] = {0, 3, 14, 9};
   const float neutralY[4] = {38, -38, 38, -38};
-  ServoCalibrationProfile profile = defaultServoCalibrationProfile();
-  for (auto &joint : profile.joints) {
-    if (joint.logicalChannel == 0 || joint.logicalChannel == 14) joint.direction = -1;
+  // The compiled default profile must already carry the installed hardware's
+  // inverted left hips; patching them here previously hid that a reset or a
+  // fallback to defaults dropped them and broke tilt.
+  const ServoCalibrationProfile profile = defaultServoCalibrationProfile();
+  for (const auto &joint : profile.joints) {
+    const bool leftHip = joint.logicalChannel == 0 || joint.logicalChannel == 14;
+    const bool rightHip = joint.logicalChannel == 3 || joint.logicalChannel == 9;
+    if ((leftHip && joint.direction != -1) || (rightHip && joint.direction != 1)) {
+      std::cerr << "FAIL: default profile does not invert exactly the left hips\n";
+      return false;
+    }
   }
   setServoCalibrationProfile(profile);
   Adafruit_PWMServoDriver driver;
@@ -455,14 +477,18 @@ bool validateCalibratedHipDirection() {
     passed = passed && legIkFailureCount() == failuresBefore + 1 &&
         fabsf(commandedServoAnglesDeg()[hips[leg]] - outward) < 0.001f;
   }
-  setServoCalibrationProfile(defaultServoCalibrationProfile());
+  // The pure-kinematics scenarios below compare raw servo commands with the
+  // CAD neutral pose, so they run on the CAD basis rather than the baseline.
+  setServoCalibrationProfile(cadBasisProfile());
   if (!passed) std::cerr << "FAIL: calibrated CAD hip direction or invalid-target hold behavior failed\n";
   return passed;
 }
 
 bool validateServoWriteReuse() {
   Adafruit_PWMServoDriver driver;
-  setServoCalibrationProfile(defaultServoCalibrationProfile());
+  // The pure-kinematics scenarios below compare raw servo commands with the
+  // CAD neutral pose, so they run on the CAD basis rather than the baseline.
+  setServoCalibrationProfile(cadBasisProfile());
   setServoOutputsEnabled(driver, true);
   moveLegFR(driver, -15.75f, -38.0f, 280.0f);
   constexpr uint8_t kChannels[3] = {3, 4, 15};

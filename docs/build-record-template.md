@@ -1,133 +1,62 @@
-# Domino As-Built Record Template
+# Domino as-built record
 
-Copy this file for each robot. Replace `MEASURE` and `VERIFY` only with physical
-evidence. Attach photos, calibration JSON, LIVE CSV sessions, DMM results, and
-manufacturer documents beside the completed record.
+The current state of the robot, with what is known filled in and the few gaps
+listed at the end. For the parts themselves see the [bill of materials](bill-of-materials.md).
 
 ## Identity
 
-| Field | Value |
+| | |
 | --- | --- |
-| Robot name / serial | MEASURE |
-| Builder and date | MEASURE |
-| Repository commit | VERIFY |
-| Firmware version/hash | VERIFY |
-| Calibration JSON | VERIFY |
-| PCB/controller revision | MEASURE |
+| Robot | Domino, ESP32 composite quadruped |
+| Builder | Blacksheep909 |
+| Controller board | Domino PCB V1.1B ([Gerbers](../hardware/pcb/domino-quadruped-pcb-v1.1b)) |
+| Firmware | 0.8.19 (`src/`, PlatformIO `esp32dev`) |
+| Software | Quadruped Studio 0.4.0 |
+| Repository | [Blacksheep909/Domino-ESP32-Quadruped](https://github.com/Blacksheep909/Domino-ESP32-Quadruped) |
 
-## Exact BOM
+## Servo routing
 
-| Qty | Subsystem | Manufacturer / part | Revision | Key rating | Source | Installed |
-| ---: | --- | --- | --- | --- | --- | --- |
-| 1 | ESP32 | MEASURE | MEASURE | Logic/input voltage | MEASURE | [ ] |
-| 1 | PCA9685/PCB | MEASURE | MEASURE | Logic/servo separation | MEASURE | [ ] |
-| 1 | CRSF receiver | MEASURE | MEASURE | Supply/signal voltage | MEASURE | [ ] |
-| 1 | MPU6050 | MEASURE | MEASURE | I2C address | MEASURE | [ ] |
-| 12 | Servos | MEASURE | MEASURE | Voltage, no-load/stall current, travel | MEASURE | [ ] |
-| 1 | Regulator/BEC | MEASURE | MEASURE | Input/output, continuous/peak current | MEASURE | [ ] |
-| 1+ | Battery | MEASURE | MEASURE | Chemistry, cells, capacity, C rating | MEASURE | [ ] |
-| 1 | Fuse/current limit | MEASURE | MEASURE | Rating/interrupt capability | MEASURE | [ ] |
-| 1 | Physical disconnect | MEASURE | MEASURE | Voltage/current rating | MEASURE | [ ] |
-| 1 | Optional INA226/shunt | MEASURE | MEASURE | Address, shunt µΩ, current, dissipation | MEASURE | [ ] / N/A |
+PCA9685 channel for each joint. This is the default map; the calibration wizard
+can re-route any joint to another output.
 
-Add every printed part, fastener, insert/bearing, rod/tube, connector, wire,
-sleeve, foot, and mechanical consumable as additional rows.
+| Leg | Hip | Upper | Lower |
+| --- | ---: | ---: | ---: |
+| Front-left (FL) | 0 | 1 | 2 |
+| Front-right (FR) | 3 | 4 | 15 |
+| Back-left (BL) | 14 | 7 | 8 |
+| Back-right (BR) | 9 | 10 | 11 |
 
-## Manufactured mechanics
+## Wiring
 
-| Item | Material/process | Print/machining settings | Critical measured dimensions | Pass |
-| --- | --- | --- | --- | --- |
-| Body/electronics cage | MEASURE | MEASURE | MEASURE | [ ] |
-| FR / FL leg parts | MEASURE | MEASURE | MEASURE | [ ] |
-| BR / BL leg parts | MEASURE | MEASURE | MEASURE | [ ] |
-| Rods/tubes/pivots | MEASURE | MEASURE | Length/diameter/fit | [ ] |
+| Signal | Connection |
+| --- | --- |
+| Servo PWM | PCA9685, 12 of 16 channels (5, 6, 12 and 13 unused) |
+| PCA9685 control | ESP32 I2C (`Wire.begin()` defaults) |
+| CRSF receiver | Receiver TX to ESP32 UART2 RX (GPIO16), 5 V supply, common ground |
+| Battery voltage | 0-25 V sensor module to ESP32 GPIO36 (`SENSOR_VP`) |
+| Servo power | Battery, relay module, SZBK07 buck converter, PCA9685 servo rail |
+| Logic power | Battery, logic-rail step-down, ESP32 and modules |
+| IMU | Not fitted (`DOMINO_IMU_ENABLED=0`) |
+| Current monitor | Not fitted (`DOMINO_POWER_*` flags off) |
 
-Record servo-pocket fit, pivot play, mirrored orientation, horn length, linkage
-branch, foot position, and full unpowered clearance.
+ESP32, receiver, PCA9685 and the servo supply share one ground.
 
-## Power and wiring worksheet
+## Calibration
 
-| Check | Measured value / evidence | Pass |
-| --- | --- | --- |
-| Battery open-circuit voltage | MEASURE | [ ] |
-| Logic rail voltage | MEASURE | [ ] |
-| Servo rail unloaded / loaded minimum | MEASURE | [ ] |
-| Regulator temperature after test | MEASURE | [ ] |
-| Fuse/current-limit setting | MEASURE | [ ] |
-| Power connector and wire gauge | MEASURE | [ ] |
-| Common-ground continuity | MEASURE | [ ] |
-| Power-to-ground resistance before power | MEASURE | [ ] |
-| Disconnect removes servo power | VERIFY | [ ] |
-| Receiver supply and TX → ESP32 RX16 | VERIFY | [ ] |
-| ESP32/PCA/IMU SDA and SCL pins | MEASURE | [ ] |
-| PCA9685 address/oscillator | MEASURE | [ ] |
-| Optional INA226 address/shunt | MEASURE | [ ] / N/A |
+Each robot keeps its own calibration. It lives in the ESP32's flash and can be
+exported as a JSON file from Studio. Export one after every change and keep it
+with this record. See the [calibration guide](calibration-guide.md).
 
-Attach an as-built diagram with every connector pin, polarity, gauge,
-fuse/disconnect, regulator, battery, logic/servo rail, and ground.
+## Bring-up
 
-## Servo routing and calibration
+Follow the [LIVE hardware bring-up procedure](live-hardware-bring-up.md) before
+any motion: unpowered inspection, USB logic, receiver, one unloaded servo, one
+supported leg, a suspended robot, then a restrained floor test.
 
-| Joint | PCA channel | Servo identity | Neutral photo | Direction | Offset | Min | Max | Unloaded | Supported |
-| --- | ---: | --- | --- | --- | ---: | ---: | ---: | --- | --- |
-| FL Hip | MEASURE | MEASURE | LINK | MEASURE | MEASURE | MEASURE | MEASURE | [ ] | [ ] |
-| FL Upper | MEASURE | MEASURE | LINK | MEASURE | MEASURE | MEASURE | MEASURE | [ ] | [ ] |
-| FL Lower | MEASURE | MEASURE | LINK | MEASURE | MEASURE | MEASURE | MEASURE | [ ] | [ ] |
-| FR Hip | MEASURE | MEASURE | LINK | MEASURE | MEASURE | MEASURE | MEASURE | [ ] | [ ] |
-| FR Upper | MEASURE | MEASURE | LINK | MEASURE | MEASURE | MEASURE | MEASURE | [ ] | [ ] |
-| FR Lower | MEASURE | MEASURE | LINK | MEASURE | MEASURE | MEASURE | MEASURE | [ ] | [ ] |
-| BL Hip | MEASURE | MEASURE | LINK | MEASURE | MEASURE | MEASURE | MEASURE | [ ] | [ ] |
-| BL Upper | MEASURE | MEASURE | LINK | MEASURE | MEASURE | MEASURE | MEASURE | [ ] | [ ] |
-| BL Lower | MEASURE | MEASURE | LINK | MEASURE | MEASURE | MEASURE | MEASURE | [ ] | [ ] |
-| BR Hip | MEASURE | MEASURE | LINK | MEASURE | MEASURE | MEASURE | MEASURE | [ ] | [ ] |
-| BR Upper | MEASURE | MEASURE | LINK | MEASURE | MEASURE | MEASURE | MEASURE | [ ] | [ ] |
-| BR Lower | MEASURE | MEASURE | LINK | MEASURE | MEASURE | MEASURE | MEASURE | [ ] | [ ] |
+## Still to record
 
-## Bring-up gates
-
-| Gate | Date | Power/current limit | Evidence/log/session | Result | Notes |
-| --- | --- | --- | --- | --- | --- |
-| A — unpowered inspection | MEASURE | N/A | LINK | PASS / FAIL | MEASURE |
-| B — USB logic | MEASURE | MEASURE | LINK | PASS / FAIL | MEASURE |
-| C — receiver/IMU | MEASURE | MEASURE | LINK | PASS / FAIL | MEASURE |
-| D — one unloaded servo | MEASURE | MEASURE | LINK | PASS / FAIL | MEASURE |
-| E — one supported leg | MEASURE | MEASURE | LINK | PASS / FAIL | MEASURE |
-| F — suspended robot | MEASURE | MEASURE | LINK | PASS / FAIL | MEASURE |
-| G — restrained floor | MEASURE | MEASURE | LINK | PASS / FAIL | MEASURE |
-
-## Safety acceptance
-
-| Test | Expected result | Evidence | Pass |
-| --- | --- | --- | --- |
-| Physical disconnect | Servo rail de-energizes independently | LINK | [ ] |
-| E-stop | Outputs latch off until safe reset | LINK | [ ] |
-| CRSF failsafe/link loss | Motion stops in defined safe state | LINK | [ ] |
-| PC link loss | Engineering authority revokes | LINK | [ ] |
-| Armed watchdog | Missing heartbeat disables outputs | LINK | [ ] |
-| Power cycle | Boots disarmed with PWM off | LINK | [ ] |
-| Brownout/transient | No uncontrolled output; recovery understood | LINK | [ ] |
-
-## Optional power-monitor calibration
-
-| Condition | DMM V | INA226 V | Independent A | INA226 A | Error | Pass |
-| --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Unloaded rail | MEASURE | MEASURE | MEASURE | MEASURE | CALCULATE | [ ] |
-| One moving servo | MEASURE | MEASURE | MEASURE | MEASURE | CALCULATE | [ ] |
-| Suspended stand | MEASURE | MEASURE | MEASURE | MEASURE | CALCULATE | [ ] |
-| Controlled dynamic test | MEASURE | MEASURE | MEASURE | MEASURE | CALCULATE | [ ] |
-
-Record shunt temperature/dissipation, connector temperature, sampling settings,
-and exact `DOMINO_POWER_*` flags.
-
-## Final media and sign-off
-
-- [ ] Readable wiring photos and diagram.
-- [ ] Twelve neutral-horn photos.
-- [ ] Supported calibration video/GIF.
-- [ ] Suspended baseline and restrained-floor LIVE CSVs.
-- [ ] Baseline/candidate comparison screenshot.
-- [ ] Final assembly photos, measured mass, known limitations.
-
-- Builder: `MEASURE`
-- Date: `MEASURE`
-- Next inspection/service date: `MEASURE`
+- Exact servo model numbers.
+- Rod diameters and lengths, fastener sizes.
+- Fuse rating and wire gauge.
+- Measured mass.
+- Wiring photos and a connector-level wiring diagram.

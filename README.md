@@ -83,7 +83,7 @@ Mechanical design for a closed-linkage leg, PCB design, embedded C++ firmware on
 
 1. Download **Domino Quadruped Studio** from the [releases page](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/releases/latest). Simulation works offline with no robot attached.
 2. To drive hardware, follow the [LIVE hardware bring-up procedure](docs/live-hardware-bring-up.md) and the [calibration guide](docs/calibration-guide.md) before enabling any motion.
-3. To build one, start with the [build guide](docs/build-guide.md) and the [build record template](docs/build-record-template.md). It is a prototype and not yet a finished kit; the [project overview](docs/project-overview.md#build-and-bring-up-status) lists what is and is not validated.
+3. To build one, start with the [build guide](docs/build-guide.md) and the [bill of materials](docs/bill-of-materials.md). It is a prototype and not yet a finished kit; the [project overview](docs/project-overview.md#build-and-bring-up-status) lists what is and is not validated.
 
 ### Build from source
 
@@ -110,10 +110,13 @@ npm start            # browser/source version at http://127.0.0.1:8770
 | --- | --- |
 | [Engineering overview](docs/engineering-overview.md) | Architecture, data flow, code tour and current boundaries |
 | [Project overview](docs/project-overview.md) | Full tour: tracks, mechanics, electronics, firmware, repository layout and credits |
-| [Build guide](docs/build-guide.md) | Build sequence, functional BOM, wiring architecture and commissioning gates |
+| [Bill of materials](docs/bill-of-materials.md) | The parts on the robot: electronics, servos, power, mechanics and the servo channel map |
+| [Build guide](docs/build-guide.md) | Build sequence, wiring architecture and commissioning gates |
+| [As-built record](docs/build-record-template.md) | Identity, servo routing and wiring for this robot, and what is still to record |
 | [Calibration guide](docs/calibration-guide.md) | Servo centring, the LIVE wizard and how the profile is stored |
 | [Quadruped Studio](docs/quadruped-studio.md) | Desktop app guide |
-| [Virtual Lab](docs/virtual-lab.md) | Simulation, LIVE workspace, controls and limitations |
+| [Virtual Lab](docs/virtual-lab.md) | Simulation, the seven LIVE views, connection safety and manual control |
+| [Route planner](docs/route-planner.md) | Waypoints, maps, running a route, and the camera panel |
 | [LIVE bring-up](docs/live-hardware-bring-up.md) | Safe procedure before physical calibration or motion |
 | [Control notes](docs/control-notes.md) | Coordinate frames, IK constants, servo mapping and mode flow |
 | [CRSF / ExpressLRS](docs/crsf.md) | Receiver parser and migration notes |

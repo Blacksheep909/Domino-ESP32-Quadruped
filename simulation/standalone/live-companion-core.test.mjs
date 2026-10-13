@@ -541,3 +541,19 @@ test("malformed physical messages cannot keep the robot or controller link fresh
   assert.equal(core.lastRobotMessageAt, lastRobotMessageAt);
   assert.equal(core.robotFresh(2_001), false);
 });
+
+// --- Calibration origin relay ---
+import * as originCore from "./live-companion-core.mjs";
+import * as originCalState from "./web/src/live-calibration-state.js";
+import assertCoreOrigin from "node:assert/strict";
+
+test("the robot's calibration origin is relayed, bounded and sanitised", () => {
+  const sanitize = originCore.sanitizeCalibrationOrigin;
+  assertCoreOrigin.deepEqual(sanitize({ source: "default-fallback", savedAt: 0, detail: "active2:bad-checksum", junk: 1 }),
+    { source: "default-fallback", usingDefaults: true, savedAt: 0, detail: "active2:bad-checksum" });
+  assertCoreOrigin.equal(sanitize({ source: "nvs", savedAt: 1790639152123 }).usingDefaults, false);
+  assertCoreOrigin.equal(sanitize({ source: "something-else" }), null);
+  assertCoreOrigin.equal(sanitize("nvs"), null);
+  assertCoreOrigin.equal(sanitize(undefined), null);
+  assertCoreOrigin.ok(originCalState.createLiveCalibrationProfile());
+});

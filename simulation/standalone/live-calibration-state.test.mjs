@@ -323,7 +323,8 @@ test("robot persistence commands always carry a concrete save timestamp", () => 
   const active = createLiveCalibrationProfile({ savedAt: 1200 });
   active.joints.find((joint) => joint.logicalChannel === 0).direction = -1;
   active.joints.find((joint) => joint.logicalChannel === 14).direction = -1;
-  assert.deepEqual(acceptRobotCalibrationProfile(state, active, "session-1"),
+  const accepted = acceptRobotCalibrationProfile(state, active, "session-1");
+  assert.deepEqual({ accepted: accepted.accepted, adopted: accepted.adopted },
     { accepted: true, adopted: true });
   assert.equal(state.profile.joints.find((joint) => joint.logicalChannel === 0).direction, -1);
   assert.equal(robotCalibrationReady(state, "session-1"), true);
@@ -342,7 +343,8 @@ test("a robot readback preserves unsaved calibration edits", () => {
   updateCalibrationJoint(state, { offsetDeg: 4 });
   const active = createLiveCalibrationProfile({ savedAt: 1000 });
   active.joints.find((joint) => joint.logicalChannel === 0).direction = -1;
-  assert.deepEqual(acceptRobotCalibrationProfile(state, active, "session-2"),
+  const readback = acceptRobotCalibrationProfile(state, active, "session-2");
+  assert.deepEqual({ accepted: readback.accepted, adopted: readback.adopted },
     { accepted: true, adopted: false });
   assert.equal(state.profile.joints[0].offsetDeg, 4);
   assert.equal(state.profile.joints[0].direction, 1);
@@ -371,7 +373,8 @@ test("disconnect resets bench permission and jog while retaining calibration wor
   assert.equal(calibrationProfileJson(state.profile), before);
   assert.equal(robotCalibrationReady(state, "before"), false);
   assert.equal(createCalibrationBenchCommand(state, "save-profile", "stale-save"), null);
-  assert.deepEqual(acceptRobotCalibrationProfile(state, createLiveCalibrationProfile({ savedAt: 2000 }), "after"),
+  const afterReconnect = acceptRobotCalibrationProfile(state, createLiveCalibrationProfile({ savedAt: 2000 }), "after");
+  assert.deepEqual({ accepted: afterReconnect.accepted, adopted: afterReconnect.adopted },
     { accepted: true, adopted: false });
   assert.equal(calibrationProfileJson(state.profile), before);
   assert.equal(robotCalibrationReady(state, "after"), true);
@@ -603,4 +606,93 @@ test("a complete calibration save envelope fits the firmware USB receive ring", 
   const bytes = Buffer.byteLength(JSON.stringify(physicalEnvelope), "utf8") + 1;
   assert.ok(bytes > 1024, "the regression command must exceed the former 1 KB reservation");
   assert.ok(bytes <= 4096, "profile writes must remain inside the firmware's 4 KB RX ring");
+});
+
+// --- Calibration origin: a robot on compiled defaults must never be mistaken for a saved profile ---
+import * as originState from "./web/src/live-calibration-state.js";
+import assertOrigin from "node:assert/strict";
+
+function originOwnerProfile(savedAt) {
+  const profile = originState.createLiveCalibrationProfile({ savedAt });
+  profile.joints.find((joint) => joint.logicalChannel === 0).direction = -1;
+  profile.joints.find((joint) => joint.logicalChannel === 14).direction = -1;
+  profile.joints.find((joint) => joint.logicalChannel === 3).offsetDeg = 7;
+  return profile;
+}
+
+test("a robot that lost its profile never overwrites the saved browser copy with defaults", () => {
+  const state = originState.createLiveCalibrationState(originOwnerProfile(5000));
+  const result = originState.acceptRobotCalibrationProfile(
+    state, originState.createLiveCalibrationProfile(), "session-lost",
+    { source: "default-fallback", detail: "active2:bad-checksum" },
+  );
+  assertOrigin.equal(result.robotUsingDefaults, true);
+  assertOrigin.equal(result.restored, true);
+  assertOrigin.equal(result.adopted, false);
+  assertOrigin.equal(state.dirty, true, "restored draft must require review and an explicit save");
+  assertOrigin.equal(state.profile.joints.find((joint) => joint.logicalChannel === 0).direction, -1);
+  assertOrigin.equal(state.profile.joints.find((joint) => joint.logicalChannel === 3).offsetDeg, 7);
+  const warning = originState.calibrationOriginWarning(state);
+  assertOrigin.equal(warning.level, "danger");
+  assertOrigin.match(warning.detail, /active2:bad-checksum/);
+  assertOrigin.match(warning.detail, /review it, then save/);
+});
+
+test("a default robot restores from the last robot-read profile when the browser copy is empty", () => {
+  const state = originState.createLiveCalibrationState();
+  const result = originState.acceptRobotCalibrationProfile(
+    state, originState.createLiveCalibrationProfile(), "session-empty-browser",
+    { source: "default-empty" }, originOwnerProfile(4000),
+  );
+  assertOrigin.equal(result.restored, true);
+  assertOrigin.equal(state.profile.joints.find((joint) => joint.logicalChannel === 0).direction, -1);
+  assertOrigin.equal(state.restorableProfile, true);
+});
+
+test("a default robot with no earlier saved profile adopts the defaults and still warns", () => {
+  const state = originState.createLiveCalibrationState();
+  const result = originState.acceptRobotCalibrationProfile(
+    state, originState.createLiveCalibrationProfile(), "session-fresh", { source: "default-empty" },
+  );
+  assertOrigin.equal(result.adopted, true);
+  assertOrigin.equal(result.restored, false);
+  assertOrigin.equal(originState.calibrationOriginWarning(state).level, "danger");
+  assertOrigin.match(originState.calibrationOriginWarning(state).detail, /compiled defaults/);
+});
+
+test("a saved robot profile replaces the browser copy and shows no warning", () => {
+  const state = originState.createLiveCalibrationState(originOwnerProfile(1000));
+  const result = originState.acceptRobotCalibrationProfile(
+    state, originOwnerProfile(9000), "session-ok", { source: "nvs", savedAt: 9000 },
+  );
+  assertOrigin.equal(result.adopted, true);
+  assertOrigin.equal(result.robotUsingDefaults, false);
+  assertOrigin.equal(state.profile.savedAt, 9000);
+  assertOrigin.equal(originState.calibrationOriginWarning(state), null);
+});
+
+test("backup, legacy and unreported origins are classified without false default alarms", () => {
+  const backup = originState.createLiveCalibrationState();
+  originState.acceptRobotCalibrationProfile(backup, originOwnerProfile(2000), "s", { source: "nvs-backup", detail: "active2:bad-magic" });
+  assertOrigin.equal(originState.calibrationOriginWarning(backup).level, "warning");
+  const legacy = originState.createLiveCalibrationState();
+  originState.acceptRobotCalibrationProfile(legacy, originOwnerProfile(2000), "s", { source: "nvs-legacy" });
+  assertOrigin.equal(originState.calibrationOriginWarning(legacy).level, "notice");
+  assertOrigin.equal(originState.normalizeCalibrationOrigin(undefined, originOwnerProfile(3000)).usingDefaults, false);
+  assertOrigin.equal(originState.normalizeCalibrationOrigin(undefined, originState.createLiveCalibrationProfile()).usingDefaults, true);
+  assertOrigin.equal(originState.normalizeCalibrationOrigin({ source: "<script>" }, originOwnerProfile(3000)).known, false);
+  originState.forgetRobotCalibrationProfile(legacy);
+  assertOrigin.equal(originState.calibrationOriginWarning(legacy), null);
+});
+
+test("unsaved browser edits are never replaced when the robot reports defaults", () => {
+  const state = originState.createLiveCalibrationState(originOwnerProfile(5000));
+  state.dirty = true;
+  state.profile.joints[0].offsetDeg = 4;
+  const result = originState.acceptRobotCalibrationProfile(
+    state, originState.createLiveCalibrationProfile(), "session-dirty", { source: "default-fallback" },
+  );
+  assertOrigin.equal(result.adopted, false);
+  assertOrigin.equal(result.restored, false);
+  assertOrigin.equal(state.profile.joints[0].offsetDeg, 4);
 });

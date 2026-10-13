@@ -51,7 +51,7 @@ Domino is a quadruped with three actuated joints per leg. Its frame is a service
 - **Mechanics.** A scratch-built layout with carbon members, printed structural parts and a service-friendly electronics cage. See the [CAD design notes](docs/cad-design.md).
 - **Electronics.** A purpose-made PCB, power distribution, voltage and current sensing, and servo power isolation. See [electronics](docs/electronics.md) and the [Gerber package](hardware/pcb/domino-quadruped-pcb-v1.1b).
 - **Firmware.** Per-leg kinematics for a custom linkage, a CRSF/ExpressLRS parser with link-loss handling, stand, stow, tilt and gait modes, per-servo safety limits, a watchdog and a power-fault guard. See the [engineering overview](docs/engineering-overview.md) and [control notes](docs/control-notes.md).
-- **Calibration.** Every servo needs a centre, a direction and travel limits. The profile is stored in the robot's flash, and Studio reads it back from the robot after every save to confirm it matches. See the [calibration guide](docs/calibration-guide.md).
+- **Calibration.** Every servo needs a centre, a direction and travel limits. The profile is stored in the robot's flash as a versioned, checksummed record with a backup, Studio reads it back after every save, and the robot reports where its profile came from so a robot running defaults is flagged immediately. See the [calibration guide](docs/calibration-guide.md).
 
 ## Quadruped Studio: the software side
 
@@ -72,7 +72,7 @@ Commissioning twelve high-torque servos safely needs good tools, so I built **Qu
 
 - **Simulation:** firmware modes on the actual CAD and linkage geometry, driven by keyboard, gamepad or CRSF transmitter.
 - **LIVE:** telemetry graphs, gait profiles, diagnostics and saved sessions with the physical robot.
-- **Safety first:** one-servo limited jog behind a bench-mode handshake, hard limits, and a calibration import that stays a visible draft until the robot's readback confirms it.
+- **Safety first:** one-servo limited jog behind a bench-mode handshake, hard limits, a calibration import that stays a visible draft until the robot's readback confirms it, and a warning if the robot is running default calibration.
 - **Firmware in the loop:** build and flash from inside the app, plus a software-in-the-loop executable that runs the production firmware before any hardware does.
 
 ## What this project demonstrates
@@ -99,8 +99,9 @@ npm install
 npm test
 npm start            # browser/source version at http://127.0.0.1:8770
 
-# Firmware software-in-the-loop check
+# Firmware software-in-the-loop check and calibration storage test
 ./simulation/sil/test.ps1
+./simulation/sil/test-calibration-storage.ps1
 ```
 
 ## Documentation

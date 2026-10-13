@@ -171,6 +171,14 @@ direction, and decide roll and tilt) and **output channel changes** are shown
 in red. If you see hip directions flipping that you did not mean to change,
 cancel and import your last good profile instead.
 
+### Saving without bench mode (firmware 0.8.21 and later)
+
+A save only writes flash (the robot turns every output off first), so on firmware
+0.8.21 and later it needs neither bench mode nor the "robot is supported" checkbox.
+Older firmware still requires bench mode to save. If **CONFIRM & SEND** is blocked,
+the reason is shown inside the dialog and the button stays disabled until it clears
+(for example: not connected, telemetry older than one second, robot not disarmed,
+another request pending, or, on older firmware, bench mode not active).
 When the robot is on defaults, Studio does **not** overwrite your saved browser
 copy with them. It keeps that copy (or the last profile read from a healthy
 robot) as an unsaved draft: review it, then send it to the robot. The serial

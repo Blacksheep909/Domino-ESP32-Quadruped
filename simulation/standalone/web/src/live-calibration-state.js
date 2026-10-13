@@ -2,6 +2,7 @@ import { legs, standServoReference } from "./domino-config.js";
 import {
   LIVE_CALIBRATION_JOG_LIMIT_DEG,
   LIVE_CALIBRATION_MAX_SPEED_DEG_PER_SEC,
+  firmwareSavesWithoutBench,
 } from "./live-calibration-protocol.js";
 
 export const LIVE_CALIBRATION_SCHEMA_VERSION = 2;
@@ -11,7 +12,7 @@ export const LIVE_CALIBRATION_PRE_SYNC_BACKUP_KEY = "domino-live-calibration-bef
 export const LIVE_CALIBRATION_DRAFT_STORAGE_KEY = "domino-live-calibration-draft-v1";
 export const LIVE_CALIBRATION_LAST_ROBOT_KEY = "domino-live-calibration-last-robot-v1";
 export const LIVE_CALIBRATION_CORRUPT_BACKUP_KEY = "domino-live-calibration-unreadable-v1";
-export { LIVE_CALIBRATION_JOG_LIMIT_DEG, LIVE_CALIBRATION_MAX_SPEED_DEG_PER_SEC };
+export { LIVE_CALIBRATION_JOG_LIMIT_DEG, LIVE_CALIBRATION_MAX_SPEED_DEG_PER_SEC, firmwareSavesWithoutBench };
 
 export const LIVE_CALIBRATION_STEPS = Object.freeze([
   Object.freeze({ id: "safety", label: "Safety" }),
@@ -406,12 +407,20 @@ export function calibrationControlBlockReason(state, context, action = "enter") 
   if (context.robotState !== "disarmed") return "Disarm the robot before physical calibration.";
   if (!context.calibrationSupported) return "This robot adapter does not support calibration.";
   if (!robotCalibrationReady(state, context.sessionId)) return "Read the active robot profile before physical calibration.";
-  if (!state.safetyConfirmed) return "Confirm that the robot is supported before requesting bench mode.";
+  // Saving to flash energizes nothing (the robot turns every output off first),
+  // so on firmware that supports it, it needs neither bench mode, the support
+  // checkbox, nor a healthy battery. Everything else about the link still applies.
+  const flashOnly = action === "save-profile" && context.saveWithoutBench === true;
+  if (!flashOnly && !state.safetyConfirmed) return "Confirm that the robot is supported before requesting bench mode.";
   if (!context.workspaceActive) return "Open the LIVE calibration page to request physical calibration.";
-  if (context.batteryLocked) return "Robot battery is too low for physical calibration.";
+  if (!flashOnly && context.batteryLocked) return "Robot battery is too low for physical calibration.";
   if (context.pending) return "Waiting for the current robot calibration request.";
   if (action === "enter" && state.benchModeAcknowledged) return "Bench mode is already acknowledged.";
-  if (action !== "enter" && !state.benchModeAcknowledged) return "Request bench mode before sending physical calibration commands.";
+  if (action !== "enter" && !flashOnly && !state.benchModeAcknowledged) {
+    return action === "save-profile"
+      ? "This robot's firmware needs bench mode to save: request bench mode first (or flash firmware 0.8.21 or later)."
+      : "Request bench mode before sending physical calibration commands.";
+  }
   return "";
 }
 
@@ -602,7 +611,7 @@ export function updateCalibrationChannelMap(state, channelMap) {
   return { accepted: true, issues: [] };
 }
 
-export function createCalibrationBenchCommand(state, action, requestId, now = Date.now(), smoothing = null) {
+export function createCalibrationBenchCommand(state, action, requestId, now = Date.now(), smoothing = null, options = {}) {
   const allowedActions = ["request-profile", "request-smoothing", "save-smoothing", "enter", "exit", "jog", "save-profile", "keepalive"];
   if (!state || !allowedActions.includes(action)) return null;
   if (action === "save-profile" && !robotCalibrationReady(state, state.robotProfileSessionId)) return null;
@@ -618,7 +627,9 @@ export function createCalibrationBenchCommand(state, action, requestId, now = Da
     requestId: String(requestId),
     timestampMs: now,
     safety: {
-      benchModeRequired: !["request-profile", "request-smoothing", "save-smoothing"].includes(action),
+      benchModeRequired: action === "save-profile" && options.saveWithoutBench === true
+        ? false
+        : !["request-profile", "request-smoothing", "save-smoothing"].includes(action),
       maxSpeedDegPerSec: LIVE_CALIBRATION_MAX_SPEED_DEG_PER_SEC,
       jogLimitDeg: LIVE_CALIBRATION_JOG_LIMIT_DEG,
     },

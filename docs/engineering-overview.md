@@ -252,13 +252,9 @@ production firmware with:
 - an orbit camera and axis navigation; and
 - live channel, firmware, contact, linkage, and debug telemetry.
 
-Launch it with:
+It runs inside Quadruped Studio (pnpm run desktop:start from simulation/standalone).
 
-```powershell
-.\simulation\standalone\launch.ps1
-```
-
-The important current boundary is documented rather than hidden: the browser
+The important current boundary is documented rather than hidden: the app
 renders Domino's actual CAD, but its collision model is still a simplified
 twelve-joint proxy while the exact closed-chain contact model is being tuned.
 This makes the Virtual Lab useful for radio mapping, firmware modes, commanded

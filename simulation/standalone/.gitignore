@@ -3,3 +3,7 @@ node_modules/
 runtime/
 desktop/resources/
 out/
+
+# Local browser launcher helpers (not part of the app)
+launch.ps1
+stop.ps1

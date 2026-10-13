@@ -26,15 +26,8 @@ and link statistics become fresh, and no servo moves.
 
 ## Gate 1: read-only USB PC link
 
-Run the Virtual Lab and physical companion in separate terminals:
-
-```powershell
-.\simulation\standalone\launch.ps1
-.\simulation\standalone\start-live-companion.ps1 -Transport usb -Device COMx
-```
-
-Open `http://127.0.0.1:8770`, select **LIVE**, then **PAIR ROBOT**. Verify the robot
-identity and establish the read-only session. Do not arm.
+Open Quadruped Studio (it bundles the physical companion), select **LIVE**, then **PAIR ROBOT**,
+and choose the USB adapter. Verify the robot identity and establish the read-only session. Do not arm.
 
 Expected evidence:
 

@@ -120,8 +120,9 @@ cd simulation\standalone
 pnpm install
 cd ..\..
 pio pkg install --global --tool platformio/toolchain-gccmingw32
-.\simulation\standalone\launch.ps1      # then open http://127.0.0.1:8770
-.\simulation\standalone\stop.ps1        # stops both local processes
+.\simulation\sil\build.ps1
+cd simulation\standalone
+pnpm run desktop:start
 ```
 
 Tests: `cd simulation\standalone; pnpm test`. `dist/`, `node_modules/` and `runtime/` are ignored.

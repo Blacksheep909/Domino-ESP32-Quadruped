@@ -356,16 +356,13 @@ cd ..\..
 pio pkg install --global --tool platformio/toolchain-gccmingw32
 ```
 
-Then launch the local application:
+Then run the desktop application from source:
 
 ```powershell
-.\simulation\standalone\launch.ps1
+.\simulation\sil\build.ps1
+cd simulation\standalone
+pnpm run desktop:start
 ```
-
-Open `http://127.0.0.1:8770`.
-
-For a hands-off renderer and linkage check, open
-`http://127.0.0.1:8770/?demo=1`.
 
 ## Input
 
@@ -395,7 +392,7 @@ vertical commands forward/reverse travel and right-stick horizontal commands
 turning. Gait cannot run while SD/tilt is active. The renderer and physics proxy
 consume the same 12 firmware-authored servo outputs.
 
-### Website gait lab
+### Gait lab
 
 `TUNE` opens a simulator-only gait lab for evaluating candidate walking values
 without rebuilding or changing the ESP32 firmware. Its Stable, Balanced, and
@@ -427,12 +424,6 @@ radio mapping, firmware modes, commanded poses, travel limits, gross contact
 behavior, and obvious unsafe transitions before powering the physical robot.
 The visible **RAPIER + CAD / ASSISTED** status is deliberate: only the raw CAD
 endpoint regression is treated as a fixed-foot kinematic proof.
-
-## Stop
-
-```powershell
-.\simulation\standalone\stop.ps1
-```
 
 This environment is under active local development and is not ready for public
 repository publication.

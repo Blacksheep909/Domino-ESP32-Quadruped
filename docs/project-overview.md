@@ -37,10 +37,6 @@ the Virtual Lab UI, local service, CAD, firmware SIL, and companion adapter so
 Simulation and LIVE work offline without a separately opened terminal.
 
 - **[Download the latest Domino Quadruped Studio Windows release](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/releases/latest)** — preferred installer and portable desktop builds.
-- **[Open the browser/source version](../simulation/standalone)** — secondary development and quick-inspection option; it runs locally from the repository.
-
-The browser version remains available for development and lightweight review,
-but the desktop application is the primary distribution and update path.
 
 The LIVE Sensors view includes a top-down route planner, local autosave, named
 editable waypoints, precise local cursor coordinates, offline route preview,
@@ -104,10 +100,7 @@ research environment and the physical firmware project.
 
 ![Domino Virtual Lab simulation workspace](images/virtual-lab-simulation-workspace.png)
 
-The browser/source version remains available as a secondary path for local
-development and quick inspection. Clone the repository, install the Virtual
-Lab's Node dependencies, and run its PowerShell launcher. The desktop build is
-the preferred distribution. See the [Virtual Lab guide](virtual-lab.md)
+The desktop build is the distribution. See the [Virtual Lab guide](virtual-lab.md)
 for setup, screenshots, architecture, controls, and current limitations.
 
 ## Domino Virtual Lab
@@ -136,8 +129,8 @@ Simulation and LIVE are deliberately separate top-level workspaces:
 
 The LIVE digital twin can overlay robot-reported measured joint and IMU state
 against the expected command. Its seven pages divide normal operation from the
-deeper engineering tools. The desktop and browser builds use the same frontend
-source, so LIVE layout, typography, and behavior are kept in sync:
+deeper engineering tools. The desktop app is built from one frontend
+source, so LIVE layout, typography, and behavior stay consistent:
 
 The always-available **PROJECT** control now exports and imports a validated
 Dog V2 `.qstudio.json` bundle. This is the first project-driven desktop step:
@@ -241,16 +234,14 @@ bundles the updated firmware workspace, and publishes the installer artifacts
 used by the updater. Use `pnpm run desktop:start` for immediate local iteration;
 that development build intentionally does not check for published updates.
 
-For source development, launch from the repository root:
+For source development, run the desktop app from the repository:
 
 ```powershell
 cd simulation\standalone
 pnpm install
-cd ..\..
-.\simulation\standalone\launch.ps1
+pnpm run desktop:start
 ```
 
-The source launcher starts the local service and opens the browser build.
 Full setup, controller notes, connection transports, safety contracts, and
 troubleshooting are in the [Virtual Lab guide](virtual-lab.md).
 

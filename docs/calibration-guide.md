@@ -128,3 +128,31 @@ gait. Tune in a neutral stand pose with tilt, balance, and gait disabled.
 - A foot moves sideways during stow.
 
 If trims become extreme, stop and inspect horn clocking, servo orientation, channel mapping, and mechanical assembly before continuing.
+
+## Where is the robot's profile coming from? (firmware 0.8.19 and later)
+
+The profile is stored in the ESP32's flash (NVS namespace `domino-cal`) as an
+explicit, little-endian, checksummed 212-byte record (`active2`) instead of a
+raw C struct dump, so a compiler or struct change can no longer make a saved
+profile unreadable. Each save first keeps the profile being replaced as
+`backup2`, then writes and read-back-verifies the new record. At boot the
+firmware tries `active2`, then `backup2`, then the older raw blob (`active`,
+read-only, migrated on the next save). Defaults are used only when nothing
+usable exists, and the reason is reported.
+
+The robot reports the source in `robot-hello` (`calibration`) and with every
+profile readback (`origin`). Studio shows a banner on the Calibration page:
+
+| Source | Meaning |
+| --- | --- |
+| `nvs` | Normal: the current saved record. |
+| `nvs-backup` | The newest record was unreadable; the previous profile is in use. Review and save to refresh it. |
+| `nvs-legacy` | Profile saved by firmware 0.8.18 or earlier. Save once to upgrade the format. |
+| `default-empty` | Nothing was ever saved (first boot, or flash erased). **The robot is on compiled defaults.** |
+| `default-fallback` | Something was stored but could not be read. **The robot is on compiled defaults.** The `detail` field names the reason (for example `active2:bad-checksum`). |
+
+When the robot is on defaults, Studio does **not** overwrite your saved browser
+copy with them. It keeps that copy (or the last profile read from a healthy
+robot) as an unsaved draft: review it, then send it to the robot. The serial
+console also prints `Calibration source: ...` at boot. The hip, upper and lower
+trims in `src/leg_controller.h` are compiled in and apply under every profile.

@@ -249,6 +249,7 @@ import { createJointInspectionOverlay } from "./joint-inspection-overlay.js";
 import {
   LIVE_CALIBRATION_CORRUPT_BACKUP_KEY,
   LIVE_CALIBRATION_LAST_ROBOT_KEY,
+  calibrationChangeSummary,
   calibrationOriginWarning,
   acceptCalibrationSaveReadback,
   acceptRobotCalibrationProfile,
@@ -7969,7 +7970,51 @@ function openCalibrationWiringDialog() {
   document.querySelector("#live-calibration-wiring-dialog").showModal();
 }
 
+function renderRobotCalibrationChanges() {
+  const box = document.querySelector("#live-calibration-robot-confirm-changes");
+  box.replaceChildren();
+  const summary = calibrationChangeSummary(liveCalibrationState.robotProfile, liveCalibrationState.profile);
+  const add = (tone, title, lines) => {
+    const section = document.createElement("div");
+    section.dataset.tone = tone;
+    const heading = document.createElement("strong");
+    heading.textContent = title;
+    section.append(heading);
+    lines.forEach((line) => {
+      const row = document.createElement("div");
+      row.textContent = line;
+      section.append(row);
+    });
+    box.append(section);
+  };
+  if (!summary.comparable) {
+    add("notice", "CANNOT COMPARE WITH THE ROBOT", ["The robot's current profile has not been read in this session."]);
+    return;
+  }
+  if (summary.total === 0) {
+    add("notice", "NO CHANGES", ["This profile matches what the robot already holds."]);
+    return;
+  }
+  add("notice", `THIS SEND CHANGES ${summary.total} OF 12 JOINTS`, []);
+  if (summary.directionChanges.length) {
+    add("danger", "DIRECTION CHANGES - these flip which way a servo turns; roll and tilt depend on them",
+      summary.directionChanges.map((change) => `${change.label}: ${change.from} to ${change.to}`));
+  }
+  if (summary.channelChanges.length) {
+    add("danger", "OUTPUT CHANNEL CHANGES",
+      summary.channelChanges.map((change) => `${change.label}: output ${change.from} to ${change.to}`));
+  }
+  if (summary.offsetChanges.length) {
+    add("warning", "OFFSET CHANGES",
+      summary.offsetChanges.map((change) => `${change.label}: ${change.from} to ${change.to} degrees`));
+  }
+  if (summary.limitChanges.length) {
+    add("warning", "LIMIT CHANGES", summary.limitChanges.map((change) => change.label));
+  }
+}
+
 function openRobotCalibrationConfirmation() {
+  renderRobotCalibrationChanges();
   document.querySelector("#live-calibration-robot-confirm-ack").checked = false;
   document.querySelector("#live-calibration-robot-confirm-send").disabled = true;
   document.querySelector("#live-calibration-robot-confirm").showModal();
@@ -8294,9 +8339,9 @@ function acceptCalibrationAcknowledgement(message) {
             result.matched ? "success" : "warning", 4200);
         } else {
           status.textContent = result.restored
-            ? "Robot is on DEFAULT calibration. Your last known profile is loaded as an unsaved draft - review it, then send it to the robot."
+            ? "Robot has no saved profile. Your last known profile is loaded as an unsaved draft - review it, then send it to the robot."
             : result.robotUsingDefaults
-              ? "Robot is on DEFAULT calibration and Studio has no earlier saved profile to restore."
+              ? "Robot has no saved profile (see the banner for what it is running) and Studio has no earlier saved profile to restore."
               : result.adopted
                 ? "Active robot calibration loaded. Offsets map the physical servos to the CAD neutral; CAD foot geometry stays the same."
                 : "Active robot profile read separately. Your browser draft was kept; Review shows both.";

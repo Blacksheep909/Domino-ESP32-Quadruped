@@ -148,8 +148,28 @@ profile readback (`origin`). Studio shows a banner on the Calibration page:
 | `nvs` | Normal: the current saved record. |
 | `nvs-backup` | The newest record was unreadable; the previous profile is in use. Review and save to refresh it. |
 | `nvs-legacy` | Profile saved by firmware 0.8.18 or earlier. Save once to upgrade the format. |
-| `default-empty` | Nothing was ever saved (first boot, or flash erased). **The robot is on compiled defaults.** |
-| `default-fallback` | Something was stored but could not be read. **The robot is on compiled defaults.** The `detail` field names the reason (for example `active2:bad-checksum`). |
+| `default-empty` | Nothing was ever saved (first boot, or flash erased). The robot runs the **built-in baseline** (see below). |
+| `default-fallback` | Something was stored but could not be read. The robot runs the **built-in baseline**. The `detail` field names the reason (for example `active2:bad-checksum`). |
+
+### The built-in baseline (firmware 0.8.20 and later)
+
+The profile the firmware and Studio fall back to is **not** a blank CAD default.
+It is the verified profile for the installed hardware: the left hips (CH0 and
+CH14) inverted, and the horn trims (CH1 +4, CH3 +12, CH7 -6, CH8 +6, CH9 +12,
+CH10 -3, CH11 +12). A plain CAD-basis default does not invert the left hips,
+which breaks roll and tilt, so every reset or fallback used to wipe them.
+**Restore defaults** in Studio now restores this baseline too. The two tables
+(`kBaselineOffsetDeg` and `kBaselineDirection` in `src/servo_calibration.cpp`,
+and `DOMINO_BASELINE_CALIBRATION` in `live-calibration-state.js`) must stay
+identical; a test enforces it. If you recalibrate the robot, update both.
+
+### Before every send
+
+The confirmation dialog compares your profile with what the robot holds and
+lists what the send changes. **Direction changes** (which flip a servo's turn
+direction, and decide roll and tilt) and **output channel changes** are shown
+in red. If you see hip directions flipping that you did not mean to change,
+cancel and import your last good profile instead.
 
 When the robot is on defaults, Studio does **not** overwrite your saved browser
 copy with them. It keeps that copy (or the last profile read from a healthy

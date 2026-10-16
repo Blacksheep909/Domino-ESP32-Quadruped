@@ -1,0 +1,232 @@
+{
+  "assumptions": {
+    "massKg": 2.15,
+    "contactFactor": 3,
+    "verticalN": 63.2745,
+    "frame": "screen right positive horizontal; screen up positive vertical; pins horizontal and foot at right",
+    "model": "ideal planar pin joints; diagonal is a two-force member; member self-weight/inertia, lateral forces, compliance and actuator stall omitted",
+    "travel": "candidate kinematic poses inside +/-45 degree default CAD-drive range, not validated physical operating limits"
+  },
+  "cases": [
+    {
+      "name": "standing vertical",
+      "heightMm": 275.993,
+      "footXmm": 2.5449999999999084,
+      "cadDriveDegrees": {
+        "upper": 0,
+        "lower": 0
+      },
+      "worldFootForceN": {
+        "x": 0,
+        "z": 63.2745
+      },
+      "left": {
+        "rightN": -25.173441447374373,
+        "upN": 92.9021068485392,
+        "magnitudeN": 96.25229145948569,
+        "angleFromRightHorizontalDeg": 105.16122380972342
+      },
+      "right": {
+        "rightN": 79.9608494279491,
+        "upN": -124.55652639810698,
+        "magnitudeN": 148.01373486809078,
+        "angleFromRightHorizontalDeg": -57.30098354244786
+      },
+      "localFootForceN": {
+        "x": -54.78740798057471,
+        "z": 31.65441954956777
+      },
+      "localEquilibriumResidual": {
+        "forceXN": 1.4210854715202004e-14,
+        "forceZN": -7.105427357601002e-15,
+        "momentNm": -8.881784197001252e-16
+      },
+      "effectiveLeverMm": -38.6080302988337,
+      "equilibriumResidual": {
+        "forceXN": 0,
+        "forceZN": -1.4210854715202004e-14,
+        "momentNm": 0
+      },
+      "requiredDriveTorquesNm": {
+        "upper": -3.7150599694867337,
+        "lower": 7.130083442642044
+      }
+    },
+    {
+      "name": "220 mm loaded crouch",
+      "heightMm": 219.99999928552606,
+      "footXmm": 2.544999522178959,
+      "cadDriveDegrees": {
+        "upper": 12.515654484582722,
+        "lower": -17.811945097398706
+      },
+      "worldFootForceN": {
+        "x": 0,
+        "z": 63.2745
+      },
+      "left": {
+        "rightN": 37.732158401411354,
+        "upN": 139.22570407026137,
+        "magnitudeN": 144.24809340677328,
+        "angleFromRightHorizontalDeg": 74.83627169579455
+      },
+      "right": {
+        "rightN": 8.895590018838007,
+        "upN": -181.99853922889838,
+        "magnitudeN": 182.21580558018593,
+        "angleFromRightHorizontalDeg": -87.2017661537783
+      },
+      "localFootForceN": {
+        "x": -46.62774842024936,
+        "z": 42.77283515863701
+      },
+      "localEquilibriumResidual": {
+        "forceXN": 0,
+        "forceZN": 0,
+        "momentNm": 0
+      },
+      "effectiveLeverMm": -38.60757297151099,
+      "equilibriumResidual": {
+        "forceXN": 0,
+        "forceZN": 0,
+        "momentNm": 0
+      },
+      "requiredDriveTorquesNm": {
+        "upper": -5.5682241612426,
+        "lower": 8.983042144344562
+      }
+    },
+    {
+      "name": "300 mm loaded extension",
+      "heightMm": 299.99999999998954,
+      "footXmm": 2.544999999963715,
+      "cadDriveDegrees": {
+        "upper": -8.064904482502428,
+        "lower": 9.57853745584088
+      },
+      "worldFootForceN": {
+        "x": 0,
+        "z": 63.2745
+      },
+      "left": {
+        "rightN": -39.0374766615884,
+        "upN": 60.57007868438737,
+        "magnitudeN": 72.0601069658999,
+        "angleFromRightHorizontalDeg": 122.80182099939123
+      },
+      "right": {
+        "rightN": 97.72280045227924,
+        "upN": -84.22795521276106,
+        "magnitudeN": 129.0119923400878,
+        "angleFromRightHorizontalDeg": -40.75827760111468
+      },
+      "localFootForceN": {
+        "x": -58.68532379069086,
+        "z": 23.65787652837368
+      },
+      "localEquilibriumResidual": {
+        "forceXN": -1.4210854715202004e-14,
+        "forceZN": -1.0658141036401503e-14,
+        "momentNm": -4.440892098500626e-16
+      },
+      "effectiveLeverMm": -33.62222074303537,
+      "equilibriumResidual": {
+        "forceXN": 0,
+        "forceZN": 0,
+        "momentNm": 0
+      },
+      "requiredDriveTorquesNm": {
+        "upper": -2.421773293562607,
+        "lower": 5.836792344555531
+      }
+    },
+    {
+      "name": "standing fore-aft contact +0.5 Fz",
+      "heightMm": 275.993,
+      "footXmm": 2.5449999999999084,
+      "cadDriveDegrees": {
+        "upper": 0,
+        "lower": 0
+      },
+      "worldFootForceN": {
+        "x": 31.63725,
+        "z": 63.2745
+      },
+      "left": {
+        "rightN": -55.52066162777332,
+        "upN": 204.8979457031281,
+        "magnitudeN": 212.28686257267015,
+        "angleFromRightHorizontalDeg": 105.16122380972342
+      },
+      "right": {
+        "rightN": 94.48085983356417,
+        "upN": -263.94606924298324,
+        "magnitudeN": 280.34650050198826,
+        "angleFromRightHorizontalDeg": -70.30490946030447
+      },
+      "localFootForceN": {
+        "x": -38.96019820579083,
+        "z": 59.048123539855126
+      },
+      "localEquilibriumResidual": {
+        "forceXN": 1.4210854715202004e-14,
+        "forceZN": -1.4210854715202004e-14,
+        "momentNm": 0
+      },
+      "effectiveLeverMm": -38.6080302988337,
+      "equilibriumResidual": {
+        "forceXN": 7.105427357601002e-15,
+        "forceZN": -1.4210854715202004e-14,
+        "momentNm": 0
+      },
+      "requiredDriveTorquesNm": {
+        "upper": -8.193652373987074,
+        "lower": 3.542670605948595
+      }
+    },
+    {
+      "name": "standing fore-aft contact -0.5 Fz",
+      "heightMm": 275.993,
+      "footXmm": 2.5449999999999084,
+      "cadDriveDegrees": {
+        "upper": 0,
+        "lower": 0
+      },
+      "worldFootForceN": {
+        "x": -31.63725,
+        "z": 63.2745
+      },
+      "left": {
+        "rightN": 5.173778733024594,
+        "upN": -19.093732006049724,
+        "magnitudeN": 19.782279653698794,
+        "angleFromRightHorizontalDeg": -74.83877619027659
+      },
+      "right": {
+        "rightN": 65.440839022334,
+        "upN": 14.83301644676931,
+        "magnitudeN": 67.10083299674575,
+        "angleFromRightHorizontalDeg": 12.77104237290817
+      },
+      "localFootForceN": {
+        "x": -70.6146177553586,
+        "z": 4.260715559280413
+      },
+      "localEquilibriumResidual": {
+        "forceXN": 0,
+        "forceZN": 0,
+        "momentNm": 3.3306690738754696e-16
+      },
+      "effectiveLeverMm": -38.6080302988337,
+      "equilibriumResidual": {
+        "forceXN": -3.552713678800501e-15,
+        "forceZN": 0,
+        "momentNm": 0
+      },
+      "requiredDriveTorquesNm": {
+        "upper": 0.7635324350136059,
+        "lower": 10.717496279335494
+      }
+    }
+  ]
+}

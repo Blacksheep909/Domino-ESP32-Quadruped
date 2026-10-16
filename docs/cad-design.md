@@ -8,6 +8,8 @@ Domino is built around a carbon-and-printed composite structure, modular 3-DoF l
 
 The STEP files live under [`cad/step`](../cad/step).
 
+**Latest robot (v6):** download [`cad/step/latest/Domino_v6_full_robot.step`](../cad/step/latest/Domino_v6_full_robot.step) for the complete current robot. Per-leg and body-frame files are listed in [`cad/README.md`](../cad/README.md). The stress analysis of the generative knee bracket is in [`cad/fea_generative_bracket`](../cad/fea_generative_bracket). The table below lists the older exports used by the URDF and simulation work.
+
 | File | Role |
 | --- | --- |
 | [`cad/step/assembly/Domino_URDF_Parts.step`](../cad/step/assembly/Domino_URDF_Parts.step) | Full assembly export for viewing the complete robot. |

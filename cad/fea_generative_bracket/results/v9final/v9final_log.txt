@@ -1,0 +1,10 @@
+﻿volumes in STEP: [(20579, 1)] -> keeping 1 vol 20579 mm3
+mesh: 33712 nodes, 152347 tets (8s)
+assembled K: 711735 dofs (62s)
+fixed bore facets 1226 | pin A facets 664 (hole r 1.55 mm) | pin B facets 670 (hole r 1.55 mm)
+standing vertical                    max VM   0.81 MPa (99.9%  0.50) disp 0.007 mm  SF 62.1 / 31.0  (326s)
+220 mm loaded crouch                 max VM   1.25 MPa (99.9%  0.76) disp 0.009 mm  SF 40.1 / 20.1  (353s)
+300 mm loaded extension              max VM   0.52 MPa (99.9%  0.33) disp 0.005 mm  SF 97.0 / 48.5  (311s)
+standing fore-aft +0.5 Fz            max VM   1.78 MPa (99.9%  1.10) disp 0.016 mm  SF 28.0 / 14.0  (300s)
+standing fore-aft -0.5 Fz            max VM   0.25 MPa (99.9%  0.14) disp 0.002 mm  SF 201.1 / 100.5  (299s)
+done in 1663s

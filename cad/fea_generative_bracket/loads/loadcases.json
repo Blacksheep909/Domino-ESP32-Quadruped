@@ -1,0 +1,7 @@
+[
+ {"key": "standing",  "name": "standing vertical",             "B": [-25.1734, 92.9021],  "A": [79.9608, -124.5565]},
+ {"key": "crouch",    "name": "220 mm loaded crouch",          "B": [37.7322, 139.2257],  "A": [8.8956, -181.9985]},
+ {"key": "extension", "name": "300 mm loaded extension",       "B": [-39.0375, 60.5701],  "A": [97.7228, -84.2280]},
+ {"key": "fore_pos",  "name": "standing fore-aft +0.5 Fz",     "B": [-55.5207, 204.8979], "A": [94.4809, -263.9461]},
+ {"key": "fore_neg",  "name": "standing fore-aft -0.5 Fz",     "B": [5.1738, -19.0937],   "A": [65.4408, 14.8330]}
+]

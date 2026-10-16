@@ -57,7 +57,7 @@ Domino is a quadruped with three actuated joints per leg. Its frame is a service
 
 <a href="cad/fea_generative_bracket"><img src="docs/images/fea-knee-bracket.png" alt="Von Mises stress plot of the generative knee bracket under the worst-case load" width="520"></a>
 
-The knee bracket is a generative design printed in solid PETG. A finite-element check under Quadruped Studio's pin-reaction load cases puts the worst case at 1.78 MPa, a safety factor of about 28 within a layer and 14 across layers. See the [full analysis](cad/fea_generative_bracket), or download the [latest robot as STEP](cad/step/latest/Domino_v6_full_robot.step).
+The knee bracket is a generative design printed in PETG. I checked it with a linear finite-element model using the pin loads Quadruped Studio computes for standing, crouch, extension and fore-aft pushes. The body turned out to be lightly loaded. The real limit is bearing stress at the 3 mm bolt holes, where a hand check gives a margin of roughly 2–7, depending on how well the two pad halves share the load. Impacts and fatigue are not modelled. See the [full analysis](cad/fea_generative_bracket), or download the [latest robot as STEP](cad/step/latest/Domino_v6_full_robot.step).
 
 ## Quadruped Studio: the software side
 

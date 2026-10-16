@@ -8,9 +8,13 @@ Linear static finite-element analysis of Domino's generative knee bracket (`Gene
 
 ## Result Summary
 
-The current bracket (`v9final`: thickened walls plus the pad-A insertion channel) peaks at **1.78 MPa** in the worst load case. That gives a safety factor of about **28 within a layer and 14 across layers**.
+**The bracket body is not the limiting feature; the bolt holes are.** Under these load cases the body peaks at only 1.78 MPa. The FE model spreads each pin load evenly over the hole walls, which hides the real bolt contact. A hand bearing check on those holes gives a margin of roughly **2–7**, depending on how evenly the two pad halves share the load (see [Bolt-hole bearing](#bolt-hole-bearing)). So the body has material to spare, and the holes, impacts and print quality are what decide whether the part survives.
 
-| Load case | Peak von Mises | Max displacement | SF in-layer (50 MPa) | SF inter-layer (25 MPa) |
+These are static loads with a 3× dynamic factor. Falls, servo stalls and fatigue are not included (see [limitations](#limitations)).
+
+The table gives the FE results for the bracket body (`v9final`: thickened walls plus the pad-A insertion channel). The "body SF" columns compare peak body stress against PETG strength. They do **not** describe the bolt holes.
+
+| Load case | Peak von Mises | Max displacement | Body SF in-layer (50 MPa) | Body SF inter-layer (25 MPa) |
 | --- | --- | --- | --- | --- |
 | Standing vertical | 0.81 MPa | 0.007 mm | 62 | 31 |
 | 220 mm loaded crouch | 1.25 MPa | 0.009 mm | 40 | 20 |
@@ -32,6 +36,17 @@ Comparison with the original generative output (`legv8`), under the same load ca
 - **Hottest spot, in every case:** the inner corner where the organic body meets the pad-B shaft-clamp block. It is the dark-red patch in the "Front (−Y)" and "Iso" views.
 - **Why the stresses are low overall:** the two pin reactions point in nearly opposite directions. Most of the load crosses the web between the pins, and only a small net force goes into the L3 tube.
 - **What the edits did:** the seam repair, the clamp-clearance reshaping and the pad-A insertion channel all sit in low-stress regions. The 0.75 mm wall thickening lowered the peaks by about 17% compared with `legv8`.
+
+## Bolt-Hole Bearing
+
+The FE model spreads each pin reaction evenly over the hole walls, so it underestimates contact stress at the bolts. A hand check on the worst-loaded pin (pad A, about 280 N, 3.1 mm hole, two 6 mm pad halves) gives:
+
+| Assumption | Bearing stress | SF in-layer (50 MPa) | SF inter-layer (25 MPa) |
+| --- | --- | --- | --- |
+| Both pad halves share the load (projected area 3.1 × 12 mm) | ~7.5 MPa | ~7 | ~3 |
+| One pad half takes most of it (slop or misalignment, 3.1 × 6 mm) | ~15 MPa | ~3 | ~1.7 |
+
+These holes are the real limit under walking loads. Keep the bolts snug so both pad halves share the load. Print with enough walls around each hole (4 or more) that it is surrounded by solid perimeters rather than infill.
 
 ## Load Cases
 

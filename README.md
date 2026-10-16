@@ -53,6 +53,12 @@ Domino is a quadruped with three actuated joints per leg. Its frame is a service
 - **Firmware.** Per-leg kinematics for a custom linkage, a CRSF/ExpressLRS parser with link-loss handling, stand, stow, tilt and gait modes, per-servo safety limits, a watchdog and a power-fault guard. See the [engineering overview](docs/engineering-overview.md) and [control notes](docs/control-notes.md).
 - **Calibration.** Every servo needs a centre, a direction and travel limits. The profile is stored in the robot's flash as a versioned, checksummed record with a backup, Studio reads it back after every save, and the robot reports where its profile came from so a robot running defaults is flagged immediately. See the [calibration guide](docs/calibration-guide.md).
 
+### Generative knee bracket: stress analysis
+
+<a href="cad/fea_generative_bracket"><img src="docs/images/fea-knee-bracket.png" alt="Von Mises stress plot of the generative knee bracket under the worst-case load" width="520"></a>
+
+The knee bracket is a generative design printed in solid PETG. A finite-element check under Quadruped Studio's pin-reaction load cases puts the worst case at 1.78 MPa, a safety factor of about 28 within a layer and 14 across layers. See the [full analysis](cad/fea_generative_bracket), or download the [latest robot as STEP](cad/step/latest/Domino_v6_full_robot.step).
+
 ## Quadruped Studio: the software side
 
 Commissioning twelve high-torque servos safely needs good tools, so I built **Quadruped Studio**, a Windows desktop app. It runs the real firmware kinematics against the CAD model in simulation, then connects to the physical robot for calibration, gait tuning, diagnostics and recording.

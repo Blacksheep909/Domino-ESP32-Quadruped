@@ -442,7 +442,7 @@ export function calibrationControlBlockReason(state, context, action = "enter") 
   if (action === "enter" && state.benchModeAcknowledged) return "A jog session is already running.";
   if (action !== "enter" && !flashOnly && !state.benchModeAcknowledged) {
     return action === "save-profile"
-      ? "This robot's firmware needs bench mode to save: start a jog session first (or flash firmware 0.8.21 or later)."
+      ? "This robot's firmware is older than 0.8.21 and only saves during a jog session. Start one above, or flash firmware 0.8.22."
       : "Start a jog session before moving servos.";
   }
   return "";

@@ -36,6 +36,8 @@ import {
   trimCalibrationJoint,
   updateCalibrationJoint,
   updateCalibrationChannelMap,
+  unsavedCalibrationChanges,
+  calibrationSaveNeedsAcknowledgement,
 } from "./web/src/live-calibration-state.js";
 import {
   validCalibrationAcknowledgement,
@@ -464,6 +466,7 @@ function browserCalibrationHarness() {
     motionSmoothingSyncRetryAt: 0, robotCalibrationReady, forgetRobotCalibrationProfile,
     calibrationObservedSessionId: "session", calibrationLastKeepaliveAt: 0,
     calibrationOpenWiringAfterExit: false, calibrationRequestTimeout: 123,
+    calibrationJogQueued: false, calibrationJogQueuedPurpose: "",
     calibrationBenchFeedback: "", liveConnectionState: {},
     applicationState: { workspace: "real-robot" }, WORKSPACE_REAL_ROBOT: "real-robot",
     liveViewState: { selected: "calibration" }, LIVE_VIEW_CALIBRATION: "calibration",
@@ -579,7 +582,7 @@ test("physical calibration blockers identify armed, stale, missing profile and u
   assert.match(calibrationControlBlockReason(state, { ...context, calibrationSupported: false }), /support/);
   assert.match(calibrationControlBlockReason(state, { ...context, sessionId: "other" }), /profile/);
   assert.match(calibrationControlBlockReason(state, { ...context, batteryLocked: true }), /battery/);
-  assert.match(calibrationControlBlockReason(state, context, "jog"), /bench/);
+  assert.match(calibrationControlBlockReason(state, context, "jog"), /jog session/);
 });
 
 test("browser disconnect cancels a pending bench request and ignores its late ACK", () => {
@@ -836,4 +839,65 @@ test("the save command states whether it needs bench mode and both forms validat
   // Other actions keep their fixed requirement.
   const jog = originState.createCalibrationBenchCommand(state, "jog", "c", 5000, null, { saveWithoutBench: true });
   assertOrigin.equal(jog.safety.benchModeRequired, true);
+});
+// --- 0.4.3: calibration must hold between modes and restarts ---
+
+test("a kept draft that equals the robot profile is not reported as unsaved", () => {
+  const state = createLiveCalibrationState();
+  const robot = createLiveCalibrationProfile({ savedAt: 5000 });
+  state.profile = createLiveCalibrationProfile({ ...robot, savedAt: 1 });
+  state.dirty = true;
+  const result = acceptRobotCalibrationProfile(state, robot, "session");
+  assert.equal(result.adopted, true);
+  assert.equal(state.dirty, false);
+  assert.equal(state.profile.savedAt, 5000);
+});
+
+test("a kept draft that differs from the robot stays unsaved and lists its changes", () => {
+  const state = createLiveCalibrationState();
+  updateCalibrationJoint(state, { offsetDeg: 7 });
+  acceptRobotCalibrationProfile(state, createLiveCalibrationProfile({ savedAt: 5000 }), "session");
+  assert.equal(state.dirty, true);
+  const changes = unsavedCalibrationChanges(state);
+  assert.equal(changes.total, 1);
+  assert.equal(changes.offsetChanges.length, 1);
+  assert.equal(calibrationSaveNeedsAcknowledgement(changes), false);
+});
+
+test("direction or wiring changes need an explicit tick; trims do not", () => {
+  const state = createLiveCalibrationState();
+  acceptRobotCalibrationProfile(state, createLiveCalibrationProfile({ savedAt: 5000 }), "session");
+  updateCalibrationJoint(state, { direction: -state.profile.joints[0].direction });
+  assert.equal(calibrationSaveNeedsAcknowledgement(unsavedCalibrationChanges(state)), true);
+  assert.equal(calibrationSaveNeedsAcknowledgement(null), true);
+});
+
+test("a save the robot finished in bench mode keeps the jog session", () => {
+  const state = createLiveCalibrationState();
+  acceptRobotCalibrationProfile(state, createLiveCalibrationProfile({ savedAt: 1000 }), "session");
+  state.benchModeAcknowledged = true;
+  updateCalibrationJoint(state, { offsetDeg: 3 });
+  const command = createCalibrationBenchCommand(state, "save-profile", "save", 2000);
+  beginRobotCalibrationSave(state, command.profile);
+  acknowledgeRobotCalibrationSave(state, true, true, true);
+  assert.equal(state.benchModeAcknowledged, true);
+  acknowledgeRobotCalibrationSave(state, true, true, false);
+  assert.equal(state.benchModeAcknowledged, false);
+});
+
+test("an accepted jog session moves the selected joint to its center first", () => {
+  const browser = browserCalibrationHarness();
+  const sent = [];
+  browser.sendCalibrationCommand = (action, purpose) => { sent.push([action, purpose]); return true; };
+  browser.selectedCalibrationDefinition = () => ({ label: "FL Hip" });
+  browser.renderLiveCalibrationUi = () => {};
+  browser.liveCalibrationState.jogOffsetDeg = 4;
+  assert.equal(browser.acceptCalibrationAcknowledgement({
+    type: "live-calibration-ack", adapterId: "adapter", sessionId: "session",
+    requestId: "enter-before-disconnect", action: "enter", accepted: true,
+    benchMode: true, supportsSafeJog: true, maxSpeedDegPerSec: 5,
+  }), true);
+  assert.equal(browser.liveCalibrationState.benchModeAcknowledged, true);
+  assert.equal(browser.liveCalibrationState.jogOffsetDeg, 0);
+  assert.deepEqual(sent, [["jog", "center"]]);
 });

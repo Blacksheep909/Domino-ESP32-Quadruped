@@ -250,6 +250,8 @@ import {
   LIVE_CALIBRATION_CORRUPT_BACKUP_KEY,
   LIVE_CALIBRATION_LAST_ROBOT_KEY,
   calibrationChangeSummary,
+  calibrationSaveNeedsAcknowledgement,
+  unsavedCalibrationChanges,
   firmwareSavesWithoutBench,
   calibrationOriginWarning,
   acceptCalibrationSaveReadback,
@@ -862,6 +864,10 @@ let calibrationChannelDraft = null;
 let calibrationWiringStage = "edit";
 let calibrationRestoreScope = "joint";
 let calibrationOpenWiringAfterExit = false;
+// The newest jog target waits here while an earlier jog is unacknowledged, so
+// fast trim clicks are never dropped and the servo always ends on the latest.
+let calibrationJogQueued = false;
+let calibrationJogQueuedPurpose = "";
 let calibrationInspectionMode = "jog";
 let calibrationInspectionPoseDeg = 0;
 let calibrationInspectionDirection = 1;
@@ -1317,7 +1323,7 @@ function persistPresentationPreferences() {
 function applyWorkspace(workspace) {
   if (workspace !== WORKSPACE_REAL_ROBOT &&
       (liveCalibrationState.benchModeAcknowledged || calibrationPendingAction === "enter")) {
-    releaseCalibrationBench("Leaving LIVE closed bench mode. Your calibration draft was kept.");
+    releaseCalibrationBench("Leaving LIVE ended the jog session. Unsaved calibration changes were kept.");
   }
   if (workspace !== WORKSPACE_REAL_ROBOT && liveManualState.authorityToken) {
     releaseLiveManualControl("Leaving LIVE released browser-control authority.");
@@ -1390,7 +1396,7 @@ function applyLiveView(view) {
     closeCalibrationWiringDialog();
     closeRobotCalibrationConfirmation();
     if (liveCalibrationState.benchModeAcknowledged || calibrationPendingAction === "enter") {
-      releaseCalibrationBench("Leaving calibration closed bench mode. Your draft was kept.");
+      releaseCalibrationBench("Leaving calibration ended the jog session. Unsaved changes were kept.");
     }
     liveCalibrationState.benchModeAcknowledged = false;
     liveCalibrationState.jogOffsetDeg = 0;
@@ -3761,14 +3767,14 @@ function ingestLiveTelemetry(packet, receivedAt = Date.now()) {
     const bootId = packet.diagnostics?.bootId;
     if (Number.isInteger(bootId)) {
       if (calibrationRobotBootId !== null && calibrationRobotBootId !== bootId) {
-        resetCalibrationLink("Robot restarted. Your calibration edits were kept; request bench mode again.");
+        resetCalibrationLink("Robot restarted. Unsaved changes were kept; start a jog session again.");
       }
       calibrationRobotBootId = bootId;
     }
     if (liveCalibrationState.benchModeAcknowledged &&
         (packet.diagnostics?.benchMode === false ||
          (packet.diagnostics?.robotState && packet.diagnostics.robotState !== "disarmed"))) {
-      resetCalibrationLink("Robot closed bench mode. Your calibration edits were kept; request bench mode again.");
+      resetCalibrationLink("Robot ended the jog session. Unsaved changes were kept; start it again.");
     }
     acceptLiveControllerTelemetry(liveControllerState, packet, receivedAt);
     let gaitStateChanged = false;
@@ -3807,7 +3813,7 @@ function connectControlBridge() {
     lockLiveSafetyState(liveSafetyState, "The local bridge disconnected. Robot-side outputs must fail safe.");
     revokeLiveManualControl(liveManualState, "The local bridge disconnected. Browser authority was revoked.");
     bridgeInput = { connected: false, channels: null };
-    resetCalibrationLink("PC link disconnected. Your calibration edits were kept; request bench mode after reconnecting.");
+    resetCalibrationLink("PC link disconnected. Unsaved changes were kept; start a jog session after reconnecting.");
     liveGaitState.pendingRequestId = "";
     liveGaitState.pendingAction = "";
     liveGaitState.persistentApplySupported = false;
@@ -3845,7 +3851,7 @@ function connectControlBridge() {
       }
       if (message.type === "live-adapter-removed") {
         removeLiveAdapter(liveConnectionState, message.adapterId, message.reason);
-        resetCalibrationLink("Robot adapter disconnected. Your calibration edits were kept; request bench mode after reconnecting.");
+        resetCalibrationLink("Robot adapter disconnected. Unsaved changes were kept; start a jog session after reconnecting.");
         lockLiveSafetyState(liveSafetyState, "The adapter heartbeat was lost. Robot-side outputs must fail safe.");
         liveGaitState.persistentApplySupported = false;
         revokeLiveManualControl(liveManualState, "The robot adapter disappeared. Browser authority was revoked.");
@@ -3946,6 +3952,8 @@ function resetCalibrationLink(reason) {
   calibrationObservedSessionId = "";
   calibrationLastKeepaliveAt = 0;
   calibrationOpenWiringAfterExit = false;
+  calibrationJogQueued = false;
+  calibrationJogQueuedPurpose = "";
   clearTimeout(calibrationRequestTimeout);
   calibrationRequestTimeout = null;
   if (reason) calibrationBenchFeedback = reason;
@@ -7646,7 +7654,7 @@ function renderLiveCalibrationUi() {
   document.querySelector("#live-calibration-save-state").textContent = liveCalibrationState.savePhase === "sending"
     ? "SENDING PROFILE"
     : liveCalibrationState.savePhase === "verifying" ? "VERIFYING ROBOT SAVE"
-      : liveCalibrationState.dirty ? "BROWSER DRAFT / NOT APPLIED"
+      : liveCalibrationState.dirty ? "UNSAVED CHANGES"
         : savedAt ? `ROBOT PROFILE / ${new Date(savedAt).toLocaleTimeString()}` : "DEFAULT DRAFT";
   const channelIssues = calibrationChannelMapIssues(calibrationChannelMap(liveCalibrationState.profile));
   document.querySelector("#live-calibration-wiring-summary").textContent = channelIssues.length > 0
@@ -7655,8 +7663,6 @@ function renderLiveCalibrationUi() {
   document.querySelector("#live-calibration-edit-wiring").disabled = Boolean(calibrationPendingRequestId);
   document.querySelector("#live-calibration-export-robot").disabled = Boolean(calibrationPendingRequestId) ||
     !liveConnectionIsReady(liveConnectionState) || liveConnectionState.robotState !== "disarmed";
-  document.querySelector("#live-calibration-restore-browser-copy").hidden =
-    !localStorage.getItem(LIVE_CALIBRATION_PRE_SYNC_BACKUP_KEY);
   renderCalibrationJointMap();
   renderCalibrationReview();
   renderCalibrationSyncStatus();
@@ -7681,31 +7687,35 @@ function renderCalibrationSyncStatus() {
   const ready = robotCalibrationReady(liveCalibrationState, liveConnectionState.sessionId);
   const phase = liveCalibrationState.savePhase;
   const banner = document.querySelector("#live-calibration-sync-status");
-  let title = liveCalibrationState.dirty ? "Browser draft kept — not applied to the robot" : "Calibration in Studio";
-  let copy = "Import or edit a profile, then use Send to robot to apply and save it. A browser copy only saves on this PC.";
+  const changes = ready ? unsavedCalibrationChanges(liveCalibrationState) : null;
+  const changedJoints = changes?.total ?? 0;
+  let title = "Waiting for the robot";
+  let copy = "Connect the robot. Studio loads the calibration it is running; changes stay unsaved until you press SAVE TO ROBOT.";
   let tone = "draft";
   if (phase === "sending" || phase === "verifying") {
-    title = phase === "sending" ? "Sending calibration to the robot…" : "Stored on robot — verifying the values…";
-    copy = "Your draft stays visible until a separate read-back confirms every joint. Servo outputs are switched off during the save.";
+    title = phase === "sending" ? "Saving to the robot…" : "Saved — checking the robot's copy…";
+    copy = "Studio reads the profile back from the robot to confirm every joint.";
     tone = "waiting";
   } else if (phase === "mismatch") {
-    title = "Robot read-back differs — your draft has been kept";
-    copy = "Compare DRAFT and ON ROBOT in Review. Read robot again before retrying the save, or use its values explicitly.";
+    title = "The robot's copy differs from what was sent";
+    copy = "Your changes were kept. RELOAD FROM ROBOT, compare in Review, then save again.";
     tone = "warning";
   } else if (phase === "unconfirmed" || phase === "rejected") {
-    title = phase === "rejected" ? "Calibration save rejected — draft kept" : "Robot save not yet confirmed — draft kept";
-    copy = "Read robot when connected and disarmed to check its active profile. The app will not assume that a timed-out save succeeded.";
+    title = phase === "rejected" ? "The robot refused the save" : "Save not confirmed";
+    copy = "Your changes were kept. RELOAD FROM ROBOT to see what it runs, then save again.";
     tone = "warning";
-  } else if (ready && !liveCalibrationState.dirty) {
-    title = phase === "verified" ? "Calibration saved and verified on the robot" : "Active robot calibration loaded";
-    copy = phase === "verified"
-      ? "It is active now and survives a restart. No firmware upload is needed. Outputs are off; request bench mode again for a joint jog, or return to Compare to arm."
-      : "Studio is showing the profile read from this robot. Offsets correct physical servo centers; they do not change the CAD foot geometry.";
+  } else if (ready && liveCalibrationState.dirty && changedJoints > 0) {
+    title = `${changedJoints} joint${changedJoints === 1 ? "" : "s"} changed — not on the robot yet`;
+    copy = "The robot still runs its saved calibration, in every mode and after a restart. Press SAVE TO ROBOT to keep these changes, or DISCARD CHANGES.";
+    tone = "warning";
+  } else if (ready) {
+    title = phase === "verified" ? "Saved to the robot and checked" : "Studio matches the robot";
+    copy = "These values are what the robot runs now and loads on every power-up.";
     tone = "verified";
-  } else if (ready && liveCalibrationState.dirty) {
-    copy = "The robot's active values were read separately. Your imported or edited draft stays visible; Review shows both. Send to robot applies and saves the draft without a firmware upload.";
-  } else if (liveCalibrationState.robotProfile) {
-    copy = "Showing the last known profile or local draft. Connect and read robot to confirm what is active; saved servo telemetry is not a new foot measurement.";
+  } else if (liveCalibrationState.dirty) {
+    title = "Unsaved changes from an earlier session";
+    copy = "Connect the robot to compare them with what it runs, then save or discard them.";
+    tone = "warning";
   }
   banner.dataset.state = tone;
   const titleElement = document.querySelector("#live-calibration-sync-title");
@@ -7713,11 +7723,12 @@ function renderCalibrationSyncStatus() {
   if (titleElement.textContent !== title) titleElement.textContent = title;
   if (copyElement.textContent !== copy) copyElement.textContent = copy;
   const readButton = document.querySelector("#live-calibration-read-robot");
-  readButton.textContent = calibrationPendingAction === "request-profile" ? "READING…" : "READ ROBOT";
+  readButton.textContent = calibrationPendingAction === "request-profile" ? "READING…" : "RELOAD FROM ROBOT";
   readButton.setAttribute("aria-busy", String(calibrationPendingAction === "request-profile"));
   readButton.disabled = Boolean(calibrationPendingRequestId) ||
     !liveConnectionIsReady(liveConnectionState) || liveConnectionState.robotState !== "disarmed";
-  document.querySelector("#live-calibration-use-robot").disabled = !ready || Boolean(calibrationPendingRequestId);
+  document.querySelector("#live-calibration-use-robot").disabled =
+    !ready || !liveCalibrationState.dirty || Boolean(calibrationPendingRequestId);
 }
 
 function calibrationInspectionTargetDeg() {
@@ -7998,7 +8009,7 @@ function renderRobotCalibrationChanges() {
     add("notice", "NO CHANGES", ["This profile matches what the robot already holds."]);
     return;
   }
-  add("notice", `THIS SEND CHANGES ${summary.total} OF 12 JOINTS`, []);
+  add("notice", `SAVING CHANGES ${summary.total} OF 12 JOINTS`, []);
   if (summary.directionChanges.length) {
     add("danger", "DIRECTION CHANGES - these flip which way a servo turns; roll and tilt depend on them",
       summary.directionChanges.map((change) => `${change.label}: ${change.from} to ${change.to}`));
@@ -8018,15 +8029,22 @@ function renderRobotCalibrationChanges() {
 
 // The dialog is modal, so a refusal written to the page behind it is invisible.
 // Keep the CONFIRM & SEND button and an explanation in sync with the real gate.
+function robotCalibrationConfirmAcknowledged() {
+  const needed = calibrationSaveNeedsAcknowledgement(unsavedCalibrationChanges(liveCalibrationState));
+  return !needed || document.querySelector("#live-calibration-robot-confirm-ack").checked;
+}
+
 function refreshRobotCalibrationConfirmGate() {
   const dialog = document.querySelector("#live-calibration-robot-confirm");
   if (!dialog?.open) return "";
   const reason = calibrationControlBlockReason(liveCalibrationState, calibrationControlContext(), "save-profile");
   const status = document.querySelector("#live-calibration-robot-confirm-status");
   status.hidden = !reason;
-  status.textContent = reason ? `Cannot send yet: ${reason}` : "";
+  status.textContent = reason ? `Cannot save yet: ${reason}` : "";
+  document.querySelector("#live-calibration-robot-confirm-ack-row").hidden =
+    !calibrationSaveNeedsAcknowledgement(unsavedCalibrationChanges(liveCalibrationState));
   document.querySelector("#live-calibration-robot-confirm-send").disabled =
-    !document.querySelector("#live-calibration-robot-confirm-ack").checked || Boolean(reason);
+    !robotCalibrationConfirmAcknowledged() || Boolean(reason);
   return reason;
 }
 
@@ -8069,6 +8087,27 @@ function downloadCalibrationJson(profile = liveCalibrationState.profile, source 
   link.download = `domino-calibration-${source}-${new Date().toISOString().slice(0, 10)}.json`;
   link.click();
   setTimeout(() => URL.revokeObjectURL(link.href), 0);
+}
+
+// Sends the current jog target, or queues it behind an unacknowledged jog.
+function requestCalibrationJog(purpose = "manual") {
+  if (!liveCalibrationState.benchModeAcknowledged) return false;
+  if (calibrationPendingRequestId) {
+    if (calibrationPendingAction !== "jog" && calibrationPendingAction !== "enter") return false;
+    calibrationJogQueued = true;
+    calibrationJogQueuedPurpose = purpose;
+    return true;
+  }
+  return sendCalibrationCommand("jog", purpose);
+}
+
+function centerSelectedCalibrationJoint() {
+  liveCalibrationState.jogOffsetDeg = 0;
+  calibrationInspectionMode = "jog";
+  if (requestCalibrationJog("center")) {
+    calibrationBenchFeedback = `Moving ${selectedCalibrationDefinition()?.label || "the joint"} to its center ` +
+      "at 5°/s. Wait for it to stop, then trim with the ± buttons.";
+  }
 }
 
 function sendCalibrationCommand(action, purpose = "manual") {
@@ -8160,7 +8199,7 @@ function sendCalibrationCommand(action, purpose = "manual") {
         `No reply after ${requestTimeoutMs / 1000} seconds. Movement is locked; check the link, then read the robot before retrying.`;
     }
     const statusMessage = action === "request-profile"
-      ? "The robot did not return its active profile. The browser draft was not exported as robot data."
+      ? "The robot did not return its active profile. Nothing was exported as robot data."
       : "The robot did not acknowledge the calibration request. Physical movement remains locked.";
     showAppActionResult(statusMessage, "error", "#live-calibration-review-status");
     updateLiveComparisonUi();
@@ -8172,7 +8211,7 @@ function sendCalibrationCommand(action, purpose = "manual") {
 function serviceCalibrationProfileSync() {
   const connection = liveConnectionEnvelope(liveConnectionState);
   if ((connection?.sessionId || "") !== calibrationObservedSessionId) {
-    resetCalibrationLink("PC link changed. Your calibration edits were kept; request bench mode again.");
+    resetCalibrationLink("PC link changed. Unsaved changes were kept; start a jog session again.");
     calibrationObservedSessionId = connection?.sessionId || "";
     calibrationSyncRetryAt = 0;
     motionSmoothingSyncRetryAt = 0;
@@ -8225,13 +8264,13 @@ function serviceCalibrationBenchKeepalive() {
   if (applicationState.workspace !== WORKSPACE_REAL_ROBOT ||
       liveViewState.selected !== LIVE_VIEW_CALIBRATION || document.hidden ||
       !liveCalibrationState.safetyConfirmed) {
-    releaseCalibrationBench("Calibration control was released. Your draft was kept; request bench mode again.");
+    releaseCalibrationBench("The jog session ended. Unsaved changes were kept; start it again to keep jogging.");
     updateLiveComparisonUi();
     return false;
   }
   const age = liveComparisonSnapshot(liveTelemetryState).lastRobotPacketAgeMs;
   if (!liveConnectionIsReady(liveConnectionState) || age === null || age > 1_000) {
-    resetCalibrationLink("Robot communication was lost. Your calibration edits were kept; request bench mode after reconnecting.");
+    resetCalibrationLink("Robot communication was lost. Unsaved changes were kept; start a jog session after reconnecting.");
     updateLiveComparisonUi();
     return false;
   }
@@ -8351,19 +8390,19 @@ function acceptCalibrationAcknowledgement(message) {
           calibrationSyncRetryAt = result.matched ? 0 : Number.POSITIVE_INFINITY;
           status.textContent = result.matched
             ? result.adopted
-              ? "Saved and verified on robot. Calibration is active and survives reboot; no firmware upload is needed. Outputs are off — request bench mode again to jog."
-              : "The sent profile was saved and verified. Newer browser edits were kept and have not been applied."
+              ? "Saved and verified on the robot. It is active now and loads on every power-up."
+              : "The sent profile was saved and verified. Edits you made while it was saving are still unsaved."
             : "Robot read-back differs from the sent profile. Your draft was kept. Compare ON ROBOT values, then read again before retrying.";
-          showAppToast(result.matched ? "Robot calibration saved and verified. Outputs off." : "Calibration read-back differs. Draft kept.",
+          showAppToast(result.matched ? "Calibration saved to the robot and verified." : "Calibration read-back differs. Your changes were kept.",
             result.matched ? "success" : "warning", 4200);
         } else {
           status.textContent = result.restored
-            ? "Robot has no saved profile. Your last known profile is loaded as an unsaved draft - review it, then send it to the robot."
+            ? "Robot has no saved profile. Your last known profile is loaded as unsaved changes - review it, then save it to the robot."
             : result.robotUsingDefaults
               ? "Robot has no saved profile (see the banner for what it is running) and Studio has no earlier saved profile to restore."
               : result.adopted
-                ? "Active robot calibration loaded. Offsets map the physical servos to the CAD neutral; CAD foot geometry stays the same."
-                : "Active robot profile read separately. Your browser draft was kept; Review shows both.";
+                ? "Loaded the calibration the robot is running."
+                : "Read the robot's calibration. Your unsaved changes were kept; the bar above lists them.";
         }
       } catch {
         status.textContent = "The robot returned an invalid calibration profile. Saving remains locked.";
@@ -8384,26 +8423,37 @@ function acceptCalibrationAcknowledgement(message) {
       Number(message.maxSpeedDegPerSec) <= 5,
     );
     calibrationBenchFeedback = liveCalibrationState.benchModeAcknowledged
-      ? "Robot acknowledged bench mode. No servo moves until you issue a joint jog."
-      : `Robot refused bench mode${message.reason ? `: ${message.reason}` : "."}`;
+      ? "Jog session started. The selected joint moves to its center first."
+      : `Robot refused the jog session${message.reason ? `: ${message.reason}` : "."}`;
     if (!liveCalibrationState.benchModeAcknowledged) releaseCalibrationBench(calibrationBenchFeedback);
+    else {
+      // Start every session at the selected joint's center so the first trim
+      // click is a 0.1-1 degree move, not a long slew from the walking pose.
+      liveCalibrationState.jogOffsetDeg = 0;
+      calibrationJogQueued = true;
+      calibrationJogQueuedPurpose = "center";
+    }
   } else if (message.action === "jog") {
     calibrationBenchFeedback = accepted
-      ? "Robot accepted the joint target. Motion remains limited to 5°/s."
+      ? purpose === "center"
+        ? `Moving ${selectedCalibrationDefinition()?.label || "the joint"} to its center at 5°/s. Wait for it to stop, then trim with the ± buttons.`
+        : "Robot accepted the joint target. Motion remains limited to 5°/s."
       : `Robot rejected the jog${message.reason ? `: ${message.reason}` : "."}`;
-    if (!accepted) releaseCalibrationBench(calibrationBenchFeedback + " Bench mode was closed; your trim edits were kept.");
+    if (!accepted) releaseCalibrationBench(calibrationBenchFeedback + " The jog session ended; your trim edits were kept.");
   } else if (message.action === "exit") {
     liveCalibrationState.benchModeAcknowledged = false;
     calibrationBenchFeedback = accepted
-      ? "Bench mode closed and servo outputs disabled."
-      : `Robot refused to close bench mode${message.reason ? `: ${message.reason}` : "."}`;
+      ? "Jog session ended. The robot is back on radio control with its saved calibration."
+      : `Robot refused to end the jog session${message.reason ? `: ${message.reason}` : "."}`;
   } else if (message.action === "save-profile") {
     const status = document.querySelector("#live-calibration-review-status");
-    acknowledgeRobotCalibrationSave(liveCalibrationState, accepted, message.persisted === true);
+    acknowledgeRobotCalibrationSave(liveCalibrationState, accepted, message.persisted === true, message.benchMode);
     calibrationSyncRetryAt = 0;
     calibrationBenchFeedback = accepted && message.persisted === true
-      ? "Calibration save closed bench mode. Outputs are off; request bench mode again before a physical jog."
-      : "Calibration save was not confirmed. Physical jog is locked; read the robot before retrying.";
+      ? liveCalibrationState.benchModeAcknowledged
+        ? "Saved to the robot. The jog session is still running; carry on with the next joint."
+        : "Saved to the robot. The jog session ended; start it again to keep jogging."
+      : "Calibration save was not confirmed. Physical jog is locked; reload from the robot before retrying.";
     status.textContent = accepted && message.persisted === true
       ? "Robot stored the calibration. Reading it back to verify the saved centers and directions..."
       : `Robot rejected calibration save${message.reason ? `: ${message.reason}` : "."}`;
@@ -8425,6 +8475,14 @@ function acceptCalibrationAcknowledgement(message) {
   if (message.action === "exit" && accepted && calibrationOpenWiringAfterExit) {
     calibrationOpenWiringAfterExit = false;
     openCalibrationWiringDialog();
+  }
+  if (calibrationJogQueued && !calibrationPendingRequestId) {
+    const queuedPurpose = calibrationJogQueuedPurpose || "manual";
+    calibrationJogQueued = false;
+    calibrationJogQueuedPurpose = "";
+    if (liveCalibrationState.benchModeAcknowledged) sendCalibrationCommand("jog", queuedPurpose);
+    updateLiveComparisonUi();
+    renderLiveCalibrationUi();
   }
   return true;
 }
@@ -8984,7 +9042,7 @@ function updateLiveComparisonUi() {
   dataLinkOutput.dataset.state = engineeringConnected ? "online" : "offline";
   const calibrationLinkOutput = document.querySelector("#live-calibration-link-state");
   calibrationLinkOutput.textContent = liveCalibrationState.benchModeAcknowledged
-    ? "BENCH MODE READY"
+    ? "JOG SESSION RUNNING"
     : engineeringConnected
       ? calibrationProfileReady ? "ROBOT PROFILE LOADED" : "READING ROBOT PROFILE"
       : "ROBOT NOT READY";
@@ -8997,41 +9055,47 @@ function updateLiveComparisonUi() {
   refreshRobotCalibrationConfirmGate();
   const calibrationApplyButton = document.querySelector("#live-calibration-apply-robot");
   const calibrationSaving = ["sending", "verifying"].includes(liveCalibrationState.savePhase);
-  calibrationApplyButton.textContent = liveCalibrationState.savePhase === "sending" ? "SENDING…"
-    : liveCalibrationState.savePhase === "verifying" ? "VERIFYING SAVE…" : "SEND TO ROBOT";
+  const unsavedForButton = unsavedCalibrationChanges(liveCalibrationState);
+  calibrationApplyButton.textContent = liveCalibrationState.savePhase === "sending" ? "SAVING…"
+    : liveCalibrationState.savePhase === "verifying" ? "CHECKING SAVE…"
+      : unsavedForButton?.total ? `SAVE ${unsavedForButton.total} CHANGE${unsavedForButton.total === 1 ? "" : "S"} TO ROBOT`
+        : "SAVE TO ROBOT";
   calibrationApplyButton.setAttribute("aria-busy", String(calibrationSaving));
   const benchRequest = document.querySelector("#live-calibration-request-bench");
   const benchBlockReason = calibrationControlBlockReason(liveCalibrationState, calibrationControlContext());
   benchRequest.disabled = Boolean(benchBlockReason);
-  benchRequest.title = benchBlockReason || "Request permission from the disarmed robot for bounded servo jogging.";
+  benchRequest.title = benchBlockReason || "Ask the disarmed robot for one-servo-at-a-time jogging (5°/s, ±10°).";
   benchRequest.textContent = calibrationPendingAction === "enter"
     ? "WAITING FOR ROBOT"
     : liveCalibrationState.benchModeAcknowledged
-      ? "BENCH MODE READY"
+      ? "JOG SESSION RUNNING"
       : calibrationBenchFeedback.startsWith("No reply") || calibrationBenchFeedback.startsWith("Robot refused")
         ? "TRY AGAIN"
-        : "REQUEST BENCH MODE";
+        : "START JOG SESSION";
   document.querySelector("#live-calibration-bench-state").textContent =
     liveCalibrationState.benchModeAcknowledged
-      ? "UNLOCKED - ROBOT SAFETY ACKNOWLEDGED"
+      ? "UNLOCKED - ONE SERVO AT A TIME"
       : calibrationPendingAction === "enter"
-        ? "LOCKED - WAITING FOR ROBOT ACKNOWLEDGEMENT"
-        : "LOCKED - BENCH MODE NOT ACKNOWLEDGED";
+        ? "LOCKED - WAITING FOR THE ROBOT"
+        : "LOCKED - NO JOG SESSION";
   document.querySelector("#live-calibration-bench-feedback").textContent =
     !liveCalibrationState.benchModeAcknowledged && benchBlockReason
       ? /rejected|refused|No reply/i.test(calibrationBenchFeedback)
         ? `${calibrationBenchFeedback} ${benchBlockReason}` : benchBlockReason
       : calibrationBenchFeedback;
-  const physicalJogReady = !calibrationControlBlockReason(liveCalibrationState, calibrationControlContext(), "jog");
+  // A jog in flight does not lock the buttons: the newest target is queued.
+  const jogInFlightOnly = ["jog", ""].includes(calibrationPendingAction);
+  const physicalJogReady = !calibrationControlBlockReason(liveCalibrationState,
+    { ...calibrationControlContext(), pending: !jogInFlightOnly }, "jog");
   document.querySelectorAll("[data-calibration-trim]").forEach((control) => {
-    control.disabled = !physicalJogReady || Boolean(calibrationPendingRequestId);
+    control.disabled = !physicalJogReady;
     control.title = physicalJogReady
       ? "Send a bounded single-servo command to the robot"
-      : "Physical jog is locked. Enable bench mode first; preview changes alone do not move hardware.";
+      : "Start a jog session first; without one, changes only move the 3D preview.";
   });
   document.querySelectorAll("[data-calibration-jog], [data-calibration-jog-reset]").forEach((control) => {
     control.disabled = liveCalibrationState.benchModeAcknowledged
-      ? !physicalJogReady || Boolean(calibrationPendingRequestId)
+      ? !physicalJogReady
       : !liveCalibrationState.previewEnabled;
     control.title = liveCalibrationState.benchModeAcknowledged
       ? "Send a bounded single-servo command to the robot"
@@ -9043,13 +9107,13 @@ function updateLiveComparisonUi() {
   enablePhysicalJog.title = benchRequest.title;
   enablePhysicalJog.textContent = calibrationPendingAction === "enter"
     ? "WAITING FOR ROBOT"
-    : "ENABLE PHYSICAL JOG";
+    : "START JOG SESSION";
   document.querySelector("#live-calibration-jog-status").textContent =
     liveCalibrationState.benchModeAcknowledged
-      ? "Robot bench mode is active. Jog requests remain limited to ±10° and 5°/s."
+      ? calibrationBenchFeedback || "Jog session running. Moves are limited to ±10° and 5°/s."
       : engineeringConnected
-        ? "Preview only — the PC link is paired, but physical jog needs a separate robot bench-mode acknowledgement."
-        : "Preview only. Connect a compatible robot adapter and receive a bench-mode acknowledgement to unlock physical movement.";
+        ? "Preview only. Start a jog session to move the real servo."
+        : "Preview only. Connect the robot and start a jog session to move the real servo.";
   document.querySelector("#live-data-current-time").textContent = engineeringConnected
     ? `PACKET ${formatPacketAge(snapshot.lastRobotPacketAgeMs)} AGO`
     : "NO TELEMETRY";
@@ -9938,7 +10002,7 @@ document.querySelectorAll("[data-calibration-step]").forEach((button) => {
 document.querySelector("#live-calibration-safety-confirm").addEventListener("change", (event) => {
   liveCalibrationState.safetyConfirmed = event.target.checked;
   if (!event.target.checked && (liveCalibrationState.benchModeAcknowledged || calibrationPendingAction === "enter")) {
-    releaseCalibrationBench("Safety confirmation was withdrawn. Bench mode closed; your draft was kept.");
+    releaseCalibrationBench("Safety check was unticked. The jog session ended; unsaved changes were kept.");
   }
   renderLiveCalibrationUi();
   updateLiveComparisonUi();
@@ -9954,8 +10018,13 @@ document.querySelector("#live-calibration-enable-jog").addEventListener("click",
 document.querySelector("#live-calibration-joint-list").addEventListener("click", (event) => {
   const button = event.target.closest("[data-calibration-channel]");
   if (!button) return;
+  const previousChannel = liveCalibrationState.selectedChannel;
   selectCalibrationJoint(liveCalibrationState, button.dataset.calibrationChannel);
   calibrationInspectionMode = "jog";
+  if (liveCalibrationState.benchModeAcknowledged && previousChannel !== liveCalibrationState.selectedChannel) {
+    centerSelectedCalibrationJoint();
+    updateLiveComparisonUi();
+  }
   renderLiveCalibrationUi();
   focusCalibrationJoint();
 });
@@ -10014,7 +10083,7 @@ document.querySelector("#live-calibration-wiring-dialog").addEventListener("canc
 document.querySelector("#live-calibration-offset").addEventListener("change", (event) => {
   updateCalibrationJoint(liveCalibrationState, { offsetDeg: event.target.value });
   liveCalibrationState.jogOffsetDeg = 0;
-  if (liveCalibrationState.benchModeAcknowledged) sendCalibrationCommand("jog");
+  requestCalibrationJog();
   renderLiveCalibrationUi();
 });
 document.querySelector("#live-calibration-direction").addEventListener("change", (event) => {
@@ -10064,7 +10133,7 @@ document.querySelectorAll("[data-calibration-jog]").forEach((button) => {
     if (liveCalibrationState.benchModeAcknowledged) {
       jogCalibrationJoint(liveCalibrationState, button.dataset.calibrationJog);
       calibrationInspectionMode = "jog";
-      sendCalibrationCommand("jog");
+      requestCalibrationJog();
     } else {
       const joint = selectedCalibrationJoint();
       calibrationInspectionPoseDeg = nudgeCalibrationInspectionPose(
@@ -10084,16 +10153,17 @@ document.querySelectorAll("[data-calibration-trim]").forEach((button) => {
       calibrationInspectionPoseDeg = previewPose;
       calibrationInspectionMode = "scrub";
     }
-    if (liveCalibrationState.benchModeAcknowledged) sendCalibrationCommand("jog");
-    document.querySelector("#live-calibration-jog-status").textContent =
-      "Neutral trim updated for the selected channel. Finish all joints, then use Send to Robot to persist the complete profile.";
+    if (liveCalibrationState.benchModeAcknowledged) {
+      requestCalibrationJog();
+      calibrationBenchFeedback = "Trim changed. It is not on the robot until you press SAVE TO ROBOT.";
+    }
     renderLiveCalibrationUi();
   });
 });
 document.querySelector("[data-calibration-jog-reset]").addEventListener("click", () => {
   liveCalibrationState.jogOffsetDeg = 0;
   calibrationInspectionMode = "jog";
-  if (liveCalibrationState.benchModeAcknowledged) sendCalibrationCommand("jog");
+  requestCalibrationJog();
   renderLiveCalibrationUi();
 });
 document.querySelector("#live-calibration-minimum").addEventListener("change", (event) => {
@@ -10140,7 +10210,7 @@ document.querySelector("#live-calibration-restore-ack").addEventListener("change
 });
 document.querySelector("#live-calibration-restore-confirm-button").addEventListener("click", () => {
   if (liveCalibrationState.benchModeAcknowledged || calibrationPendingAction === "enter") {
-    releaseCalibrationBench("Restoring defaults closed bench mode. Review the draft before requesting physical control again.");
+    releaseCalibrationBench("Restoring defaults ended the jog session. Review, then save to the robot.");
   }
   const restoreWiring = calibrationRestoreScope === "all" &&
     document.querySelector("#live-calibration-restore-wiring").checked;
@@ -10159,27 +10229,13 @@ document.querySelector("#live-calibration-restore-confirm-button").addEventListe
   "#live-calibration-restore-close",
   "#live-calibration-restore-cancel",
 ].forEach((selector) => document.querySelector(selector).addEventListener("click", closeCalibrationRestoreConfirmation));
-document.querySelector("#live-calibration-save-browser").addEventListener("click", () => {
-  try {
-    localStorage.setItem(LIVE_CALIBRATION_STORAGE_KEY, calibrationProfileJson(liveCalibrationState.profile));
-  } catch {
-    showAppActionResult("Browser copy could not be saved. Your draft is still open; export JSON to keep a backup.",
-      "error", "#live-calibration-review-status", "#live-calibration-save-browser");
-    return;
-  }
-  liveCalibrationState.dirty = !robotCalibrationReady(liveCalibrationState, liveConnectionState.sessionId) ||
-    !calibrationProfilesMatch(liveCalibrationState.profile, liveCalibrationState.robotProfile, false);
-  showAppActionResult("Browser copy saved on this PC. Use Send to robot to apply and save the calibration there.",
-    "success", "#live-calibration-review-status", "#live-calibration-save-browser", "Calibration saved on this PC.");
-  renderLiveCalibrationUi();
-});
 document.querySelector("#live-calibration-read-robot").addEventListener("click", () => {
   liveCalibrationState.saveExpectedProfile = null;
   liveCalibrationState.saveDraftProfile = null;
   liveCalibrationState.savePhase = "idle";
   const sent = sendCalibrationCommand("request-profile", "sync");
   setStudioActionFeedback(document.querySelector("#live-calibration-review-status"), sent
-    ? "Reading active robot calibration. Your draft stays visible."
+    ? "Reading the robot's calibration. Unsaved changes stay visible."
     : "Connect and disarm the robot to read calibration.", sent ? "waiting" : "error");
   renderLiveCalibrationUi();
 });
@@ -10188,11 +10244,11 @@ document.querySelector("#live-calibration-use-robot").addEventListener("click", 
   try {
     localStorage.setItem(LIVE_CALIBRATION_PRE_SYNC_BACKUP_KEY, calibrationProfileJson(liveCalibrationState.profile));
   } catch {
-    showAppActionResult("Your draft could not be backed up on this PC. Export it before replacing it with robot values.", "error", "#live-calibration-review-status");
+    showAppActionResult("Your changes could not be backed up on this PC. Export them before discarding.", "error", "#live-calibration-review-status");
     return;
   }
   if (liveCalibrationState.benchModeAcknowledged) {
-    releaseCalibrationBench("Loading robot values closed bench mode. Your previous draft was backed up.");
+    releaseCalibrationBench("Discarding changes ended the jog session.");
   }
   liveCalibrationState.profile = createLiveCalibrationProfile(liveCalibrationState.robotProfile);
   liveCalibrationState.dirty = false;
@@ -10201,7 +10257,7 @@ document.querySelector("#live-calibration-use-robot").addEventListener("click", 
   liveCalibrationState.saveExpectedProfile = null;
   liveCalibrationState.saveDraftProfile = null;
   try { localStorage.setItem(LIVE_CALIBRATION_STORAGE_KEY, calibrationProfileJson(liveCalibrationState.profile)); } catch { /* Readback is held in memory. */ }
-  showAppActionResult("Using the active robot values. Your previous draft is available in Load previous browser copy.", "success", "#live-calibration-review-status");
+  showAppActionResult("Changes discarded. Studio now shows what the robot runs.", "success", "#live-calibration-review-status");
   renderLiveCalibrationUi();
 });
 document.querySelector("#live-calibration-export").addEventListener("click", () => downloadCalibrationJson());
@@ -10215,7 +10271,7 @@ document.querySelector("#live-calibration-export-robot").addEventListener("click
 document.querySelector("#live-calibration-apply-robot").addEventListener("click", () => {
   const reason = calibrationControlBlockReason(liveCalibrationState, calibrationControlContext(), "save-profile");
   if (reason) {
-    document.querySelector("#live-calibration-review-status").textContent = `Cannot send yet: ${reason}`;
+    document.querySelector("#live-calibration-review-status").textContent = `Cannot save yet: ${reason}`;
     return;
   }
   openRobotCalibrationConfirmation();
@@ -10232,13 +10288,13 @@ function closeRobotCalibrationConfirmation() {
   "#live-calibration-robot-confirm-cancel",
 ].forEach((selector) => document.querySelector(selector).addEventListener("click", closeRobotCalibrationConfirmation));
 document.querySelector("#live-calibration-robot-confirm-send").addEventListener("click", () => {
-  if (!document.querySelector("#live-calibration-robot-confirm-ack").checked) return;
+  if (!robotCalibrationConfirmAcknowledged()) return;
   // Never fail silently: explain inside the dialog why nothing was sent.
   if (refreshRobotCalibrationConfirmGate()) return;
   if (!sendCalibrationCommand("save-profile")) {
     const status = document.querySelector("#live-calibration-robot-confirm-status");
     status.hidden = false;
-    status.textContent = "Cannot send yet: Studio could not hand the request to the link " +
+    status.textContent = "Cannot save yet: Studio could not hand the request to the link " +
       "(not connected, the robot profile was not read this session, or another request is pending). Close this dialog and check the connection.";
     return;
   }
@@ -10250,25 +10306,6 @@ document.querySelector("#live-calibration-robot-confirm-send").addEventListener(
 document.querySelector("#live-calibration-import").addEventListener("click", () => {
   document.querySelector("#live-calibration-import-file").click();
 });
-document.querySelector("#live-calibration-restore-browser-copy").addEventListener("click", () => {
-  const stored = localStorage.getItem(LIVE_CALIBRATION_PRE_SYNC_BACKUP_KEY);
-  if (!stored) return;
-  try {
-    const profile = parseCalibrationProfileJson(stored);
-    if (liveCalibrationState.benchModeAcknowledged || calibrationPendingAction === "enter") {
-      releaseCalibrationBench("Loading a browser copy closed bench mode. Review it before requesting physical control again.");
-    }
-    liveCalibrationState.profile = profile;
-    liveCalibrationState.dirty = true;
-    liveCalibrationState.jogOffsetDeg = 0;
-    document.querySelector("#live-calibration-review-status").textContent =
-      "Previous browser copy loaded for review. The robot calibration has not changed.";
-  } catch {
-    document.querySelector("#live-calibration-review-status").textContent =
-      "The previous browser copy is invalid. The robot calibration has not changed.";
-  }
-  renderLiveCalibrationUi();
-});
 document.querySelector("#live-calibration-import-file").addEventListener("change", async (event) => {
   const [file] = event.target.files || [];
   if (!file) return;
@@ -10276,13 +10313,19 @@ document.querySelector("#live-calibration-import-file").addEventListener("change
   try {
     const profile = parseCalibrationProfileJson(await file.text());
     if (liveCalibrationState.benchModeAcknowledged || calibrationPendingAction === "enter") {
-      releaseCalibrationBench("Importing calibration closed bench mode. Review the draft before requesting physical control again.");
+      releaseCalibrationBench("Importing a file ended the jog session.");
     }
     liveCalibrationState.profile = profile;
     liveCalibrationState.dirty = true;
     liveCalibrationState.jogOffsetDeg = 0;
-    status.textContent = `Imported ${file.name} as a browser draft. Send to robot applies and saves it immediately after verification; no firmware upload is needed.`;
-    showAppToast("Calibration JSON imported. Draft kept until a verified robot save.", "info", 4200);
+    // Importing never changes the robot by itself. Show what the file would
+    // change and ask, instead of leaving an unsaved copy that looks applied.
+    const saveBlocked = calibrationControlBlockReason(liveCalibrationState, calibrationControlContext(), "save-profile");
+    status.textContent = saveBlocked
+      ? `Loaded ${file.name}. Nothing changed on the robot. ${saveBlocked}`
+      : `Loaded ${file.name}. Nothing changed on the robot yet - confirm to save it.`;
+    renderLiveCalibrationUi();
+    if (!saveBlocked) openRobotCalibrationConfirmation();
   } catch (error) {
     status.textContent = error instanceof Error ? error.message : "Calibration import failed.";
   }
@@ -12345,7 +12388,7 @@ window.addEventListener("resize", resize);
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
     if (liveCalibrationState.benchModeAcknowledged || calibrationPendingAction === "enter") {
-      releaseCalibrationBench("Studio was hidden. Bench mode closed; your draft was kept.");
+      releaseCalibrationBench("Studio was hidden. The jog session ended; unsaved changes were kept.");
     }
     if (nativeNavigationRunnerIsActive(liveNativeNavigationState)) {
       haltLiveNativeNavigation("Browser control was released because this tab is no longer visible.", true);

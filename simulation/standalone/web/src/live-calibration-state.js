@@ -191,7 +191,7 @@ export function resetLiveCalibrationConnection(state) {
 
 export function saveLocalCalibrationProfile(state, now = Date.now()) {
   state.profile.savedAt = now;
-  // A browser backup does not make edits synchronized with robot NVS.
+  // A copy on this PC does not make edits synchronized with robot NVS.
   // Keep the dirty flag so reconnect readback cannot replace this draft.
   return calibrationProfileJson(state.profile);
 }
@@ -265,6 +265,12 @@ export function acceptRobotCalibrationProfile(state, profile, sessionId, origin 
   const robotOrigin = normalizeCalibrationOrigin(origin, active);
   state.robotOrigin = robotOrigin;
   state.restorableProfile = false;
+  // A kept draft whose values already equal the robot's is not an unsaved
+  // change. Treating it as one kept jogs and edits on a stale copy after every
+  // reconnect, which looked as if the robot had lost its calibration.
+  if (state.dirty && !robotOrigin.usingDefaults && calibrationProfilesMatch(state.profile, active, false)) {
+    state.dirty = false;
+  }
   let adopted = !state.dirty;
   let restored = false;
   if (robotOrigin.usingDefaults && !state.dirty) {
@@ -288,7 +294,10 @@ export function acceptRobotCalibrationProfile(state, profile, sessionId, origin 
   }
   state.robotProfileSessionId = sessionId;
   state.robotProfileSavedAt = active.savedAt ?? 0;
-  state.robotProfile = active;
+  // Keep the robot's copy separate from the editable profile. Sharing one
+  // object made every trim edit rewrite the "on robot" values too, so the save
+  // dialog and Review reported no changes while the robot still ran old ones.
+  state.robotProfile = structuredClone(active);
   return { accepted: true, adopted, restored, robotUsingDefaults: robotOrigin.usingDefaults };
 }
 
@@ -344,6 +353,19 @@ export function calibrationChangeSummary(robotProfile, draft) {
   return summary;
 }
 
+// Joints whose Studio values differ from the profile the robot is running.
+// Null when the robot profile has not been read in this session.
+export function unsavedCalibrationChanges(state) {
+  if (!state?.robotProfile) return null;
+  return calibrationChangeSummary(state.robotProfile, state.profile);
+}
+
+// A send that flips a servo direction or rewires an output needs an explicit
+// acknowledgement; trims and limits are saved with a single confirmation.
+export function calibrationSaveNeedsAcknowledgement(summary) {
+  return !summary?.comparable || summary.directionChanges.length > 0 || summary.channelChanges.length > 0;
+}
+
 export function beginRobotCalibrationSave(state, profile) {
   state.saveDraftProfile = createLiveCalibrationProfile(state.profile);
   state.saveExpectedProfile = createLiveCalibrationProfile(profile);
@@ -351,8 +373,10 @@ export function beginRobotCalibrationSave(state, profile) {
   state.dirty = true;
 }
 
-export function acknowledgeRobotCalibrationSave(state, accepted, persisted) {
-  state.benchModeAcknowledged = false;
+export function acknowledgeRobotCalibrationSave(state, accepted, persisted, benchMode = false) {
+  // Firmware 0.8.22+ keeps bench mode through a save that does not change the
+  // channel map, so the owner can save one joint and continue with the next.
+  state.benchModeAcknowledged = Boolean(state.benchModeAcknowledged && benchMode === true);
   state.dirty = true;
   state.savePhase = accepted && persisted && state.saveExpectedProfile ? "verifying" : "rejected";
   forgetRobotCalibrationProfile(state);
@@ -369,7 +393,7 @@ export function acceptCalibrationSaveReadback(state, profile, sessionId) {
   acceptRobotCalibrationProfile(state, active, sessionId);
   const adopted = matched && draftUnchanged;
   if (adopted) {
-    state.profile = active;
+    state.profile = structuredClone(active);
     state.jogOffsetDeg = 0;
     state.dirty = false;
   }
@@ -411,15 +435,15 @@ export function calibrationControlBlockReason(state, context, action = "enter") 
   // so on firmware that supports it, it needs neither bench mode, the support
   // checkbox, nor a healthy battery. Everything else about the link still applies.
   const flashOnly = action === "save-profile" && context.saveWithoutBench === true;
-  if (!flashOnly && !state.safetyConfirmed) return "Confirm that the robot is supported before requesting bench mode.";
+  if (!flashOnly && !state.safetyConfirmed) return "Tick the safety check (robot supported, feet clear) before moving servos.";
   if (!context.workspaceActive) return "Open the LIVE calibration page to request physical calibration.";
   if (!flashOnly && context.batteryLocked) return "Robot battery is too low for physical calibration.";
   if (context.pending) return "Waiting for the current robot calibration request.";
-  if (action === "enter" && state.benchModeAcknowledged) return "Bench mode is already acknowledged.";
+  if (action === "enter" && state.benchModeAcknowledged) return "A jog session is already running.";
   if (action !== "enter" && !flashOnly && !state.benchModeAcknowledged) {
     return action === "save-profile"
-      ? "This robot's firmware needs bench mode to save: request bench mode first (or flash firmware 0.8.21 or later)."
-      : "Request bench mode before sending physical calibration commands.";
+      ? "This robot's firmware needs bench mode to save: start a jog session first (or flash firmware 0.8.21 or later)."
+      : "Start a jog session before moving servos.";
   }
   return "";
 }

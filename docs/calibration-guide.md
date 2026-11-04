@@ -26,36 +26,45 @@ unique. The editor highlights duplicate outputs, then presents a second review
 screen listing only the changed routes. Confirmation remains locked until the
 user acknowledges that an incorrect route can energize a different actuator.
 
-The channel map is safe to edit offline. Physical jog is separately gated by a
-connected adapter, disarmed robot, supported-chassis acknowledgement, and robot
-bench-mode acknowledgement. Only one physical output is energized during a
-jog. Changing to another mapped output turns the previous one fully off.
+The channel map is safe to edit offline. Moving a real servo needs a **jog
+session** (the firmware calls it bench mode): a connected, disarmed robot, the
+"robot is supported" tick box, and the robot's acknowledgement. Only one output
+is energized at a time, at 5°/s. Changing to another mapped output turns the
+previous one fully off.
 
-Saving to the robot has another confirmation step. Firmware turns all 16 PWM
-outputs off before validating, checksumming, rereading, and activating the new
-profile in NVS. The robot then leaves bench mode, so further movement requires
-a fresh bench-mode request.
+### What the robot runs, and what Studio shows
 
-On each connection to a disarmed robot, Studio reads that robot's active NVS
-profile and fills the calibration controls from it. This includes all 12 joint
-offsets, directions, limits, and physical output assignments. The robot is the
-source for the connected session, even when a new Studio version has an empty
-browser cache. Unsaved browser edits are kept for review. When a saved browser
-copy differs from the robot, Studio keeps the previous copy under **Load previous
-browser copy** before showing the robot values.
+The robot's saved profile (in flash) is the only calibration it ever uses: at
+power-up, in every radio mode (stow, stand, tilt, walk) and in LIVE. Studio
+never changes it except through **SAVE TO ROBOT**.
 
-During the current Studio session, disconnecting, reconnecting, or resetting
-the robot keeps calibration edits, the selected joint, and the wizard step.
-**Save browser copy** backs up those edits locally; they remain changes to
-review and send to the robot, so reconnect readback cannot overwrite them.
-Temporary jog displacement is reset when communication is lost.
+On each connection Studio reads that profile and shows it. Any edit you make
+(trim, direction, limits, wiring, an imported file) is an **unsaved change**:
+the bar at the top of the page says how many joints differ from the robot, with
+**SAVE TO ROBOT** and **DISCARD CHANGES** next to it. Unsaved changes are kept on
+this PC between sessions so nothing is lost, but the robot does not run them. A
+kept change that turns out to equal the robot's values is cleared automatically.
 
-Disconnecting from **Pair Robot** sends a bench-mode exit to the firmware.
-Studio renews bench permission every 500 ms while calibration is active. If
-USB is removed or communication stops, firmware disables outputs and leaves
-bench mode after two seconds without renewal. Reconnect and request bench mode
-again before jogging; pairing alone does not restore bench permission. This
-disconnect timeout requires both the updated Studio app and firmware.
+### Jogging (Studio 0.4.3, firmware 0.8.22)
+
+1. Tick the safety box and press **START JOG SESSION**.
+2. The selected joint first moves to its center (saved center plus any unsaved
+   trim) at 5°/s. A long move here only means the leg was somewhere else, for
+   example folded in stow; it is not lost calibration. Selecting another joint
+   does the same for that joint.
+3. Use the trim buttons. Clicks are never dropped: if one is still on its way,
+   the newest target is sent as soon as the robot answers.
+4. Press **SAVE TO ROBOT**. With firmware 0.8.22 the jog session stays open
+   after a save (unless the channel map changed), so you can save joint by joint.
+
+Ending the session (leaving the page, unticking the box, unplugging USB, or two
+seconds without Studio's keepalive) hands the robot back to the radio. It
+immediately takes the radio-selected pose with its **saved** profile. Firmware
+0.8.21 and older left the outputs off and ignored the radio until a reboot,
+which looked as if calibration had been lost.
+
+Saving from the Review step without a jog session blinks the outputs off for one
+control tick; the radio pose then continues with the new profile.
 
 Before a profile can be sent, Studio must have read the current robot profile
 in that session. Firmware 0.8.15 and later require the read profile's `savedAt`
@@ -163,24 +172,28 @@ which breaks roll and tilt, so every reset or fallback used to wipe them.
 and `DOMINO_BASELINE_CALIBRATION` in `live-calibration-state.js`) must stay
 identical; a test enforces it. If you recalibrate the robot, update both.
 
-### Before every send
+### Before every save
 
-The confirmation dialog compares your profile with what the robot holds and
-lists what the send changes. **Direction changes** (which flip a servo's turn
+The confirmation dialog compares your values with what the robot holds and
+lists what the save changes. **Direction changes** (which flip a servo's turn
 direction, and decide roll and tilt) and **output channel changes** are shown
-in red. If you see hip directions flipping that you did not mean to change,
+in red and need a tick before the save is allowed; trims and limits save with
+one click. If you see hip directions flipping that you did not mean to change,
 cancel and import your last good profile instead.
+
+**IMPORT FILE…** never changes the robot by itself: it loads the file as unsaved
+changes and opens this dialog so you can save it or cancel.
 
 ### Saving without bench mode (firmware 0.8.21 and later)
 
 A save only writes flash (the robot turns every output off first), so on firmware
 0.8.21 and later it needs neither bench mode nor the "robot is supported" checkbox.
-Older firmware still requires bench mode to save. If **CONFIRM & SEND** is blocked,
+Older firmware still requires bench mode to save. If **SAVE TO ROBOT** is blocked,
 the reason is shown inside the dialog and the button stays disabled until it clears
 (for example: not connected, telemetry older than one second, robot not disarmed,
 another request pending, or, on older firmware, bench mode not active).
-When the robot is on defaults, Studio does **not** overwrite your saved browser
-copy with them. It keeps that copy (or the last profile read from a healthy
-robot) as an unsaved draft: review it, then send it to the robot. The serial
+When the robot is on defaults, Studio does **not** overwrite your last known
+profile with them. It loads that profile (or the last one read from a healthy
+robot) as unsaved changes: review it, then save it to the robot. The serial
 console also prints `Calibration source: ...` at boot. The hip, upper and lower
 trims in `src/leg_controller.h` are compiled in and apply under every profile.

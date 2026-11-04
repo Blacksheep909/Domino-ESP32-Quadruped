@@ -95,6 +95,8 @@
 .calibration-sync-actions { display: flex; flex: 0 0 auto; gap: 6px; }
 .calibration-sync-actions button, .context-guide-button { padding: 9px 12px; color: var(--ui-accent); border: 1px solid var(--ui-accent-border); border-radius: 4px; background: var(--ui-accent-soft); font: 700 10px/1.2 Consolas, monospace; cursor: pointer; }
 .calibration-sync-actions button:disabled { color: var(--ui-disabled); border-color: var(--ui-border); background: var(--ui-disabled-surface); cursor: default; }
+.calibration-sync-actions .calibration-sync-primary:not(:disabled) { color: var(--ui-field); border-color: var(--ui-accent); background: var(--ui-accent); }
+.calibration-sync-status[data-state="warning"] .calibration-sync-primary:not(:disabled) { box-shadow: 0 0 0 2px var(--ui-warning-soft), 0 0 0 3px var(--ui-warning); }
 .calibration-sync-status[data-state="verified"] { border-left-color: var(--ui-accent); }
 .calibration-sync-status[data-state="warning"] { border-left-color: var(--ui-warning); background: var(--ui-warning-soft); }
 #live-view-calibration .calibration-review-table-wrap { overflow-x: auto; }

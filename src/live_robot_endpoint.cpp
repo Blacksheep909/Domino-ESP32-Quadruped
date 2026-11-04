@@ -113,8 +113,9 @@ enum class LiveTransport : uint8_t { None, Usb, Wifi, Bluetooth };
 
 LiveRobotState state = LiveRobotState::Disarmed;
 // Standalone CRSF control is available after boot. A LIVE disarm, E-stop,
-// watchdog, fault, or calibration session can latch it off; an accepted LIVE
-// arm or a physical reboot restores it.
+// watchdog or fault latches it off; an accepted LIVE arm or a physical reboot
+// restores it. A calibration bench session suspends it and gives it back when
+// the session ends (see endCalibrationSession).
 bool radioControlEnabled = true;
 LiveRobotPoseSnapshot expectedPose{};
 float expectedFootTargetsMm[4][3] = {};
@@ -772,7 +773,7 @@ void sendHello(bool bestEffort = false) {
   document["type"] = "robot-hello";
   document["robotId"] = "domino-esp32-quadruped";
   document["robotName"] = "Domino";
-  document["firmwareVersion"] = "0.8.21";
+  document["firmwareVersion"] = "0.8.22";
   document["robotState"] = stateName();
   addCalibrationOrigin(document["calibration"].to<JsonObject>());
   if (state == LiveRobotState::Fault && faultReason[0]) document["faultReason"] = faultReason;
@@ -1029,6 +1030,20 @@ void disableOutputs(Adafruit_PWMServoDriver &driver, LiveRobotState nextState) {
   state = nextState;
 }
 
+// Ends a calibration bench session without latching radio control off.
+// Firmware <= 0.8.21 used disableOutputs() here, which left radioControlEnabled
+// false: after calibration the dog stayed limp and ignored the radio (stand,
+// walk) until a reboot or LIVE arm, so it looked as if the saved calibration was
+// lost. Returning to radio control is exactly what boot does: the control loop
+// re-enables outputs on its next tick and drives the radio-selected pose through
+// the active (saved) profile. LIVE disarm, E-stop, watchdog and faults still
+// latch radio control off through disableOutputs(); a calibration session only
+// ends in the disarmed state, so it never clears one of those latches.
+void endCalibrationSession(Adafruit_PWMServoDriver &driver) {
+  disableOutputs(driver, state);
+  radioControlEnabled = state == LiveRobotState::Disarmed;
+}
+
 void handleReceiverPassthrough(JsonObjectConst command, JsonObjectConst payload,
                                LiveTransport source, Adafruit_PWMServoDriver &driver) {
   const char *action = command["action"] | "";
@@ -1200,7 +1215,7 @@ void handleCalibration(JsonObjectConst command, JsonObjectConst payload,
     return;
   }
   if (!strcmp(action, "exit")) {
-    disableOutputs(driver, LiveRobotState::Disarmed);
+    endCalibrationSession(driver);
     acknowledgeCalibration(action, requestId, true);
     return;
   }
@@ -1255,9 +1270,19 @@ void handleCalibration(JsonObjectConst command, JsonObjectConst payload,
       acknowledgeCalibration(action, requestId, false,
                              "Robot calibration changed. Reload its active profile before saving.");
     } else {
-      // A channel-map replacement is applied only with every PCA9685 output
-      // fully off. Re-entering bench mode is required before any further jog.
-      disableOutputs(driver, LiveRobotState::Disarmed);
+      // A channel-map change is applied only with every PCA9685 output fully
+      // off, and it ends a bench session (re-enter before any further jog).
+      // Trim, direction and limit changes keep the bench session open so the
+      // owner can save one joint and carry on with the next. Outside bench
+      // mode the outputs blink off and radio control re-drives the pose with
+      // the new profile on its next tick instead of leaving the dog limp.
+      bool channelMapChanged = false;
+      for (const ServoCalibrationJoint &joint : profile.joints) {
+        if (servoCalibrationPhysicalChannel(servoCalibrationProfile(), joint.logicalChannel) !=
+            joint.channel) channelMapChanged = true;
+      }
+      if (!benchMode) setServoOutputsEnabled(driver, false);
+      else if (channelMapChanged) endCalibrationSession(driver);
       if (!persistCalibrationProfile(profile)) {
         acknowledgeCalibration(action, requestId, false, "NVS verification failed; previous calibration remains active.");
       } else {
@@ -1512,7 +1537,7 @@ void updateWirelessTransports(Adafruit_PWMServoDriver &driver, uint32_t now) {
 
   if (!ownerConnected()) {
     if (state == LiveRobotState::Armed) disableOutputs(driver, LiveRobotState::Watchdog);
-    else if (benchMode) disableOutputs(driver, LiveRobotState::Disarmed);
+    else if (benchMode) endCalibrationSession(driver);
     commandOwner = LiveTransport::None;
   } else if (commandOwner != LiveTransport::None && state != LiveRobotState::Armed && !benchMode &&
              now - lastOwnerCommandMs > kTransportOwnerIdleMs) {
@@ -1589,8 +1614,8 @@ void liveRobotEndpointLoop(uint32_t now, Adafruit_PWMServoDriver &driver) {
   // USB-UART hardware cannot report a removed cable. Expire bench permission
   // before reading queued commands so a late keepalive cannot revive it.
   if (calibrationLease.expired(now)) {
-    disableOutputs(driver, state == LiveRobotState::Armed
-        ? LiveRobotState::Watchdog : LiveRobotState::Disarmed);
+    if (state == LiveRobotState::Armed) disableOutputs(driver, LiveRobotState::Watchdog);
+    else endCalibrationSession(driver);
     commandOwner = LiveTransport::None;
   }
   readTransport(Serial, usbInputLine, LiveTransport::Usb, driver, now);

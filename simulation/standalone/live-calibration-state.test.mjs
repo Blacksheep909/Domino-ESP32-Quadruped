@@ -801,7 +801,7 @@ test("old firmware still needs bench mode to save, and says so", () => {
   const state = readySaveState();
   state.safetyConfirmed = true;
   const reason = originState.calibrationControlBlockReason(state, saveContext(), "save-profile");
-  assertOrigin.match(reason, /bench mode/i);
+  assertOrigin.match(reason, /jog session/i);
   state.benchModeAcknowledged = true;
   assertOrigin.equal(originState.calibrationControlBlockReason(state, saveContext(), "save-profile"), "");
 });

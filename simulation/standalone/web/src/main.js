@@ -7689,6 +7689,14 @@ function renderCalibrationSyncStatus() {
   const banner = document.querySelector("#live-calibration-sync-status");
   const changes = ready ? unsavedCalibrationChanges(liveCalibrationState) : null;
   const changedJoints = changes?.total ?? 0;
+  // Edits that were put back to the robot's values are not unsaved changes.
+  if (ready && liveCalibrationState.dirty && changes?.comparable && changedJoints === 0 &&
+      !["sending", "verifying", "mismatch", "unconfirmed", "rejected"].includes(phase)) {
+    liveCalibrationState.dirty = false;
+    liveCalibrationState.profile = createLiveCalibrationProfile(liveCalibrationState.robotProfile);
+  }
+  const saveBlockReason = calibrationControlBlockReason(
+    liveCalibrationState, calibrationControlContext(), "save-profile");
   let title = "Waiting for the robot";
   let copy = "Connect the robot. Studio loads the calibration it is running; changes stay unsaved until you press SAVE TO ROBOT.";
   let tone = "draft";
@@ -7706,7 +7714,9 @@ function renderCalibrationSyncStatus() {
     tone = "warning";
   } else if (ready && liveCalibrationState.dirty && changedJoints > 0) {
     title = `${changedJoints} joint${changedJoints === 1 ? "" : "s"} changed — not on the robot yet`;
-    copy = "The robot still runs its saved calibration, in every mode and after a restart. Press SAVE TO ROBOT to keep these changes, or DISCARD CHANGES.";
+    copy = saveBlockReason && !calibrationPendingRequestId
+      ? `The robot still runs its saved calibration. Can't save yet: ${saveBlockReason}`
+      : "The robot still runs its saved calibration, in every mode and after a restart. Press SAVE TO ROBOT to keep these changes, or DISCARD CHANGES.";
     tone = "warning";
   } else if (ready) {
     title = phase === "verified" ? "Saved to the robot and checked" : "Studio matches the robot";
@@ -9050,8 +9060,15 @@ function updateLiveComparisonUi() {
   if (liveViewState.selected === LIVE_VIEW_CALIBRATION) renderMotionSmoothingUi();
   renderCalibrationSyncStatus();
   if (liveViewState.selected === LIVE_VIEW_GAITS) renderLiveGaitUi();
-  document.querySelector("#live-calibration-apply-robot").disabled = Boolean(
-    calibrationControlBlockReason(liveCalibrationState, calibrationControlContext(), "save-profile"));
+  const calibrationSaveBlockReason =
+    calibrationControlBlockReason(liveCalibrationState, calibrationControlContext(), "save-profile");
+  const calibrationSaveButton = document.querySelector("#live-calibration-apply-robot");
+  calibrationSaveButton.disabled = Boolean(calibrationSaveBlockReason);
+  // A greyed-out button must say why (for example, older firmware that only
+  // saves during a jog session).
+  calibrationSaveButton.title = calibrationSaveBlockReason
+    ? `Can't save yet: ${calibrationSaveBlockReason}`
+    : "Store these values on the robot. It uses them in every mode and after a restart.";
   refreshRobotCalibrationConfirmGate();
   const calibrationApplyButton = document.querySelector("#live-calibration-apply-robot");
   const calibrationSaving = ["sending", "verifying"].includes(liveCalibrationState.savePhase);

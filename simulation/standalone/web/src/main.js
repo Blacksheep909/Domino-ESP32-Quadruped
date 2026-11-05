@@ -37,6 +37,7 @@ import {
   liveGaitRiskAssessment,
   LIVE_GAIT_LIBRARY_KEY,
   parseLiveGaitProfileJson,
+  liveGaitImportRollback,
   readLiveGaitLibrary,
   replaceLiveGaitDraft,
   selectLiveGaitPreset,
@@ -8727,7 +8728,9 @@ function renderLiveGaitUi() {
   const gaitStatus = document.querySelector("#live-gait-status");
   if (gaitStatus.textContent !== liveGaitState.status) {
     setStudioActionFeedback(gaitStatus, liveGaitState.status,
-      liveGaitState.pendingRequestId ? "waiting" : "info");
+      liveGaitState.pendingRequestId ? "waiting"
+        : /^Robot rejected|timed out|No reply|OLDER/i.test(liveGaitState.status) ? "error"
+          : /saved persistently|restored/i.test(liveGaitState.status) ? "success" : "info");
   }
   document.querySelector("#live-gait-apply").disabled =
     liveBatteryControlLocked || !gaitLinkReady || !liveGaitCanApplyDraft(liveGaitState);
@@ -8767,9 +8770,11 @@ function sendLiveGaitCommand(action, profileOverride = null) {
     if (liveGaitState.pendingRequestId !== requestId) return;
     liveGaitState.pendingRequestId = "";
     liveGaitState.pendingAction = "";
-    liveGaitState.status = "Robot acknowledgement timed out. No profile change was assumed.";
+    liveGaitState.status = action === "request-profile"
+      ? "Robot acknowledgement timed out. No profile change was assumed."
+      : "No reply from the robot. Read its profile to see whether the change was saved.";
     renderLiveGaitUi();
-  }, 3_000);
+  }, ["apply-profile", "revert-profile"].includes(action) ? 10_000 : 3_000);
   renderLiveGaitUi();
   return true;
 }
@@ -10447,7 +10452,10 @@ document.querySelector("#live-gait-import-file").addEventListener("change", asyn
     const profile = parseLiveGaitProfileJson(await file.text());
     replaceLiveGaitDraft(liveGaitState, profile, "import");
     liveGaitPreviewLab.reset();
-    liveGaitState.status = `Imported ${file.name}. Preview and review the profile before applying.`;
+    const rollback = liveGaitImportRollback(liveGaitState);
+    liveGaitState.status = rollback
+      ? `Imported ${file.name}. It is OLDER than the robot's gait (file ${formatCalibrationSaveTime(rollback.fileUpdatedAt)}, robot ${formatCalibrationSaveTime(rollback.robotUpdatedAt)}). Applying it replaces the newer gait.`
+      : `Imported ${file.name}. Nothing changed on the robot. Preview it, then apply it to the robot.`;
   } catch (error) {
     liveGaitState.status = error instanceof Error ? error.message : "Gait import failed.";
   }
@@ -10511,7 +10519,19 @@ document.querySelector("#live-gait-use-robot").addEventListener("click", () => {
   renderLiveGaitUi();
 });
 document.querySelector("#live-gait-apply").addEventListener("click", () => {
-  if (liveGaitCanApplyDraft(liveGaitState)) sendLiveGaitCommand("apply-profile");
+  if (!liveGaitCanApplyDraft(liveGaitState)) return;
+  const rollback = liveGaitImportRollback(liveGaitState);
+  if (rollback && !window.confirm(
+    `This gait file was saved ${formatCalibrationSaveTime(rollback.fileUpdatedAt)}, ` +
+    `older than the robot's gait (saved ${formatCalibrationSaveTime(rollback.robotUpdatedAt)}).
+
+` +
+    "Replace the robot's newer gait with this older file?")) {
+    liveGaitState.status = "Apply cancelled. The robot keeps its newer gait.";
+    renderLiveGaitUi();
+    return;
+  }
+  sendLiveGaitCommand("apply-profile");
 });
 document.querySelector("#live-gait-revert").addEventListener("click", () => {
   if (liveGaitCanApply(liveGaitState) && liveGaitState.previousRobotProfile) sendLiveGaitCommand("revert-profile");

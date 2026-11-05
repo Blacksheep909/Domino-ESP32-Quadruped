@@ -402,7 +402,8 @@ function rememberAdapterRequest(socket, message, kind) {
     kind,
     sessionId: message.sessionId || "",
     sentAt: Date.now(),
-    timeoutMs: kind === "calibration" && ["save-profile", "save-smoothing"].includes(message.action)
+    timeoutMs: (kind === "calibration" && ["save-profile", "save-smoothing"].includes(message.action)) ||
+      (kind === "gait" && ["apply-profile", "revert-profile"].includes(message.action))
       ? 12_000 : 5_000,
   });
 }

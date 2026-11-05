@@ -183,6 +183,9 @@ export class LiveCompanionCore {
       motionSmoothing: false,
       gaitProfiles: false,
       persistentProfiles: false,
+      // Firmware reports this in its hello. Without it here Studio never
+      // learned that gaits can be stored, and APPLY DRAFT TO ROBOT stayed off.
+      persistentGaitProfiles: false,
       manualControl: false,
       nativeNavigation: false,
       navigation: false,
@@ -615,7 +618,7 @@ export class LiveCompanionCore {
         if (message.action === "exit" || message.benchMode === false) this.benchMode = false;
         relay.push(this.calibrationAck(pending.message, accepted, reason, message.profile, message));
       } else if (message.kind === "gait") {
-        relay.push(this.gaitAck(pending.message, accepted, reason, message.profile));
+        relay.push(this.gaitAck(pending.message, accepted, reason, message.profile, message));
       } else if (message.kind === "navigation") {
         relay.push(this.navigationAck(pending.message, accepted, reason, message));
       }
@@ -706,8 +709,19 @@ export class LiveCompanionCore {
     };
   }
 
-  gaitAck(message, accepted, reason = "", profile = undefined) {
-    return { type: "live-gait-ack", action: message.action, requestId: message.requestId, accepted, adapterId: this.adapterId, sessionId: this.sessionId, ...(reason ? { reason } : {}), ...(profile ? { profile } : {}) };
+  gaitAck(message, accepted, reason = "", profile = undefined, physical = undefined) {
+    // Carry what Studio needs from the robot's reply: whether gaits can be
+    // stored, whether this one was, and the robot state. Dropping these left
+    // the apply button permanently disabled and every save "unconfirmed".
+    return {
+      type: "live-gait-ack", action: message.action, requestId: message.requestId, accepted,
+      adapterId: this.adapterId, sessionId: this.sessionId,
+      supportsPersistentProfiles: this.capabilities.persistentGaitProfiles === true,
+      robotState: this.robotState,
+      ...(typeof physical?.persisted === "boolean" ? { persisted: physical.persisted } : {}),
+      ...(typeof physical?.rollbackAvailable === "boolean" ? { rollbackAvailable: physical.rollbackAvailable } : {}),
+      ...(reason ? { reason } : {}), ...(profile ? { profile } : {}),
+    };
   }
 
   navigationAck(message, accepted, reason = "", physical = undefined) {

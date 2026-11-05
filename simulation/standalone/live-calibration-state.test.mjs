@@ -38,6 +38,7 @@ import {
   updateCalibrationChannelMap,
   unsavedCalibrationChanges,
   calibrationSaveNeedsAcknowledgement,
+  calibrationImportRollback,
 } from "./web/src/live-calibration-state.js";
 import {
   validCalibrationAcknowledgement,
@@ -900,4 +901,32 @@ test("an accepted jog session moves the selected joint to its center first", () 
   assert.equal(browser.liveCalibrationState.benchModeAcknowledged, true);
   assert.equal(browser.liveCalibrationState.jogOffsetDeg, 0);
   assert.deepEqual(sent, [["jog", "center"]]);
+});
+
+test("importing a file older than the robot's profile is flagged as a rollback and needs a tick", () => {
+  const state = createLiveCalibrationState();
+  acceptRobotCalibrationProfile(state, createLiveCalibrationProfile({ savedAt: 5_000 }), "session");
+  const older = createLiveCalibrationProfile({ savedAt: 1_000 });
+  older.joints[0].offsetDeg = -6;
+  state.profile = older;
+  state.dirty = true;
+  state.importedFile = { name: "old.json", savedAt: 1_000 };
+  const rollback = calibrationImportRollback(state);
+  assert.deepEqual(rollback, { name: "old.json", fileSavedAt: 1_000, robotSavedAt: 5_000 });
+  assert.equal(calibrationSaveNeedsAcknowledgement(unsavedCalibrationChanges(state), rollback), true);
+});
+
+test("a newer imported file, or one with no save time against an unsaved robot, is not a rollback", () => {
+  const state = createLiveCalibrationState();
+  acceptRobotCalibrationProfile(state, createLiveCalibrationProfile({ savedAt: 5_000 }), "session");
+  state.dirty = true;
+  state.importedFile = { name: "new.json", savedAt: 9_000 };
+  assert.equal(calibrationImportRollback(state), null);
+  state.importedFile = { name: "undated.json", savedAt: null };
+  assert.equal(calibrationImportRollback(state)?.fileSavedAt, null, "undated files are treated as older");
+  const fresh = createLiveCalibrationState();
+  acceptRobotCalibrationProfile(fresh, createLiveCalibrationProfile({ savedAt: 0 }), "session");
+  fresh.dirty = true;
+  fresh.importedFile = { name: "any.json", savedAt: 1 };
+  assert.equal(calibrationImportRollback(fresh), null, "a robot with no saved profile cannot be rolled back");
 });

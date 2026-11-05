@@ -251,6 +251,7 @@ import {
   LIVE_CALIBRATION_LAST_ROBOT_KEY,
   calibrationChangeSummary,
   calibrationSaveNeedsAcknowledgement,
+  calibrationImportRollback,
   unsavedCalibrationChanges,
   firmwareSavesWithoutBench,
   calibrationOriginWarning,
@@ -7707,6 +7708,7 @@ function renderCalibrationSyncStatus() {
   if (ready && liveCalibrationState.dirty && changes?.comparable && changedJoints === 0 &&
       !["sending", "verifying", "mismatch", "unconfirmed", "rejected"].includes(phase)) {
     liveCalibrationState.dirty = false;
+    liveCalibrationState.importedFile = null;
     liveCalibrationState.profile = createLiveCalibrationProfile(liveCalibrationState.robotProfile);
   }
   const saveBlockReason = calibrationControlBlockReason(
@@ -8029,6 +8031,14 @@ function renderRobotCalibrationChanges() {
     add("notice", "CANNOT COMPARE WITH THE ROBOT", ["The robot's current profile has not been read in this session."]);
     return;
   }
+  const rollback = calibrationImportRollback(liveCalibrationState);
+  if (rollback) {
+    add("danger", "THIS FILE IS OLDER THAN THE ROBOT'S CALIBRATION", [
+      `${rollback.name || "The imported file"} was saved ${formatCalibrationSaveTime(rollback.fileSavedAt)}.`,
+      `The robot's current calibration was saved ${formatCalibrationSaveTime(rollback.robotSavedAt)}.`,
+      "Saving puts the older values back on the robot. Cancel and use DISCARD CHANGES to keep the robot's newer calibration.",
+    ]);
+  }
   if (summary.total === 0) {
     add("notice", "NO CHANGES", ["This profile matches what the robot already holds."]);
     return;
@@ -8053,8 +8063,18 @@ function renderRobotCalibrationChanges() {
 
 // The dialog is modal, so a refusal written to the page behind it is invisible.
 // Keep the CONFIRM & SEND button and an explanation in sync with the real gate.
+function formatCalibrationSaveTime(savedAt) {
+  if (!Number.isFinite(Number(savedAt)) || Number(savedAt) <= 0) return "at an unknown time";
+  return `on ${new Date(Number(savedAt)).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}`;
+}
+
+function robotCalibrationSaveNeedsTick() {
+  return calibrationSaveNeedsAcknowledgement(
+    unsavedCalibrationChanges(liveCalibrationState), calibrationImportRollback(liveCalibrationState));
+}
+
 function robotCalibrationConfirmAcknowledged() {
-  const needed = calibrationSaveNeedsAcknowledgement(unsavedCalibrationChanges(liveCalibrationState));
+  const needed = robotCalibrationSaveNeedsTick();
   return !needed || document.querySelector("#live-calibration-robot-confirm-ack").checked;
 }
 
@@ -8065,8 +8085,11 @@ function refreshRobotCalibrationConfirmGate() {
   const status = document.querySelector("#live-calibration-robot-confirm-status");
   status.hidden = !reason;
   status.textContent = reason ? `Cannot save yet: ${reason}` : "";
-  document.querySelector("#live-calibration-robot-confirm-ack-row").hidden =
-    !calibrationSaveNeedsAcknowledgement(unsavedCalibrationChanges(liveCalibrationState));
+  const ackRow = document.querySelector("#live-calibration-robot-confirm-ack-row");
+  ackRow.hidden = !robotCalibrationSaveNeedsTick();
+  ackRow.querySelector("span").textContent = calibrationImportRollback(liveCalibrationState)
+    ? "I want to replace the robot's newer calibration with this older file."
+    : "I checked the direction and wiring changes above.";
   document.querySelector("#live-calibration-robot-confirm-send").disabled =
     !robotCalibrationConfirmAcknowledged() || Boolean(reason);
   return reason;
@@ -8393,7 +8416,10 @@ function acceptCalibrationAcknowledgement(message) {
         try {
           // Keep the newest profile read from a robot that was NOT on defaults, so
           // a robot that later loses its flash copy can be restored from it.
-          if (!verifying && !result.robotUsingDefaults && Number(activeProfile.savedAt) > 0) {
+          // A verified save counts too: skipping it left an older profile here,
+          // which a restore would then have put back on the robot.
+          const goodRead = verifying ? result.matched : !result.robotUsingDefaults;
+          if (goodRead && Number(activeProfile.savedAt) > 0) {
             localStorage.setItem(LIVE_CALIBRATION_LAST_ROBOT_KEY, calibrationProfileJson(activeProfile));
           }
         } catch {
@@ -10284,6 +10310,7 @@ document.querySelector("#live-calibration-use-robot").addEventListener("click", 
   }
   liveCalibrationState.profile = createLiveCalibrationProfile(liveCalibrationState.robotProfile);
   liveCalibrationState.dirty = false;
+  liveCalibrationState.importedFile = null;
   liveCalibrationState.jogOffsetDeg = 0;
   liveCalibrationState.savePhase = "idle";
   liveCalibrationState.saveExpectedProfile = null;
@@ -10350,14 +10377,24 @@ document.querySelector("#live-calibration-import-file").addEventListener("change
     liveCalibrationState.profile = profile;
     liveCalibrationState.dirty = true;
     liveCalibrationState.jogOffsetDeg = 0;
+    liveCalibrationState.importedFile = { name: file.name, savedAt: profile.savedAt };
     // Importing never changes the robot by itself. Show what the file would
     // change and ask, instead of leaving an unsaved copy that looks applied.
+    const changes = unsavedCalibrationChanges(liveCalibrationState);
+    const rollback = calibrationImportRollback(liveCalibrationState);
     const saveBlocked = calibrationControlBlockReason(liveCalibrationState, calibrationControlContext(), "save-profile");
-    status.textContent = saveBlocked
-      ? `Loaded ${file.name}. Nothing changed on the robot. ${saveBlocked}`
-      : `Loaded ${file.name}. Nothing changed on the robot yet - confirm to save it.`;
+    if (changes?.comparable && changes.total === 0) {
+      status.textContent = `${file.name} matches what the robot already runs. Nothing to save.`;
+    } else {
+      const older = rollback
+        ? ` It is OLDER than the robot's calibration (file ${formatCalibrationSaveTime(rollback.fileSavedAt)}, robot ${formatCalibrationSaveTime(rollback.robotSavedAt)}).`
+        : "";
+      status.textContent = saveBlocked
+        ? `Loaded ${file.name}.${older} Nothing changed on the robot. ${saveBlocked}`
+        : `Loaded ${file.name}.${older} Nothing changed on the robot yet - confirm to save it.`;
+    }
     renderLiveCalibrationUi();
-    if (!saveBlocked) openRobotCalibrationConfirmation();
+    if (!saveBlocked && !(changes?.comparable && changes.total === 0)) openRobotCalibrationConfirmation();
   } catch (error) {
     status.textContent = error instanceof Error ? error.message : "Calibration import failed.";
   }

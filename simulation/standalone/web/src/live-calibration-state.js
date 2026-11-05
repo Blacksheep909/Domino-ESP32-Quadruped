@@ -162,6 +162,7 @@ export function createLiveCalibrationState(profile = createLiveCalibrationProfil
     benchModeAcknowledged: false,
     dirty: false,
     profile: createLiveCalibrationProfile(profile),
+    importedFile: null,
     robotProfileSessionId: "",
     robotProfileSavedAt: null,
     robotProfile: null,
@@ -360,10 +361,21 @@ export function unsavedCalibrationChanges(state) {
   return calibrationChangeSummary(state.robotProfile, state.profile);
 }
 
+// An imported file whose saved time is older than the profile the robot runs
+// would roll the robot back. Returns both times, or null when it is not older.
+export function calibrationImportRollback(state) {
+  const fileSavedAt = Number(state?.importedFile?.savedAt);
+  const robotSavedAt = Number(state?.robotProfileSavedAt);
+  if (!state?.importedFile || !state.dirty || !Number.isFinite(robotSavedAt) || robotSavedAt <= 0) return null;
+  if (Number.isFinite(fileSavedAt) && fileSavedAt > 0 && fileSavedAt >= robotSavedAt) return null;
+  return { name: state.importedFile.name || "", fileSavedAt: fileSavedAt > 0 ? fileSavedAt : null, robotSavedAt };
+}
+
 // A send that flips a servo direction or rewires an output needs an explicit
 // acknowledgement; trims and limits are saved with a single confirmation.
-export function calibrationSaveNeedsAcknowledgement(summary) {
-  return !summary?.comparable || summary.directionChanges.length > 0 || summary.channelChanges.length > 0;
+export function calibrationSaveNeedsAcknowledgement(summary, rollback = null) {
+  return Boolean(rollback) || !summary?.comparable ||
+    summary.directionChanges.length > 0 || summary.channelChanges.length > 0;
 }
 
 export function beginRobotCalibrationSave(state, profile) {
@@ -396,11 +408,13 @@ export function acceptCalibrationSaveReadback(state, profile, sessionId) {
     state.profile = structuredClone(active);
     state.jogOffsetDeg = 0;
     state.dirty = false;
+    state.importedFile = null;
   }
   state.savePhase = matched ? "verified" : "mismatch";
   if (matched) {
     state.saveExpectedProfile = null;
     state.saveDraftProfile = null;
+    state.importedFile = null;
   } else {
     forgetRobotCalibrationProfile(state);
   }

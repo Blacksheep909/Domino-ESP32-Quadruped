@@ -5485,6 +5485,7 @@ body[data-workspace="real-robot"]:is([data-live-view="sensors"], [data-live-view
 
 .calibration-jog-control button,
 .calibration-review-actions button,
+.calibration-secondary-actions button,
 .calibration-wizard-footer > button {
   height: 34px;
   padding: 0 11px;
@@ -5554,6 +5555,7 @@ body[data-workspace="real-robot"]:is([data-live-view="sensors"], [data-live-view
 .calibration-secondary-actions span { color: #7d807a; font-size: 9px; }
 .calibration-confirm[hidden] { display: none; }
 .calibration-review-actions button:disabled,
+.calibration-secondary-actions button:disabled,
 .calibration-wizard-footer > button:disabled { color: #9b9d98; background: #ededE9; border-color: #d8d8d3; cursor: default; }
 
 .calibration-wizard-footer {
@@ -5699,6 +5701,7 @@ body[data-workspace="real-robot"]:is([data-live-view="sensors"], [data-live-view
 :root[data-theme="dark"] .calibration-review-table-wrap th,
 :root[data-theme="dark"] .calibration-review-table-wrap td { border-color: #29292c; }
 :root[data-theme="dark"] .calibration-review-actions button:disabled,
+:root[data-theme="dark"] .calibration-secondary-actions button:disabled,
 :root[data-theme="dark"] .calibration-wizard-footer > button:disabled { color: #626269; background: #1b1b1e; border-color: #2d2d31; }
 :root[data-theme="dark"] .calibration-dialog { color: #ededee; }
 :root[data-theme="dark"] .calibration-dialog-shell { background: #121214; border-color: #343438; }
@@ -10675,3 +10678,42 @@ body[data-workspace="real-robot"][data-live-view="sensors"][data-live-planner-fo
 .calibration-inspection-clearance strong { font-size: 12px; }
 .calibration-inspection-clearance small, .calibration-inspection-sweep small { font-size: 11px; line-height: 1.4; }
 .calibration-preview-caption :is(.calibration-inspection-actions, .calibration-inspection-sweep) button { height: 30px; font-size: 10px; }
+
+/* Measured LIVE preview lane ----------------------------------------------
+   main.js (layoutLivePreviewLane) measures the title/notice rows, the editor
+   column and the caption, then sets --live-preview-top/right/width/height,
+   --live-preview-gap and --live-preview-caption-max on <body>. Every part of
+   the lane uses those values and one gap, so no page can slide under it. */
+@media (min-width: 1001px) {
+  body[data-workspace="real-robot"]:is([data-live-view="calibration"], [data-live-view="gaits"]) #scene {
+    inset: var(--live-preview-top) var(--live-preview-right) auto auto;
+    width: var(--live-preview-width);
+    height: var(--live-preview-height);
+  }
+
+  body[data-workspace="real-robot"]:is([data-live-view="calibration"], [data-live-view="gaits"]) .camera-gizmo {
+    top: calc(var(--live-preview-top) + var(--live-preview-gap, 12px) * 0.75);
+    right: calc(var(--live-preview-right) + var(--live-preview-gap, 12px) * 0.75);
+  }
+
+  body[data-workspace="real-robot"] :is(.calibration-preview-caption, .live-gait-preview-caption) {
+    top: calc(var(--live-preview-top) + var(--live-preview-height) + var(--live-preview-gap, 12px));
+    right: var(--live-preview-right);
+    width: var(--live-preview-width);
+    max-height: var(--live-preview-caption-max, none);
+    overflow-y: auto;
+    box-sizing: border-box;
+  }
+
+  /* The lane ends on the same page edge as the titles above it (the older
+     clamp(20px, 2.5vw, 54px) left it short of the title on every width). */
+  body[data-workspace="real-robot"]:is([data-live-view="calibration"], [data-live-view="gaits"]) {
+    --live-preview-right: var(--live-shell-gutter, var(--app-gutter));
+  }
+
+  /* Every LIVE title ends on the same page edge. */
+  #live-view-sensors .live-page-heading {
+    width: auto;
+    margin-right: 0;
+  }
+}

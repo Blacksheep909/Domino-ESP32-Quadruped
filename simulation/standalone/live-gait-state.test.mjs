@@ -144,6 +144,22 @@ test("firmware 0.8.23 lets a standing robot take a gait and refuses only while w
   const source = readFileSync(new URL("../../src/live_robot_endpoint.cpp", import.meta.url), "utf8");
   const handler = source.slice(source.indexOf("void handleGait("), source.indexOf("void handleCommand("));
   assert.doesNotMatch(handler, /servoOutputsEnabled\(\)/);
-  assert.match(handler, /kBodyModeGait = 4, kBodyModeCareful = 5, kBodyModeTransition = 6/);
+  assert.match(handler, /robotWalking()/);
   assert.match(handler, /Stop walking first/);
+});
+
+test("firmware 0.8.24 saves motion smoothing on a standing robot and refuses only in a jog session or a walk", () => {
+  const source = readFileSync(new URL("../../src/live_robot_endpoint.cpp", import.meta.url), "utf8");
+  const start = source.indexOf('if (!strcmp(action, "save-smoothing"))');
+  const block = source.slice(start, source.indexOf('if (!strcmp(action, "enter"))', start));
+  assert.doesNotMatch(block, /servoOutputsEnabled\(\)/);
+  assert.match(block, /benchMode \|\| robotWalking\(\)/);
+});
+
+test("the in-app guide describes the current calibration buttons, not the removed ones", () => {
+  const guide = readFileSync(new URL("./web/src/studio-help-content.js", import.meta.url), "utf8");
+  for (const removed of ["Save browser copy", "Send to robot", "Request bench mode", "Use robot values", "Export browser draft"]) {
+    assert.ok(!guide.includes(removed), removed);
+  }
+  assert.ok(guide.includes("SAVE TO ROBOT"));
 });

@@ -139,38 +139,34 @@ export const STUDIO_HELP_GUIDES = [
       "Use **Stop / Hold** to halt the mission. **Autonomy activity** records transfers and execution events for troubleshooting.",
     ]),
   ]),
-  guide("calibration", "LIVE", "Servo calibration", "Set the servo centres and travel limits. Send to robot saves them on the robot immediately; it does not need a firmware upload.", "calibration", [
-    section("Use an existing JSON profile", [
-      "Connect the robot and leave it disarmed. Click **Read robot** to see the calibration it is currently using.",
-      "Open **05 Review**, click **Import JSON** and choose your profile. Your imported values appear as a draft alongside the **On robot** values.",
-      "Check all 12 joints: channel, direction, trim and travel. Trim corrects the physical servo centre, so changing it does not move the CAD's neutral feet.",
-      "Complete **01 Safety** and request bench mode. Return to **05 Review**, click **Send to robot** and confirm the profile.",
-      "Wait for **Saved and verified on robot**. If the save fails or the values differ, Studio keeps your draft and explains what to check.",
-      "The save turns outputs off. For a physical check, request bench mode again and use a small joint jog. Power-cycle and read the robot again to check that the profile survives a restart.",
+  guide("calibration", "LIVE", "Servo calibration", "Set the servo centres and travel limits. SAVE TO ROBOT stores them on the robot; it does not need a firmware upload.", "calibration", [
+    section("How saving works", [
+      "The robot only ever runs the calibration saved on it: at power-up, in every radio mode and in LIVE. The bar at the top of the page says whether Studio matches the robot.",
+      "Any edit (trim, direction, limits, wiring or an imported file) is an **unsaved change** until you click **SAVE TO ROBOT**. Wait for **Saved to the robot and checked**.",
+      "**DISCARD CHANGES** throws your edits away and shows what the robot runs. **RELOAD FROM ROBOT** reads it again.",
     ], calibrationStep("review"), "Open Review"),
     section("1. Prepare the bench", [
       "Support the chassis with the feet clear. Remove load from the selected leg and keep the servo power switch within reach.",
-      "Complete the safety checks and click **Request bench mode**. Wait for the robot to confirm it before trying a physical jog.",
+      "Tick the safety check and click **START JOG SESSION**. The selected joint first moves to its centre at 5°/s.",
     ], calibrationStep("safety"), "Open Safety"),
     section("2. Choose a joint", [
-      "Select an actuator on the leg map. **CH** is its physical servo output.",
-      "Use **Edit channel map** if the wiring differs. Each of the 12 actuators needs a unique output; apply the map to your draft, then review it before sending.",
+      "Select an actuator on the leg map. **CH** is its physical servo output. In a jog session the new joint moves to its centre.",
+      "Use **Edit channel map** only if the wiring differs. Each of the 12 actuators needs a unique output.",
     ], calibrationStep("select"), "Open Select joint"),
     section("3. Set the neutral", [
-      "Adjust **Offset** to match the physical servo centre. Change **Direction** if the shaft turns the wrong way.",
-      "The model slider, **Play sweep** and **Neutral** let you inspect the geometry. **Enable physical jog** is a separate control, available in bench mode, with a ±10° range at 5°/s.",
-      "Test jog is temporary. Only channel, direction, offset and travel limits are saved.",
+      "Use the trim buttons until the leg matches the 3D model. Change **Direction** only if the shaft turns the wrong way.",
+      "Without a jog session the buttons only move the 3D preview. Test jog is temporary; trim, direction, wiring and limits are what get saved.",
+      "Click **SAVE TO ROBOT** after each joint if you like; the jog session stays open.",
     ], calibrationStep("neutral"), "Open Set neutral"),
     section("4. Set the travel limits", [
       "Enter **Min** and **Max** around the calibrated neutral. Check the linkage and displayed electrical range at both ends.",
       "Use the model slider to inspect the chosen travel. Check clearance on the real robot too; the CAD's hip pivot nubs are absent from this build.",
       "The existing electrical servo caps still apply. A configured mechanical range cannot extend an electrical output beyond those caps.",
     ], calibrationStep("limits"), "Open Set limits"),
-    section("5. Save and back up", [
-      "**Save browser copy** saves on this PC. **Send to robot** applies and stores the profile on the connected robot.",
-      "**Export browser draft** backs up your edits. **Export robot profile** reads and exports the robot's active calibration.",
-      "If a save cannot be verified, click **Read robot** and compare the values before retrying. **Use robot values** replaces your draft with that read-back.",
-      "**Restore defaults** changes your draft. The robot changes only after you send it.",
+    section("5. Back up, or restore from a file", [
+      "After saving, click **EXPORT ROBOT'S PROFILE** for a backup. It exports what is saved on the robot, not unsaved edits; save first.",
+      "**IMPORT FILE…** shows what the file would change and asks before saving. A file older than the robot's calibration is flagged and needs an extra tick, so an old backup cannot silently roll the robot back.",
+      "**RESTORE DEFAULTS…** changes Studio only. The robot changes only after **SAVE TO ROBOT**.",
     ], calibrationStep("review"), "Open Review"),
   ]),
   guide("smoothing", "LIVE", "Motion smoothing", "Set how quickly height and tilt commands change, then preview the response before saving.", "smoothing", [
@@ -182,7 +178,7 @@ export const STUDIO_HELP_GUIDES = [
     ]),
     section("Save the settings", [
       "Use **Read robot** in Motion response to check the active settings. **Default draft** resets your local values.",
-      "Leave bench mode and keep the robot disarmed, then click **Save to robot**. Wait for the verified-save result.",
+      "Keep the robot disarmed and not walking (standing is fine), end any calibration jog session, then click **Save to robot**. Wait for the verified-save result.",
       "This preview shows the shaped command, not the physical servo's measured response.",
     ]),
   ]),
@@ -193,8 +189,8 @@ export const STUDIO_HELP_GUIDES = [
       "Click **Request robot profile** to read the active gait. Compare the settings and export a backup before replacing it.",
     ]),
     section("Apply it", [
-      "Connect your robot, leave it disarmed and complete the apply review. The robot must support gait profiles and saving them.",
-      "Send the profile and wait for the saved result and matching read-back. If it is rejected, fix the reported setting before trying again.",
+      "Connect your robot and leave it disarmed with the walk switch on stand (standing or stowed is fine). Firmware 0.8.23 or later is needed to save a gait on a powered robot.",
+      "Click **Apply draft to robot** and wait for the saved result. An imported file older than the robot's gait asks before replacing it. If it is rejected, the reason says what to fix.",
       "Return to **Compare** for a physical run. Start with careful walking; centre the motion sticks through each mode change.",
     ], "compare", "Open Compare"),
   ]),
@@ -230,7 +226,7 @@ export const STUDIO_HELP_GUIDES = [
     section("Build first", [
       "Open **Upload FW** in LIVE. Check the board and package, and select any source file you want to review.",
       "Click **Build & validate**. Wait for a successful build and check the deployment log.",
-      "To change servo calibration, use **Calibration → Send to robot**. Uploading firmware does not apply an imported calibration draft.",
+      "To change servo calibration, use **Calibration → SAVE TO ROBOT**. Uploading firmware keeps the robot's saved calibration and does not apply unsaved edits.",
     ]),
     section("Upload to the ESP32", [
       "Export a calibration backup. Support the robot, isolate servo power and leave it disarmed. Studio releases its robot connection when you start uploading.",

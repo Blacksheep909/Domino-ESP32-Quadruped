@@ -584,3 +584,31 @@ test("a flash-only save is forwarded without bench mode only to firmware that su
   old.benchMode = true;
   assert.equal(save(old, true, "flash-3").robot.length, 1, "with bench mode the old path still works");
 });
+test("gait storage support, the saved flag and robot state reach Studio so APPLY DRAFT TO ROBOT can be used", () => {
+  const core = new LiveCompanionCore({ adapterId, transport: "usb" });
+  const realHello = hello();
+  realHello.capabilities = { ...realHello.capabilities, persistentGaitProfiles: true };
+  core.handleRobot(realHello, 1_000);
+  core.handleRobot(telemetry(1_000), 1_000);
+  core.handleRelay({
+    type: "live-connection-command", action: "connect", requestId: "connect-1",
+    timestampMs: 1_000, adapterId, transport: "usb",
+    safety: { readOnlyHandshake: true, commandsBlockedUntilStateKnown: true },
+  }, 1_000);
+  assert.equal(core.announcement(1_010).capabilities.persistentGaitProfiles, true);
+  const profile = createLiveGaitProfile({}, "Robot balanced");
+  core.handleRelay({
+    type: "live-gait-command", action: "apply-profile", requestId: "gait-apply",
+    adapterId, sessionId: core.sessionId,
+    safety: { requiresDisarmed: true, twoStageApply: true }, profile,
+  }, 1_050);
+  const ack = core.handleRobot({
+    protocol: DOMINO_ROBOT_LINK_PROTOCOL, type: "robot-ack", kind: "gait",
+    action: "apply-profile", requestId: "gait-apply", accepted: true,
+    robotState: "disarmed", persisted: true, rollbackAvailable: true, profile,
+  }, 1_060).relay[0];
+  assert.equal(ack.supportsPersistentProfiles, true);
+  assert.equal(ack.persisted, true);
+  assert.equal(ack.rollbackAvailable, true);
+  assert.equal(ack.robotState, "disarmed");
+});

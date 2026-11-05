@@ -8785,9 +8785,39 @@ function renderLiveGaitIkInspector(telemetry = liveGaitPreviewLab.getTelemetry()
   const apply = document.querySelector("#live-gait-apply");
   const adapter = liveConnectionState.adapters[liveConnectionState.selectedAdapterId];
   const gaitLinkReady = liveConnectionIsReady(liveConnectionState) && adapter?.capabilities.gaitProfiles === true;
-  if (apply) apply.disabled = liveBatteryControlLocked || !gaitLinkReady || !liveGaitCanApplyDraft(liveGaitState);
+  if (apply) renderLiveGaitApplyButton();
   if (details.length && !liveGaitState.previewAssessment.safe && !liveGaitState.pendingRequestId) {
     document.querySelector("#live-gait-apply-state").textContent = "PREVIEW BLOCKED / FIX IK";
+  }
+}
+
+// Why APPLY DRAFT TO ROBOT is disabled, or "" when it can be used.
+function liveGaitApplyBlockReason() {
+  const adapter = liveConnectionState.adapters[liveConnectionState.selectedAdapterId];
+  const gaitLinkReady = liveConnectionIsReady(liveConnectionState) && adapter?.capabilities.gaitProfiles === true;
+  if (liveBatteryControlLocked) return "The battery is too low to change the robot.";
+  if (!gaitLinkReady) return "Pair a robot that supports gait profiles.";
+  if (liveGaitState.robotState !== "disarmed") return "Disarm the robot first.";
+  if (!liveGaitState.persistentApplySupported) {
+    return "This robot's firmware does not report gait storage. Flash firmware 0.8.23 or later.";
+  }
+  if (liveGaitState.pendingRequestId) return "Waiting for the robot's reply.";
+  if (liveGaitState.previewAssessment?.safe !== true) {
+    return "The preview must show all four feet reachable with no joint at its limit. Turn the preview on and fix any IK warning.";
+  }
+  return "";
+}
+
+function renderLiveGaitApplyButton() {
+  const button = document.querySelector("#live-gait-apply");
+  const reason = liveGaitApplyBlockReason();
+  button.disabled = Boolean(reason);
+  // A greyed-out button must say why.
+  button.title = reason ? `Can't apply yet: ${reason}` : "Save this gait on the robot. It is used the next time it walks.";
+  const hint = document.querySelector("#live-gait-apply-block");
+  if (hint) {
+    hint.hidden = !reason;
+    hint.textContent = reason ? `Can't apply yet: ${reason}` : "";
   }
 }
 
@@ -8833,8 +8863,7 @@ function renderLiveGaitUi() {
         : /^Robot rejected|timed out|No reply|OLDER/i.test(liveGaitState.status) ? "error"
           : /saved persistently|restored/i.test(liveGaitState.status) ? "success" : "info");
   }
-  document.querySelector("#live-gait-apply").disabled =
-    liveBatteryControlLocked || !gaitLinkReady || !liveGaitCanApplyDraft(liveGaitState);
+  renderLiveGaitApplyButton();
   document.querySelector("#live-gait-use-robot").disabled = !gaitLinkReady || !liveGaitState.robotProfile || Boolean(liveGaitState.pendingRequestId);
   document.querySelector("#live-gait-revert").disabled =
     liveBatteryControlLocked || !gaitLinkReady || !liveGaitState.previousRobotProfile || !liveGaitCanApply(liveGaitState);
@@ -8897,7 +8926,9 @@ function acceptLiveGaitAcknowledgement(message) {
   liveGaitState.pendingRequestId = "";
   liveGaitState.pendingAction = "";
   liveGaitState.robotState = String(message.robotState || liveGaitState.robotState).toLowerCase();
-  liveGaitState.persistentApplySupported = message.supportsPersistentProfiles === true;
+  if (typeof message.supportsPersistentProfiles === "boolean") {
+    liveGaitState.persistentApplySupported = message.supportsPersistentProfiles;
+  }
   if (message.profile) acceptRobotGaitProfile(liveGaitState, message.profile);
   if (message.accepted) {
     liveGaitState.status = action === "apply-profile"

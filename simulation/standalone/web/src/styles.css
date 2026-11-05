@@ -10717,3 +10717,7 @@ body[data-workspace="real-robot"][data-live-view="sensors"][data-live-planner-fo
     margin-right: 0;
   }
 }
+
+/* Why APPLY DRAFT TO ROBOT is disabled, shown next to it. */
+.live-gait-apply-block { margin: 6px 0 0; color: var(--ui-warning, #91601b); font-size: 11px; line-height: 1.45; }
+.live-gait-apply-block[hidden] { display: none; }

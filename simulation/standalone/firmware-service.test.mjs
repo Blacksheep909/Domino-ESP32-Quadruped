@@ -234,3 +234,25 @@ test("Domino PCB voltage telemetry uses the routed GPIO36 divider", () => {
   assert.match(monitorSource, /analogReadMilliVolts\(DOMINO_VOLTAGE_ADC_PIN\)/);
   assert.match(endpointSource, /if \(power\.voltageValid\) powerJson\["voltageV"\]/);
 });
+
+test("a build workspace from an earlier install location is adopted, not refused", () => {
+  const scratch = mkdtempSync(path.join(tmpdir(), "domino-fw-move-"));
+  const makeSource = (name, body) => {
+    const root = path.join(scratch, name);
+    mkdirSync(path.join(root, "src"), { recursive: true });
+    writeFileSync(path.join(root, "platformio.ini"), "[env:esp32dev]\n");
+    writeFileSync(path.join(root, "src", "main.cpp"), body);
+    return root;
+  };
+  const oldInstall = makeSource("program-files", "// old\n");
+  const oldOnly = path.join(oldInstall, "src", "removed.h");
+  writeFileSync(oldOnly, "// gone in the new version\n");
+  const newInstall = makeSource("local-programs", "// new\n");
+  const buildRoot = path.join(scratch, "build");
+  syncFirmwareWorkspace(oldInstall, buildRoot, collectFirmwarePackage(oldInstall));
+  syncFirmwareWorkspace(newInstall, buildRoot, collectFirmwarePackage(newInstall));
+  assert.equal(readFileSync(path.join(buildRoot, "src", "main.cpp"), "utf8"), "// new\n");
+  assert.equal(existsSync(path.join(buildRoot, "src", "removed.h")), false);
+  const marker = JSON.parse(readFileSync(path.join(buildRoot, ".domino-firmware-workspace.json"), "utf8"));
+  assert.equal(marker.sourceRoot, path.resolve(newInstall));
+});

@@ -81,3 +81,52 @@ body[data-workspace="real-robot"] > header #shortcuts-open { margin-left: 5px; }
   body[data-workspace="real-robot"] > header .status :is(#real-battery-status, #real-safety-status) { flex-shrink: 0; }
 }
 @media (prefers-reduced-motion: reduce) { body[data-workspace="real-robot"] > header #live-connection-open[data-state="busy"]::before { animation: none; } }
+
+/* Desktop update banner: checked on every launch, one click to restart into the new version. */
+.app-update-banner {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 2000;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 14px;
+  width: min(460px, calc(100vw - 32px));
+  padding: 12px 14px;
+  color: var(--ui-text);
+  background: var(--ui-field);
+  border: 1px solid var(--ui-border);
+  border-left: 3px solid var(--ui-info);
+  border-radius: 6px;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.25);
+  font-size: 12px;
+}
+.app-update-banner[hidden] { display: none; }
+.app-update-banner[data-tone="success"],
+.app-update-banner[data-tone="ready"] { border-left-color: var(--ui-accent); }
+.app-update-banner[data-tone="warning"] { border-left-color: var(--ui-warning); }
+.app-update-copy { display: grid; gap: 4px; min-width: 0; }
+.app-update-copy strong { font-size: 12px; }
+.app-update-copy span { color: var(--ui-muted); font-size: 11px; line-height: 1.45; }
+.app-update-copy span[hidden] { display: none; }
+.app-update-progress { grid-column: 1 / -1; height: 4px; overflow: hidden; border-radius: 4px; background: var(--ui-border); }
+.app-update-progress[hidden] { display: none; }
+.app-update-progress i { display: block; height: 100%; width: 0; background: var(--ui-accent); transition: width 0.3s ease; }
+.app-update-actions { display: flex; align-items: center; gap: 6px; }
+.app-update-actions [hidden] { display: none; }
+.app-update-actions a { color: var(--ui-accent); font: 700 10px/1.2 Consolas, monospace; text-decoration: none; }
+.app-update-actions button {
+  padding: 8px 11px;
+  color: var(--ui-accent);
+  border: 1px solid var(--ui-accent-border);
+  border-radius: 4px;
+  background: var(--ui-accent-soft);
+  font: 700 10px/1.2 Consolas, monospace;
+  cursor: pointer;
+}
+.app-update-actions .app-update-action:not(:disabled) { color: var(--ui-field); border-color: var(--ui-accent); background: var(--ui-accent); }
+.app-update-actions button:disabled { color: var(--ui-disabled); border-color: var(--ui-border); background: var(--ui-disabled-surface); cursor: default; }
+@media (max-width: 560px) {
+  .app-update-banner { grid-template-columns: 1fr; }
+}

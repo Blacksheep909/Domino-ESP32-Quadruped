@@ -348,6 +348,7 @@ import "./theme.css";
 import "./studio-help.css";
 import "./joint-inspection-overlay.css";
 import "./studio-chrome.css";
+import { initAppUpdateBanner } from "./app-update-banner.js";
 
 initializeFirmwareWorkspace();
 
@@ -358,6 +359,19 @@ const jointScreenOverlay = createJointInspectionOverlay(
 let jointInspectionOverlayLastFrame = 0;
 const desktopProjectFiles = globalThis.dominoDesktop?.projectFiles;
 const desktopWindow = globalThis.dominoDesktop?.window;
+// Desktop updates: checked on every launch; one click restarts into the new version.
+// Restarting closes the PC link, so it waits while the robot is armed or jogging.
+const desktopUpdateBanner = initAppUpdateBanner(globalThis.dominoDesktop?.updates, {
+  getBlockReason: () => {
+    try {
+      if (liveConnectionState.robotState === "armed") return "Disarm the robot before updating: restarting closes the PC link.";
+      if (liveCalibrationState.benchModeAcknowledged) return "End the calibration jog session before updating.";
+    } catch {
+      // Live state is not initialised yet during startup.
+    }
+    return "";
+  },
+});
 let desktopWindowFullscreen = false;
 const sensorsPage = document.querySelector("#live-view-sensors");
 const navigationGrid = sensorsPage?.querySelector(".live-navigation-grid");
@@ -9023,6 +9037,7 @@ function updateLiveSessionUi(snapshot) {
 }
 
 function updateLiveComparisonUi() {
+  desktopUpdateBanner?.render();
   if (pruneLiveAdapters(liveConnectionState)) {
     lockLiveSafetyState(liveSafetyState, "The adapter heartbeat was lost. Robot-side outputs must fail safe.");
     resetLiveCommandPermissions("The adapter heartbeat was lost. Robot profile changes remain blocked.");

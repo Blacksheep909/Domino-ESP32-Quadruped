@@ -13,7 +13,13 @@ import {
   validateProjectFileContents,
   writeProjectFile,
 } from "./project-files.mjs";
-import { requestUpdateCheck, setupAutoUpdater, stopAutoUpdater } from "./updater.mjs";
+import {
+  getUpdateState,
+  installDownloadedUpdate,
+  requestUpdateCheck,
+  setupAutoUpdater,
+  stopAutoUpdater,
+} from "./updater.mjs";
 import { desktopWindowTitle } from "./app-title.mjs";
 
 const APP_NAME = "Domino Quadruped Studio";
@@ -63,6 +69,9 @@ function registerProjectFileHandlers() {
 
 registerProjectFileHandlers();
 
+ipcMain.handle("domino:update:get-state", () => getUpdateState());
+ipcMain.handle("domino:update:check", () => requestUpdateCheck("manual"));
+ipcMain.handle("domino:update:install", () => installDownloadedUpdate());
 ipcMain.handle("domino:window:is-fullscreen", () => mainWindow?.isFullScreen() ?? false);
 ipcMain.handle("domino:window:toggle-fullscreen", () => {
   if (!mainWindow) return false;
@@ -237,7 +246,11 @@ else {
     mainWindow.focus();
   });
   app.whenReady().then(createApplication).then(() => {
-    setupAutoUpdater({ getMainWindow: () => mainWindow });
+    setupAutoUpdater({
+      onStateChange: (updateState) => {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("domino:update:state", updateState);
+      },
+    });
   }).catch(async (error) => {
     console.error(error);
     await dialog.showMessageBox({

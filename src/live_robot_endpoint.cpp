@@ -773,7 +773,7 @@ void sendHello(bool bestEffort = false) {
   document["type"] = "robot-hello";
   document["robotId"] = "domino-esp32-quadruped";
   document["robotName"] = "Domino";
-  document["firmwareVersion"] = "0.8.22";
+  document["firmwareVersion"] = "0.8.23";
   document["robotState"] = stateName();
   addCalibrationOrigin(document["calibration"].to<JsonObject>());
   if (state == LiveRobotState::Fault && faultReason[0]) document["faultReason"] = faultReason;
@@ -1386,9 +1386,21 @@ void handleGait(JsonObjectConst command, JsonObjectConst payload) {
     acknowledgeGait(action, requestId, true);
     return;
   }
-  if (state != LiveRobotState::Disarmed || benchMode || servoOutputsEnabled()) {
+  // The gait profile is only read while walking or moving into a walk, so a
+  // standing or stowed robot can take a new one safely. Firmware <= 0.8.22 also
+  // required every servo output off, which is never true for a powered robot
+  // under radio control, so every apply from Studio was refused.
+  constexpr uint8_t kBodyModeGait = 4, kBodyModeCareful = 5, kBodyModeTransition = 6;
+  const bool walking = controlBodyMode == kBodyModeGait || controlBodyMode == kBodyModeCareful ||
+      controlBodyMode == kBodyModeTransition;
+  if (state != LiveRobotState::Disarmed || benchMode) {
     acknowledgeGait(action, requestId, false,
-                    "Gait persistence requires disarmed state with every servo output disabled.");
+                    "Gait changes need the robot disarmed and no calibration jog session.");
+    return;
+  }
+  if (walking) {
+    acknowledgeGait(action, requestId, false,
+                    "Stop walking first: set the walk switch to stand, then apply the gait.");
     return;
   }
   if (!strcmp(action, "apply-profile")) {

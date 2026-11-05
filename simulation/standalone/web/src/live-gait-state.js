@@ -135,6 +135,17 @@ export function liveGaitRiskAssessment(profile) {
   return findings;
 }
 
+// An imported gait whose saved time is older than the profile the robot runs
+// would roll the robot back. Returns both times, or null when it is not older.
+export function liveGaitImportRollback(state) {
+  const robotUpdatedAt = Number(state?.robotProfile?.updatedAt);
+  if (state?.draft?.source !== "import" || !state.dirty ||
+      !Number.isFinite(robotUpdatedAt) || robotUpdatedAt <= 0) return null;
+  const fileUpdatedAt = Number(state.draft.updatedAt);
+  if (Number.isFinite(fileUpdatedAt) && fileUpdatedAt > 0 && fileUpdatedAt >= robotUpdatedAt) return null;
+  return { fileUpdatedAt: fileUpdatedAt > 0 ? fileUpdatedAt : null, robotUpdatedAt };
+}
+
 export function liveGaitCanApply(state) {
   return Boolean(
     state &&

@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import { gaitLabControls, gaitLabPresets } from "./web/src/gait-lab.js";
 import { validLiveGaitAcknowledgement, validLiveGaitCommand, validLiveGaitProfile } from "./web/src/live-gait-protocol.js";
@@ -17,7 +18,9 @@ import {
   readLiveGaitLibrary,
   selectLiveGaitPreset,
   updateLiveGaitDraft,
+  replaceLiveGaitDraft,
   updateLiveGaitPreviewAssessment,
+  liveGaitImportRollback,
 } from "./web/src/live-gait-state.js";
 
 test("simulation settings upgrade into a versioned cross-workspace profile", () => {
@@ -115,4 +118,32 @@ test("versioned and raw simulation JSON both import safely", () => {
 test("gait acknowledgement validator rejects unknown actions", () => {
   assert.equal(validLiveGaitAcknowledgement({ type: "live-gait-ack", action: "apply-profile", requestId: "1", accepted: true }), true);
   assert.equal(validLiveGaitAcknowledgement({ type: "live-gait-ack", action: "run-fast", requestId: "1", accepted: true }), false);
+});
+
+test("importing a gait older than the robot's saved gait is flagged as a rollback", () => {
+  const state = createLiveGaitState();
+  acceptRobotGaitProfile(state, { ...createLiveGaitProfile({}, "Robot"), updatedAt: 5_000 });
+  replaceLiveGaitDraft(state, { ...createLiveGaitProfile({}, "Old"), updatedAt: 1_000 }, "import");
+  assert.deepEqual(liveGaitImportRollback(state), { fileUpdatedAt: 1_000, robotUpdatedAt: 5_000 });
+  replaceLiveGaitDraft(state, { ...createLiveGaitProfile({}, "New"), updatedAt: 9_000 }, "import");
+  assert.equal(liveGaitImportRollback(state), null);
+});
+
+test("a robot still on the built-in gait cannot be rolled back, and slider edits are not imports", () => {
+  const state = createLiveGaitState();
+  acceptRobotGaitProfile(state, { ...createLiveGaitProfile({}, "Firmware safe"), updatedAt: 0 });
+  replaceLiveGaitDraft(state, { ...createLiveGaitProfile({}, "Old"), updatedAt: 1_000 }, "import");
+  assert.equal(liveGaitImportRollback(state), null);
+  const edited = createLiveGaitState();
+  acceptRobotGaitProfile(edited, { ...createLiveGaitProfile({}, "Robot"), updatedAt: 5_000 });
+  updateLiveGaitDraft(edited, { cadenceHz: 1 });
+  assert.equal(liveGaitImportRollback(edited), null);
+});
+
+test("firmware 0.8.23 lets a standing robot take a gait and refuses only while walking", () => {
+  const source = readFileSync(new URL("../../src/live_robot_endpoint.cpp", import.meta.url), "utf8");
+  const handler = source.slice(source.indexOf("void handleGait("), source.indexOf("void handleCommand("));
+  assert.doesNotMatch(handler, /servoOutputsEnabled\(\)/);
+  assert.match(handler, /kBodyModeGait = 4, kBodyModeCareful = 5, kBodyModeTransition = 6/);
+  assert.match(handler, /Stop walking first/);
 });

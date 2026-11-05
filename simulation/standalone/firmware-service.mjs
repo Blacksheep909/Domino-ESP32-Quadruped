@@ -84,9 +84,13 @@ export function syncFirmwareWorkspace(projectRoot, buildRoot, firmwarePackage) {
   if (!prior && readdirSync(destinationRoot).length !== 0) {
     throw new Error("Firmware build workspace contains unrecognized files.");
   }
-  if (prior && (prior.format !== 1 || prior.sourceRoot !== sourceRoot ||
+  // The marker proves Studio created this workspace. A different sourceRoot
+  // only means Studio was reinstalled somewhere else (for example from
+  // Program Files to the per-user folder); the files listed below are
+  // replaced from the current install, so the workspace is adopted.
+  if (prior && (prior.format !== 1 || typeof prior.sourceRoot !== "string" ||
       !Array.isArray(prior.files))) {
-    throw new Error("Firmware build workspace belongs to a different source package.");
+    throw new Error("Firmware build workspace marker is unreadable. Delete the folder and build again: " + destinationRoot);
   }
   const nextFiles = new Set(firmwarePackage.files.map((file) => file.path));
   for (const oldFile of prior?.files || []) {

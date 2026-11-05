@@ -18,7 +18,19 @@ const desktopWindow = Object.freeze({
   },
 });
 
+const desktopUpdates = Object.freeze({
+  getState: () => ipcRenderer.invoke("domino:update:get-state"),
+  check: () => ipcRenderer.invoke("domino:update:check"),
+  install: () => ipcRenderer.invoke("domino:update:install"),
+  onState: (callback) => {
+    const listener = (_event, state) => callback(state);
+    ipcRenderer.on("domino:update:state", listener);
+    return () => ipcRenderer.removeListener("domino:update:state", listener);
+  },
+});
+
 contextBridge.exposeInMainWorld("dominoDesktop", Object.freeze({
   projectFiles: desktopProjectFiles,
   window: desktopWindow,
+  updates: desktopUpdates,
 }));

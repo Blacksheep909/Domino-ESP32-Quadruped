@@ -773,7 +773,7 @@ void sendHello(bool bestEffort = false) {
   document["type"] = "robot-hello";
   document["robotId"] = "domino-esp32-quadruped";
   document["robotName"] = "Domino";
-  document["firmwareVersion"] = "0.8.23";
+  document["firmwareVersion"] = "0.8.24";
   document["robotState"] = stateName();
   addCalibrationOrigin(document["calibration"].to<JsonObject>());
   if (state == LiveRobotState::Fault && faultReason[0]) document["faultReason"] = faultReason;
@@ -1030,6 +1030,12 @@ void disableOutputs(Adafruit_PWMServoDriver &driver, LiveRobotState nextState) {
   state = nextState;
 }
 
+// True while the radio/LIVE pose is walking or moving into or out of a walk.
+// Matches BodyMode in main.cpp (BODY_GAIT = 4, BODY_CAREFUL = 5, BODY_TRANSITION = 6).
+bool robotWalking() {
+  return controlBodyMode == 4 || controlBodyMode == 5 || controlBodyMode == 6;
+}
+
 // Ends a calibration bench session without latching radio control off.
 // Firmware <= 0.8.21 used disableOutputs() here, which left radioControlEnabled
 // false: after calibration the dog stayed limp and ignored the radio (stand,
@@ -1184,9 +1190,14 @@ void handleCalibration(JsonObjectConst command, JsonObjectConst payload,
   }
   if (!strcmp(action, "save-smoothing")) {
     MotionSmoothingSettings candidate{};
-    if (benchMode || servoOutputsEnabled()) {
-      acknowledgeCalibration(action, requestId, false,
-                             "Leave bench mode and disable every servo output before saving smoothing.");
+    // Firmware <= 0.8.23 also required every servo output off, which a powered
+    // robot under radio control never has, so smoothing could never be saved.
+    // The ramp rates only shape how fast the pose follows the sticks, so a
+    // standing robot can take new ones; refuse only during a jog session or a walk.
+    if (benchMode || robotWalking()) {
+      acknowledgeCalibration(action, requestId, false, benchMode
+          ? "End the calibration jog session before saving smoothing."
+          : "Stop walking first: set the walk switch to stand, then save smoothing.");
     } else if (!parseMotionSmoothingSettings(payload["smoothing"].as<JsonObjectConst>(),
                                              &candidate)) {
       acknowledgeCalibration(action, requestId, false, "Smoothing settings are outside safe bounds.");
@@ -1390,15 +1401,12 @@ void handleGait(JsonObjectConst command, JsonObjectConst payload) {
   // standing or stowed robot can take a new one safely. Firmware <= 0.8.22 also
   // required every servo output off, which is never true for a powered robot
   // under radio control, so every apply from Studio was refused.
-  constexpr uint8_t kBodyModeGait = 4, kBodyModeCareful = 5, kBodyModeTransition = 6;
-  const bool walking = controlBodyMode == kBodyModeGait || controlBodyMode == kBodyModeCareful ||
-      controlBodyMode == kBodyModeTransition;
   if (state != LiveRobotState::Disarmed || benchMode) {
     acknowledgeGait(action, requestId, false,
                     "Gait changes need the robot disarmed and no calibration jog session.");
     return;
   }
-  if (walking) {
+  if (robotWalking()) {
     acknowledgeGait(action, requestId, false,
                     "Stop walking first: set the walk switch to stand, then apply the gait.");
     return;

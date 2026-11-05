@@ -1470,6 +1470,104 @@ function updateLivePreviewVisibility() {
   document.body.dataset.livePreviewCollapsed = String(
     compactViewport && (activeLivePage?.scrollTop ?? 0) > 24,
   );
+  layoutLivePreviewLane();
+}
+
+// The right-hand 3D preview lane on Calibration and Gaits.
+// Its geometry used to be fixed numbers per page, so anything that changed the
+// height above it (a wrapped title, the calibration notice or save bar) slid
+// under the preview, and each page had a different gap. Measure instead:
+//  - top: just below the full-width rows above the editor (title, notices,
+//    save bar), following them up as the page scrolls, never above the toolbar;
+//  - height: what fits above the caption and the window bottom.
+// Width stays in CSS: the editor column is sized from the preview width, so
+// measuring one from the other would feed back.
+const LIVE_PREVIEW_GAP_PX = 16;
+const LIVE_PREVIEW_MIN_HEIGHT_PX = 240;
+const LIVE_PREVIEW_LANES = Object.freeze({
+  calibration: {
+    header: ":scope > .live-page-heading, :scope > .calibration-origin-banner, :scope > .calibration-sync-status",
+    column: ".live-calibration-layout",
+    caption: ".calibration-preview-caption",
+  },
+  gaits: {
+    header: ":scope > .live-page-heading",
+    column: ".live-gaits-layout",
+    caption: ".live-gait-preview-caption",
+  },
+});
+let livePreviewLaneFrame = 0;
+let livePreviewLaneSize = "";
+
+function clearLivePreviewLane() {
+  ["--live-preview-top", "--live-preview-height", "--live-preview-caption-max", "--live-preview-gap"].forEach((name) => document.body.style.removeProperty(name));
+  livePreviewLaneSize = "";
+}
+
+function layoutLivePreviewLane() {
+  const lane = LIVE_PREVIEW_LANES[liveViewState.selected];
+  const page = document.querySelector(`#live-view-${liveViewState.selected}`);
+  if (!lane || !page || page.hidden || applicationState.workspace !== WORKSPACE_REAL_ROBOT ||
+      window.innerWidth <= 1000) {
+    if (livePreviewLaneSize) clearLivePreviewLane();
+    return;
+  }
+  const visible = (element) => element && !element.hidden && element.getClientRects().length > 0;
+  const toolbar = document.querySelector("#real-workspace .live-toolbar");
+  const floor = visible(toolbar) ? toolbar.getBoundingClientRect().bottom : 0;
+  const headers = [...page.querySelectorAll(lane.header)].filter(visible);
+  const headerBottom = Math.max(0, ...headers.map((element) => element.getBoundingClientRect().bottom));
+  const top = Math.round(Math.max(floor, headerBottom) + LIVE_PREVIEW_GAP_PX);
+  // Size from the unscrolled position so scrolling only moves the lane.
+  const restingTop = Math.round(Math.max(floor, headerBottom + page.scrollTop) + LIVE_PREVIEW_GAP_PX);
+
+  const caption = document.querySelector(lane.caption);
+  let captionHeight = 0;
+  if (visible(caption)) {
+    const previousMax = caption.style.maxHeight;
+    caption.style.maxHeight = "none";
+    captionHeight = Math.ceil(caption.scrollHeight);
+    caption.style.maxHeight = previousMax;
+  }
+  const available = window.innerHeight - LIVE_PREVIEW_GAP_PX - restingTop;
+  const preferred = Math.min(460, Math.round(window.innerHeight * 0.5));
+  let height = Math.min(preferred, available - (captionHeight ? captionHeight + LIVE_PREVIEW_GAP_PX : 0));
+  if (height < LIVE_PREVIEW_MIN_HEIGHT_PX) {
+    // Short window: the caption scrolls inside a minimum strip, and the
+    // preview gives up height (down to a floor) so both stay on screen.
+    const captionFloor = captionHeight ? Math.min(captionHeight, 96) + LIVE_PREVIEW_GAP_PX : 0;
+    height = Math.max(140, Math.min(LIVE_PREVIEW_MIN_HEIGHT_PX, available - captionFloor));
+  }
+  height = Math.round(height);
+  const captionMax = Math.max(60, available - height - LIVE_PREVIEW_GAP_PX);
+
+  const style = document.body.style;
+  style.setProperty("--live-preview-gap", `${LIVE_PREVIEW_GAP_PX}px`);
+  style.setProperty("--live-preview-top", `${top}px`);
+  style.setProperty("--live-preview-height", `${height}px`);
+  style.setProperty("--live-preview-caption-max", `${captionMax}px`);
+  const size = `${height}`;
+  if (size !== livePreviewLaneSize) {
+    livePreviewLaneSize = size;
+    resize();
+  }
+}
+
+function scheduleLivePreviewLane() {
+  if (livePreviewLaneFrame) return;
+  livePreviewLaneFrame = requestAnimationFrame(() => {
+    livePreviewLaneFrame = 0;
+    layoutLivePreviewLane();
+  });
+}
+
+if (typeof ResizeObserver === "function") {
+  // Notices appearing, a wrapped title or a growing caption re-run the layout.
+  const laneObserver = new ResizeObserver(scheduleLivePreviewLane);
+  Object.values(LIVE_PREVIEW_LANES).forEach(({ header, column, caption }) => {
+    document.querySelectorAll(`.live-view-page ${header.replaceAll(":scope > ", "")}, ${column}, ${caption}`)
+      .forEach((element) => laneObserver.observe(element));
+  });
 }
 
 Object.entries(workspaceButtons).forEach(([workspace, button]) => {
@@ -3245,7 +3343,7 @@ function updateJointInspectionOverlay(now) {
     label: definition.label.toUpperCase(),
     source: inCalibration ? "CALIBRATION DRAFT · MODEL ONLY"
       : robotCalibrationReady(liveCalibrationState, liveConnectionState.sessionId) && !liveCalibrationState.dirty
-        ? "ROBOT PROFILE · CAD POSE" : "BROWSER DRAFT · CAD POSE",
+        ? "ROBOT PROFILE · CAD POSE" : "UNSAVED STUDIO VALUES · CAD POSE",
     poseDeg, servoDeg: definition.neutralServoDeg + joint.offsetDeg + joint.direction *
       (inCalibration ? calibrationInspectionTargetDeg() : requestedModelPoseDeg), modelWarning,
     targetDeg: inCalibration ? calibrationInspectionTargetDeg() : null,
@@ -7685,6 +7783,9 @@ function renderLiveCalibrationUi() {
   persistCalibrationDraft();
   renderMotionSmoothingUi();
   renderCalibrationInspectionUi();
+  // The notice and save bar above can change height; place the preview below
+  // them now rather than waiting for the next resize notification.
+  if (liveViewState.selected === LIVE_VIEW_CALIBRATION) layoutLivePreviewLane();
 }
 
 function persistCalibrationDraft() {
@@ -8369,7 +8470,7 @@ function acceptCalibrationAcknowledgement(message) {
             try { localStorage.removeItem(MOTION_SMOOTHING_STORAGE_KEY); } catch { /* Robot readback remains valid. */ }
           } else {
             motionSmoothingDirty = true;
-            motionSmoothingStatus = "Robot save verified. Your newer browser edits were kept and have not been saved.";
+            motionSmoothingStatus = "Robot save verified. Your newer edits were kept and have not been saved.";
           }
         }
         showAppActionResult(motionSmoothingStatus, matches ? "success" : "error", "#live-calibration-smoothing-status");
@@ -8378,7 +8479,7 @@ function acceptCalibrationAcknowledgement(message) {
         motionSmoothingLocal = active;
         motionSmoothingStatus = "Active robot smoothing loaded. Adjust a value, then save while disarmed.";
       } else {
-        motionSmoothingStatus = "Active robot smoothing read. Your unsaved browser draft was kept.";
+        motionSmoothingStatus = "Active robot smoothing read. Your unsaved changes were kept.";
       }
     } else {
       motionSmoothingStatus = message.smoothing?.schemaVersion === 1

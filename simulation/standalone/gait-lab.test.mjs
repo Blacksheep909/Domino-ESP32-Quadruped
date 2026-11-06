@@ -8,6 +8,8 @@ import {
   defaultGaitLabSettings,
   gaitLabControls,
   gaitLabPresets,
+  gaitStrides,
+  CAREFUL_ORDER,
 } from "./web/src/gait-lab.js";
 
 function state(mode = "GAIT", heightMm = 260) {
@@ -201,4 +203,71 @@ test("leaving a gait clears speed and eases into a tilt pose", () => {
   const firstTiltFrame = lab.update(1 / 120, tilt, { forward: 0, turn: 0 });
   assert.equal(lab.getTelemetry().speedMmPerSec, 0);
   assert.ok(Math.abs(firstTiltFrame.body_pose_rpy_deg[0]) < 1);
+});
+
+// --- Turning on the spot, steering, and the careful crawl ---
+
+function runLab(mode, input, seconds = 4) {
+  const lab = createGaitLab({ ...gaitLabPresets.balanced, enabled: true });
+  let output;
+  for (let t = 0; t < seconds; t += 1 / 60) output = lab.update(1 / 60, state(mode), input);
+  return { lab, output, telemetry: lab.getTelemetry() };
+}
+
+test("a pure turn moves every foot along the circle round the body centre", () => {
+  const strides = gaitStrides(gaitLabPresets.balanced, 0, 1);
+  // Clockwise turn: left feet forward, right feet back, front feet right, rear feet left.
+  assert.ok(strides.FL.x > 0 && strides.BL.x > 0 && strides.FR.x < 0 && strides.BR.x < 0);
+  assert.ok(strides.FL.y < 0 && strides.FR.y < 0 && strides.BL.y > 0 && strides.BR.y > 0);
+  // Each stride is tangent to the circle about the body centre (perpendicular to its radius).
+  const settings = gaitLabPresets.balanced;
+  const offsets = {
+    FL: [167.5 + settings.touchdownXMm, 62.375 + settings.stanceWidthMm],
+    FR: [167.5 + settings.touchdownXMm, -(62.375 + settings.stanceWidthMm)],
+    BL: [-167.5 + settings.touchdownXMm, 62.375 + settings.stanceWidthMm],
+    BR: [-167.5 + settings.touchdownXMm, -(62.375 + settings.stanceWidthMm)],
+  };
+  for (const [label, [x, y]] of Object.entries(offsets)) {
+    const dot = strides[label].x * x + strides[label].y * y;
+    assert.ok(Math.abs(dot) < 1e-6, `${label} stride is not tangent`);
+  }
+});
+
+test("left-stick spin turns on the spot with no forward travel", () => {
+  const { telemetry } = runLab("GAIT", { forward: 0, turn: 0.8 });
+  assert.equal(telemetry.active, true);
+  assert.ok(Math.abs(telemetry.bodyVelocity.forwardMmPerSec) < 1);
+  assert.ok(telemetry.bodyVelocity.yawDegPerSec > 5, `turns right, got ${telemetry.bodyVelocity.yawDegPerSec}`);
+  const lateral = telemetry.legDetails.map((leg) => Math.abs(leg.targetMm[1]) - 38);
+  assert.ok(lateral.some((value) => Math.abs(value) > 1), "feet move sideways while spinning");
+});
+
+test("right-stick steer only bends the path while walking forward", () => {
+  const still = runLab("GAIT", { forward: 0, steer: 1 }).telemetry;
+  assert.ok(!still.active || Math.abs(still.bodyVelocity.yawDegPerSec) < 0.5, "steer alone does not spin");
+  const walking = runLab("GAIT", { forward: 0.8, steer: 0.5 }).telemetry;
+  assert.ok(walking.bodyVelocity.forwardMmPerSec > 10);
+  assert.ok(walking.bodyVelocity.yawDegPerSec > 1);
+});
+
+test("careful crawl keeps three feet down, uses the lateral order and shifts away from the lifted leg", () => {
+  assert.deepEqual([...CAREFUL_ORDER], ["BL", "FL", "BR", "FR"]);
+  const lab = createGaitLab({ ...gaitLabPresets.balanced, enabled: true });
+  let sawShift = false;
+  for (let t = 0; t < 8; t += 1 / 60) {
+    lab.update(1 / 60, state("CAREFUL"), { forward: 0.6, turn: 0 });
+    const telemetry = lab.getTelemetry();
+    if (!telemetry.active) continue;
+    assert.ok(telemetry.stanceCount >= 3, `only ${telemetry.stanceCount} feet down`);
+    const swinging = telemetry.legDetails.find((leg) => !leg.stance);
+    if (swinging) {
+      const left = swinging.leg.endsWith("L");
+      // Feet move toward the lifted leg's side, so the body leans away from it.
+      const support = telemetry.legDetails.filter((leg) => leg.stance);
+      const lateral = support.reduce((sum, leg) => sum + leg.targetMm[1], 0) / support.length;
+      const neutral = support.reduce((sum, leg) => sum + (leg.leg.endsWith("L") ? 38 : -38), 0) / support.length;
+      if (Math.abs(lateral - neutral) > 5) sawShift = sawShift || (left ? lateral > neutral : lateral < neutral);
+    }
+  }
+  assert.ok(sawShift, "body shifted away from the lifting leg");
 });

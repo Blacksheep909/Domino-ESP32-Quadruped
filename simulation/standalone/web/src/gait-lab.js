@@ -9,7 +9,96 @@ const COMMAND_Z_MM = 280;
 const CAD_FOOT_Y_MM = 38.1;
 const MAX_SERVO_DELTA_DEG = 45;
 const COMMAND_INDEX = { FL: 0, FR: 1, BL: 2, BR: 3 };
-const CAREFUL_ORDER = ["FL", "BR", "FR", "BL"];
+// Keep in step with src/main.cpp (kCrawlOrder, kCrawlMaxSwingFraction,
+// kCrawlBodyShiftMm, BODY_HALF_LENGTH_X / BODY_HALF_WIDTH_Y).
+export const CAREFUL_ORDER = Object.freeze(["BL", "FL", "BR", "FR"]);
+const CRAWL_SLOT = 0.25;
+const CRAWL_MAX_SWING_FRACTION = 0.17;
+const CRAWL_BODY_SHIFT_MM = 30;
+const BODY_HALF_LENGTH_X_MM = 167.5;
+const BODY_HALF_WIDTH_Y_MM = 62.375;
+
+// Nominal foot position relative to the body centre (x forward, y left).
+function footOffsetFromCentre(label, settings) {
+  const front = label === "FL" || label === "FR";
+  const left = label === "FL" || label === "BL";
+  return {
+    x: (front ? BODY_HALF_LENGTH_X_MM : -BODY_HALF_LENGTH_X_MM) + settings.touchdownXMm,
+    y: (left ? 1 : -1) * (BODY_HALF_WIDTH_Y_MM + settings.stanceWidthMm),
+  };
+}
+
+// Per-leg stride vector, as in the firmware: forward moves every foot straight
+// back; turning moves each planted foot along the circle around the body
+// centre, so a pure turn spins the robot on the spot. Positive turn is
+// clockwise (to the right). Combined commands longer than the stride are
+// scaled down evenly to keep the path's curvature.
+export function gaitStrides(settings, forward, turn) {
+  const strides = {};
+  let largest = 0;
+  for (const label of ["FL", "FR", "BL", "BR"]) {
+    const { x, y } = footOffsetFromCentre(label, settings);
+    const radius = Math.max(1, Math.hypot(x, y));
+    const stride = {
+      x: settings.strideMm * (forward + turn * settings.turnGain * y / radius),
+      y: settings.strideMm * (turn * settings.turnGain * -x / radius),
+    };
+    strides[label] = stride;
+    largest = Math.max(largest, Math.hypot(stride.x, stride.y));
+  }
+  const limit = settings.strideMm * 1.05;
+  if (largest > limit) {
+    const scale = limit / largest;
+    Object.values(strides).forEach((stride) => { stride.x *= scale; stride.y *= scale; });
+  }
+  return strides;
+}
+
+// Body motion that a set of strides produces: forward speed (mm/s) and turn
+// rate (deg/s, clockwise positive), from how far a planted foot travels per
+// stance phase.
+export function gaitBodyVelocity(settings, strides, stanceFraction) {
+  const stanceSeconds = Math.max(0.05, stanceFraction / Math.max(0.05, settings.cadenceHz));
+  const fl = footOffsetFromCentre("FL", settings);
+  const radius = Math.max(1, Math.hypot(fl.x, fl.y));
+  const average = (key) => ["FL", "FR", "BL", "BR"].reduce((sum, label) => sum + strides[label][key], 0) / 4;
+  const forwardMmPerSec = average("x") / stanceSeconds;
+  // The left-minus-right forward difference is the turning part of the stride.
+  const turnMm = ((strides.FL.x + strides.BL.x) - (strides.FR.x + strides.BR.x)) / 4;
+  const yawRadPerSec = (turnMm / stanceSeconds) / radius * (radius / Math.abs(fl.y));
+  return { forwardMmPerSec, yawDegPerSec: yawRadPerSec / DEG };
+}
+
+// Foot offset (leg frame) that moves the body away from the lifting leg during
+// the careful crawl, blending to the next leg in the four-feet-down gap.
+function crawlBodyShift(settings, cycle, swingFraction, amplitude) {
+  const gap = CRAWL_SLOT - swingFraction;
+  const t = wrap01(cycle);
+  const slot = Math.floor(t / CRAWL_SLOT) % 4;
+  const inSlot = t - slot * CRAWL_SLOT;
+  let from = slot;
+  let to = slot;
+  let blend = 0;
+  if (inSlot < gap / 2) {
+    from = (slot + 3) % 4;
+    blend = 0.5 + 0.5 * (inSlot / (gap / 2));
+  } else if (inSlot > CRAWL_SLOT - gap / 2) {
+    to = (slot + 1) % 4;
+    blend = 0.5 * (inSlot - (CRAWL_SLOT - gap / 2)) / (gap / 2);
+  }
+  const direction = (label) => {
+    const { x, y } = footOffsetFromCentre(label, settings);
+    const radius = Math.max(1, Math.hypot(x, y));
+    return { x: x / radius, y: y / radius };
+  };
+  const a = direction(CAREFUL_ORDER[from]);
+  const b = direction(CAREFUL_ORDER[to]);
+  const eased = 0.5 - 0.5 * Math.cos(Math.PI * clamp(blend, 0, 1));
+  return {
+    x: amplitude * CRAWL_BODY_SHIFT_MM * (a.x + (b.x - a.x) * eased),
+    y: amplitude * CRAWL_BODY_SHIFT_MM * (a.y + (b.y - a.y) * eased),
+  };
+}
 
 export const GAIT_LAB_STORAGE_KEY = "domino-gait-lab-v1";
 
@@ -306,7 +395,7 @@ function sampleTrot(cycle, halfStride, lift, dutyFactor, swingShape) {
 }
 
 function sampleCareful(cycle, halfStride, lift, dutyFactor, swingShape) {
-  const swingFraction = Math.min(0.245, 1 - dutyFactor);
+  const swingFraction = Math.min(CRAWL_MAX_SWING_FRACTION, 1 - dutyFactor);
   if (cycle < swingFraction) {
     const swing = cycle / swingFraction;
     return {
@@ -503,8 +592,11 @@ export function createGaitLab(initialSettings = {}) {
       sourceState.link_alive !== false && !sourceState.transition_active && transitionProgress >= 1;
     filteredForward = approach(filteredForward, motionAllowed
       ? clamp(Number(input.forward) || 0, -1, 1) * motionSettings.maxForwardScale : 0, blend);
-    filteredTurn = approach(filteredTurn, motionAllowed
-      ? clamp(Number(input.turn) || 0, -1, 1) * motionSettings.maxTurnScale : 0, blend);
+    // Left stick X spins on the spot; right stick X steers, scaled by speed.
+    const forwardInput = clamp(Number(input.forward) || 0, -1, 1);
+    const turnInput = clamp(
+      (Number(input.turn) || 0) + (Number(input.steer) || 0) * Math.abs(forwardInput), -1, 1);
+    filteredTurn = approach(filteredTurn, motionAllowed ? turnInput * motionSettings.maxTurnScale : 0, blend);
     const activity = clamp(Math.hypot(filteredForward, filteredTurn), 0, 1);
     if (activity > 0.02) {
       phase = wrap01(
@@ -527,39 +619,36 @@ export function createGaitLab(initialSettings = {}) {
     let reachableCount = 0;
     const legDetails = [];
     const bodyHeight = Math.min(Number(sourceState.ride_height_mm ?? sourceState.pose_z_mm), motionSettings.bodyHeightMm);
+    const careful = sourceState.mode === "CAREFUL";
+    const strides = gaitStrides(motionSettings, amplitude * forwardDirection, amplitude * turnDirection);
+    const swingFraction = Math.min(CRAWL_MAX_SWING_FRACTION, 1 - motionSettings.dutyFactor);
+    const crawlGap = CRAWL_SLOT - swingFraction;
+    const shift = careful ? crawlBodyShift(motionSettings, phase, swingFraction, amplitude) : { x: 0, y: 0 };
+    const bodyVelocity = gaitBodyVelocity(
+      motionSettings, strides, careful ? 1 - swingFraction : motionSettings.dutyFactor);
+    const cycleSpeed = activity > 0.02 ? 0.35 + 0.65 * activity : 0;
 
     for (const leg of legs) {
       const left = leg.label.endsWith("L");
       const side = left ? 1 : -1;
       let cycle;
       let foot;
-      if (sourceState.mode === "CAREFUL") {
+      if (careful) {
         const orderIndex = CAREFUL_ORDER.indexOf(leg.label);
-        cycle = wrap01(phase - orderIndex * 0.25);
-        foot = sampleCareful(
-          cycle,
-          amplitude * motionSettings.strideMm / 2 *
-            (forwardDirection + side * turnDirection * motionSettings.turnGain),
-          amplitude * motionSettings.liftMm,
-          motionSettings.dutyFactor,
-          motionSettings.swingShape,
-        );
+        cycle = wrap01(phase - orderIndex * CRAWL_SLOT - crawlGap / 2);
+        foot = sampleCareful(cycle, 1, amplitude * motionSettings.liftMm,
+          motionSettings.dutyFactor, motionSettings.swingShape);
       } else {
         const diagonalA = leg.label === "FL" || leg.label === "BR";
         cycle = wrap01(phase + (diagonalA ? 0 : motionSettings.diagonalPhase));
-        foot = sampleTrot(
-          cycle,
-          amplitude * motionSettings.strideMm / 2 *
-            (forwardDirection + side * turnDirection * motionSettings.turnGain),
-          amplitude * motionSettings.liftMm,
-          motionSettings.dutyFactor,
-          motionSettings.swingShape,
-        );
+        foot = sampleTrot(cycle, 1, amplitude * motionSettings.liftMm,
+          motionSettings.dutyFactor, motionSettings.swingShape);
       }
       if (foot.stance) stanceCount += 1;
+      const stride = strides[leg.label];
       const command = [
-        motionSettings.touchdownXMm + foot.x,
-        side * motionSettings.stanceWidthMm,
+        motionSettings.touchdownXMm + stride.x / 2 * foot.x + shift.x,
+        side * motionSettings.stanceWidthMm + stride.y / 2 * foot.x + shift.y,
         bodyHeight + foot.z,
       ];
       commands[COMMAND_INDEX[leg.label]] = command;
@@ -591,6 +680,12 @@ export function createGaitLab(initialSettings = {}) {
       active: true,
       phase,
       speedMmPerSec: motionSettings.cadenceHz * motionSettings.strideMm * activity,
+      // The preview phase advances at cadence * cycleSpeed; scale the body
+      // motion the same way so the floor and path match the feet.
+      bodyVelocity: {
+        forwardMmPerSec: bodyVelocity.forwardMmPerSec * cycleSpeed,
+        yawDegPerSec: bodyVelocity.yawDegPerSec * cycleSpeed,
+      },
       stanceCount,
       reachableCount,
       legDetails,

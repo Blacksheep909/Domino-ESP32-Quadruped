@@ -39,6 +39,7 @@ import {
   parseLiveGaitProfileJson,
   liveGaitImportRollback,
   readLiveGaitLibrary,
+  writeLiveGaitLibrary,
   replaceLiveGaitDraft,
   selectLiveGaitPreset,
   updateLiveGaitDraft,
@@ -2344,6 +2345,35 @@ grid.position.y = 0.002;
 grid.material.opacity = 0.32;
 grid.material.transparent = true;
 scene.add(grid);
+
+// Gaits preview: the robot stays in view while this floor grid slides and turns
+// under it, and the line shows where the current command takes it next.
+const gaitTreadmillPivot = new THREE.Group();
+gaitTreadmillPivot.name = "gait-preview-floor";
+const GAIT_TREADMILL_CELL_M = 0.1;
+const gaitTreadmillGrid = new THREE.GridHelper(4, 40, 0x3f8f5a, 0x7d8a80);
+gaitTreadmillGrid.material.opacity = 0.55;
+gaitTreadmillGrid.material.transparent = true;
+gaitTreadmillGrid.material.depthWrite = false;
+gaitTreadmillPivot.add(gaitTreadmillGrid);
+const gaitPathPointCount = 61;
+const GAIT_PATH_SECONDS = 6;
+const GAIT_PATH_HALF_WIDTH_M = 0.0075;
+// A flat ribbon (two vertices per path point) reads far better than a 1 px line.
+const gaitPathGeometry = new THREE.BufferGeometry();
+gaitPathGeometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(gaitPathPointCount * 2 * 3), 3));
+gaitPathGeometry.setIndex(Array.from({ length: gaitPathPointCount - 1 }, (_, index) => {
+  const a = index * 2;
+  return [a, a + 1, a + 2, a + 1, a + 3, a + 2];
+}).flat());
+const gaitPathLine = new THREE.Mesh(gaitPathGeometry, new THREE.MeshBasicMaterial({
+  color: 0x3fbf74, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false,
+}));
+gaitPathLine.frustumCulled = false;
+gaitTreadmillPivot.add(gaitPathLine);
+gaitTreadmillPivot.visible = false;
+scene.add(gaitTreadmillPivot);
+const gaitTreadmill = { x: 0, z: 0, heading: 0 };
 
 const courseVisuals = new THREE.Group();
 courseVisuals.name = "course-visuals";
@@ -6833,6 +6863,7 @@ const liveChartDefinitions = {
   maxControlStageMs: measuredChartDefinition("Longest control update / milliseconds", (sample) => Number.isFinite(sample.diagnostics?.maxControlStageUs) ? sample.diagnostics.maxControlStageUs / 1000 : null),
   maxServoWriteMs: measuredChartDefinition("Longest servo write / milliseconds", (sample) => Number.isFinite(sample.diagnostics?.maxServoWriteUs) ? sample.diagnostics.maxServoWriteUs / 1000 : null),
   imuI2cErrors: measuredChartDefinition("IMU I²C error count", (sample) => sample.diagnostics?.imuI2cErrors),
+  i2cBusRecoveries: measuredChartDefinition("I²C bus recoveries (stuck SDA freed)", (sample) => sample.diagnostics?.i2cBusRecoveries),
   imuSampleAgeMs: measuredChartDefinition("IMU sample age / milliseconds", (sample) => sample.diagnostics?.imuSampleAgeMs),
   crsfPendingBytes: measuredChartDefinition("CRSF RX queued / bytes", (sample) => sample.diagnostics?.crsfPendingBytes),
   crsfBudgetHits: measuredChartDefinition("CRSF RX budget hits", (sample) => sample.diagnostics?.crsfBudgetHits),
@@ -8665,17 +8696,41 @@ function formatLiveGaitValue(entry, value) {
   return `${(value * (entry.scale || 1)).toFixed(entry.decimals)}${suffix}`;
 }
 
+// One shared profile list for Simulation and LIVE. The Simulation list
+// (gaitProfiles) holds the names and settings; LIVE keeps extra details (source,
+// saved time) under its own key. Before, LIVE read only its own key while
+// SAVE COPY wrote only the Simulation list, so LIVE saves vanished on restart and
+// Simulation profiles never showed up in LIVE.
+function rebuildLiveGaitLibrary() {
+  const details = liveGaitLibrary;
+  liveGaitLibrary = Object.fromEntries(Object.entries(gaitProfiles).map(([name, settings]) => [
+    name,
+    createLiveGaitProfile({
+      ...(details[name] || {}),
+      name,
+      settings,
+      source: details[name]?.source || "simulation",
+    }, name),
+  ]));
+}
+
 function persistLiveGaitLibrary(selectedName = "") {
   gaitProfiles = Object.fromEntries(Object.entries(liveGaitLibrary).map(([name, profile]) => [
     name,
     sanitizeGaitLabSettings(profile.settings),
   ]));
   const saved = persistGaitProfiles();
+  try {
+    localStorage.setItem(LIVE_GAIT_LIBRARY_KEY, JSON.stringify(writeLiveGaitLibrary(liveGaitLibrary)));
+  } catch {
+    // The Simulation list above still holds every profile's settings.
+  }
   syncGaitProfileUi(selectedName);
   return saved;
 }
 
 function syncLiveGaitLibrary(selectedName = "") {
+  rebuildLiveGaitLibrary();
   const select = document.querySelector("#live-gait-library");
   const selection = selectedName || select.value;
   select.replaceChildren(new Option("SELECT PROFILE", ""));
@@ -8684,7 +8739,20 @@ function syncLiveGaitLibrary(selectedName = "") {
     select.add(new Option(`${name} / ${source}`, name));
   });
   select.value = Object.hasOwn(liveGaitLibrary, selection) ? selection : "";
-  document.querySelector("#live-gait-load").disabled = !select.value;
+  liveGaitState.selectedLibraryName = select.value;
+  ["#live-gait-load", "#live-gait-duplicate", "#live-gait-rename", "#live-gait-delete"].forEach((id) => {
+    document.querySelector(id).disabled = !select.value;
+  });
+}
+
+function uniqueGaitProfileName(base) {
+  const stem = String(base || "Untitled gait").trim().slice(0, 26) || "Untitled gait";
+  if (!Object.hasOwn(liveGaitLibrary, stem)) return stem;
+  for (let index = 2; index < 100; index += 1) {
+    const candidate = `${stem} ${index}`.slice(0, 32);
+    if (!Object.hasOwn(liveGaitLibrary, candidate)) return candidate;
+  }
+  return `${stem} ${Date.now() % 10000}`.slice(0, 32);
 }
 
 function rebuildLiveGaitSettings() {
@@ -8834,6 +8902,9 @@ function renderLiveGaitUi() {
   document.querySelector("#live-gait-preview-enabled").checked = liveGaitState.previewEnabled;
   document.querySelector("#live-gait-preview-forward").value = String(liveGaitState.previewForward);
   document.querySelector("#live-gait-preview-turn").value = String(liveGaitState.previewTurn);
+  document.querySelector("#live-gait-preview-steer").value = String(liveGaitState.previewSteer);
+  document.querySelector("#live-gait-preview-steer-value").textContent =
+    `${liveGaitState.previewSteer >= 0 ? "+" : ""}${liveGaitState.previewSteer.toFixed(2)}`;
   document.querySelector("#live-gait-preview-forward-value").textContent =
     `${liveGaitState.previewForward >= 0 ? "+" : ""}${liveGaitState.previewForward.toFixed(2)}`;
   document.querySelector("#live-gait-preview-turn-value").textContent =
@@ -9113,7 +9184,9 @@ function updateLiveDiagnosticsUi(snapshot, liveSnapshot, controllerSnapshot) {
   document.querySelector("#live-diagnostics-max-control").textContent = formatStageMs(trace?.maxControlStageUs);
   document.querySelector("#live-diagnostics-max-servo").textContent = formatStageMs(trace?.maxServoWriteUs);
   document.querySelector("#live-diagnostics-imu-errors").textContent = Number.isFinite(trace?.imuI2cErrors)
-    ? String(trace.imuI2cErrors) : "--";
+    ? `${trace.imuI2cErrors}${Number.isFinite(trace?.i2cBusRecoveries) && trace.i2cBusRecoveries > 0
+      ? ` / ${trace.i2cBusRecoveries} BUS RESET${trace.i2cBusRecoveries === 1 ? "" : "S"}` : ""}${trace?.imuQuarantined ? " / IMU OFF" : ""}`
+    : "--";
   document.querySelector("#live-diagnostics-imu-age").textContent =
     `${Number.isFinite(trace?.imuSampleAgeMs) ? trace.imuSampleAgeMs : "--"} ms / ${Number.isFinite(trace?.imuConsecutiveErrors) ? trace.imuConsecutiveErrors : "--"}`;
   document.querySelector("#live-diagnostics-crsf-errors").textContent = Number.isFinite(trace?.crsfCrcErrors) &&
@@ -10541,7 +10614,46 @@ document.querySelector("#live-calibration-import-file").addEventListener("change
 
 document.querySelector("#live-gait-library").addEventListener("change", (event) => {
   liveGaitState.selectedLibraryName = event.target.value;
-  document.querySelector("#live-gait-load").disabled = !event.target.value;
+  syncLiveGaitLibrary(event.target.value);
+});
+document.querySelector("#live-gait-delete").addEventListener("click", () => {
+  const name = liveGaitState.selectedLibraryName;
+  if (!Object.hasOwn(liveGaitLibrary, name)) return;
+  if (!window.confirm(`Delete the gait profile "${name}" from this PC?\n\nThis does not change the robot. Export it first if you want a copy.`)) return;
+  delete liveGaitLibrary[name];
+  liveGaitState.selectedLibraryName = "";
+  const saved = persistLiveGaitLibrary();
+  liveGaitState.status = saved ? `Deleted ${name} from the shared profile library.`
+    : "The profile could not be deleted because storage is unavailable.";
+  renderLiveGaitUi();
+});
+document.querySelector("#live-gait-duplicate").addEventListener("click", () => {
+  const source = liveGaitLibrary[liveGaitState.selectedLibraryName];
+  if (!source) return;
+  const name = uniqueGaitProfileName(`${source.name} copy`);
+  liveGaitLibrary[name] = createLiveGaitProfile({ ...source, name, updatedAt: Date.now(), source: "live" }, name);
+  const saved = persistLiveGaitLibrary(name);
+  liveGaitState.status = saved ? `Copied ${source.name} as ${name}.` : "The copy could not be saved because storage is unavailable.";
+  syncLiveGaitLibrary(name);
+  renderLiveGaitUi();
+});
+document.querySelector("#live-gait-rename").addEventListener("click", () => {
+  const from = liveGaitState.selectedLibraryName;
+  const to = document.querySelector("#live-gait-name").value.trim().slice(0, 32);
+  if (!Object.hasOwn(liveGaitLibrary, from)) return;
+  if (!to || to === from) {
+    liveGaitState.status = "Type the new name in the name box, then click RENAME.";
+  } else if (Object.hasOwn(liveGaitLibrary, to)) {
+    liveGaitState.status = `A profile called ${to} already exists. Choose another name.`;
+  } else {
+    liveGaitLibrary[to] = createLiveGaitProfile({ ...liveGaitLibrary[from], name: to }, to);
+    delete liveGaitLibrary[from];
+    if (liveGaitState.draft.name === from) liveGaitState.draft.name = to;
+    const saved = persistLiveGaitLibrary(to);
+    liveGaitState.status = saved ? `Renamed ${from} to ${to}.` : "The rename could not be saved because storage is unavailable.";
+    syncLiveGaitLibrary(to);
+  }
+  renderLiveGaitUi();
 });
 document.querySelector("#live-gait-load").addEventListener("click", () => {
   const profile = liveGaitLibrary[liveGaitState.selectedLibraryName];
@@ -10636,6 +10748,11 @@ document.querySelector("#live-gait-preview-forward").addEventListener("input", (
   liveGaitState.previewForward = Number(event.target.value);
   document.querySelector("#live-gait-preview-forward-value").textContent =
     `${liveGaitState.previewForward >= 0 ? "+" : ""}${liveGaitState.previewForward.toFixed(2)}`;
+});
+document.querySelector("#live-gait-preview-steer").addEventListener("input", (event) => {
+  liveGaitState.previewSteer = Number(event.target.value);
+  document.querySelector("#live-gait-preview-steer-value").textContent =
+    `${liveGaitState.previewSteer >= 0 ? "+" : ""}${liveGaitState.previewSteer.toFixed(2)}`;
 });
 document.querySelector("#live-gait-preview-turn").addEventListener("input", (event) => {
   liveGaitState.previewTurn = Number(event.target.value);
@@ -10948,6 +11065,18 @@ function resetCameraForActiveView() {
   perspectiveCamera.zoom = liveViewState.selected === LIVE_VIEW_SENSORS
     ? 1.2
     : liveViewState.selected === LIVE_VIEW_GAITS ? 1.35 : 1;
+  if (liveViewState.selected === LIVE_VIEW_GAITS) {
+    // Aim at the robot itself (found from its feet), half way up its body, so
+    // the taller preview lane does not leave it clipped at the bottom.
+    const frame = robotFloorFrame();
+    if (frame) {
+      const aim = frame.centre.clone();
+      aim.y = (liveGaitState.draft.settings.bodyHeightMm || 260) / 1000 * 0.45;
+      const shift = aim.sub(controls.target);
+      controls.target.add(shift);
+      perspectiveCamera.position.add(shift);
+    }
+  }
   perspectiveCamera.updateProjectionMatrix();
   perspectiveCamera.lookAt(controls.target);
   controls.update();
@@ -11910,6 +12039,76 @@ function smoothLiveServoAngles(current, target, delta) {
   return current;
 }
 
+// Robot frame on the floor from the rendered feet: origin under the body,
+// +X forward (rear feet to front feet), +Z to the robot's right, Y up.
+const gaitFloorFeet = new THREE.Vector3();
+function robotFloorFrame() {
+  if (!linkageRuntimesReady()) return null;
+  const sum = { FL: null, FR: null, BL: null, BR: null };
+  linkageRuntimes.forEach((runtime) => {
+    if (!runtime?.footProbe) return;
+    runtime.footProbe.getWorldPosition(gaitFloorFeet);
+    sum[runtime.spec.label] = gaitFloorFeet.clone();
+  });
+  if (Object.values(sum).some((value) => !value)) return null;
+  const front = sum.FL.clone().add(sum.FR).multiplyScalar(0.5);
+  const rear = sum.BL.clone().add(sum.BR).multiplyScalar(0.5);
+  const forward = front.clone().sub(rear).setY(0);
+  if (forward.lengthSq() < 1e-6) return null;
+  forward.normalize();
+  const centre = front.add(rear).multiplyScalar(0.5);
+  centre.y = 0.003;
+  return { centre, heading: Math.atan2(-forward.z, forward.x) };
+}
+
+function updateGaitTreadmill(delta, telemetry) {
+  const show = applicationState.workspace === WORKSPACE_REAL_ROBOT &&
+    liveViewState.selected === LIVE_VIEW_GAITS && liveGaitState.previewEnabled && !floatModeEnabled;
+  gaitTreadmillPivot.visible = show;
+  if (!show) return;
+  const frame = robotFloorFrame();
+  if (!frame) {
+    gaitTreadmillPivot.visible = false;
+    return;
+  }
+  const moving = telemetry?.active === true;
+  const forward = moving ? (telemetry.bodyVelocity?.forwardMmPerSec || 0) / 1000 : 0;
+  // Clockwise-positive yaw rate; turning right lowers the heading.
+  const yawRate = moving ? -(telemetry.bodyVelocity?.yawDegPerSec || 0) * Math.PI / 180 : 0;
+  gaitTreadmill.heading += yawRate * delta;
+  gaitTreadmill.x += forward * Math.cos(gaitTreadmill.heading) * delta;
+  gaitTreadmill.z -= forward * Math.sin(gaitTreadmill.heading) * delta;
+  // The pivot sits under the robot facing its forward direction. The grid is
+  // turned back by the robot's own heading and shifted by its travel, wrapped
+  // to one cell so it stays centred.
+  gaitTreadmillPivot.position.copy(frame.centre);
+  gaitTreadmillPivot.rotation.set(0, frame.heading, 0);
+  const wrap = (value) => value - Math.round(value / GAIT_TREADMILL_CELL_M) * GAIT_TREADMILL_CELL_M;
+  const local = new THREE.Vector3(-wrap(gaitTreadmill.x), 0, -wrap(gaitTreadmill.z))
+    .applyAxisAngle(new THREE.Vector3(0, 1, 0), -gaitTreadmill.heading);
+  gaitTreadmillGrid.position.copy(local);
+  gaitTreadmillGrid.rotation.set(0, -gaitTreadmill.heading, 0);
+
+  // Path for the next few seconds at the current speed and turn rate, in the
+  // robot frame (+X forward, +Z right), drawn as a ribbon on the floor.
+  const positions = gaitPathGeometry.attributes.position.array;
+  let px = 0;
+  let pz = 0;
+  let heading = 0;
+  const step = GAIT_PATH_SECONDS / (gaitPathPointCount - 1);
+  for (let index = 0; index < gaitPathPointCount; index += 1) {
+    // Side offset perpendicular to the heading.
+    const sideX = Math.sin(heading) * GAIT_PATH_HALF_WIDTH_M;
+    const sideZ = Math.cos(heading) * GAIT_PATH_HALF_WIDTH_M;
+    positions.set([px - sideX, 0.003, pz - sideZ, px + sideX, 0.003, pz + sideZ], index * 6);
+    heading += yawRate * step;
+    px += forward * Math.cos(heading) * step;
+    pz -= forward * Math.sin(heading) * step;
+  }
+  gaitPathGeometry.attributes.position.needsUpdate = true;
+  gaitPathLine.visible = moving && (Math.abs(forward) > 0.002 || Math.abs(yawRate) > 0.01);
+}
+
 function applyLiveBodyPose(group, body) {
   if (!group || !body) return;
   if (Number.isFinite(body.heightMm)) group.position.y = body.heightMm / 1_000;
@@ -12026,6 +12225,7 @@ function updateLiveTwinPose(delta) {
       ? liveGaitPreviewLab.update(delta, source, {
           forward: liveGaitState.previewForward,
           turn: liveGaitState.previewTurn,
+          steer: liveGaitState.previewSteer,
         })
       : source;
     liveExpectedServoAngles = smoothLiveServoAngles(
@@ -12047,9 +12247,19 @@ function updateLiveTwinPose(delta) {
     if (measuredRobotWorld) measuredRobotWorld.visible = false;
     canvas.dataset.liveExpectedPose = "gait-preview";
     canvas.dataset.liveMeasuredPose = "unavailable";
+    updateGaitTreadmill(delta, liveGaitPreviewLab.getTelemetry());
     if (telemetryDatasetDue) {
       const preview = liveGaitPreviewLab.getTelemetry();
-      document.querySelector("#live-gait-preview-speed").textContent = `${Math.round(preview.speedMmPerSec || 0)} mm/s`;
+      const velocity = preview.active ? preview.bodyVelocity : null;
+      document.querySelector("#live-gait-preview-speed").textContent =
+        `${Math.round(Math.abs(velocity?.forwardMmPerSec || 0))} mm/s`;
+      const yaw = velocity?.yawDegPerSec || 0;
+      document.querySelector("#live-gait-preview-yaw").textContent =
+        Math.abs(yaw) < 0.5 ? "0 °/s" : `${Math.abs(yaw).toFixed(0)} °/s ${yaw > 0 ? "RIGHT" : "LEFT"}`;
+      const radiusMm = Math.abs(yaw) >= 0.5
+        ? Math.abs((velocity?.forwardMmPerSec || 0) / (yaw * Math.PI / 180)) : Infinity;
+      document.querySelector("#live-gait-preview-radius").textContent =
+        Math.abs(yaw) < 0.5 ? "STRAIGHT" : radiusMm < 30 ? "ON THE SPOT" : `${(radiusMm / 1000).toFixed(2)} m`;
       document.querySelector("#live-gait-preview-support").textContent = `${preview.stanceCount ?? 4} / 4`;
       const previewHealth = document.querySelector("#live-gait-preview-health");
       previewHealth.textContent = `${preview.reachableCount ?? 4} / 4 REACHABLE`;
@@ -12476,6 +12686,8 @@ function updateGaitLabState(delta) {
   effectiveFirmwareState = gaitLab.update(delta, firmwareState, {
     forward: forwardInput,
     turn: turnInput,
+    // Right stick X (CH1) steers while walking, as in the firmware.
+    steer: rollInput,
   });
   const telemetry = gaitLab.getTelemetry();
   if (!telemetryDatasetDue) return;

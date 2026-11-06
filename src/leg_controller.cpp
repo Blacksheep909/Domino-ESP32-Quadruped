@@ -100,6 +100,32 @@ bool gServoOutputsEnabled = false;
 uint32_t gServoSafetyClipCount = 0;
 ServoCalibrationProfile gServoCalibration = defaultServoCalibrationProfile();
 constexpr uint32_t kServoWriteRefreshMs = 250;
+// PCA9685 timing, captured once after setPWMFreq(). Adafruit's
+// writeMicroseconds() re-reads the PRESCALE register over I2C before every
+// single servo write (12 per control tick); computing the tick count here
+// halves the bus traffic shared with the IMU. 0 means "not captured yet".
+uint8_t gPcaPrescale = 0;
+uint32_t gPcaOscillatorHz = 25000000;
+
+uint16_t servoPulseTicks(uint16_t pulseUs) {
+  // Same arithmetic as Adafruit_PWMServoDriver::writeMicroseconds().
+  const double tickUs = 1000000.0 * (static_cast<double>(gPcaPrescale) + 1.0) /
+      static_cast<double>(gPcaOscillatorHz);
+  const double ticks = static_cast<double>(pulseUs) / tickUs;
+  return static_cast<uint16_t>(ticks > 4095.0 ? 4095.0 : ticks);
+}
+
+void writeServoPulse(Adafruit_PWMServoDriver &driver, uint8_t physicalChannel, uint16_t pulseUs) {
+#ifdef DOMINO_SIL
+  driver.writeMicroseconds(physicalChannel, pulseUs);
+#else
+  if (gPcaPrescale == 0) {
+    driver.writeMicroseconds(physicalChannel, pulseUs);
+  } else {
+    driver.setPWM(physicalChannel, 0, servoPulseTicks(pulseUs));
+  }
+#endif
+}
 
 void invalidateServoWriteCache() {
   for (uint8_t channel = 0; channel < kPcaChannelCount; ++channel) {
@@ -450,7 +476,7 @@ void write270(Adafruit_PWMServoDriver &driver, uint8_t logicalChannel, float ang
 #ifndef DOMINO_SIL
   ScopedLoopStage stage(LoopStage::ServoWrite);
 #endif
-  driver.writeMicroseconds(physicalChannel, pulseUs);
+  writeServoPulse(driver, physicalChannel, pulseUs);
   gLastWrittenPulseUs[physicalChannel] = pulseUs;
   gLastWrittenAtMs[physicalChannel] = nowMs;
   gWrittenPulseValid[physicalChannel] = true;
@@ -647,7 +673,7 @@ bool commandCalibrationServoAngle(Adafruit_PWMServoDriver &driver,
   gCommandedModelServoAnglesDeg[logicalChannel] =
       servoCalibrationModelAngle(gServoCalibration, logicalChannel, safeAngle);
   gCommandedServoPulseUs[logicalChannel] = pulseUs;
-  driver.writeMicroseconds(physicalChannel, pulseUs);
+  writeServoPulse(driver, physicalChannel, pulseUs);
   gLastWrittenPulseUs[physicalChannel] = pulseUs;
   gLastWrittenAtMs[physicalChannel] = millis();
   gWrittenPulseValid[physicalChannel] = true;
@@ -672,3 +698,8 @@ bool setServoCalibrationProfile(const ServoCalibrationProfile &profile) {
 }
 
 const ServoCalibrationProfile& servoCalibrationProfile() { return gServoCalibration; }
+
+void setServoPwmTiming(uint8_t prescale, uint32_t oscillatorHz) {
+  gPcaPrescale = prescale;
+  if (oscillatorHz > 0) gPcaOscillatorHz = oscillatorHz;
+}

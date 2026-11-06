@@ -66,6 +66,9 @@ export function sanitizeDiagnostics(diagnostics) {
     imuLastFailedRequestBytes: finite(diagnostics.imuLastFailedRequestBytes),
     imuLastFailedRequestUs: finite(diagnostics.imuLastFailedRequestUs),
     imuMaxRequestUs: finite(diagnostics.imuMaxRequestUs),
+    imuQuarantined: bool(diagnostics.imuQuarantined),
+    i2cBusRecoveries: finite(diagnostics.i2cBusRecoveries),
+    i2cBusFailedRecoveries: finite(diagnostics.i2cBusFailedRecoveries),
     imuConsecutiveErrors: finite(diagnostics.imuConsecutiveErrors),
     imuSampleAgeMs: finite(diagnostics.imuSampleAgeMs),
     telemetryTxSkipped: finite(diagnostics.telemetryTxSkipped),
@@ -165,12 +168,27 @@ export function observeLiveDiagnosticPacket(state, packet, accepted, receivedAt 
       current.imuI2cErrors > (previous.imuI2cErrors ?? 0)) {
     addEvent(state, "warning", `IMU I²C read errors increased to ${current.imuI2cErrors}.`, receivedAt, "firmware");
   }
+  if (previous && current && current.i2cBusRecoveries !== null &&
+      current.i2cBusRecoveries > (previous.i2cBusRecoveries ?? 0)) {
+    addEvent(state, "warning",
+      `I²C bus was found stuck (SDA held low) and freed; ${current.i2cBusRecoveries} time${current.i2cBusRecoveries === 1 ? "" : "s"} since boot.`,
+      receivedAt, "firmware");
+  }
+  if (previous && current && current.i2cBusFailedRecoveries !== null &&
+      current.i2cBusFailedRecoveries > (previous.i2cBusFailedRecoveries ?? 0)) {
+    addEvent(state, "fault",
+      "I²C bus could not be freed: a device is still holding a line low. Servo writes may fail; check the I²C wiring and power.",
+      receivedAt, "firmware");
+  }
   if (previous && current && current.crsfBudgetHits !== null &&
       current.crsfBudgetHits > (previous.crsfBudgetHits ?? 0)) {
     addEvent(state, "warning", `CRSF receive reached its work limit; ${current.crsfPendingBytes ?? "?"} bytes remain queued.`, receivedAt, "firmware");
   }
-  conditionEvent(state, "imu-stale", current?.imuOnline === false && current?.imuSampleAgeMs !== null,
+  conditionEvent(state, "imu-stale", current?.imuOnline === false && current?.imuSampleAgeMs !== null &&
+    current?.imuQuarantined !== true,
     "warning", "IMU sample became stale.", receivedAt);
+  conditionEvent(state, "imu-quarantined", current?.imuQuarantined === true, "fault",
+    "IMU disabled until reboot after repeated I²C errors, to keep the bus free for the servos.", receivedAt);
   state.lastPacket = {
     type: packet.type,
     sequence,

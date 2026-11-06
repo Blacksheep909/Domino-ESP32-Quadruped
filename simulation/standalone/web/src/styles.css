@@ -10721,3 +10721,7 @@ body[data-workspace="real-robot"][data-live-view="sensors"][data-live-planner-fo
 /* Why APPLY DRAFT TO ROBOT is disabled, shown next to it. */
 .live-gait-apply-block { margin: 6px 0 0; color: var(--ui-warning, #91601b); font-size: 11px; line-height: 1.45; }
 .live-gait-apply-block[hidden] { display: none; }
+
+/* Gait library: delete spans the row and reads as destructive. */
+.live-gait-library-controls .live-gait-danger { grid-column: 1 / -1; }
+.live-gait-library-controls .live-gait-danger:not(:disabled) { color: var(--ui-danger, #b4432f); border-color: currentColor; }

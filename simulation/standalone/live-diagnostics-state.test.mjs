@@ -126,3 +126,16 @@ test("does not log USB residual voltage as low battery while disarmed", () => {
   observeLiveDiagnosticPacket(state, armedPacket, true, 1_100);
   assert.equal(state.events.some((event) => event.message.includes("Battery voltage is below")), true);
 });
+
+test("stuck-bus recoveries and an IMU shut-off are reported as events", async () => {
+  const { createLiveDiagnosticsState, observeLiveDiagnosticPacket } = await import("./web/src/live-diagnostics-state.js");
+  const state = createLiveDiagnosticsState();
+  const packet = (sequence, diagnostics) => ({ type: "live-telemetry", sequence, diagnostics });
+  observeLiveDiagnosticPacket(state, packet(1, { i2cBusRecoveries: 0, i2cBusFailedRecoveries: 0, imuQuarantined: false }), true, 1_000);
+  observeLiveDiagnosticPacket(state, packet(2, { i2cBusRecoveries: 2, i2cBusFailedRecoveries: 0, imuQuarantined: false }), true, 1_100);
+  observeLiveDiagnosticPacket(state, packet(3, { i2cBusRecoveries: 2, i2cBusFailedRecoveries: 1, imuQuarantined: true }), true, 1_200);
+  const messages = state.events.map((event) => `${event.severity}: ${event.message}`);
+  assert.ok(messages.some((m) => m.startsWith("warning") && /stuck .* freed; 2 times/.test(m)), messages.join("\n"));
+  assert.ok(messages.some((m) => m.startsWith("fault") && /could not be freed/.test(m)));
+  assert.ok(messages.some((m) => m.startsWith("fault") && /IMU disabled until reboot/.test(m)));
+});

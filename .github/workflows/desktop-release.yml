@@ -76,3 +76,53 @@ jobs:
         run: pnpm run desktop:publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Apple-silicon Mac build, added to the same GitHub release after the Windows
+  # job has created it (running both at once would race to create the release).
+  release-macos:
+    needs: release
+    runs-on: macos-14
+
+    steps:
+      - name: Check out release
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: simulation/standalone/pnpm-lock.yaml
+
+      - name: Build firmware SIL (clang)
+        run: bash simulation/sil/build.sh
+
+      - name: Install desktop dependencies
+        working-directory: simulation/standalone
+        run: pnpm install --frozen-lockfile
+
+      - name: Download Electron binary
+        working-directory: simulation/standalone
+        run: node node_modules/electron/install.js
+
+      - name: Verify release version
+        working-directory: simulation/standalone
+        run: |
+          package_version="$(node -p "require('./package.json').version")"
+          tag_version="${GITHUB_REF_NAME#v}"
+          if [ "$package_version" != "$tag_version" ]; then
+            echo "package.json version $package_version does not match tag v$tag_version" >&2
+            exit 1
+          fi
+
+      - name: Build and publish the Mac app
+        working-directory: simulation/standalone
+        run: pnpm run desktop:publish:mac
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"

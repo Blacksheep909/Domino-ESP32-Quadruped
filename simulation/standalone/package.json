@@ -17,7 +17,9 @@
     "desktop:make": "npm run build && npm run desktop:prepare && electron-builder --win nsis zip --x64",
     "desktop:publish": "npm run build && npm run desktop:prepare && electron-builder --win nsis zip --x64 --publish always",
     "release:firmware": "node desktop/release-firmware.mjs",
-    "test": "node run-tests.mjs"
+    "test": "node run-tests.mjs",
+    "desktop:make:mac": "npm run build && npm run desktop:prepare && electron-builder --mac dmg zip --arm64",
+    "desktop:publish:mac": "npm run build && npm run desktop:prepare && electron-builder --mac dmg zip --arm64 --publish always"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "0.19.3",
@@ -94,6 +96,31 @@
         "repo": "Domino-ESP32-Quadruped",
         "releaseType": "release"
       }
-    ]
+    ],
+    "afterPack": "desktop/after-pack.cjs",
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "desktop/assets/domino-studio-icon-smooth.png",
+      "identity": null,
+      "hardenedRuntime": false,
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "artifactName": "Domino-Quadruped-Studio-${version}-${arch}.${ext}"
+    },
+    "dmg": {
+      "title": "Domino Quadruped Studio ${version}"
+    }
   }
 }

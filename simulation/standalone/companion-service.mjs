@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { readdirSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { closeCompanionProcess } from "./companion-process.mjs";
@@ -10,26 +11,42 @@ const PORT_QUERY = [
   "Get-CimInstance Win32_SerialPort | Select-Object DeviceID,Description,PNPDeviceID | ConvertTo-Json -Compress",
 ];
 
+// Windows COM names are case-insensitive, so they are compared in upper case.
+// macOS device paths (/dev/cu.usbserial-0001) are case-sensitive and kept as is.
+function normalizedPortName(name) {
+  const text = String(name || "").trim();
+  return /^com\d+$/i.test(text) ? text.toUpperCase() : text;
+}
+
 function normalizedPort(port) {
   return {
-    port: String(port?.port || port?.DeviceID || "").trim().toUpperCase(),
+    port: normalizedPortName(port?.port || port?.DeviceID),
     description: String(port?.description || port?.Description || "Serial device").trim(),
     hwid: String(port?.hwid || port?.PNPDeviceID || "").trim(),
   };
 }
 
+// macOS lists each serial device twice; the call-out (cu.) node is the one
+// to open from an application. Its built-in pseudo ports are never the robot.
+const MAC_IGNORED_PORT = /Bluetooth-Incoming-Port|debug-console|wlan-debug/i;
+
+function usableSerialPort(name) {
+  return /^COM\d+$/.test(name) || (/^\/dev\/cu\..+/.test(name) && !MAC_IGNORED_PORT.test(name));
+}
+
 export function selectCompanionPort(ports, transport = "auto", explicitPort = "") {
-  const normalized = ports.map(normalizedPort).filter((port) => /^COM\d+$/i.test(port.port));
+  const normalized = ports.map(normalizedPort).filter((port) => usableSerialPort(port.port));
   if (explicitPort) {
-    const requested = explicitPort.trim().toUpperCase();
+    const requested = normalizedPortName(explicitPort);
     return normalized.find((port) => port.port === requested) || null;
   }
   const bluetooth = transport === "bluetooth";
   const ranked = normalized
     .map((port) => {
-      const identity = `${port.description} ${port.hwid}`;
+      // On macOS the device name carries the driver (usbserial, SLAB_USBtoUART, wchusbserial).
+      const identity = `${port.description} ${port.hwid} ${port.port}`;
       let score = 0;
-      if (/esp32|cp210|ch340|usb.*serial|uart|silicon labs/i.test(identity)) score += 100;
+      if (/esp32|cp210|ch340|usb.*serial|uart|silicon labs|slab_usbto|wchusbserial/i.test(identity)) score += 100;
       if (/bluetooth|standard serial over bluetooth/i.test(identity)) score += bluetooth ? 120 : -80;
       if (/radiomaster|edge\s*tx|open\s*tx/i.test(identity)) score -= 120;
       return { port, score };
@@ -58,6 +75,19 @@ function windowsSerialPorts() {
       }
     });
   });
+}
+
+// Fallback when PlatformIO is not installed: the macOS call-out serial devices.
+// Only called on macOS; tests pass their own device lister.
+export function macSerialPorts(listDevices = () => readdirSync("/dev")) {
+  try {
+    return listDevices()
+      .filter((name) => name.startsWith("cu.") && !MAC_IGNORED_PORT.test(name))
+      .sort()
+      .map((name) => ({ port: `/dev/${name}`, description: name.slice(3), hwid: "" }));
+  } catch {
+    return [];
+  }
 }
 
 export class CompanionService {
@@ -108,6 +138,7 @@ export class CompanionService {
   async ports() {
     const platformioPorts = await this.firmwareService.ports();
     if (platformioPorts.length) return platformioPorts.map(normalizedPort);
+    if (process.platform === "darwin") return macSerialPorts();
     return windowsSerialPorts();
   }
 

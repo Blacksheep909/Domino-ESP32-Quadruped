@@ -1,5 +1,8 @@
 import path from "node:path";
 
+// build.ps1 produces domino_sil.exe on Windows; build.sh produces domino_sil elsewhere.
+export const SIL_EXECUTABLE_NAME = process.platform === "win32" ? "domino_sil.exe" : "domino_sil";
+
 export function resolveDesktopPaths({
   appPath,
   resourcesPath,
@@ -30,8 +33,8 @@ export function resolveDesktopPaths({
           "meshes",
         ),
     silExecutable: packaged
-      ? path.join(bundledRoot, "sil", "domino_sil.exe")
-      : path.join(repoRoot, "simulation", "sil", "bin", "domino_sil.exe"),
+      ? path.join(bundledRoot, "sil", SIL_EXECUTABLE_NAME)
+      : path.join(repoRoot, "simulation", "sil", "bin", SIL_EXECUTABLE_NAME),
     companionEntry: packaged
       ? path.join(bundledRoot, "companion", "live-companion-adapter.mjs")
       : path.join(standaloneRoot, "live-companion-adapter.mjs"),

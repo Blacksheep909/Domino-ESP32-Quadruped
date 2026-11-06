@@ -56,3 +56,21 @@ test("the desktop bridge exposes the update calls and the updater installs silen
   assert.match(updater, /quitAndInstall\(true, true\)/);
   assert.match(updater, /INITIAL_CHECK_DELAY_MS = 3_000/);
 });
+
+test("on macOS a new version is offered as a download, since it cannot install itself", () => {
+  const view = appUpdateBannerView({ status: "manual", version: "0.5.1" });
+  assert.equal(view.visible, true);
+  assert.match(view.text, /0\.5\.1 is available/);
+  assert.equal(view.action.id, "download");
+  assert.equal(view.action.disabled, false);
+  assert.match(view.downloadUrl, /releases\/tag\/v0\.5\.1$/);
+  assert.equal(view.dismissLabel, "LATER");
+});
+
+test("the Mac updater only checks for updates and never downloads or installs them", () => {
+  const updater = readFileSync(new URL("./desktop/updater.mjs", import.meta.url), "utf8");
+  assert.match(updater, /const manualInstall = process\.platform === "darwin"/);
+  assert.match(updater, /autoDownload = !manualInstall/);
+  assert.match(updater, /autoInstallOnAppQuit = !manualInstall/);
+  assert.match(updater, /\["win32", "darwin"\]\.includes\(process\.platform\)/);
+});

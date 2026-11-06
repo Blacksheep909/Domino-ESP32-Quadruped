@@ -41,6 +41,18 @@ export function appUpdateBannerView(state, blockReason = "", dismissed = false) 
       notesUrl: version ? `${RELEASES_URL}${version}` : "",
     };
   }
+  if (status === "manual") {
+    // macOS: the app cannot replace itself, so offer the release download.
+    const url = version ? `${RELEASES_URL}${version}` : "";
+    return {
+      visible: !dismissed, tone: "ready",
+      text: `Version ${version} is available.`,
+      detail: "Download the new .dmg, then drag Domino Quadruped Studio into Applications to replace this version. Settings and calibration are kept.",
+      action: { id: "download", label: "DOWNLOAD", disabled: !url },
+      dismissLabel: "LATER",
+      downloadUrl: url,
+    };
+  }
   if (status === "error") {
     return {
       visible: !dismissed, tone: "warning",
@@ -135,6 +147,10 @@ export function initAppUpdateBanner(updates, { getBlockReason = () => "", root =
         installing = false;
         render();
       }
+    } else if (actionButton.dataset.action === "download") {
+      const url = appUpdateBannerView(state).downloadUrl;
+      // Studio opens external links in the default browser.
+      if (url) window.open(url, "_blank", "noopener");
     } else if (actionButton.dataset.action === "check") {
       await updates.check().catch(() => false);
     }

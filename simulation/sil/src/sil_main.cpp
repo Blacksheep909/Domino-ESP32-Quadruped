@@ -1,5 +1,10 @@
 #include <Arduino.h>
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include <chrono>
+#include <thread>
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -62,7 +67,7 @@ constexpr uint32_t kLinkDropMs = 16300;       // link lost: failsafe stow follow
 constexpr uint32_t kScenarioDurationMs = 21300;  // failsafe stow takes ~3.5 s after the link drop
 constexpr uint32_t kLoopPeriodMs = 21800;
 constexpr int kRideHeightChannelIndex = 2;  // Boxer left-stick vertical / CRSF CH3.
-#ifndef CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
+#if defined(_WIN32) && !defined(CREATE_WAITABLE_TIMER_HIGH_RESOLUTION)
 constexpr DWORD CREATE_WAITABLE_TIMER_HIGH_RESOLUTION = 0x00000002;
 #endif
 constexpr uint8_t kServoChannels[12] = {0, 1, 2, 3, 4, 15, 14, 7, 8, 9, 10, 11};
@@ -309,13 +314,18 @@ struct Options {
   std::string telemetryFile;
 };
 
+// Paces --realtime runs at one firmware step per kStepMs of wall-clock time.
+#ifdef _WIN32
+// A high-resolution waitable timer avoids Sleep(5) rounding up to the default
+// ~15.6 ms Windows scheduler tick and slowing the whole robot down.
 struct RealtimePacer {
   HANDLE timer;
   LARGE_INTEGER frequency;
   LONGLONG nextDeadline;
 };
 
-RealtimePacer createRealtimePacer() {
+RealtimePacer createRealtimePacer(bool enabled) {
+  if (!enabled) return RealtimePacer{NULL, LARGE_INTEGER(), 0};
   typedef HANDLE(WINAPI* CreateWaitableTimerExAFunction)(
       LPSECURITY_ATTRIBUTES, LPCSTR, DWORD, DWORD);
   HMODULE kernel32 = GetModuleHandleA("kernel32.dll");
@@ -364,6 +374,39 @@ void waitRealtimeStep(RealtimePacer* pacer) {
   }
   WaitForSingleObject(pacer->timer, INFINITE);
 }
+
+void closeRealtimePacer(RealtimePacer* pacer) {
+  if (pacer != NULL && pacer->timer != NULL) CloseHandle(pacer->timer);
+}
+#else
+// macOS / Linux: sleep until an absolute steady-clock deadline, so rounding in
+// one step does not accumulate into drift.
+struct RealtimePacer {
+  bool enabled;
+  std::chrono::steady_clock::time_point nextDeadline;
+};
+
+RealtimePacer createRealtimePacer(bool enabled) {
+  return RealtimePacer{enabled, std::chrono::steady_clock::now()};
+}
+
+void waitRealtimeStep(RealtimePacer* pacer) {
+  if (pacer == NULL || !pacer->enabled) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(kStepMs));
+    return;
+  }
+  pacer->nextDeadline += std::chrono::milliseconds(kStepMs);
+  const auto now = std::chrono::steady_clock::now();
+  if (pacer->nextDeadline <= now) {
+    // Fell behind (e.g. the machine was busy): resynchronise, don't race.
+    if (now - pacer->nextDeadline > std::chrono::milliseconds(250)) pacer->nextDeadline = now;
+    return;
+  }
+  std::this_thread::sleep_until(pacer->nextDeadline);
+}
+
+void closeRealtimePacer(RealtimePacer*) {}
+#endif
 
 uint8_t crc8DvbS2(const uint8_t* bytes, size_t length) {
   uint8_t crc = 0;
@@ -868,11 +911,7 @@ bool validateOutputs(bool sawStand, bool sawTilt, bool sawGait, bool sawCareful,
 
 int main(int argc, char** argv) {
   const Options options = parseOptions(argc, argv);
-  // A high-resolution waitable timer avoids Sleep(5) rounding up to the
-  // default ~15.6 ms Windows scheduler tick and slowing the whole robot down.
-  RealtimePacer realtimePacer = options.realtime
-                                    ? createRealtimePacer()
-                                    : RealtimePacer{NULL, LARGE_INTEGER(), 0};
+  RealtimePacer realtimePacer = createRealtimePacer(options.realtime);
   const bool calibrationMathPassed = validateCalibrationMath();
   const bool gaitProfilesPassed = validateGaitProfiles();
   const bool smoothingBypassPassed = validateMotionSmoothingBypass();
@@ -1093,8 +1132,6 @@ int main(int argc, char** argv) {
             << ": frames=" << crsfAcceptedFrameCount()
             << " final_mode=" << modeName(dominoSilBodyMode())
             << " final_pose_z_mm=" << dominoSilPoseZ() << "\n";
-  if (realtimePacer.timer != NULL) {
-    CloseHandle(realtimePacer.timer);
-  }
+  closeRealtimePacer(&realtimePacer);
   return passed ? 0 : 1;
 }

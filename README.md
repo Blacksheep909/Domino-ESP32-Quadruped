@@ -87,7 +87,7 @@ Mechanical design for a closed-linkage leg, PCB design, embedded C++ firmware on
 
 ## Get started
 
-1. Download **Domino Quadruped Studio** from the [releases page](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/releases/latest). Simulation works offline with no robot attached.
+1. Download **Domino Quadruped Studio** for Windows (`.exe`) or Apple-silicon Macs (`.dmg`) from the [releases page](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/releases/latest). Simulation works offline with no robot attached. Mac first-launch steps are in the [Studio guide](docs/quadruped-studio.md#macos-apple-silicon).
 2. To drive hardware, follow the [LIVE hardware bring-up procedure](docs/live-hardware-bring-up.md) and the [calibration guide](docs/calibration-guide.md) before enabling any motion.
 3. To build one, start with the [build guide](docs/build-guide.md) and the [bill of materials](docs/bill-of-materials.md). It is a prototype and not yet a finished kit; the [project overview](docs/project-overview.md#build-and-bring-up-status) lists what is and is not validated.
 

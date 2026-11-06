@@ -51,6 +51,7 @@ export function createLiveGaitState(initialProfile = createLiveGaitProfile(defau
     previewMode: "trot",
     previewForward: 0.65,
     previewTurn: 0,
+    previewSteer: 0,
     previewAssessment: { available: false, safe: false, reachableCount: 0, limitedJointCount: 0 },
     robotState: "unknown",
     persistentApplySupported: false,

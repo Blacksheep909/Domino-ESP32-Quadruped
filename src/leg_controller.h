@@ -83,3 +83,7 @@ bool commandCalibrationServoAngle(Adafruit_PWMServoDriver &driver,
 void disableServoOutputPhysicalChannel(Adafruit_PWMServoDriver &driver, uint8_t physicalChannel);
 bool setServoCalibrationProfile(const ServoCalibrationProfile &profile);
 const ServoCalibrationProfile& servoCalibrationProfile();
+// Cache the PCA9685 prescale (read once after setPWMFreq) so servo writes do
+// not re-read it over I2C every time. Without it, writes fall back to the
+// library's writeMicroseconds().
+void setServoPwmTiming(uint8_t prescale, uint32_t oscillatorHz);

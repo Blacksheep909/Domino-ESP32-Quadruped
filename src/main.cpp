@@ -44,6 +44,7 @@
 #include "gait_profile.h"
 #include "leg_controller.h"
 #include "motion_smoothing.h"
+#include "i2c_bus.h"
 #include "imu.h"
 #ifndef DOMINO_SIL
 #include "live_robot_endpoint.h"
@@ -872,6 +873,67 @@ float applyGaitDeadband(float value) {
   return copysignf(constrain(scaled, 0.0f, 1.0f), value);
 }
 
+// Walking commands from the sticks (Boxer, mode 2):
+//  - right stick Y (CH2) drives forward/back;
+//  - left stick X (CH4) spins the body on the spot about Z;
+//  - right stick X (CH1) steers while walking: its turn is scaled by how fast
+//    the robot is moving, so it bends the path instead of spinning.
+// Positive turn is clockwise (to the right), matching the operator's stick.
+float readGaitForwardInput(const GaitProfileSettings &profile) {
+  return profile.enabled
+      ? applyGaitDeadband(readMotionChannelNormalized(PITCH_CH_INDEX)) * profile.maxForwardScale : 0.0f;
+}
+
+float readGaitTurnInput(const GaitProfileSettings &profile, float forward) {
+  if (!profile.enabled) return 0.0f;
+  const float spin = applyGaitDeadband(readMotionChannelNormalized(YAW_CH_INDEX));
+  float steer = 0.0f;
+#ifndef DOMINO_SIL
+  // LIVE manual control uses its roll axis for body roll while walking.
+  if (!activeManualControl.active)
+#endif
+  {
+    const float speed = profile.maxForwardScale > 0.0f
+        ? constrain(fabsf(forward) / profile.maxForwardScale, 0.0f, 1.0f) : 0.0f;
+    steer = applyGaitDeadband(readMotionChannelNormalized(ROLL_CH_INDEX)) * speed;
+  }
+  return constrain(spin + steer, -1.0f, 1.0f) * profile.maxTurnScale;
+}
+
+// Per-leg stride vector (full stance travel, mm) in the leg command frame.
+// Forward motion moves every foot straight back; turning moves each planted
+// foot along the circle around the body centre (tangent to its radius), so a
+// pure turn rotates the robot on the spot instead of skidding the feet
+// sideways like a tank. The tangent is normalised so that a full turn command
+// gives the same foot travel as a full forward command at the same stride.
+// A combined command that would exceed the stride is scaled down evenly, which
+// keeps the path's curvature.
+struct GaitStride { float x; float y; };
+
+void computeGaitStrides(const GaitProfileSettings &profile, float forward, float turn,
+                        GaitStride strides[kLegCount]) {
+  float largest = 0.0f;
+  for (int i = 0; i < kLegCount; ++i) {
+    const bool front = i == LEG_FL || i == LEG_FR;
+    const bool left = i == LEG_FL || i == LEG_BL;
+    const float px = (front ? BODY_HALF_LENGTH_X : -BODY_HALF_LENGTH_X) + profile.touchdownXMm;
+    const float py = (left ? 1.0f : -1.0f) * (BODY_HALF_WIDTH_Y + profile.stanceWidthMm);
+    const float radius = fmaxf(1.0f, sqrtf(px * px + py * py));
+    // Clockwise (positive) turn: the body point at (px, py) moves along (py, -px).
+    strides[i].x = profile.strideMm * (forward + turn * profile.turnGain * py / radius);
+    strides[i].y = profile.strideMm * (turn * profile.turnGain * -px / radius);
+    largest = fmaxf(largest, sqrtf(strides[i].x * strides[i].x + strides[i].y * strides[i].y));
+  }
+  const float limit = profile.strideMm * 1.05f;
+  if (largest > limit) {
+    const float scale = limit / largest;
+    for (int i = 0; i < kLegCount; ++i) {
+      strides[i].x *= scale;
+      strides[i].y *= scale;
+    }
+  }
+}
+
 float approachGaitCommand(float current, float target, float maximumStep) {
   if (target > current) {
     return fminf(target, current + maximumStep);
@@ -944,10 +1006,8 @@ void applySinusoidalGait(Adafruit_PWMServoDriver &driver, float baseZ) {
       gaitBodyZ,
       gaitBodyTargetZ,
       bodySlewMmPerSec * kControlStepSeconds);
-  const float targetForward = profile.enabled
-      ? applyGaitDeadband(readMotionChannelNormalized(PITCH_CH_INDEX)) * profile.maxForwardScale : 0.0f;
-  const float targetTurn = profile.enabled
-      ? applyGaitDeadband(readMotionChannelNormalized(YAW_CH_INDEX)) * profile.maxTurnScale : 0.0f;
+  const float targetForward = readGaitForwardInput(profile);
+  const float targetTurn = readGaitTurnInput(profile, targetForward);
   const float maximumCommandStep = commandSlewPerSec * kControlStepSeconds;
   gaitForwardCommand = approachGaitCommand(gaitForwardCommand, targetForward, maximumCommandStep);
   gaitTurnCommand = approachGaitCommand(gaitTurnCommand, targetTurn, maximumCommandStep);
@@ -978,27 +1038,82 @@ void applySinusoidalGait(Adafruit_PWMServoDriver &driver, float baseZ) {
   outputRollDeg = outputPitchDeg = outputYawDeg = 0.0f;
   outputBodyX = outputBodyY = 0.0f;
   outputUsesBodyPose = false;
+  GaitStride strides[kLegCount];
+  computeGaitStrides(profile, gaitForwardStride, gaitTurnStride, strides);
   for (int i = 0; i < kLegCount; ++i) {
     const bool diagonalA = (i == LEG_FL || i == LEG_BR);
     const bool leftLeg = (i == LEG_FL || i == LEG_BL);
     const float sideSign = leftLeg ? 1.0f : -1.0f;
-    const float halfStrideMm = profile.strideMm * 0.5f * (
-        gaitForwardStride + sideSign * gaitTurnStride * profile.turnGain);
-    float xOffsetMm = 0.0f;
+    // The path is linear in the half stride: sample it once at unit length,
+    // then lay it along this leg's stride vector.
+    float progress = 0.0f;
     float zOffsetMm = 0.0f;
     sampleGaitFootPath(normalizedCycle + (diagonalA ? 0.0f : profile.diagonalPhase),
-                       halfStrideMm,
+                       1.0f,
                        profile.liftMm * gaitAmplitude,
                        profile.dutyFactor,
                        profile.swingShape,
-                       &xOffsetMm,
+                       &progress,
                        &zOffsetMm);
-    const float x = profile.touchdownXMm + xOffsetMm;
-    const float y = sideSign * profile.stanceWidthMm;
+    const float x = profile.touchdownXMm + 0.5f * strides[i].x * progress;
+    const float y = sideSign * profile.stanceWidthMm + 0.5f * strides[i].y * progress;
     gaitSupportZ[i] = gaitBodyZ + manualRollFootZOffset(y);
     const float z = gaitSupportZ[i] + zOffsetMm;
     commandLeg(driver, i, x, y, z);
   }
+}
+
+// Static crawl: one foot in the air at a time, with all four feet down between
+// steps. Before each foot lifts, the body shifts away from it, toward the middle
+// of the three feet that stay down. Without that shift the centre of mass sits
+// on the line between the two diagonal support feet, the robot tips toward the
+// lifted corner, and that foot drags and catches. Legs lift in the lateral
+// order back-left, front-left, back-right, front-right, which keeps the most
+// stability margin for a slow walk.
+constexpr LegIndex kCrawlOrder[kLegCount] = {LEG_BL, LEG_FL, LEG_BR, LEG_FR};
+constexpr float kCrawlSlot = 0.25f;                // each leg owns a quarter cycle
+constexpr float kCrawlMaxSwingFraction = 0.17f;    // of the full cycle, per leg
+constexpr float kCrawlBodyShiftMm = 30.0f;         // body shift away from the lifting leg
+
+// Unit vector from the body centre toward a foot's nominal position.
+void crawlFootDirection(const GaitProfileSettings &profile, LegIndex leg, float *ux, float *uy) {
+  const bool front = leg == LEG_FL || leg == LEG_FR;
+  const bool left = leg == LEG_FL || leg == LEG_BL;
+  const float px = (front ? BODY_HALF_LENGTH_X : -BODY_HALF_LENGTH_X) + profile.touchdownXMm;
+  const float py = (left ? 1.0f : -1.0f) * (BODY_HALF_WIDTH_Y + profile.stanceWidthMm);
+  const float radius = fmaxf(1.0f, sqrtf(px * px + py * py));
+  *ux = px / radius;
+  *uy = py / radius;
+}
+
+// Foot offset (in the leg frame) that moves the body away from the lifting
+// leg. Holds the full shift while a leg is in the air and blends to the next
+// leg's shift during the four-feet-down gap between steps.
+void crawlBodyShift(const GaitProfileSettings &profile, float cycle, float swingFraction,
+                    float amplitude, float *dx, float *dy) {
+  const float gap = kCrawlSlot - swingFraction;
+  // Slot k: [k*0.25, (k+1)*0.25). Its swing is centred, with half the gap on each side.
+  float t = cycle - floorf(cycle);
+  const int slot = static_cast<int>(t / kCrawlSlot) % kLegCount;
+  const float inSlot = t - slot * kCrawlSlot;
+  int from = slot;
+  int to = slot;
+  float blend = 0.0f;
+  if (inSlot < gap * 0.5f) {
+    from = (slot + kLegCount - 1) % kLegCount;
+    blend = 0.5f + 0.5f * (inSlot / (gap * 0.5f));
+  } else if (inSlot > kCrawlSlot - gap * 0.5f) {
+    to = (slot + 1) % kLegCount;
+    blend = 0.5f * (inSlot - (kCrawlSlot - gap * 0.5f)) / (gap * 0.5f);
+  }
+  const float eased = halfCosine01(blend);
+  float fx, fy, tx, ty;
+  crawlFootDirection(profile, kCrawlOrder[from], &fx, &fy);
+  crawlFootDirection(profile, kCrawlOrder[to], &tx, &ty);
+  // Feet move toward the lifting leg's side relative to the body, which moves
+  // the body (and its centre of mass) away from that leg.
+  *dx = amplitude * kCrawlBodyShiftMm * (fx + (tx - fx) * eased);
+  *dy = amplitude * kCrawlBodyShiftMm * (fy + (ty - fy) * eased);
 }
 
 void applyCarefulWalk(Adafruit_PWMServoDriver &driver, float baseZ) {
@@ -1009,10 +1124,8 @@ void applyCarefulWalk(Adafruit_PWMServoDriver &driver, float baseZ) {
   const float commandSlewPerSec = 1.0f / responseSeconds;
   gaitBodyZ = approachGaitCommand(
       gaitBodyZ, gaitBodyTargetZ, (60.0f / responseSeconds) * kControlStepSeconds);
-  const float targetForward = profile.enabled
-      ? applyGaitDeadband(readMotionChannelNormalized(PITCH_CH_INDEX)) * profile.maxForwardScale : 0.0f;
-  const float targetTurn = profile.enabled
-      ? applyGaitDeadband(readMotionChannelNormalized(YAW_CH_INDEX)) * profile.maxTurnScale : 0.0f;
+  const float targetForward = readGaitForwardInput(profile);
+  const float targetTurn = readGaitTurnInput(profile, targetForward);
   const float maximumCommandStep = commandSlewPerSec * kControlStepSeconds;
   gaitForwardCommand = approachGaitCommand(gaitForwardCommand, targetForward, maximumCommandStep);
   gaitTurnCommand = approachGaitCommand(gaitTurnCommand, targetTurn, maximumCommandStep);
@@ -1037,34 +1150,38 @@ void applyCarefulWalk(Adafruit_PWMServoDriver &driver, float baseZ) {
   outputRollDeg = outputPitchDeg = outputYawDeg = 0.0f;
   outputBodyX = outputBodyY = 0.0f;
   outputUsesBodyPose = false;
-  constexpr LegIndex kSwingOrder[kLegCount] = {LEG_FL, LEG_BR, LEG_FR, LEG_BL};
+  const float swingFraction = fminf(kCrawlMaxSwingFraction, 1.0f - profile.dutyFactor);
+  const float gap = kCrawlSlot - swingFraction;
+  GaitStride strides[kLegCount];
+  computeGaitStrides(profile, gaitForwardStride, gaitTurnStride, strides);
+  float shiftX = 0.0f;
+  float shiftY = 0.0f;
+  crawlBodyShift(profile, normalizedCycle, swingFraction, gaitAmplitude, &shiftX, &shiftY);
   for (int orderIndex = 0; orderIndex < kLegCount; ++orderIndex) {
-    const LegIndex leg = kSwingOrder[orderIndex];
+    const LegIndex leg = kCrawlOrder[orderIndex];
     const bool leftLeg = leg == LEG_FL || leg == LEG_BL;
     const float sideSign = leftLeg ? 1.0f : -1.0f;
-    const float halfStrideMm = profile.strideMm * 0.5f * (
-        gaitForwardStride + sideSign * gaitTurnStride * profile.turnGain);
-    float legCycle = normalizedCycle - 0.25f * static_cast<float>(orderIndex);
+    // This leg's swing starts half a gap into its slot.
+    float legCycle = normalizedCycle - kCrawlSlot * static_cast<float>(orderIndex) - gap * 0.5f;
     legCycle -= floorf(legCycle);
-    float xOffsetMm = 0.0f;
+    float progress = 0.0f;
     float zOffsetMm = 0.0f;
-    const float swingFraction = fminf(0.245f, 1.0f - profile.dutyFactor);
     if (legCycle < swingFraction) {
       const float swing = legCycle / swingFraction;
-      xOffsetMm = halfStrideMm * (-1.0f + 2.0f * halfCosine01(swing));
+      progress = -1.0f + 2.0f * halfCosine01(swing);
       const float liftWave = sinf(kPi * swing);
       zOffsetMm = -profile.liftMm * gaitAmplitude *
           powf(fmaxf(0.0f, liftWave), profile.swingShape);
     } else {
       const float stance = (legCycle - swingFraction) / (1.0f - swingFraction);
-      xOffsetMm = halfStrideMm * (1.0f - 2.0f * stance);
+      progress = 1.0f - 2.0f * stance;
     }
     gaitSupportZ[leg] = gaitBodyZ +
         manualRollFootZOffset(sideSign * profile.stanceWidthMm);
     commandLeg(driver,
                leg,
-               profile.touchdownXMm + xOffsetMm,
-               sideSign * profile.stanceWidthMm,
+               profile.touchdownXMm + 0.5f * strides[leg].x * progress + shiftX,
+               sideSign * profile.stanceWidthMm + 0.5f * strides[leg].y * progress + shiftY,
                gaitSupportZ[leg] + zOffsetMm);
   }
 }
@@ -1328,11 +1445,13 @@ void setup() {
 #ifndef DOMINO_SIL
   loopDiagnosticsInit();
 #endif
-  Wire.begin();
 #ifndef DOMINO_SIL
-  // Keep servo-bus transactions bounded if a device stops responding.
-  Wire.setClock(100000);
-  Wire.setTimeOut(20);
+  // 100 kHz with a bounded timeout, and free the bus first in case a device
+  // was left mid-transfer by a reset (it would otherwise hold SDA low).
+  i2cBusBegin();
+  i2cBusEnsureIdle();
+#else
+  Wire.begin();
 #endif
 
 #if DOMINO_IMU_ENABLED
@@ -1349,6 +1468,10 @@ void setup() {
   pca.setOscillatorFrequency(kOscillatorFreqHz);
   pca.setPWMFreq(kServoPwmFreqHz);
   delay(10);
+#ifndef DOMINO_SIL
+  // Read the prescale once so servo writes don't re-read it every time.
+  setServoPwmTiming(pca.readPrescale(), kOscillatorFreqHz);
+#endif
 
 #ifndef DOMINO_SIL
   liveRobotEndpointBegin(pca);
@@ -1631,6 +1754,9 @@ void loop() {
 #endif
     lastControlMs = now;
 #ifndef DOMINO_SIL
+    // If anything left the shared I2C bus stuck (SDA held low), free it before
+    // this tick's servo writes instead of letting every write time out.
+    i2cBusEnsureIdle();
     if (liveRobotEndpointCalibrationOwnsOutputs() ||
         !liveRobotEndpointAllowsRadioControl()) return;
     if (!servoOutputsEnabled()) setServoOutputsEnabled(pca, true);

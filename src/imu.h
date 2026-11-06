@@ -42,6 +42,10 @@ void imuInit();
 // Read a fresh sample into gImuState. Returns true on success.
 bool imuReadSample();
 uint32_t imuI2cErrorCount();
+// True once repeated I2C errors made the firmware stop reading the IMU (until
+// reboot) to keep the shared bus free for the servo driver.
+bool imuQuarantined();
+uint8_t imuAddress();
 uint32_t imuLastErrorAtMs();
 uint32_t imuConsecutiveErrorCount();
 uint8_t imuLastRequestBytes();

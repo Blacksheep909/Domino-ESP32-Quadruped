@@ -56,10 +56,11 @@ constexpr uint32_t kTelemetryIntervalMs = 20;
 // finishes. The timeline leaves room for each one with the sticks centred.
 constexpr uint32_t kCarefulMotionMs = 11000;  // forward command once careful walk is active
 constexpr uint32_t kTrotRequestMs = 12000;    // SC high: careful -> trot handoff begins
-constexpr uint32_t kTrotMotionMs = 14000;     // sticks move once the handoff has finished
-constexpr uint32_t kLinkDropMs = 15500;       // link lost: failsafe stow follows
-constexpr uint32_t kScenarioDurationMs = 20500;  // failsafe stow takes ~3.5 s after the link drop
-constexpr uint32_t kLoopPeriodMs = 21000;
+constexpr uint32_t kTrotMotionMs = 14800;     // sticks move once the handoff has finished
+// (the crawl lands from a weight-shifted stance, so its handoff takes ~2.3 s)
+constexpr uint32_t kLinkDropMs = 16300;       // link lost: failsafe stow follows
+constexpr uint32_t kScenarioDurationMs = 21300;  // failsafe stow takes ~3.5 s after the link drop
+constexpr uint32_t kLoopPeriodMs = 21800;
 constexpr int kRideHeightChannelIndex = 2;  // Boxer left-stick vertical / CRSF CH3.
 #ifndef CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
 constexpr DWORD CREATE_WAITABLE_TIMER_HIGH_RESOLUTION = 0x00000002;
@@ -815,7 +816,9 @@ bool validateOutputs(bool sawStand, bool sawTilt, bool sawGait, bool sawCareful,
     passed = false;
   }
   if (gaitSupportViolation || !sawGaitSwing || !sawGaitSupportOverlap) {
-    std::cerr << "FAIL: gait did not preserve two-foot swing and four-foot transition support\n";
+    std::cerr << "FAIL: gait did not preserve two-foot swing and four-foot transition support"
+              << " (violation=" << gaitSupportViolation << " twoFootSwing=" << sawGaitSwing
+              << " fourFootOverlap=" << sawGaitSupportOverlap << ")\n";
     passed = false;
   }
   if (carefulSupportViolation || !sawCarefulSwing) {

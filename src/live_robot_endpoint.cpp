@@ -55,6 +55,7 @@
 #include "crsf.h"
 #include "calibration_lease.h"
 #include "gait_profile.h"
+#include "i2c_bus.h"
 #include "imu.h"
 #include "leg_controller.h"
 #include "loop_diagnostics.h"
@@ -773,7 +774,7 @@ void sendHello(bool bestEffort = false) {
   document["type"] = "robot-hello";
   document["robotId"] = "domino-esp32-quadruped";
   document["robotName"] = "Domino";
-  document["firmwareVersion"] = "0.8.24";
+  document["firmwareVersion"] = "0.8.26";
   document["robotState"] = stateName();
   addCalibrationOrigin(document["calibration"].to<JsonObject>());
   if (state == LiveRobotState::Fault && faultReason[0]) document["faultReason"] = faultReason;
@@ -923,6 +924,13 @@ void sendTelemetry(uint32_t now) {
   diagnostics["imuLastFailedRequestBytes"] = imuLastFailedRequestBytes();
   diagnostics["imuLastFailedRequestUs"] = imuLastFailedRequestUs();
   diagnostics["imuMaxRequestUs"] = imuMaxRequestUs();
+  diagnostics["imuOnline"] = gImuState.online;
+  diagnostics["imuQuarantined"] = imuQuarantined();
+  diagnostics["imuAddress"] = imuAddress();
+  // Times the shared I2C bus was found stuck (SDA held low) and freed.
+  diagnostics["i2cBusRecoveries"] = i2cBusRecoveryCount();
+  diagnostics["i2cBusFailedRecoveries"] = i2cBusFailedRecoveryCount();
+  diagnostics["i2cBusLastRecoveryMs"] = i2cBusLastRecoveryMs();
   diagnostics["telemetryTxSkipped"] = telemetryTxSkipped;
   diagnostics["bodyMode"] = controlBodyMode;
   diagnostics["motionInputAwaitingCenter"] = controlAwaitingStickCenter;

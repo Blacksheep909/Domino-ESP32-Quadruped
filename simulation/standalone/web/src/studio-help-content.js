@@ -192,6 +192,7 @@ export const STUDIO_HELP_GUIDES = [
       "Connect your robot and leave it disarmed with the walk switch on stand (standing or stowed is fine). Firmware 0.8.23 or later is needed to save a gait on a powered robot.",
       "Click **Apply draft to robot** and wait for the saved result. An imported file older than the robot's gait asks before replacing it. If it is rejected, the reason says what to fix.",
       "Return to **Compare** for a physical run. Start with careful walking; centre the motion sticks through each mode change.",
+      "While walking: right stick up/down drives forward and back, **left stick left/right turns on the spot**, and **right stick left/right steers** (it bends the path in proportion to forward speed). The preview's SPIN and STEER sliders do the same, and the floor and green path show the result.",
     ], "compare", "Open Compare"),
   ]),
   guide("diagnostics", "LIVE", "Diagnostics", "Find where an input stops becoming a valid servo command.", "diagnostics", [

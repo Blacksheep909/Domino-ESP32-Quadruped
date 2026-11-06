@@ -74,7 +74,7 @@ jobs:
   # checks, and builds an unpublished arm64 DMG that can be downloaded from the
   # run's artifacts to try the Mac app before a release.
   macos:
-    runs-on: macos-14
+    runs-on: macos-latest
 
     steps:
       - name: Check out

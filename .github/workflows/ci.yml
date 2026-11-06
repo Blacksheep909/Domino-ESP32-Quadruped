@@ -6,6 +6,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Run by hand on any branch, e.g. to get a Mac test build before a release.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -67,3 +69,57 @@ jobs:
       - name: Studio production build
         working-directory: simulation/standalone
         run: pnpm run build
+
+  # macOS (Apple silicon): builds the simulator with clang, runs the same Studio
+  # checks, and builds an unpublished arm64 DMG that can be downloaded from the
+  # run's artifacts to try the Mac app before a release.
+  macos:
+    runs-on: macos-14
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: simulation/standalone/pnpm-lock.yaml
+
+      - name: Build firmware SIL (clang)
+        run: bash simulation/sil/build.sh
+
+      - name: Firmware SIL scenario
+        run: bash simulation/sil/test.sh
+
+      - name: Install Studio dependencies
+        working-directory: simulation/standalone
+        run: pnpm install --frozen-lockfile
+
+      - name: Studio tests
+        working-directory: simulation/standalone
+        run: pnpm test
+
+      - name: Download Electron binary
+        working-directory: simulation/standalone
+        run: node node_modules/electron/install.js
+
+      - name: Build the Mac app (not published)
+        working-directory: simulation/standalone
+        run: pnpm run desktop:make:mac
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Keep the DMG as a run artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: domino-studio-macos-arm64
+          path: simulation/standalone/out/*.dmg
+          if-no-files-found: error
+          retention-days: 14

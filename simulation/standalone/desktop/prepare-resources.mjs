@@ -10,7 +10,9 @@ const expectedOutputRoot = path.resolve(standaloneRoot, "desktop", "resources", 
 
 if (outputRoot !== expectedOutputRoot) throw new Error(`Refusing to replace unexpected path: ${outputRoot}`);
 
-const silSource = path.join(repoRoot, "simulation", "sil", "bin", "domino_sil.exe");
+// The SIL is a native binary: build.ps1 (Windows) or build.sh (macOS/Linux) on the packaging machine.
+const silName = process.platform === "win32" ? "domino_sil.exe" : "domino_sil";
+const silSource = path.join(repoRoot, "simulation", "sil", "bin", silName);
 const firmwareVersionSource = path.join(repoRoot, "src", "live_robot_endpoint.cpp");
 const cadSource = path.join(
   repoRoot,
@@ -31,7 +33,7 @@ rmSync(outputRoot, { recursive: true, force: true });
 mkdirSync(path.join(outputRoot, "sil"), { recursive: true });
 mkdirSync(path.join(outputRoot, "firmware"), { recursive: true });
 mkdirSync(path.join(outputRoot, "companion", "node_modules"), { recursive: true });
-cpSync(silSource, path.join(outputRoot, "sil", "domino_sil.exe"));
+cpSync(silSource, path.join(outputRoot, "sil", silName));
 cpSync(cadSource, path.join(outputRoot, "cad"), { recursive: true });
 for (const entry of ["platformio.ini", "src", "include", "lib"]) {
   const source = path.join(repoRoot, entry);

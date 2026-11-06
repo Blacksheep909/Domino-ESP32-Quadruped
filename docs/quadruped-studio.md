@@ -5,7 +5,7 @@ robot inspection, calibration, telemetry, gait development and route planning.
 It brings the Domino CAD, native firmware simulator, local service and robot
 companion tools into one workspace.
 
-**Start here:** [Studio source](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/tree/codex/desktop-app/simulation/standalone)
+**Start here:** [Studio source](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/tree/main/simulation/standalone)
 · [Download Studio 0.3.1 for Windows](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/releases/tag/v0.3.1)
 · [Project home](../README.md)
 
@@ -17,20 +17,47 @@ connection indicators in this view belong to the local simulator.*
 
 ## Availability
 
-**[Download the Windows x64 installer](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/releases/download/v0.3.1/Domino-Quadruped-Studio-0.3.1-x64.exe)**
-or choose the **[portable ZIP](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/releases/download/v0.3.1/Domino-Quadruped-Studio-0.3.1-x64.zip)**.
-Run the installer, then open **Domino Quadruped Studio v0.3.1** from the Start
-menu. For the portable build, extract the complete ZIP to a normal folder and
-run `DominoQuadrupedStudio.exe` inside it.
+Download the latest release from the
+**[releases page](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/releases/latest)**.
+The [release notes](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/releases)
+list what each version changes.
+
+### Windows (x64)
+
+Run `Domino-Quadruped-Studio-<version>-x64.exe`, then open **Domino Quadruped
+Studio** from the Start menu. A portable `.zip` is also published: extract it to
+a normal folder and run `DominoQuadrupedStudio.exe`. Installed copies update
+themselves: a banner offers **RESTART & UPDATE** when a new version is ready.
+
+### macOS (Apple silicon)
+
+1. Download `Domino-Quadruped-Studio-<version>-arm64.dmg`, open it, and drag
+   **Domino Quadruped Studio** into **Applications**.
+2. The app is not signed with an Apple Developer ID, so the first time macOS
+   blocks a double-click. **Right-click (or Control-click) the app > Open**, then
+   **Open** again in the dialog. On newer macOS versions, if there is no Open
+   button, go to **System Settings > Privacy & Security** and click
+   **Open Anyway**. If macOS says the app is damaged, run this once in Terminal:
+
+   ```bash
+   xattr -cr "/Applications/Domino Quadruped Studio.app"
+   ```
+
+3. **Firmware upload** needs PlatformIO installed on the Mac, for example
+   `brew install platformio`. Studio also finds it in `~/.platformio`, in
+   `/opt/homebrew/bin`, in `/usr/local/bin` or in `~/.local/bin`.
+4. **Updates:** macOS will not let an unsigned app replace itself. Studio still
+   checks for new versions and shows **DOWNLOAD**, which opens the release page:
+   download the new `.dmg` and drag it into Applications to replace the old
+   copy. Settings and calibration are kept.
+
+The robot's USB serial port appears on macOS as `/dev/cu.usbserial-…` or
+`/dev/cu.SLAB_USBtoUART`; Studio picks it automatically. The simulator, CAD
+preview, LIVE connection, calibration and gait tools work the same on both
+platforms.
 
 The application bundles its runtime dependencies, so ordinary use does not
-need a separate Node terminal. The release also includes `SHA256SUMS.txt`
-and the update checker's `latest.yml` and installer blockmap.
-
-Studio is developed on `codex/desktop-app`. The **[v0.3.1 source tag](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/tree/v0.3.1)**
-records the source for this release; use that tag to reproduce this version.
-Check the [release notes](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/releases/tag/v0.3.1)
-for the features included in the build you install.
+need a separate Node terminal.
 
 ## Start with Simulation
 
@@ -89,7 +116,7 @@ arrives from the selected adapter.
 authority lease, hold-to-drive input, fresh telemetry and robot-side expiry.
 The operator must complete the hardware bring-up procedure before using it.
 The detailed engineering procedure is maintained with the
-[Studio source documentation](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/blob/codex/desktop-app/docs/live-hardware-bring-up.md).
+[Studio source documentation](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/blob/main/docs/live-hardware-bring-up.md).
 
 With ordinary hobby servos, reported servo angles can be commanded output
 angles. They are not automatically encoder measurements of the actual shaft.
@@ -187,21 +214,20 @@ connected vehicle; an offline preview sends no vehicle command.
 - **Runtime state:** Arm, E-stop, bench acknowledgement, connection sessions,
   control authority and active route execution are excluded from project saves.
   A reload starts in Simulation with a fresh connection workflow.
-- **App updates:** NSIS `.exe` builds update the same installation. Published
-  releases supply the desktop updater; portable `.zip` copies are updated
-  manually. An app update does not automatically flash the ESP32 or overwrite
+- **App updates:** Windows `.exe` installs update the same installation.
+  Portable `.zip` copies and macOS (see above) are updated by downloading the
+  new release. An app update does not automatically flash the ESP32 or overwrite
   its saved calibration.
 - **Firmware:** **UPLOAD FW** opens the firmware review/build/upload workflow.
   Building firmware and uploading it are explicit separate steps.
 
 ## Build and run from source
 
-The current source launcher targets Windows. Install Git, Node.js, pnpm,
-Python and PlatformIO, and make their commands available in PowerShell.
-The desktop release workflow uses Node 24.
+Install Git, Node.js, pnpm, and (for firmware) Python and PlatformIO. The
+desktop release workflow uses Node 24. On Windows:
 
 ```powershell
-git clone --branch codex/desktop-app https://github.com/Blacksheep909/Domino-ESP32-Quadruped.git
+git clone https://github.com/Blacksheep909/Domino-ESP32-Quadruped.git
 cd Domino-ESP32-Quadruped
 pio pkg install --global --tool platformio/toolchain-gccmingw32
 .\simulation\sil\build.ps1
@@ -210,7 +236,19 @@ pnpm install --frozen-lockfile
 pnpm run desktop:make
 ```
 
-The installer and portable build are written to `simulation/standalone/out`.
+On an Apple-silicon Mac (needs the Xcode command line tools for `c++`):
+
+```bash
+git clone https://github.com/Blacksheep909/Domino-ESP32-Quadruped.git
+cd Domino-ESP32-Quadruped
+bash simulation/sil/build.sh
+cd simulation/standalone
+pnpm install --frozen-lockfile
+node node_modules/electron/install.js
+pnpm run desktop:make:mac
+```
+
+The installer, `.dmg` and portable builds are written to `simulation/standalone/out`.
 Use `pnpm run desktop:start` in that directory for desktop development.
 
 ## Common checks
@@ -225,5 +263,5 @@ Use `pnpm run desktop:start` in that directory for desktop development.
 | A graph says measured but no joint sensors exist | Check the telemetry source: commanded servo output is not independent position feedback. |
 
 For deeper implementation detail, see the
-[Virtual Lab guide on the Studio branch](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/blob/codex/desktop-app/docs/virtual-lab.md)
-and [application source](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/tree/codex/desktop-app/simulation/standalone).
+[Virtual Lab guide](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/blob/main/docs/virtual-lab.md)
+and [application source](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/tree/main/simulation/standalone).

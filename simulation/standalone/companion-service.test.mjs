@@ -53,3 +53,14 @@ test("the installed companion can select a MAVLink listener from the UI", async 
   assert.deepEqual(result, { transport: "wifi", endpoint: "127.0.0.1:14551", started: true });
   await assert.rejects(() => service.discover("auto", { protocol: "ardupilot", host: "127.0.0.1", port: 70000 }), /valid MAVLink/i);
 });
+
+test("macOS serial devices keep their case and the robot's USB port is chosen", async () => {
+  const { macSerialPorts } = await import("./companion-service.mjs");
+  const ports = macSerialPorts(() => [
+    "cu.Bluetooth-Incoming-Port", "cu.debug-console", "tty.usbserial-0001", "cu.usbserial-0001", "cu.Domino-LIVE",
+  ]);
+  assert.deepEqual(ports.map((port) => port.port), ["/dev/cu.Domino-LIVE", "/dev/cu.usbserial-0001"]);
+  assert.equal(selectCompanionPort(ports, "usb").port, "/dev/cu.usbserial-0001");
+  assert.equal(selectCompanionPort(ports, "usb", "/dev/cu.usbserial-0001").port, "/dev/cu.usbserial-0001");
+  assert.equal(selectCompanionPort(ports, "usb", "/DEV/CU.USBSERIAL-0001"), null);
+});

@@ -3,7 +3,10 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
-import { resolveDesktopPaths } from "./paths.mjs";
+import { resolveDesktopPaths, SIL_EXECUTABLE_NAME } from "./paths.mjs";
+
+// Build expected paths with path.join so these tests hold on Windows and macOS.
+const expected = (...parts) => path.resolve(path.join(...parts));
 
 test("desktop package includes the service dependency modules", () => {
   const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
@@ -22,9 +25,9 @@ test("development paths use the checked-out repository and private user runtime"
     packaged: false,
   });
 
-  assert.equal(paths.projectRoot, path.resolve("C:\\repo"));
-  assert.equal(paths.runtimeRoot, path.resolve("C:\\users\\tester\\Domino\\runtime"));
-  assert.equal(paths.silExecutable, path.resolve("C:\\repo\\simulation\\sil\\bin\\domino_sil.exe"));
+  assert.equal(paths.projectRoot, expected("C:", "repo"));
+  assert.equal(paths.runtimeRoot, expected("C:", "users", "tester", "Domino", "runtime"));
+  assert.equal(paths.silExecutable, expected("C:", "repo", "simulation", "sil", "bin", SIL_EXECUTABLE_NAME));
 });
 
 test("packaged paths keep mutable data outside installed application resources", () => {
@@ -37,18 +40,18 @@ test("packaged paths keep mutable data outside installed application resources",
 
   assert.equal(
     paths.projectRoot,
-    path.resolve("C:\\Program Files\\Domino\\resources\\domino\\firmware"),
+    expected("C:", "Program Files", "Domino", "resources", "domino", "firmware"),
   );
   assert.equal(
     paths.cadRoot,
-    path.resolve("C:\\Program Files\\Domino\\resources\\domino\\cad"),
+    expected("C:", "Program Files", "Domino", "resources", "domino", "cad"),
   );
   assert.equal(
     paths.runtimeRoot,
-    path.resolve("C:\\users\\tester\\AppData\\Roaming\\Domino\\runtime"),
+    expected("C:", "users", "tester", "AppData", "Roaming", "Domino", "runtime"),
   );
   assert.equal(
     paths.companionEntry,
-    path.resolve("C:\\Program Files\\Domino\\resources\\domino\\companion\\live-companion-adapter.mjs"),
+    expected("C:", "Program Files", "Domino", "resources", "domino", "companion", "live-companion-adapter.mjs"),
   );
 });

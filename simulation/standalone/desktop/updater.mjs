@@ -40,8 +40,14 @@ function setState(patch) {
   }
 }
 
+// macOS builds are not signed with an Apple Developer ID, and macOS refuses to
+// install an unsigned update in place. There, Studio still checks for updates
+// but only offers the download page (status "manual").
+const manualInstall = process.platform === "darwin";
+
 function updatesSupported() {
-  return app.isPackaged && process.platform === "win32" && process.env.DOMINO_DISABLE_AUTO_UPDATE !== "1";
+  return app.isPackaged && ["win32", "darwin"].includes(process.platform) &&
+    process.env.DOMINO_DISABLE_AUTO_UPDATE !== "1";
 }
 
 function loadUpdater() {
@@ -69,7 +75,7 @@ function errorText(error) {
 }
 
 async function checkForUpdates(activeUpdater, reason = "scheduled") {
-  if (checkInFlight || state.status === "ready" || state.status === "downloading") return;
+  if (checkInFlight || ["ready", "downloading", "manual"].includes(state.status)) return;
   checkInFlight = true;
   setState({ status: "checking", message: "" });
   try {
@@ -118,8 +124,8 @@ export function setupAutoUpdater({ onStateChange } = {}) {
     return;
   }
 
-  activeUpdater.autoDownload = true;
-  activeUpdater.autoInstallOnAppQuit = true;
+  activeUpdater.autoDownload = !manualInstall;
+  activeUpdater.autoInstallOnAppQuit = !manualInstall;
   activeUpdater.allowDowngrade = false;
   activeUpdater.allowPrerelease = false;
   activeUpdater.logger = {
@@ -130,6 +136,11 @@ export function setupAutoUpdater({ onStateChange } = {}) {
   };
 
   activeUpdater.on("update-available", (info) => {
+    if (manualInstall) {
+      log("info", `Update ${info.version} is available to download.`);
+      setState({ status: "manual", version: info.version, percent: 0, message: "" });
+      return;
+    }
     log("info", `Update ${info.version} is available; downloading in the background.`);
     setState({ status: "downloading", version: info.version, percent: 0, message: "" });
   });

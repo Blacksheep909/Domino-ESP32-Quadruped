@@ -122,6 +122,13 @@ function findPlatformio() {
   const candidates = [
     process.env.PLATFORMIO_CMD,
     path.join(homedir(), ".platformio", "penv", process.platform === "win32" ? "Scripts" : "bin", executable),
+    // Apps opened from the macOS Finder do not inherit the shell PATH, so look
+    // where Homebrew (Apple silicon, Intel) and pip --user install PlatformIO.
+    ...(process.platform === "win32" ? [] : [
+      "/opt/homebrew/bin/platformio",
+      "/usr/local/bin/platformio",
+      path.join(homedir(), ".local", "bin", "platformio"),
+    ]),
     executable,
   ].filter(Boolean);
   return candidates.find((candidate) => candidate === executable || existsSync(candidate)) || null;

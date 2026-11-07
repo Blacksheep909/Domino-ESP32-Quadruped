@@ -396,11 +396,22 @@ bool motionInputsAreCentered() {
          fabsf(normalizeChannel(ch_us[YAW_CH_INDEX])) <= kModeInputCenterDeadband;
 }
 
+// Which newly entered input profiles wait for centred sticks before acting.
+// Tilt maps the sticks straight to a body angle, so a held stick must be
+// released and re-centred first or the body would snap to it. Walking starts
+// from a zeroed gait command that only ramps toward the stick at the profile's
+// response rate, so a stick already held when the walk begins is ramped in
+// instead of ignored. (Firmware <= 0.8.26 made walking wait for a re-centre
+// too, which felt like the robot ignoring the forward stick.)
+bool motionProfileNeedsCentredSticks(MotionInputProfile profile) {
+  return profile == MOTION_INPUT_TILT;
+}
+
 void updateMotionInputInterlock(BodyMode previousMode, BodyMode nextMode, uint32_t now) {
   const MotionInputProfile previousProfile = motionInputProfileForMode(previousMode);
   const MotionInputProfile nextProfile = motionInputProfileForMode(nextMode);
   if (previousProfile != nextProfile) {
-    motionInputAwaitingCenter = nextProfile != MOTION_INPUT_NONE;
+    motionInputAwaitingCenter = motionProfileNeedsCentredSticks(nextProfile);
     motionInputCenteredSinceMs = 0;
   }
 
@@ -912,16 +923,26 @@ struct GaitStride { float x; float y; };
 
 void computeGaitStrides(const GaitProfileSettings &profile, float forward, float turn,
                         GaitStride strides[kLegCount]) {
-  float largest = 0.0f;
+  float px[kLegCount];
+  float py[kLegCount];
+  float radiusSum = 0.0f;
   for (int i = 0; i < kLegCount; ++i) {
     const bool front = i == LEG_FL || i == LEG_FR;
     const bool left = i == LEG_FL || i == LEG_BL;
-    const float px = (front ? BODY_HALF_LENGTH_X : -BODY_HALF_LENGTH_X) + profile.touchdownXMm;
-    const float py = (left ? 1.0f : -1.0f) * (BODY_HALF_WIDTH_Y + profile.stanceWidthMm);
-    const float radius = fmaxf(1.0f, sqrtf(px * px + py * py));
+    px[i] = (front ? BODY_HALF_LENGTH_X : -BODY_HALF_LENGTH_X) + profile.touchdownXMm;
+    py[i] = (left ? 1.0f : -1.0f) * (BODY_HALF_WIDTH_Y + profile.stanceWidthMm);
+    radiusSum += sqrtf(px[i] * px[i] + py[i] * py[i]);
+  }
+  // One shared turn rate for every foot: each foot's sweep is proportional to
+  // its own distance from the body centre. (0.8.26 swept every foot the same
+  // distance, so the front feet, which sit closer to the centre, tried to turn
+  // the body faster than the rear feet and the difference was scuffed off.)
+  const float referenceRadius = fmaxf(1.0f, radiusSum / kLegCount);
+  float largest = 0.0f;
+  for (int i = 0; i < kLegCount; ++i) {
     // Clockwise (positive) turn: the body point at (px, py) moves along (py, -px).
-    strides[i].x = profile.strideMm * (forward + turn * profile.turnGain * py / radius);
-    strides[i].y = profile.strideMm * (turn * profile.turnGain * -px / radius);
+    strides[i].x = profile.strideMm * (forward + turn * profile.turnGain * py[i] / referenceRadius);
+    strides[i].y = profile.strideMm * (turn * profile.turnGain * -px[i] / referenceRadius);
     largest = fmaxf(largest, sqrtf(strides[i].x * strides[i].x + strides[i].y * strides[i].y));
   }
   const float limit = profile.strideMm * 1.05f;
@@ -1420,7 +1441,7 @@ bool applyModeTransition(Adafruit_PWMServoDriver &driver,
     tiltRollRamp.go(0.0f);
     tiltPitchRamp.go(0.0f);
     tiltYawRamp.go(0.0f);
-    motionInputAwaitingCenter = motionInputProfileForMode(outputMode) != MOTION_INPUT_NONE;
+    motionInputAwaitingCenter = motionProfileNeedsCentredSticks(motionInputProfileForMode(outputMode));
     motionInputCenteredSinceMs = 0;
   }
   return true;

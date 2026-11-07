@@ -148,7 +148,9 @@ test("relay retains a delayed calibration save acknowledgement throughout its ph
     { requestId: "save", action: "save-profile", sessionId: "session" }, "calibration"), true);
 });
 
-test("running service enforces API errors, session-bound telemetry, and adapter expiry", { timeout: 18_000 }, async (t) => {
+// The adapter-expiry check alone waits ~7 s; slower CI machines (macOS) also
+// take longer to start the server, so allow 40 s overall.
+test("running service enforces API errors, session-bound telemetry, and adapter expiry", { timeout: 40_000 }, async (t) => {
   const port = await freePort();
   const tempRoot = mkdtempSync(path.join(tmpdir(), "domino-server-"));
   const runtimeRoot = path.join(tempRoot, "runtime");
@@ -177,10 +179,17 @@ test("running service enforces API errors, session-bound telemetry, and adapter 
   let browserSocket;
   let adapterSocket;
   let stage = "starting the server";
+  const startedAt = Date.now();
+  const timings = [];
+  const mark = (next) => {
+    timings.push(`${stage}: ${Date.now() - startedAt} ms`);
+    stage = next;
+  };
+  t.after(() => t.diagnostic(`stage timings: ${[...timings, `${stage} (current): ${Date.now() - startedAt} ms`].join(", ")}`));
   try {
     child.stderr.on("data", (chunk) => { serverOutput = (serverOutput + chunk).slice(-4000); });
-    await waitForOutput(child, /Domino Virtual Lab:/, 10_000);
-    stage = "API checks";
+    await waitForOutput(child, /Domino Virtual Lab:/, 20_000);
+    mark("API checks");
 
     const baseUrl = `http://127.0.0.1:${port}`;
     const unknownApi = await requestJson(`${baseUrl}/api/not-a-real-endpoint`);
@@ -282,11 +291,11 @@ test("running service enforces API errors, session-bound telemetry, and adapter 
     }));
     await malformedTelemetry;
 
-    stage = "waiting for adapter expiry";
+    mark("waiting for adapter expiry");
     const removed = waitForMessage(browserSocket, (message) =>
       message.type === "live-adapter-removed" && message.adapterId === adapterId, 7_000);
     await removed;
-    stage = "re-announce and stale command";
+    mark("re-announce and stale command");
 
     const reannounced = waitForMessage(browserSocket, (message) =>
       message.type === "live-adapter-announce" && message.adapterId === adapterId);

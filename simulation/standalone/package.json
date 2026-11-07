@@ -18,7 +18,7 @@
     "desktop:publish": "npm run build && npm run desktop:prepare && electron-builder --win nsis zip --x64 --publish always",
     "release:firmware": "node desktop/release-firmware.mjs",
     "test": "node run-tests.mjs",
-    "desktop:make:mac": "npm run build && npm run desktop:prepare && electron-builder --mac dmg zip --arm64",
+    "desktop:make:mac": "npm run build && npm run desktop:prepare && electron-builder --mac dmg zip --arm64 --publish never",
     "desktop:publish:mac": "npm run build && npm run desktop:prepare && electron-builder --mac dmg zip --arm64 --publish always"
   },
   "dependencies": {

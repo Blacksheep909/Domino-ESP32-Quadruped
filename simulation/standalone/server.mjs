@@ -887,12 +887,25 @@ export const serverReady = new Promise((resolve, reject) => {
 });
 
 export function shutdown() {
-  companionService.stop().catch((error) => console.error(error.message));
+  const stopped = companionService.stop().catch((error) => console.error(error.message));
   radio.stop();
   server.close();
+  return stopped;
+}
+
+// Run on its own (npm start, tests), the process must also exit: the polling
+// timers above keep Node alive after the server closes, so SIGINT/SIGTERM used
+// to leave it running on macOS and Linux (Windows kills processes outright).
+// The desktop app shuts down in-process and exits itself.
+function shutdownAndExit() {
+  const backstop = setTimeout(() => process.exit(0), 2_000);
+  Promise.resolve(shutdown()).finally(() => {
+    clearTimeout(backstop);
+    process.exit(0);
+  });
 }
 
 if (process.env.DOMINO_EMBEDDED_DESKTOP !== "1") {
-  process.once("SIGINT", shutdown);
-  process.once("SIGTERM", shutdown);
+  process.once("SIGINT", shutdownAndExit);
+  process.once("SIGTERM", shutdownAndExit);
 }

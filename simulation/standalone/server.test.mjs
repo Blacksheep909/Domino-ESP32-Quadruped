@@ -110,6 +110,17 @@ function noMessage(socket, predicate, timeoutMs = 350) {
   });
 }
 
+// Ask the server to stop, and force it after 5 s so a broken shutdown fails
+// the test instead of hanging it.
+async function stopServer(child) {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  const exited = new Promise((resolve) => child.once("exit", resolve));
+  child.kill();
+  const timer = setTimeout(() => child.kill("SIGKILL"), 5_000);
+  await exited;
+  clearTimeout(timer);
+}
+
 function closeSocket(socket) {
   if (!socket || socket.readyState === WebSocket.CLOSED) return Promise.resolve();
   return new Promise((resolve) => {
@@ -318,8 +329,7 @@ test("running service enforces API errors, session-bound telemetry, and adapter 
     throw new Error(`Failed while ${stage}: ${error instanceof Error ? error.message : error}\n--- server output ---\n${serverOutput}`);
   } finally {
     await Promise.all([closeSocket(browserSocket), closeSocket(adapterSocket)]);
-    if (child.exitCode === null) child.kill();
-    await new Promise((resolve) => child.once("exit", resolve));
+    await stopServer(child);
     rmSync(tempRoot, { recursive: true, force: true });
   }
 });

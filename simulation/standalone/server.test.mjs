@@ -148,7 +148,7 @@ test("relay retains a delayed calibration save acknowledgement throughout its ph
     { requestId: "save", action: "save-profile", sessionId: "session" }, "calibration"), true);
 });
 
-test("running service enforces API errors, session-bound telemetry, and adapter expiry", { timeout: 18_000 }, async () => {
+test("running service enforces API errors, session-bound telemetry, and adapter expiry", { timeout: 18_000 }, async (t) => {
   const port = await freePort();
   const tempRoot = mkdtempSync(path.join(tmpdir(), "domino-server-"));
   const runtimeRoot = path.join(tempRoot, "runtime");
@@ -168,11 +168,19 @@ test("running service enforces API errors, session-bound telemetry, and adapter 
       DOMINO_EMBEDDED_DESKTOP: "0",
     },
   });
+  // A test timeout abandons this function without running `finally`, so also
+  // stop the server from the test's own cleanup; otherwise it keeps the test
+  // process (and CI) alive.
+  t.after(() => { if (child.exitCode === null) child.kill(); });
+  let serverOutput = "";
+  child.stdout.on("data", (chunk) => { serverOutput = (serverOutput + chunk).slice(-4000); });
   let browserSocket;
   let adapterSocket;
+  let stage = "starting the server";
   try {
-    child.stderr.on("data", () => {});
-    await waitForOutput(child, /Domino Virtual Lab:/);
+    child.stderr.on("data", (chunk) => { serverOutput = (serverOutput + chunk).slice(-4000); });
+    await waitForOutput(child, /Domino Virtual Lab:/, 10_000);
+    stage = "API checks";
 
     const baseUrl = `http://127.0.0.1:${port}`;
     const unknownApi = await requestJson(`${baseUrl}/api/not-a-real-endpoint`);
@@ -274,9 +282,11 @@ test("running service enforces API errors, session-bound telemetry, and adapter 
     }));
     await malformedTelemetry;
 
+    stage = "waiting for adapter expiry";
     const removed = waitForMessage(browserSocket, (message) =>
       message.type === "live-adapter-removed" && message.adapterId === adapterId, 7_000);
     await removed;
+    stage = "re-announce and stale command";
 
     const reannounced = waitForMessage(browserSocket, (message) =>
       message.type === "live-adapter-announce" && message.adapterId === adapterId);
@@ -295,6 +305,8 @@ test("running service enforces API errors, session-bound telemetry, and adapter 
       timestampMs: Date.now(),
     }));
     await staleCommand;
+  } catch (error) {
+    throw new Error(`Failed while ${stage}: ${error instanceof Error ? error.message : error}\n--- server output ---\n${serverOutput}`);
   } finally {
     await Promise.all([closeSocket(browserSocket), closeSocket(adapterSocket)]);
     if (child.exitCode === null) child.kill();

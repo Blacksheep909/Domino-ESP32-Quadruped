@@ -31,6 +31,7 @@
         <span id="real-battery-status" class="real-robot-only live-header-battery" data-state="unavailable" title="Measured robot battery voltage">BAT --.- V</span>
         <span id="real-safety-status" class="real-robot-only" data-state="offline">DISCONNECTED</span>
         <button id="live-global-estop" class="real-robot-only live-global-estop" type="button" title="Latch the robot emergency stop" disabled>E-STOP</button>
+        <button id="app-update-chip" class="app-update-chip" type="button" hidden>UPDATE</button>
         <button id="shortcuts-open" class="utility-button" type="button" aria-haspopup="dialog" aria-label="Open Studio help" title="Guides, keyboard shortcuts and camera controls (?)">?</button>
         <button id="fullscreen-toggle" class="utility-button" type="button" aria-pressed="false" title="Enter fullscreen (F)">⛶</button>
         <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false" title="Switch to dark theme">
@@ -1070,7 +1071,7 @@
           <div><span>LIVE / GAITS</span><h1 id="live-gaits-title">Gait profile transfer</h1><p>Review Simulation profiles in the 3D preview, compare them with the robot, then apply through an explicit disarmed handshake.</p></div>
           <div class="live-page-status"><span id="live-gait-link-state" data-state="offline">ROBOT PROFILE UNKNOWN</span><strong id="live-gait-draft-state">LOCAL DRAFT</strong></div>
         </header>
-        <div class="live-gait-preview-caption"><span>3D GAIT PREVIEW</span><strong id="live-gait-preview-health">4 / 4 REACHABLE</strong><small>Local kinematics only / never drives hardware. The floor moves under the robot; the line shows the next 4 s of path.</small></div>
+        <div class="live-gait-preview-caption"><span>3D GAIT PREVIEW</span><strong id="live-gait-preview-health">4 / 4 REACHABLE</strong><small>Local kinematics only / never drives hardware. The floor moves under the robot; the line shows the next 6 s of path.</small></div>
         <div class="live-gaits-layout">
           <div class="live-gaits-editor">
             <section class="live-gait-card live-gait-library-card">

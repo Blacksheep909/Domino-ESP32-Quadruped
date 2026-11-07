@@ -12732,6 +12732,9 @@ function animate(now) {
   telemetryDatasetElapsed += delta;
   telemetryDatasetDue = telemetryDatasetElapsed >= 0.1;
   if (telemetryDatasetDue) telemetryDatasetElapsed = 0;
+  // The Gaits page's moving floor and path line belong to that preview only;
+  // hide them every frame so they never linger in SIM or other LIVE pages.
+  gaitTreadmillPivot.visible = false;
   if (applicationState.workspace !== WORKSPACE_SIMULATION) {
     updateLiveTwinPose(delta);
     // Keep the same glowing foot trails used by the Simulation gait-tune

@@ -103,6 +103,25 @@ body[data-workspace="real-robot"] > header #shortcuts-open { margin-left: 5px; }
   font-size: 12px;
 }
 .app-update-banner[hidden] { display: none; }
+/* Stays in the header while an update is waiting, even after LATER. */
+.app-update-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  color: var(--ui-accent);
+  background: var(--ui-accent-soft);
+  border: 1px solid var(--ui-accent-border);
+  border-radius: 5px;
+  font: 700 10px/1 Consolas, monospace;
+  white-space: nowrap;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.app-update-chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.app-update-chip:hover, .app-update-chip:focus-visible { background: var(--ui-accent-hover); border-color: var(--ui-accent); outline: none; }
+.app-update-chip[hidden] { display: none; }
 .app-update-banner[data-tone="success"],
 .app-update-banner[data-tone="ready"] { border-left-color: var(--ui-accent); }
 .app-update-banner[data-tone="warning"] { border-left-color: var(--ui-warning); }

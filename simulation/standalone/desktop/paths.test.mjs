@@ -5,8 +5,11 @@ import test from "node:test";
 
 import { resolveDesktopPaths, SIL_EXECUTABLE_NAME } from "./paths.mjs";
 
-// Build expected paths with path.join so these tests hold on Windows and macOS.
-const expected = (...parts) => path.resolve(path.join(...parts));
+// One absolute root on every OS ("C:\\domino-test" on Windows, "/domino-test"
+// elsewhere), so the inputs and expected paths compare the same way.
+const ROOT = path.resolve(path.sep, "domino-test");
+const at = (...parts) => path.join(ROOT, ...parts);
+const expected = at;
 
 test("desktop package includes the service dependency modules", () => {
   const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
@@ -19,39 +22,39 @@ test("desktop package includes the service dependency modules", () => {
 
 test("development paths use the checked-out repository and private user runtime", () => {
   const paths = resolveDesktopPaths({
-    appPath: path.join("C:", "repo", "simulation", "standalone"),
-    resourcesPath: path.join("C:", "electron", "resources"),
-    userDataPath: path.join("C:", "users", "tester", "Domino"),
+    appPath: at("repo", "simulation", "standalone"),
+    resourcesPath: at("electron", "resources"),
+    userDataPath: at("users", "tester", "Domino"),
     packaged: false,
   });
 
-  assert.equal(paths.projectRoot, expected("C:", "repo"));
-  assert.equal(paths.runtimeRoot, expected("C:", "users", "tester", "Domino", "runtime"));
-  assert.equal(paths.silExecutable, expected("C:", "repo", "simulation", "sil", "bin", SIL_EXECUTABLE_NAME));
+  assert.equal(paths.projectRoot, expected("repo"));
+  assert.equal(paths.runtimeRoot, expected("users", "tester", "Domino", "runtime"));
+  assert.equal(paths.silExecutable, expected("repo", "simulation", "sil", "bin", SIL_EXECUTABLE_NAME));
 });
 
 test("packaged paths keep mutable data outside installed application resources", () => {
   const paths = resolveDesktopPaths({
-    appPath: path.join("C:", "Program Files", "Domino", "resources", "app"),
-    resourcesPath: path.join("C:", "Program Files", "Domino", "resources"),
-    userDataPath: path.join("C:", "users", "tester", "AppData", "Roaming", "Domino"),
+    appPath: at("Program Files", "Domino", "resources", "app"),
+    resourcesPath: at("Program Files", "Domino", "resources"),
+    userDataPath: at("users", "tester", "AppData", "Roaming", "Domino"),
     packaged: true,
   });
 
   assert.equal(
     paths.projectRoot,
-    expected("C:", "Program Files", "Domino", "resources", "domino", "firmware"),
+    expected("Program Files", "Domino", "resources", "domino", "firmware"),
   );
   assert.equal(
     paths.cadRoot,
-    expected("C:", "Program Files", "Domino", "resources", "domino", "cad"),
+    expected("Program Files", "Domino", "resources", "domino", "cad"),
   );
   assert.equal(
     paths.runtimeRoot,
-    expected("C:", "users", "tester", "AppData", "Roaming", "Domino", "runtime"),
+    expected("users", "tester", "AppData", "Roaming", "Domino", "runtime"),
   );
   assert.equal(
     paths.companionEntry,
-    expected("C:", "Program Files", "Domino", "resources", "domino", "companion", "live-companion-adapter.mjs"),
+    expected("Program Files", "Domino", "resources", "domino", "companion", "live-companion-adapter.mjs"),
   );
 });

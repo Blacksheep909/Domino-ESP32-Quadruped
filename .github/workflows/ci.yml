@@ -75,6 +75,7 @@ jobs:
   # run's artifacts to try the Mac app before a release.
   macos:
     runs-on: macos-latest
+    timeout-minutes: 40
 
     steps:
       - name: Check out
@@ -105,6 +106,7 @@ jobs:
       - name: Studio tests
         working-directory: simulation/standalone
         run: pnpm test
+        timeout-minutes: 10
 
       - name: Download Electron binary
         working-directory: simulation/standalone

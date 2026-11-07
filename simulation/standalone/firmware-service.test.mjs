@@ -78,7 +78,7 @@ test("installed firmware builds copy reviewed source into a writable workspace",
       }
     }, 25);
   });
-  assert.equal(readFileSync(path.join(buildRoot, "working-dir.txt"), "utf8"), buildRoot);
+  assert.equal(realpathSync(readFileSync(path.join(buildRoot, "working-dir.txt"), "utf8")), realpathSync(buildRoot));
   assert.equal(readFileSync(path.join(buildRoot, "src", "main.cpp"), "utf8"),
     readFileSync(path.join(root, "src", "main.cpp"), "utf8"));
   writeFileSync(path.join(root, "src", "old.cpp"), "void oldCode() {}\n");

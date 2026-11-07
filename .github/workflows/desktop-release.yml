@@ -82,6 +82,7 @@ jobs:
   release-macos:
     needs: release
     runs-on: macos-latest
+    timeout-minutes: 40
 
     steps:
       - name: Check out release

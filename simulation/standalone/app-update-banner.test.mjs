@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { appUpdateBannerView } from "./web/src/app-update-banner.js";
+import { appUpdateBannerView, appUpdateChipView } from "./web/src/app-update-banner.js";
 
 test("development builds and the idle state show no banner", () => {
   assert.equal(appUpdateBannerView({ status: "unsupported" }).visible, false);
@@ -73,4 +73,15 @@ test("the Mac updater only checks for updates and never downloads or installs th
   assert.match(updater, /autoDownload = !manualInstall/);
   assert.match(updater, /autoInstallOnAppQuit = !manualInstall/);
   assert.match(updater, /\["win32", "darwin"\]\.includes\(process\.platform\)/);
+});
+
+test("a waiting update keeps a header button, so LATER never loses it", () => {
+  assert.equal(appUpdateChipView({ status: "ready", version: "0.5.3" }).label, "UPDATE READY");
+  assert.equal(appUpdateChipView({ status: "manual", version: "0.5.3" }).label, "UPDATE 0.5.3");
+  assert.equal(appUpdateChipView({ status: "downloading", version: "0.5.3", percent: 12.4 }).label, "UPDATING 12%");
+  for (const status of ["idle", "checking", "up-to-date", "error", "unsupported"]) {
+    assert.equal(appUpdateChipView({ status }).visible, false, status);
+  }
+  const html = readFileSync(new URL("./web/index.html", import.meta.url), "utf8");
+  assert.match(html, /id="app-update-chip"[^>]*hidden/);
 });

@@ -65,7 +65,29 @@ export function appUpdateBannerView(state, blockReason = "", dismissed = false) 
   return hidden;
 }
 
-export function initAppUpdateBanner(updates, { getBlockReason = () => "", root = document.body } = {}) {
+// The header button for a waiting update. Unlike the banner it can't be
+// dismissed, so "LATER" never hides an update until the next launch.
+export function appUpdateChipView(state) {
+  const status = state?.status || "idle";
+  const version = String(state?.version || "");
+  if (status === "ready") {
+    return { visible: true, label: "UPDATE READY", title: `Version ${version} is downloaded. Click to restart and update.` };
+  }
+  if (status === "manual") {
+    return { visible: true, label: `UPDATE ${version}`.trim(), title: `Version ${version} is available to download.` };
+  }
+  if (status === "downloading") {
+    const percent = Math.max(0, Math.min(100, Math.round(Number(state?.percent) || 0)));
+    return { visible: true, label: `UPDATING ${percent}%`, title: `Downloading version ${version}.` };
+  }
+  return { visible: false };
+}
+
+export function initAppUpdateBanner(updates, {
+  getBlockReason = () => "",
+  root = document.body,
+  chip = document.getElementById("app-update-chip"),
+} = {}) {
   if (!updates || typeof updates.getState !== "function") return null;
   const banner = document.createElement("div");
   banner.className = "app-update-banner";
@@ -95,6 +117,14 @@ export function initAppUpdateBanner(updates, { getBlockReason = () => "", root =
   let installing = false;
 
   function render() {
+    if (chip) {
+      const chipView = appUpdateChipView(state);
+      chip.hidden = !chipView.visible;
+      if (chipView.visible) {
+        chip.textContent = chipView.label;
+        chip.title = chipView.title;
+      }
+    }
     const view = appUpdateBannerView(state, getBlockReason() || "", dismissedStatus === state.status);
     banner.hidden = !view.visible;
     if (!view.visible) return;
@@ -155,12 +185,21 @@ export function initAppUpdateBanner(updates, { getBlockReason = () => "", root =
       await updates.check().catch(() => false);
     }
   });
+  chip?.addEventListener("click", () => {
+    // Bring the banner back with its RESTART & UPDATE / DOWNLOAD button.
+    dismissedStatus = "";
+    render();
+    actionButton.focus?.();
+  });
   dismissButton.addEventListener("click", () => {
     dismissedStatus = state.status;
     render();
   });
 
   updates.onState?.(accept);
-  updates.getState().then(accept).catch(() => {});
+  const refresh = () => updates.getState().then(accept).catch(() => {});
+  refresh();
+  // Re-read on focus too, in case a state message was missed.
+  window.addEventListener("focus", refresh);
   return { render };
 }

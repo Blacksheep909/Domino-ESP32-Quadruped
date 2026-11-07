@@ -4874,10 +4874,16 @@ body[data-workspace="real-robot"]:is([data-live-view="sensors"], [data-live-view
 
 .live-gait-library-controls {
   padding-top: 12px;
-  display: grid;
-  grid-template-columns: minmax(188px, 1.55fr) auto minmax(102px, .9fr) auto auto auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 7px;
 }
+/* Fields stretch; buttons keep their natural size, so a wrapped row of
+   IMPORT / EXPORT / DELETE stays compact instead of filling the card. */
+.live-gait-library-controls select { flex: 1 1 200px; }
+.live-gait-library-controls input { flex: 1 1 120px; }
+.live-gait-library-controls button { flex: 0 0 auto; }
 
 .live-gait-library-controls select,
 .live-gait-library-controls input,
@@ -4992,7 +4998,6 @@ body[data-workspace="real-robot"]:is([data-live-view="sensors"], [data-live-view
   body[data-workspace="real-robot"][data-live-view="gaits"] #scene { z-index: 0; inset: 0; width: 100%; height: 100%; border: 0; }
   .live-gaits-page { padding-right: clamp(22px, 4vw, 58px); }
   .live-gait-preview-caption { display: none; }
-  .live-gait-library-controls { grid-template-columns: 1fr auto; }
   .live-gait-preview-row { grid-template-columns: 1fr 1fr; }
   .live-gait-apply-card { grid-template-columns: 1fr 1fr; }
   .live-gait-apply-card > div { grid-column: 1 / -1; }
@@ -10723,5 +10728,5 @@ body[data-workspace="real-robot"][data-live-view="sensors"][data-live-planner-fo
 .live-gait-apply-block[hidden] { display: none; }
 
 /* Gait library: delete spans the row and reads as destructive. */
-.live-gait-library-controls .live-gait-danger { grid-column: 1 / -1; }
+.live-gait-library-controls .live-gait-danger { margin-left: auto; }
 .live-gait-library-controls .live-gait-danger:not(:disabled) { color: var(--ui-danger, #b4432f); border-color: currentColor; }

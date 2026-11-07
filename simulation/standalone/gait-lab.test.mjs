@@ -271,3 +271,21 @@ test("careful crawl keeps three feet down, uses the lateral order and shifts awa
   }
   assert.ok(sawShift, "body shifted away from the lifting leg");
 });
+
+test("a turn sweeps every foot at the same rotation rate, so no foot has to slide", () => {
+  const settings = gaitLabPresets.balanced;
+  const strides = gaitStrides(settings, 0, 0.6);
+  const offsets = {
+    FL: [167.5 + settings.touchdownXMm, 62.375 + settings.stanceWidthMm],
+    FR: [167.5 + settings.touchdownXMm, -(62.375 + settings.stanceWidthMm)],
+    BL: [-167.5 + settings.touchdownXMm, 62.375 + settings.stanceWidthMm],
+    BR: [-167.5 + settings.touchdownXMm, -(62.375 + settings.stanceWidthMm)],
+  };
+  // A rigid rotation moves each point by k * (y, -x) with one shared k.
+  const rates = Object.entries(offsets).map(([label, [x, y]]) => {
+    const { x: sx, y: sy } = strides[label];
+    return Math.hypot(sx, sy) / Math.hypot(x, y);
+  });
+  const spread = Math.max(...rates) / Math.min(...rates);
+  assert.ok(spread < 1.0001, `feet turn at different rates (spread ${spread.toFixed(3)})`);
+});

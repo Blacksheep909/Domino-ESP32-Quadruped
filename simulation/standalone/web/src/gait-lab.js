@@ -36,9 +36,14 @@ function footOffsetFromCentre(label, settings) {
 export function gaitStrides(settings, forward, turn) {
   const strides = {};
   let largest = 0;
-  for (const label of ["FL", "FR", "BL", "BR"]) {
+  const labels = ["FL", "FR", "BL", "BR"];
+  // One shared turn rate: each foot sweeps in proportion to its own radius.
+  const radius = Math.max(1, labels.reduce((sum, label) => {
     const { x, y } = footOffsetFromCentre(label, settings);
-    const radius = Math.max(1, Math.hypot(x, y));
+    return sum + Math.hypot(x, y);
+  }, 0) / labels.length);
+  for (const label of labels) {
+    const { x, y } = footOffsetFromCentre(label, settings);
     const stride = {
       x: settings.strideMm * (forward + turn * settings.turnGain * y / radius),
       y: settings.strideMm * (turn * settings.turnGain * -x / radius),
@@ -60,12 +65,12 @@ export function gaitStrides(settings, forward, turn) {
 export function gaitBodyVelocity(settings, strides, stanceFraction) {
   const stanceSeconds = Math.max(0.05, stanceFraction / Math.max(0.05, settings.cadenceHz));
   const fl = footOffsetFromCentre("FL", settings);
-  const radius = Math.max(1, Math.hypot(fl.x, fl.y));
   const average = (key) => ["FL", "FR", "BL", "BR"].reduce((sum, label) => sum + strides[label][key], 0) / 4;
   const forwardMmPerSec = average("x") / stanceSeconds;
-  // The left-minus-right forward difference is the turning part of the stride.
+  // The left-minus-right forward difference is the turning part of the stride;
+  // it equals the turn rate times the feet's lateral offset.
   const turnMm = ((strides.FL.x + strides.BL.x) - (strides.FR.x + strides.BR.x)) / 4;
-  const yawRadPerSec = (turnMm / stanceSeconds) / radius * (radius / Math.abs(fl.y));
+  const yawRadPerSec = (turnMm / stanceSeconds) / Math.abs(fl.y);
   return { forwardMmPerSec, yawDegPerSec: yawRadPerSec / DEG };
 }
 

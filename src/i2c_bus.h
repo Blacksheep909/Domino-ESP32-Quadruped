@@ -24,6 +24,12 @@ bool i2cBusRecover();
 // Returns false only when a recovery was needed and did not free the bus.
 bool i2cBusEnsureIdle();
 
+// Same recovery for any bus: clock SCL until SDA is released, send STOP, and
+// restart `bus` on its pins with the given clock and timeout.
+class TwoWire;
+bool i2cRecoverBus(TwoWire &bus, int sdaPin, int sclPin, uint32_t clockHz, uint16_t timeoutMs);
+bool i2cLinesIdle(int sdaPin, int sclPin);
+
 uint32_t i2cBusRecoveryCount();
 uint32_t i2cBusFailedRecoveryCount();
 uint32_t i2cBusLastRecoveryMs();

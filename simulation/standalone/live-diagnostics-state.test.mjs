@@ -137,5 +137,5 @@ test("stuck-bus recoveries and an IMU shut-off are reported as events", async ()
   const messages = state.events.map((event) => `${event.severity}: ${event.message}`);
   assert.ok(messages.some((m) => m.startsWith("warning") && /stuck .* freed; 2 times/.test(m)), messages.join("\n"));
   assert.ok(messages.some((m) => m.startsWith("fault") && /could not be freed/.test(m)));
-  assert.ok(messages.some((m) => m.startsWith("fault") && /IMU disabled until reboot/.test(m)));
+  assert.ok(messages.some((m) => m.startsWith("fault") && /IMU paused after repeated I²C errors/.test(m)));
 });

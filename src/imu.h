@@ -42,9 +42,13 @@ void imuInit();
 // Read a fresh sample into gImuState. Returns true on success.
 bool imuReadSample();
 uint32_t imuI2cErrorCount();
-// True once repeated I2C errors made the firmware stop reading the IMU (until
-// reboot) to keep the shared bus free for the servo driver.
+// True while repeated I2C errors have paused the IMU; it is re-initialised
+// after a cooldown (no longer "off until reboot").
 bool imuQuarantined();
+// Times the IMU was re-initialised after a pause.
+uint32_t imuReinitCount();
+// True when the IMU runs on its own I2C bus (DOMINO_IMU_SDA_PIN/SCL_PIN).
+bool imuOwnBus();
 uint8_t imuAddress();
 uint32_t imuLastErrorAtMs();
 uint32_t imuConsecutiveErrorCount();

@@ -352,6 +352,7 @@ import "./studio-help.css";
 import "./joint-inspection-overlay.css";
 import "./studio-chrome.css";
 import { initAppUpdateBanner } from "./app-update-banner.js";
+import { initUpdatedNotice } from "./app-updated-notice.js";
 
 initializeFirmwareWorkspace();
 
@@ -364,6 +365,8 @@ const desktopProjectFiles = globalThis.dominoDesktop?.projectFiles;
 const desktopWindow = globalThis.dominoDesktop?.window;
 // Desktop updates: checked on every launch; one click restarts into the new version.
 // Restarting closes the PC link, so it waits while the robot is armed or jogging.
+// First launch after an update: a one-time "Studio updated to x.y.z" notice.
+void initUpdatedNotice(globalThis.dominoDesktop?.updates);
 const desktopUpdateBanner = initAppUpdateBanner(globalThis.dominoDesktop?.updates, {
   getBlockReason: () => {
     try {
@@ -9185,7 +9188,8 @@ function updateLiveDiagnosticsUi(snapshot, liveSnapshot, controllerSnapshot) {
   document.querySelector("#live-diagnostics-max-servo").textContent = formatStageMs(trace?.maxServoWriteUs);
   document.querySelector("#live-diagnostics-imu-errors").textContent = Number.isFinite(trace?.imuI2cErrors)
     ? `${trace.imuI2cErrors}${Number.isFinite(trace?.i2cBusRecoveries) && trace.i2cBusRecoveries > 0
-      ? ` / ${trace.i2cBusRecoveries} BUS RESET${trace.i2cBusRecoveries === 1 ? "" : "S"}` : ""}${trace?.imuQuarantined ? " / IMU OFF" : ""}`
+      ? ` / ${trace.i2cBusRecoveries} BUS RESET${trace.i2cBusRecoveries === 1 ? "" : "S"}` : ""}${Number.isFinite(trace?.imuReinits) && trace.imuReinits > 0
+      ? ` / ${trace.imuReinits} RE-INIT${trace.imuReinits === 1 ? "" : "S"}` : ""}${trace?.imuQuarantined ? " / IMU PAUSED" : ""}`
     : "--";
   document.querySelector("#live-diagnostics-imu-age").textContent =
     `${Number.isFinite(trace?.imuSampleAgeMs) ? trace.imuSampleAgeMs : "--"} ms / ${Number.isFinite(trace?.imuConsecutiveErrors) ? trace.imuConsecutiveErrors : "--"}`;

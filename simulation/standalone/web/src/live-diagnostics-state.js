@@ -67,6 +67,8 @@ export function sanitizeDiagnostics(diagnostics) {
     imuLastFailedRequestUs: finite(diagnostics.imuLastFailedRequestUs),
     imuMaxRequestUs: finite(diagnostics.imuMaxRequestUs),
     imuQuarantined: bool(diagnostics.imuQuarantined),
+    imuReinits: finite(diagnostics.imuReinits),
+    imuOwnBus: bool(diagnostics.imuOwnBus),
     i2cBusRecoveries: finite(diagnostics.i2cBusRecoveries),
     i2cBusFailedRecoveries: finite(diagnostics.i2cBusFailedRecoveries),
     imuConsecutiveErrors: finite(diagnostics.imuConsecutiveErrors),
@@ -187,8 +189,14 @@ export function observeLiveDiagnosticPacket(state, packet, accepted, receivedAt 
   conditionEvent(state, "imu-stale", current?.imuOnline === false && current?.imuSampleAgeMs !== null &&
     current?.imuQuarantined !== true,
     "warning", "IMU sample became stale.", receivedAt);
+  if (previous && current && current.imuReinits !== null &&
+      current.imuReinits > (previous.imuReinits ?? 0)) {
+    addEvent(state, "warning",
+      `IMU recovered: re-initialised after an I²C pause (${current.imuReinits} time${current.imuReinits === 1 ? "" : "s"} since boot).`,
+      receivedAt, "firmware");
+  }
   conditionEvent(state, "imu-quarantined", current?.imuQuarantined === true, "fault",
-    "IMU disabled until reboot after repeated I²C errors, to keep the bus free for the servos.", receivedAt);
+    "IMU paused after repeated I²C errors; the firmware frees the bus and re-initialises it automatically.", receivedAt);
   state.lastPacket = {
     type: packet.type,
     sequence,

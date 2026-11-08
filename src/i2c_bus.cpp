@@ -22,9 +22,39 @@ void i2cBusBegin() {
   Wire.setTimeOut(kI2cTimeoutMs);
 }
 
-bool i2cBusIdle() {
+bool i2cLinesIdle(int sdaPin, int sclPin) {
   // The GPIO input stays readable while the I2C peripheral owns the pins.
-  return digitalRead(SDA) == HIGH && digitalRead(SCL) == HIGH;
+  return digitalRead(sdaPin) == HIGH && digitalRead(sclPin) == HIGH;
+}
+
+bool i2cBusIdle() { return i2cLinesIdle(SDA, SCL); }
+
+bool i2cRecoverBus(TwoWire &bus, int sdaPin, int sclPin, uint32_t clockHz, uint16_t timeoutMs) {
+  const uint32_t halfClockUs = clockHz >= 400000 ? 2 : kHalfClockUs;
+  bus.end();
+  pinMode(sdaPin, INPUT_PULLUP);
+  pinMode(sclPin, OUTPUT_OPEN_DRAIN);
+  digitalWrite(sclPin, HIGH);
+  delayMicroseconds(halfClockUs);
+  for (uint8_t pulse = 0; pulse < kRecoveryClockPulses && digitalRead(sdaPin) == LOW; ++pulse) {
+    digitalWrite(sclPin, LOW);
+    delayMicroseconds(halfClockUs);
+    digitalWrite(sclPin, HIGH);
+    delayMicroseconds(halfClockUs);
+  }
+  pinMode(sdaPin, OUTPUT_OPEN_DRAIN);
+  digitalWrite(sdaPin, LOW);
+  delayMicroseconds(halfClockUs);
+  digitalWrite(sclPin, HIGH);
+  delayMicroseconds(halfClockUs);
+  digitalWrite(sdaPin, HIGH);
+  delayMicroseconds(halfClockUs);
+  pinMode(sdaPin, INPUT_PULLUP);
+  pinMode(sclPin, INPUT_PULLUP);
+  const bool released = i2cLinesIdle(sdaPin, sclPin);
+  bus.begin(sdaPin, sclPin, clockHz);
+  bus.setTimeOut(timeoutMs);
+  return released;
 }
 
 bool i2cBusRecover() {

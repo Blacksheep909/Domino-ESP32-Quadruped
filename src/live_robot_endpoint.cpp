@@ -774,7 +774,7 @@ void sendHello(bool bestEffort = false) {
   document["type"] = "robot-hello";
   document["robotId"] = "domino-esp32-quadruped";
   document["robotName"] = "Domino";
-  document["firmwareVersion"] = "0.8.27";
+  document["firmwareVersion"] = "0.8.28";
   document["robotState"] = stateName();
   addCalibrationOrigin(document["calibration"].to<JsonObject>());
   if (state == LiveRobotState::Fault && faultReason[0]) document["faultReason"] = faultReason;
@@ -926,6 +926,8 @@ void sendTelemetry(uint32_t now) {
   diagnostics["imuMaxRequestUs"] = imuMaxRequestUs();
   diagnostics["imuOnline"] = gImuState.online;
   diagnostics["imuQuarantined"] = imuQuarantined();
+  diagnostics["imuReinits"] = imuReinitCount();
+  diagnostics["imuOwnBus"] = imuOwnBus();
   diagnostics["imuAddress"] = imuAddress();
   // Times the shared I2C bus was found stuck (SDA held low) and freed.
   diagnostics["i2cBusRecoveries"] = i2cBusRecoveryCount();

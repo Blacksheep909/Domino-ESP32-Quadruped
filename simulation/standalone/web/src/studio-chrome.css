@@ -103,6 +103,8 @@ body[data-workspace="real-robot"] > header #shortcuts-open { margin-left: 5px; }
   font-size: 12px;
 }
 .app-update-banner[hidden] { display: none; }
+/* "Studio updated" notice: sits above the update banner so both can show. */
+.app-updated-notice { transform: translateY(calc(-100% - 10px)); }
 /* Stays in the header while an update is waiting, even after LATER. */
 .app-update-chip {
   display: inline-flex;

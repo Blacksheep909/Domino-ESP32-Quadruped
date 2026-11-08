@@ -1,0 +1,5 @@
+runs/
+outputs/
+__pycache__/
+*.pyc
+local-settings.ps1

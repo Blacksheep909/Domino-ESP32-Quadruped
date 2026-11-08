@@ -1,0 +1,250 @@
+{
+  "source": "simulation/standalone/web/src/domino-config.js (Studio Virtual Lab, measured pin centres)",
+  "assemblyOrigin": [
+    0.099,
+    0.062375,
+    0
+  ],
+  "legs": [
+    {
+      "label": "FR",
+      "shoulderSign": -1,
+      "neutralLinkageOffsetDeg": {
+        "upper": 0,
+        "lower": 0
+      },
+      "points": {
+        "hip_origin": [
+          0.2665,
+          0,
+          0.0105
+        ],
+        "foot_tip": [
+          0.269045,
+          -0.0381,
+          -0.265493
+        ],
+        "upper_drive": [
+          0.347,
+          -0.028,
+          0.0105
+        ],
+        "lower_drive": [
+          0.323,
+          -0.028,
+          -0.0105
+        ],
+        "lower_passive": [
+          0.323,
+          -0.036,
+          -0.0105
+        ],
+        "lower_coupler": [
+          0.302989,
+          -0.0356,
+          0.024135
+        ],
+        "upper_closure_coupler": [
+          0.322987,
+          -0.0356,
+          0.0295
+        ],
+        "upper_closure_driver": [
+          0.347,
+          -0.0356,
+          0.0505
+        ],
+        "lower_closure_diagonal": [
+          0.210315,
+          -0.0481,
+          -0.123892
+        ],
+        "lower_closure_driver": [
+          0.190304,
+          -0.0481,
+          -0.089257
+        ]
+      }
+    },
+    {
+      "label": "FL",
+      "shoulderSign": 1,
+      "neutralLinkageOffsetDeg": {
+        "upper": 0,
+        "lower": 4.18
+      },
+      "points": {
+        "hip_origin": [
+          0.2665,
+          0.12475,
+          0.0105
+        ],
+        "foot_tip": [
+          0.261073,
+          0.16285,
+          -0.25696
+        ],
+        "upper_drive": [
+          0.347,
+          0.15275,
+          0.0105
+        ],
+        "lower_drive": [
+          0.323,
+          0.15275,
+          -0.0105
+        ],
+        "lower_passive": [
+          0.323,
+          0.16075,
+          -0.0105
+        ],
+        "lower_coupler": [
+          0.302989,
+          0.16035,
+          0.024135
+        ],
+        "upper_closure_coupler": [
+          0.322987,
+          0.16035,
+          0.0295
+        ],
+        "upper_closure_driver": [
+          0.347,
+          0.16035,
+          0.0505
+        ],
+        "lower_closure_diagonal": [
+          0.202343,
+          0.17285,
+          -0.115367
+        ],
+        "lower_closure_driver": [
+          0.182332,
+          0.17285,
+          -0.080732
+        ]
+      }
+    },
+    {
+      "label": "BL",
+      "shoulderSign": 1,
+      "neutralLinkageOffsetDeg": {
+        "upper": 0,
+        "lower": 4.18
+      },
+      "points": {
+        "hip_origin": [
+          -0.0685,
+          0.12475,
+          0.0105
+        ],
+        "foot_tip": [
+          -0.073927,
+          0.16285,
+          -0.25696
+        ],
+        "upper_drive": [
+          0.012,
+          0.15275,
+          0.0105
+        ],
+        "lower_drive": [
+          -0.012,
+          0.15275,
+          -0.0105
+        ],
+        "lower_passive": [
+          -0.012,
+          0.16075,
+          -0.0105
+        ],
+        "lower_coupler": [
+          -0.032011,
+          0.16035,
+          0.024135
+        ],
+        "upper_closure_coupler": [
+          -0.012013,
+          0.16035,
+          0.0295
+        ],
+        "upper_closure_driver": [
+          0.012,
+          0.16035,
+          0.0505
+        ],
+        "lower_closure_diagonal": [
+          -0.132657,
+          0.17285,
+          -0.115367
+        ],
+        "lower_closure_driver": [
+          -0.152668,
+          0.17285,
+          -0.080732
+        ]
+      }
+    },
+    {
+      "label": "BR",
+      "shoulderSign": -1,
+      "neutralLinkageOffsetDeg": {
+        "upper": 0,
+        "lower": 0
+      },
+      "points": {
+        "hip_origin": [
+          -0.0685,
+          0,
+          0.0105
+        ],
+        "foot_tip": [
+          -0.065955,
+          -0.0381,
+          -0.265493
+        ],
+        "upper_drive": [
+          0.012,
+          -0.028,
+          0.0105
+        ],
+        "lower_drive": [
+          -0.012,
+          -0.028,
+          -0.0105
+        ],
+        "lower_passive": [
+          -0.012,
+          -0.036,
+          -0.0105
+        ],
+        "lower_coupler": [
+          -0.032011,
+          -0.0356,
+          0.024135
+        ],
+        "upper_closure_coupler": [
+          -0.012013,
+          -0.0356,
+          0.0295
+        ],
+        "upper_closure_driver": [
+          0.012,
+          -0.0356,
+          0.0505
+        ],
+        "lower_closure_diagonal": [
+          -0.124685,
+          -0.0481,
+          -0.123892
+        ],
+        "lower_closure_driver": [
+          -0.144696,
+          -0.0481,
+          -0.089257
+        ]
+      }
+    }
+  ]
+}

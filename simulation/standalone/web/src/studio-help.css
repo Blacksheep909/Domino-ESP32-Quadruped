@@ -1,19 +1,19 @@
 /* These surfaces use Studio's neutral panels; colour marks an action or state. */
 :root {
   --studio-panel: #fafbf9;
-  --studio-raised: #f0f2ee;
-  --studio-border: #d0d6ce;
-  --studio-text: #252d27;
-  --studio-muted: #647167;
-  --studio-accent: #267747;
+  --studio-raised: #eff0f1;
+  --studio-border: #d0d1d4;
+  --studio-text: #27282b;
+  --studio-muted: #656970;
+  --studio-accent: #264977;
 }
 :root[data-theme="dark"] {
   --studio-panel: #141c20;
   --studio-raised: #1b252a;
   --studio-border: #354249;
-  --studio-text: #e8eeea;
-  --studio-muted: #a1afa7;
-  --studio-accent: #78d59c;
+  --studio-text: #eaebec;
+  --studio-muted: #a4a7ac;
+  --studio-accent: #78a0d5;
 }
 
 .studio-help-dialog { margin: 0; width: 100%; height: 100%; max-width: none; max-height: none; box-sizing: border-box; border: 0; }

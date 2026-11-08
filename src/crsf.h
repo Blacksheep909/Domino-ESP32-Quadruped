@@ -24,6 +24,12 @@ constexpr int SA_OFF_THRESHOLD_US = 1400;
 // SC is the 3-position walk selector: stand / careful / trot.
 // Adjust SC_CH_INDEX if your radio maps SC differently.
 constexpr int SC_CH_INDEX = 6;
+// SB (Boxer left 3-position switch, CRSF CH6) fully down selects the learned
+// Isaac Lab walking policy ("simulation mode"). Hysteresis keeps switch
+// travel through the middle position from toggling it.
+constexpr int SB_CH_INDEX = 5;
+constexpr int SB_POLICY_ON_US = 1750;
+constexpr int SB_POLICY_OFF_US = 1650;
 
 extern uint16_t ch_raw[16];
 extern int ch_us[16];

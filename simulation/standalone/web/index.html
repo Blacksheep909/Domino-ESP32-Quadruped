@@ -23,6 +23,7 @@
         <span>PROJECT</span><strong id="project-name-label">DOMINO V2</strong>
       </button>
       <div class="status">
+        <button id="policy-lab-open" class="policy-lab-open" type="button" aria-haspopup="dialog" title="Train, review and deploy the Isaac Sim walking policy (radio SB fully down)">POLICY LAB</button>
         <button id="firmware-deploy-button" class="firmware-deploy-button real-robot-only" type="button" title="Review, build, and upload firmware to Domino">UPLOAD FW</button>
         <span id="firmware-status" class="simulation-only" data-state="offline">FIRMWARE</span>
         <span id="link-status" class="simulation-only" data-state="offline">CONTROLLER</span>
@@ -1370,6 +1371,95 @@
           <button id="live-battery-alert-dismiss" type="button">UNDERSTOOD</button>
         </footer>
       </form>
+    </dialog>
+
+    <dialog id="policy-lab-dialog" class="policy-lab-dialog" aria-labelledby="policy-lab-title">
+      <div class="policy-lab">
+        <div class="policy-lab-header">
+          <div>
+            <span class="policy-kicker">DOMINO / ISAAC SIM / ESP32</span>
+            <h1 id="policy-lab-title">Policy Lab</h1>
+            <p>Train the learned walking policy in Isaac Lab, check it fits the ESP32, and flash it. On the robot, radio SB fully down runs it; sticks drive and CH3 sets ride height.</p>
+          </div>
+          <div class="policy-header-actions">
+            <span id="policy-lab-state" class="policy-pill" data-state="neutral">LOADING</span>
+            <button id="policy-lab-close" class="studio-icon-button policy-icon-button" type="button" aria-label="Close Policy Lab" title="Close"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
+          </div>
+        </div>
+        <p id="policy-lab-feedback" class="policy-feedback" role="status" hidden></p>
+        <div class="policy-lab-body">
+          <section class="policy-col" aria-labelledby="policy-runs-title">
+            <h2 id="policy-runs-title">RUNS</h2>
+            <div id="policy-run-list" class="policy-run-list"></div>
+            <form id="policy-train-form" class="policy-train-form">
+              <h3>New training run</h3>
+              <label class="policy-field"><span>Robots in parallel</span><input name="numEnvs" type="number" min="1" max="16384" step="1" value="4096"></label>
+              <label class="policy-field"><span>PPO iterations</span><input name="iterations" type="number" min="1" max="100000" step="1" value="3000"></label>
+              <label class="policy-field"><span>Run name</span><input name="runName" type="text" placeholder="domino_walk" spellcheck="false"></label>
+              <label class="policy-field policy-field-check"><input name="visible" type="checkbox"><span>Show Isaac Sim window (slower; use 16-64 robots)</span></label>
+              <div class="policy-actions">
+                <button id="policy-train-button" class="policy-primary" type="submit">START TRAINING</button>
+                <button id="policy-stop-button" type="button" disabled>STOP</button>
+              </div>
+            </form>
+            <p id="policy-setup" class="policy-note"></p>
+          </section>
+
+          <section class="policy-col policy-col-wide" aria-labelledby="policy-training-title">
+            <h2 id="policy-training-title">TRAINING <small id="policy-throughput"></small></h2>
+            <div id="policy-charts" class="policy-charts"></div>
+            <div class="policy-split">
+              <div>
+                <h3>Reward terms (latest)</h3>
+                <div id="policy-reward-terms" class="policy-terms"></div>
+              </div>
+              <div>
+                <h3>Episode endings</h3>
+                <div id="policy-terminations" class="policy-chips"></div>
+                <h3>Console</h3>
+                <pre id="policy-console" class="policy-console"></pre>
+              </div>
+            </div>
+          </section>
+
+          <section class="policy-col" aria-labelledby="policy-deploy-title">
+            <h2 id="policy-deploy-title">DEPLOY TO ESP32</h2>
+            <label class="policy-field"><span>Checkpoint</span><select id="policy-checkpoint"></select></label>
+            <div class="policy-actions">
+              <button id="policy-export-button" type="button">EXPORT</button>
+              <button id="policy-play-button" type="button" title="Open Isaac Sim and watch this checkpoint walk">WATCH IN SIM</button>
+              <button id="policy-drive-button" type="button" title="Drive this checkpoint in Isaac Sim with the Boxer over USB (SB down = policy) or the keyboard">DRIVE IN SIM</button>
+              <button id="policy-resume-button" type="button" title="Start a new run that continues from this checkpoint">CONTINUE</button>
+            </div>
+            <div id="policy-export" class="policy-export"></div>
+            <div class="policy-actions">
+              <button id="policy-install-button" class="policy-primary" type="button">INSTALL IN FIRMWARE</button>
+              <button id="policy-flash-button" type="button">BUILD + UPLOAD FW</button>
+            </div>
+            <h3>Installed in firmware build</h3>
+            <div id="policy-installed" class="policy-note"></div>
+            <button id="policy-uninstall-button" class="policy-link" type="button" hidden>Remove installed policy</button>
+            <h3>On the robot (LIVE)</h3>
+            <div id="policy-robot"></div>
+          </section>
+        </div>
+        <details class="policy-settings">
+          <summary>Training settings, domain randomization and paths</summary>
+          <div class="policy-settings-body">
+            <div id="policy-config" class="policy-config"></div>
+            <div class="policy-actions">
+              <button id="policy-config-save" class="policy-primary" type="button">SAVE SETTINGS</button>
+              <button id="policy-config-reload" type="button">RELOAD</button>
+              <span class="policy-note">Saved to simulation/isaac_lab/config/training.json and used by the next run. Lists are "low, high".</span>
+            </div>
+            <form id="policy-settings-form" class="policy-paths">
+              <label class="policy-field"><span>Isaac Lab project folder</span><input name="labRoot" type="text" placeholder="...\DominoQuadruped\simulation\isaac_lab" spellcheck="false"></label>
+              <label class="policy-field"><span>Isaac Lab Python</span><input name="python" type="text" placeholder="C:\isaac-projects\domino-env\Scripts\python.exe" spellcheck="false"></label>
+              <button type="submit">SAVE PATHS</button>
+            </form>
+          </div>
+        </details>
+      </div>
     </dialog>
 
     <dialog id="firmware-deploy-dialog" class="firmware-deploy-dialog" aria-labelledby="firmware-deploy-title">

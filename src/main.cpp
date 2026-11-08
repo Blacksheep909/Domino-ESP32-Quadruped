@@ -46,6 +46,7 @@
 #include "motion_smoothing.h"
 #include "i2c_bus.h"
 #include "imu.h"
+#include "policy_runner.h"
 #ifndef DOMINO_SIL
 #include "live_robot_endpoint.h"
 #include "loop_diagnostics.h"
@@ -196,6 +197,9 @@ enum BodyMode : uint8_t {
   BODY_GAIT = 4,
   BODY_CAREFUL = 5,
   BODY_TRANSITION = 6,
+  // Learned Isaac Lab policy (SB fully down). Sticks still command walking
+  // velocity and CH3 still sets ride height.
+  BODY_POLICY = 7,
 };
 
 bool isWalkingMode(BodyMode mode) {
@@ -373,7 +377,7 @@ MotionInputProfile motionInputProfileForMode(BodyMode mode) {
   if (mode == BODY_TILT) {
     return MOTION_INPUT_TILT;
   }
-  if (mode == BODY_GAIT || mode == BODY_CAREFUL) {
+  if (mode == BODY_GAIT || mode == BODY_CAREFUL || mode == BODY_POLICY) {
     return MOTION_INPUT_WALK;
   }
   return MOTION_INPUT_NONE;
@@ -611,6 +615,7 @@ struct MenuInputs {
   bool balanceRequested = false;
   bool gaitRequested = false;
   bool carefulWalkRequested = false;
+  bool policyRequested = false;
   float rideHeightMm = kRideHeightMaxMm;
 };
 
@@ -674,6 +679,17 @@ MenuInputs readMenuInputs(uint32_t now, uint32_t* lastLinkAliveMs, bool* failsaf
     Serial.printf("SC=%d -> walkMode=%d\n", scValueUs, walkSelection);
   }
 
+  // SB fully down: learned policy ("simulation mode"), with hysteresis.
+  static bool sbPolicyDown = false;
+  const int sbValueUs = ch_us[SB_CH_INDEX];
+  const bool nextSbPolicyDown = sbPolicyDown ? sbValueUs >= SB_POLICY_OFF_US
+                                             : sbValueUs >= SB_POLICY_ON_US;
+  if (nextSbPolicyDown != sbPolicyDown) {
+    sbPolicyDown = nextSbPolicyDown;
+    Serial.printf("SB=%d -> policyMode=%d\n", sbValueUs, sbPolicyDown ? 1 : 0);
+  }
+  inputs.policyRequested = sbPolicyDown && !inputs.failsafeActive;
+
   // Continuous ride height from Boxer left-stick vertical / CRSF CH3.
   inputs.rideHeightMm = readRideHeightMm();
 
@@ -684,6 +700,7 @@ MenuInputs readMenuInputs(uint32_t now, uint32_t* lastLinkAliveMs, bool* failsaf
     inputs.tiltSwitchDown = false;
     inputs.carefulWalkRequested = false;
     inputs.gaitRequested = false;
+    inputs.policyRequested = false;
   }
 
   return inputs;
@@ -1372,6 +1389,18 @@ void beginNeutralTransition(BodyMode requestedMode, float rideHeight) {
 }
 
 void beginModeTransition(BodyMode requestedMode, float rideHeight) {
+  if (outputMode == BODY_POLICY) {
+    // A learned step can leave feet lifted or displaced. Lower every foot to
+    // at least the support height in place, then recentre (TRANSITION_LAND
+    // continues into the neutral stage).
+    LegTarget targets[kLegCount];
+    for (int i = 0; i < kLegCount; ++i) {
+      targets[i] = lastLegTargets[i];
+      targets[i].z = fmaxf(lastLegTargets[i].z, outputHeightMm);
+    }
+    beginTransitionStage(TRANSITION_LAND, targets, outputHeightMm, false);
+    return;
+  }
   if (isWalkingMode(outputMode)) {
     // Freeze fore/aft and lateral coordinates while lowered feet regain
     // support. Never recenter a lifted foot and collapse the body together.
@@ -1453,6 +1482,120 @@ rampFloat zRamp;
 float currentTargetZ = kCloserPoseZ;
 MenuState menuState{BODY_STOW, kRideHeightMaxMm, false, true};
 
+// ---------------------------------------------------------------------------
+// Learned policy ("simulation mode", SB fully down)
+// ---------------------------------------------------------------------------
+// Maximum stick commands. Keep inside the ranges the policy was trained on
+// (simulation/isaac_lab/config/training.json "commands").
+constexpr float kPolicyMaxForwardMps = 0.50f;
+constexpr float kPolicyMaxReverseMps = 0.30f;
+constexpr float kPolicyMaxLateralMps = 0.25f;
+constexpr float kPolicyMaxYawRadps = 1.50f;
+constexpr uint32_t kPolicyDebounceMs = 200;
+bool policyFaultLatched = false;
+uint32_t policyInferLastUs = 0;
+uint32_t policyInferMaxUs = 0;
+uint32_t policyStepCount = 0;
+
+// MPU6050 sensor frame -> body frame (+x forward, +y left, +z up). Same
+// mounting transform as the balance mode: body = (ay, az, -ax).
+PolicyImu readPolicyImu(uint32_t now) {
+  PolicyImu imu{};
+  constexpr float kDpsToRadps = kPi / 180.0f;
+  imu.fresh = gImuState.online && gImuState.has_sample && imuSampleFresh(now);
+  imu.accelG[0] = gImuState.ay_g;
+  imu.accelG[1] = gImuState.az_g;
+  imu.accelG[2] = -gImuState.ax_g;
+  imu.gyroRadps[0] = gImuState.gy_dps * kDpsToRadps;
+  imu.gyroRadps[1] = gImuState.gz_dps * kDpsToRadps;
+  imu.gyroRadps[2] = -gImuState.gx_dps * kDpsToRadps;
+  return imu;
+}
+
+PolicyCommand readPolicyCommand(float heightMm) {
+  PolicyCommand cmd{};
+  const float forward = applyGaitDeadband(readMotionChannelNormalized(PITCH_CH_INDEX));
+  const float lateral = applyGaitDeadband(readMotionChannelNormalized(ROLL_CH_INDEX));
+  const float turn = applyGaitDeadband(readMotionChannelNormalized(YAW_CH_INDEX));
+  cmd.vxMps = forward >= 0.0f ? forward * kPolicyMaxForwardMps : forward * kPolicyMaxReverseMps;
+  cmd.vyMps = -lateral * kPolicyMaxLateralMps;  // stick right = move right (-y)
+  cmd.wzRadps = -turn * kPolicyMaxYawRadps;     // stick right = clockwise
+  cmd.heightMm = heightMm;
+  return cmd;
+}
+
+void updatePolicyMode(BodyMode previousMode, const MenuInputs &inputs, bool standPoseReady,
+                      uint32_t now) {
+  static SwitchDebounceState policyDebounce;
+  if (!inputs.policyRequested) policyFaultLatched = false;
+  const bool wasActive = previousMode == BODY_POLICY;
+  const PolicyImu imu = readPolicyImu(now);
+  const bool allowed = (menuState.mode == BODY_STAND || menuState.mode == BODY_GAIT ||
+                        menuState.mode == BODY_CAREFUL || wasActive) &&
+      menuState.mode != BODY_STOW && !tiltModeActive && !inputs.failsafeActive &&
+      inputs.motionCommandsFresh && !motionIkFault && !policyFaultLatched &&
+      policyStatus().selfTestOk && imu.fresh;
+  const bool raw = inputs.policyRequested && allowed && (wasActive || standPoseReady);
+  bool filtered = applySwitchDebounce(wasActive, raw, now, &policyDebounce, kPolicyDebounceMs);
+  if (!allowed || !inputs.policyRequested) filtered = false;
+  if (filtered) {
+    menuState.mode = BODY_POLICY;
+  } else if (menuState.mode == BODY_POLICY) {
+    menuState.mode = BODY_STAND;
+  }
+  if (!wasActive && menuState.mode == BODY_POLICY) {
+    Serial.printf("Entering learned policy %s (SB=%d)\n", policyId(), ch_us[SB_CH_INDEX]);
+  } else if (wasActive && menuState.mode != BODY_POLICY) {
+    Serial.printf("Exiting learned policy (fault=%s)\n", policyFaultName(policyStatus().fault));
+    policyStop();
+  }
+}
+
+// The policy was trained with the ride-height command slewed at
+// policyHeightSlewMmPerSec() (the CH3 stick can jump; the trainer never saw
+// instant height steps).
+float policyHeightMm = kRideHeightMaxMm;
+
+void applyPolicyStep(Adafruit_PWMServoDriver &driver, float heightMm, uint32_t now) {
+  const PolicyImu imu = readPolicyImu(now);
+  if (!policyStatus().active) {
+    policyReset(imu);
+    policyInferMaxUs = 0;
+    policyHeightMm = heightMm;  // entered from a stand at this height
+  }
+  const float maxStep = policyHeightSlewMmPerSec() * static_cast<float>(kControlIntervalMs) / 1000.0f;
+  policyHeightMm += fminf(maxStep, fmaxf(-maxStep, heightMm - policyHeightMm));
+  heightMm = policyHeightMm;
+  const PolicyCommand cmd = readPolicyCommand(heightMm);
+  PolicyFeet feet{};
+  const uint32_t t0 = micros();
+  const bool ok = policyStep(cmd, imu, static_cast<float>(kControlIntervalMs) / 1000.0f, &feet);
+  policyInferLastUs = micros() - t0;
+  if (policyInferLastUs > policyInferMaxUs) policyInferMaxUs = policyInferLastUs;
+  ++policyStepCount;
+  if (!ok) {
+    // Hold the last commanded feet; the mode logic lands and recentres them.
+    policyFaultLatched = true;
+    Serial.printf("Learned policy fault: %s\n", policyFaultName(policyStatus().fault));
+    return;
+  }
+  outputHeightMm = heightMm;
+  outputRollDeg = outputPitchDeg = outputYawDeg = 0.0f;
+  outputBodyX = outputBodyY = 0.0f;
+  outputUsesBodyPose = false;
+  for (int i = 0; i < kLegCount; ++i) {
+    const float side = (i == LEG_FL || i == LEG_BL) ? 1.0f : -1.0f;
+    commandLeg(driver, i, feet.xMm[i], side * feet.yOutMm[i], feet.zMm[i]);
+  }
+}
+
+extern "C" void dominoPolicyTelemetry(uint32_t *lastUs, uint32_t *maxUs, uint32_t *steps, bool *latched) {
+  *lastUs = policyInferLastUs;
+  *maxUs = policyInferMaxUs;
+  *steps = policyStepCount;
+  *latched = policyFaultLatched;
+}
+
 void setup() {
   // LIVE telemetry contains full controller, pose and servo snapshots. Use
   // large rings in both directions: profile-write commands are roughly 1.6 KB
@@ -1511,6 +1654,10 @@ void setup() {
   sitBlend = 1.0f;
   moveLegsToSitBlend(pca, lastPoseZ, sitBlend);
   standState = STOW;
+  const bool policyOk = policySelfTest();
+  Serial.printf("Learned policy: %s id=%s run=%s it=%d self-test=%s (err %.2e)\n",
+                policyStatus().available ? "installed" : "not installed", policyId(), policyRunName(),
+                policyIteration(), policyOk ? "ok" : "FAILED", policyStatus().selfTestMaxError);
   Serial.println("All legs initialized at stow pose (waiting for CRSF link).");
   Serial.println("Debug logging ready.");
   logDebugState(millis(), false, false, false, false, false, false, tiltModeActive);
@@ -1584,6 +1731,7 @@ void loop() {
         activeManualControl.mode == LiveManualMode::Careful;
     inputs.gaitRequested = activeManualControl.deadman &&
         activeManualControl.mode == LiveManualMode::Trot;
+    inputs.policyRequested = false;
     inputs.rideHeightMm = kRideHeightMinMm +
         (activeManualControl.height + 1.0f) * 0.5f *
         (kRideHeightMaxMm - kRideHeightMinMm);
@@ -1594,6 +1742,7 @@ void loop() {
     // requires a valid neutral stand with both motion switches off.
     inputs.tiltSwitchDown = false;
     inputs.carefulWalkRequested = inputs.gaitRequested = false;
+    inputs.policyRequested = false;
     inputs.balanceRequested = false;
     if (!modeTransitionActive() && outputMode == BODY_STAND &&
         ch_us[SC_CH_INDEX] < SC_CAREFUL_MIN_US && ch_us[SD_CH_INDEX] <= SD_OFF_THRESHOLD_US &&
@@ -1727,6 +1876,10 @@ void loop() {
       !inputs.failsafeActive) {
     menuState.mode = BODY_BALANCE;
   }
+  // 8) Simulation (learned policy) mode: SB fully down. It outranks the SC
+  //    walk selector but not tilt, failsafe, a stale link or an IK fault. A
+  //    policy fault latches until SB is released.
+  updatePolicyMode(previousMode, inputs, standPoseReady, now);
   updateMotionInputInterlock(previousMode, menuState.mode, now);
 #ifndef DOMINO_SIL
   liveRobotEndpointSetControlState(static_cast<uint8_t>(
@@ -1834,6 +1987,13 @@ void loop() {
       silBodyYawDeg = 0.0f;
 #endif
       moveLegsToSitBlend(pca, rampZ, sitBlend);
+    } else if (menuState.mode == BODY_POLICY) {
+#ifdef DOMINO_SIL
+      silBodyRollDeg = 0.0f;
+      silBodyPitchDeg = 0.0f;
+      silBodyYawDeg = 0.0f;
+#endif
+      applyPolicyStep(pca, rampZ, now);
     } else if (menuState.mode == BODY_GAIT || menuState.mode == BODY_CAREFUL) {
 #ifdef DOMINO_SIL
       silBodyRollDeg = 0.0f;

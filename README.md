@@ -121,6 +121,7 @@ npm run desktop:start
 | [As-built record](docs/build-record-template.md) | Identity, servo routing and wiring for this robot, and what is still to record |
 | [Calibration guide](docs/calibration-guide.md) | Servo centring, the LIVE wizard and how the profile is stored |
 | [Quadruped Studio](docs/quadruped-studio.md) | Desktop app guide |
+| [Isaac Lab policy](simulation/isaac_lab/README.md) | Train the learned walking policy in Isaac Sim, the ESP32 budget, and SB-down simulation mode |
 | [Virtual Lab](docs/virtual-lab.md) | Simulation, the seven LIVE views, connection safety and manual control |
 | [Route planner](docs/route-planner.md) | Waypoints, maps, running a route, and the camera panel |
 | [LIVE bring-up](docs/live-hardware-bring-up.md) | Safe procedure before physical calibration or motion |

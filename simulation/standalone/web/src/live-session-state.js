@@ -451,7 +451,7 @@ export function liveSessionJson(session, exportedAt = Date.now()) {
       busRecovery: "Firmware 0.8.7 caps CRSF work at 384 bytes or 1000 us per pass; firmware 0.8.8 removes the 1000 us limit while retaining the 384-byte cap. Budget hits mean queued RX work remained. IMU sample age and event timestamps use ESP32 milliseconds since boot; zero event timestamps mean no event yet",
       blackbox: "Firmware 0.8.9+ records the latest 16 RTC events. kind: 1 boot (value=reset reason, stage=prior active stage), 2 slow stage (value=duration us), 3 IMU read error (stage=1 register select or 2 data read, value=duration us; in 0.8.10+ aux=bytes returned for stage 2, otherwise aux=Wire timeout ms), 4 CRSF UART overflow (value=total, aux=new errors), 5 failsafe change (value=1 active or 0 clear, aux=CRSF frame age ms). atMs is ESP32 uptime for the event; firstObservedAt is Studio wall-clock time.",
       imuRequest: "Firmware 0.8.10 records the last MPU6050 Wire.requestFrom result (bytes returned out of 14 and call duration in microseconds), the last failed result, and the maximum request duration this boot.",
-      bodyMode: "0 = stow, 1 = stand, 2 = tilt, 3 = balance, 4 = trot, 5 = careful walk",
+      bodyMode: "0 = stow, 1 = stand, 2 = tilt, 3 = balance, 4 = trot, 5 = careful walk, 6 = transition, 7 = learned policy (SB down)",
       measuredYaw: "Relative integrated gyro heading since boot; not an absolute heading or a translation measurement",
     },
   }, null, 2);

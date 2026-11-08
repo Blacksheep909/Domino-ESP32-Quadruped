@@ -15,6 +15,7 @@ import { WebSocketServer } from "ws";
 import { CrsfTransmitterHidInput } from "./boxer-hid.mjs";
 import { CompanionService } from "./companion-service.mjs";
 import { FirmwareService } from "./firmware-service.mjs";
+import { PolicyLabService } from "./policy-lab-service.mjs";
 import { FirmwareLinkCoordinator } from "./firmware-link.mjs";
 import {
   clientControlIsFresh,
@@ -76,9 +77,13 @@ const debugLogPath = path.join(runtimeRoot, `debug-session-${debugStamp}.jsonl`)
 const port = Number(process.env.DOMINO_STANDALONE_PORT || 8770);
 const maxDebugBytes = 64 * 1024 * 1024;
 let appUpdateCheck = null;
+// Trained Isaac Lab policies installed from Studio overlay the bundled
+// src/policy_weights.h in every firmware build (see policy-lab-service.mjs).
+const policyOverlayRoot = path.join(runtimeRoot, "policy-overlay");
 const firmwareService = new FirmwareService({
   projectRoot: repoRoot,
   runtimeRoot,
+  overlayRoot: policyOverlayRoot,
   buildRoot: process.env.DOMINO_FIRMWARE_BUILD_ROOT || repoRoot,
   onJobFinished: (job) => {
     if (job.status === "success") appUpdateCheck?.(`firmware-${job.type}-complete`);
@@ -298,6 +303,75 @@ async function handleFirmwareApi(request, response, url) {
   }
 }
 
+const policyLab = new PolicyLabService({
+  repoRoot,
+  runtimeRoot,
+  overlayRoot: policyOverlayRoot,
+  firmwareService,
+});
+
+async function handlePolicyApi(request, response, url) {
+  try {
+    const route = url.pathname.slice("/api/policy/".length);
+    const runMatch = /^runs\/([^/]+)\/(metrics|config)$/.exec(route);
+    if (request.method === "GET" && route === "status") {
+      sendJson(response, 200, policyLab.status());
+      return;
+    }
+    if (request.method === "GET" && route === "config") {
+      sendJson(response, 200, { config: policyLab.config() });
+      return;
+    }
+    if (request.method === "PUT" && route === "config") {
+      const body = await readJsonBody(request);
+      sendJson(response, 200, { config: policyLab.saveConfig(body.config) });
+      return;
+    }
+    if (request.method === "POST" && route === "settings") {
+      sendJson(response, 200, { settings: policyLab.saveSettings(await readJsonBody(request)) });
+      return;
+    }
+    if (request.method === "GET" && runMatch) {
+      const name = decodeURIComponent(runMatch[1]);
+      sendJson(response, 200, runMatch[2] === "metrics"
+        ? policyLab.metrics(name, url.searchParams.get("from"))
+        : { config: policyLab.runConfig(name) });
+      return;
+    }
+    if (request.method === "GET" && route === "log") {
+      sendJson(response, 200, { job: policyLab.job, lines: policyLab.log() });
+      return;
+    }
+    if (request.method === "POST" && route === "train") {
+      sendJson(response, 202, { job: policyLab.startTraining(await readJsonBody(request)) });
+      return;
+    }
+    if (request.method === "POST" && route === "play") {
+      sendJson(response, 202, { job: policyLab.startPlayback(await readJsonBody(request)) });
+      return;
+    }
+    if (request.method === "POST" && route === "stop") {
+      sendJson(response, 200, { stopped: policyLab.stop() });
+      return;
+    }
+    if (request.method === "POST" && route === "export") {
+      sendJson(response, 200, { export: policyLab.exportPolicy(await readJsonBody(request)) });
+      return;
+    }
+    if (request.method === "POST" && route === "install") {
+      sendJson(response, 200, { installed: policyLab.install(await readJsonBody(request)) });
+      return;
+    }
+    if (request.method === "POST" && route === "uninstall") {
+      sendJson(response, 200, { installed: policyLab.uninstall() });
+      return;
+    }
+    sendJson(response, 404, { error: "Policy Lab endpoint not found." });
+  } catch (error) {
+    sendJson(response, error.statusCode || 409, { error: error.message || "Policy Lab operation failed." });
+  }
+}
+
 async function handleCompanionApi(request, response, url) {
   try {
     if (request.method === "GET" && url.pathname === "/api/companion/status") {
@@ -333,6 +407,10 @@ const server = createServer(async (request, response) => {
   }
   if (url.pathname.startsWith("/api/companion/")) {
     await handleCompanionApi(request, response, url);
+    return;
+  }
+  if (url.pathname.startsWith("/api/policy/")) {
+    await handlePolicyApi(request, response, url);
     return;
   }
   if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {

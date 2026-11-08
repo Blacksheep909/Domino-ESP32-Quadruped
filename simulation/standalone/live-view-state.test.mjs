@@ -74,7 +74,7 @@ test("Compare omits its duplicate title rail and uses the compact content baseli
   assert.match(styles, /\.calibration-preview-caption,[\s\S]*background: rgba\(247, 247, 244, 0\.94\)/);
   assert.match(styles, /:root\[data-theme="dark"\] \.calibration-preview-caption,[\s\S]*background: rgba\(12, 12, 13, 0\.78\)/);
   assert.match(styles, /#real-workspace #live-view-compare \.live-compare-page-heading[\s\S]*right: var\(--app-gutter\)[\s\S]*width: auto/);
-  assert.match(styles, /:root:not\(\[data-theme="dark"\]\) nav button\.active,[\s\S]*background: #347b50/);
+  assert.match(styles, /:root:not\(\[data-theme="dark"\]\) nav button\.active,[\s\S]*background: #34537b/);
   assert.match(styles, /#real-workspace \.live-view-page[\s\S]*overflow-x: hidden/);
 });
 

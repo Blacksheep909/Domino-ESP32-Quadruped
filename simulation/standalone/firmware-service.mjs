@@ -19,6 +19,16 @@ const PACKAGE_ROOTS = ["platformio.ini", "src", "include", "lib"];
 const REVIEWABLE_EXTENSIONS = new Set([".ini", ".cpp", ".c", ".h", ".hpp", ".md", ".txt"]);
 const MAX_REVIEW_BYTES = 512 * 1024;
 const WORKSPACE_MARKER = ".domino-firmware-workspace.json";
+// Files a Studio-managed overlay may replace in the firmware package. The
+// Policy Lab installs a trained network here so packaged Studio builds (whose
+// bundled sources are read-only snapshots) can flash it.
+export const OVERLAY_FILES = Object.freeze(["src/policy_weights.h"]);
+
+function overlaySource(overlayRoot, relativePath) {
+  if (!overlayRoot || !OVERLAY_FILES.includes(relativePath)) return null;
+  const candidate = path.resolve(overlayRoot, ...relativePath.split("/"));
+  return existsSync(candidate) && statSync(candidate).isFile() ? candidate : null;
+}
 
 function normalizedRelative(root, filePath) {
   return path.relative(root, filePath).split(path.sep).join("/");
@@ -37,16 +47,24 @@ function walkFiles(root, entry) {
     });
 }
 
-export function collectFirmwarePackage(projectRoot) {
-  const files = PACKAGE_ROOTS.flatMap((entry) => walkFiles(projectRoot, entry))
+export function collectFirmwarePackage(projectRoot, overlayRoot = null) {
+  const sourcePaths = PACKAGE_ROOTS.flatMap((entry) => walkFiles(projectRoot, entry))
     .filter((filePath) => REVIEWABLE_EXTENSIONS.has(path.extname(filePath).toLowerCase()))
-    .map((filePath) => {
-      const contents = readFileSync(filePath);
-      return {
-        path: normalizedRelative(projectRoot, filePath),
+    .map((filePath) => normalizedRelative(projectRoot, filePath));
+  for (const relative of OVERLAY_FILES) {
+    if (overlaySource(overlayRoot, relative) && !sourcePaths.includes(relative)) sourcePaths.push(relative);
+  }
+  sourcePaths.sort();
+  const files = sourcePaths.map((relative) => {
+      const overlay = overlaySource(overlayRoot, relative);
+      const contents = readFileSync(overlay || path.resolve(projectRoot, ...relative.split("/")));
+      const entry = {
+        path: relative,
         size: contents.byteLength,
         hash: createHash("sha256").update(contents).digest("hex"),
       };
+      if (overlay) entry.overlay = true;
+      return entry;
     });
   const digest = createHash("sha256");
   files.forEach((file) => digest.update(`${file.path}\0${file.hash}\0`));
@@ -60,19 +78,26 @@ export function collectFirmwarePackage(projectRoot) {
   };
 }
 
-export function resolveReviewFile(projectRoot, requestedPath) {
-  const manifest = collectFirmwarePackage(projectRoot);
+export function resolveReviewFile(projectRoot, requestedPath, overlayRoot = null) {
+  const manifest = collectFirmwarePackage(projectRoot, overlayRoot);
   const file = manifest.files.find((candidate) => candidate.path === requestedPath);
   if (!file) return null;
-  const absolute = path.resolve(projectRoot, ...file.path.split("/"));
+  const absolute = overlaySource(overlayRoot, file.path) || path.resolve(projectRoot, ...file.path.split("/"));
   if (statSync(absolute).size > MAX_REVIEW_BYTES) return null;
   return { ...file, contents: readFileSync(absolute, "utf8") };
 }
 
-export function syncFirmwareWorkspace(projectRoot, buildRoot, firmwarePackage) {
+export function syncFirmwareWorkspace(projectRoot, buildRoot, firmwarePackage, overlayRoot = null) {
   const sourceRoot = path.resolve(projectRoot);
   const destinationRoot = path.resolve(buildRoot);
-  if (sourceRoot === destinationRoot) return destinationRoot;
+  if (sourceRoot === destinationRoot) {
+    // Development checkout builds in place: apply the overlay to it directly.
+    for (const relative of OVERLAY_FILES) {
+      const overlay = overlaySource(overlayRoot, relative);
+      if (overlay) copyFileSync(overlay, path.resolve(destinationRoot, ...relative.split("/")));
+    }
+    return destinationRoot;
+  }
   if (path.relative(sourceRoot, destinationRoot) === "" ||
       !path.relative(sourceRoot, destinationRoot).startsWith("..") &&
       !path.isAbsolute(path.relative(sourceRoot, destinationRoot))) {
@@ -102,7 +127,7 @@ export function syncFirmwareWorkspace(projectRoot, buildRoot, firmwarePackage) {
   }
   for (const file of firmwarePackage.files) {
     const components = file.path.split("/");
-    const source = path.resolve(sourceRoot, ...components);
+    const source = overlaySource(overlayRoot, file.path) || path.resolve(sourceRoot, ...components);
     const destination = path.resolve(destinationRoot, ...components);
     if (path.relative(destinationRoot, destination).startsWith("..")) {
       throw new Error("Firmware package contains an unsafe path.");
@@ -178,8 +203,9 @@ function progressFor(type, text, current) {
 }
 
 export class FirmwareService {
-  constructor({ projectRoot, runtimeRoot, buildRoot = projectRoot, onJobFinished = null }) {
+  constructor({ projectRoot, runtimeRoot, buildRoot = projectRoot, overlayRoot = null, onJobFinished = null }) {
     this.projectRoot = projectRoot;
+    this.overlayRoot = overlayRoot;
     this.buildRoot = buildRoot;
     this.runtimeRoot = path.join(runtimeRoot, "firmware-jobs");
     this.platformioEnvironment = preparePlatformioEnvironment(runtimeRoot);
@@ -193,11 +219,11 @@ export class FirmwareService {
   }
 
   package() {
-    return collectFirmwarePackage(this.projectRoot);
+    return collectFirmwarePackage(this.projectRoot, this.overlayRoot);
   }
 
   file(requestedPath) {
-    return resolveReviewFile(this.projectRoot, requestedPath);
+    return resolveReviewFile(this.projectRoot, requestedPath, this.overlayRoot);
   }
 
   publicJob() {
@@ -277,7 +303,7 @@ export class FirmwareService {
     if (this.job?.status === "running" || this.job?.status === "cancelling") {
       throw new Error("Another firmware job is already running.");
     }
-    syncFirmwareWorkspace(this.projectRoot, this.buildRoot, firmwarePackage);
+    syncFirmwareWorkspace(this.projectRoot, this.buildRoot, firmwarePackage, this.overlayRoot);
     this.cancelRequested = false;
     const id = `${Date.now()}-${type}`;
     const logPath = path.join(this.runtimeRoot, `${id}.jsonl`);

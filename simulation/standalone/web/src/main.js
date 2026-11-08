@@ -50,6 +50,7 @@ import { environmentBallSpecs, logSpecs, terrainSpecs } from "./course-config.js
 import { createVoronoiTerrain } from "./voronoi-terrain.js";
 import { CLOSE_ICON, setCloseIcon } from "./studio-icons.js";
 import { initializeFirmwareWorkspace } from "./firmware-ui.js";
+import { initializePolicyLab } from "./policy-lab.js";
 import {
   createApplicationState,
   selectExperience,
@@ -351,10 +352,12 @@ import "./theme.css";
 import "./studio-help.css";
 import "./joint-inspection-overlay.css";
 import "./studio-chrome.css";
+import "./policy-lab.css";
 import { initAppUpdateBanner } from "./app-update-banner.js";
 import { initUpdatedNotice } from "./app-updated-notice.js";
 
 initializeFirmwareWorkspace();
+initializePolicyLab();
 
 const canvas = document.querySelector("#scene");
 const jointScreenOverlay = createJointInspectionOverlay(
@@ -3905,6 +3908,8 @@ function ingestLiveTelemetry(packet, receivedAt = Date.now()) {
   const accepted = acceptLiveTelemetryPacket(liveTelemetryState, packet, receivedAt);
   observeLiveDiagnosticPacket(liveDiagnosticsState, packet, accepted, receivedAt);
   if (accepted) {
+    // Policy Lab shows the on-robot learned-policy status (firmware 0.9+).
+    if (packet.policy) window.dispatchEvent(new CustomEvent("domino:live-telemetry", { detail: packet }));
     const bootId = packet.diagnostics?.bootId;
     if (Number.isInteger(bootId)) {
       if (calibrationRobotBootId !== null && calibrationRobotBootId !== bootId) {
@@ -7204,7 +7209,7 @@ function renderLiveChart(canvas, signal, windowSelector, emptySelector, zoomRang
     context.stroke();
   }
   drawLiveSeries(context, expected, dark ? "#f0f0f2" : "#343733", width, height, xAt, yAt);
-  drawLiveSeries(context, measured, dark ? "#63c383" : "#287d43", width, height, xAt, yAt);
+  drawLiveSeries(context, measured, dark ? "#638dc3" : "#284d7d", width, height, xAt, yAt);
   drawLiveSeries(context, error, dark ? "#e16d5a" : "#b44837", width, height, xAt, yAt);
 }
 
@@ -7340,7 +7345,7 @@ function renderLiveSessionComparisonChart(baseline, candidate) {
     context.strokeStyle = color; context.lineWidth = 1.8; context.stroke();
   };
   draw(series[0], dark ? "#a4a4aa" : "#777b75");
-  draw(series[1], dark ? "#55b979" : "#287d43");
+  draw(series[1], dark ? "#5580b9" : "#284d7d");
 }
 
 function renderLiveSessionComparison() {

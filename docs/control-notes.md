@@ -97,7 +97,9 @@ Important controls:
 - Right-stick vertical: body pitch in tilt mode; forward/reverse command in gait mode.
 - Left-stick horizontal: body yaw in tilt mode; ignored by the first gait.
 - SA: stand/stow command.
-- SB: currently unbound.
+- SB (CH6) fully down: learned Isaac Lab walking policy ("simulation mode").
+  Sticks give velocity commands and CH3 keeps setting ride height. See
+  [simulation/isaac_lab](../simulation/isaac_lab/README.md).
 - SC: up/middle keeps normal stand; fully down requests gait mode.
 - SD: body tilt enable and hard gait interlock.
 

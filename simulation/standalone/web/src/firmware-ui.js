@@ -133,7 +133,7 @@ export function initializeFirmwareWorkspace() {
     latestStatus = status;
     renderManifest(status.package);
     elements.toolchain.textContent = status.toolchain.available ? "READY" : "NOT FOUND";
-    elements.toolchain.style.color = status.toolchain.available ? "#7bd798" : "#ff897a";
+    elements.toolchain.style.color = status.toolchain.available ? "#7ba3d7" : "#ff897a";
     const job = status.job;
     if (job) {
       elements.jobLabel.textContent = job.type.toUpperCase();

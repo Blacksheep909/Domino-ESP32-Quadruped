@@ -62,6 +62,9 @@
 #include "motion_smoothing.h"
 #include "power_monitor.h"
 #include "power_fault_guard.h"
+#include "policy_runner.h"
+
+extern "C" void dominoPolicyTelemetry(uint32_t *lastUs, uint32_t *maxUs, uint32_t *steps, bool *latched);
 
 namespace {
 constexpr char kProtocol[] = "domino-robot-link-v1";
@@ -969,6 +972,34 @@ void sendTelemetry(uint32_t now) {
   controller["activeAntenna"] = link.valid ? link.activeAntenna + 1 : 0;
   JsonArray channels = controller["channelsUs"].to<JsonArray>();
   for (uint8_t channel = 0; channel < 16; ++channel) channels.add(ch_us[channel]);
+
+  // Learned policy ("simulation mode", SB fully down).
+  {
+    const PolicyStatus &ps = policyStatus();
+    uint32_t inferLastUs = 0, inferMaxUs = 0, steps = 0;
+    bool latched = false;
+    dominoPolicyTelemetry(&inferLastUs, &inferMaxUs, &steps, &latched);
+    JsonObject policy = document["policy"].to<JsonObject>();
+    policy["installed"] = ps.available;
+    policy["id"] = policyId();
+    policy["run"] = policyRunName();
+    policy["iteration"] = policyIteration();
+    policy["selfTestOk"] = ps.selfTestOk;
+    policy["selfTestError"] = ps.selfTestMaxError;
+    policy["active"] = ps.active;
+    policy["requested"] = ch_us[SB_CH_INDEX] >= SB_POLICY_ON_US;
+    policy["sbUs"] = ch_us[SB_CH_INDEX];
+    policy["fault"] = policyFaultName(ps.fault);
+    policy["faultLatched"] = latched;
+    policy["steps"] = steps;
+    policy["inferUs"] = inferLastUs;
+    policy["inferMaxUs"] = inferMaxUs;
+    policy["tiltDeg"] = ps.tiltDeg;
+    JsonArray gravity = policy["gravity"].to<JsonArray>();
+    for (int i = 0; i < 3; ++i) gravity.add(ps.gravity[i]);
+    JsonArray action = policy["action"].to<JsonArray>();
+    for (int i = 0; i < 12; ++i) action.add(ps.lastAction[i]);
+  }
   writeDocument(document, true);
 }
 
@@ -1041,9 +1072,11 @@ void disableOutputs(Adafruit_PWMServoDriver &driver, LiveRobotState nextState) {
 }
 
 // True while the radio/LIVE pose is walking or moving into or out of a walk.
-// Matches BodyMode in main.cpp (BODY_GAIT = 4, BODY_CAREFUL = 5, BODY_TRANSITION = 6).
+// Matches BodyMode in main.cpp (BODY_GAIT = 4, BODY_CAREFUL = 5, BODY_TRANSITION = 6,
+// BODY_POLICY = 7).
 bool robotWalking() {
-  return controlBodyMode == 4 || controlBodyMode == 5 || controlBodyMode == 6;
+  return controlBodyMode == 4 || controlBodyMode == 5 || controlBodyMode == 6 ||
+         controlBodyMode == 7;
 }
 
 // Ends a calibration bench session without latching radio control off.

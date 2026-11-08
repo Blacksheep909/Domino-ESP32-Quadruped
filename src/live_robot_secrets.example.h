@@ -17,4 +17,4 @@
 // device name and a non-default PIN of 4-16 digits.
 #define DOMINO_LIVE_BLUETOOTH_ENABLED 1
 #define DOMINO_LIVE_BLUETOOTH_NAME "Domino-LIVE"
-#define DOMINO_LIVE_BLUETOOTH_PIN "739184"
+#define DOMINO_LIVE_BLUETOOTH_PIN "replace-with-pin"

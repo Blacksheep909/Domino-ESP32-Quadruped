@@ -2349,16 +2349,11 @@ grid.material.opacity = 0.32;
 grid.material.transparent = true;
 scene.add(grid);
 
-// Gaits preview: the robot stays in view while this floor grid slides and turns
-// under it, and the line shows where the current command takes it next.
+// Gaits preview: the robot walks in place and this line on the floor shows
+// where the current command would take it next. No extra grid is drawn: a
+// second grid over the checkered floor read as a rendering fault.
 const gaitTreadmillPivot = new THREE.Group();
-gaitTreadmillPivot.name = "gait-preview-floor";
-const GAIT_TREADMILL_CELL_M = 0.1;
-const gaitTreadmillGrid = new THREE.GridHelper(4, 40, 0x3f8f5a, 0x7d8a80);
-gaitTreadmillGrid.material.opacity = 0.55;
-gaitTreadmillGrid.material.transparent = true;
-gaitTreadmillGrid.material.depthWrite = false;
-gaitTreadmillPivot.add(gaitTreadmillGrid);
+gaitTreadmillPivot.name = "gait-preview-path";
 const gaitPathPointCount = 61;
 const GAIT_PATH_SECONDS = 6;
 const GAIT_PATH_HALF_WIDTH_M = 0.0075;
@@ -2376,7 +2371,6 @@ gaitPathLine.frustumCulled = false;
 gaitTreadmillPivot.add(gaitPathLine);
 gaitTreadmillPivot.visible = false;
 scene.add(gaitTreadmillPivot);
-const gaitTreadmill = { x: 0, z: 0, heading: 0 };
 
 const courseVisuals = new THREE.Group();
 courseVisuals.name = "course-visuals";
@@ -12036,11 +12030,14 @@ function applyServoAnglesToRuntimes(runtimes, servoAngles, crossReversedResponse
 function smoothLiveServoAngles(current, target, delta) {
   if (!current) return [...target];
   const blend = 1 - Math.exp(-SERVO_VISUAL_RESPONSE * Math.max(delta, 0));
-  current.forEach((angle, channel) => {
+  // Return a new array. `current` can be a shared array (standServoReference,
+  // a telemetry frame); writing into it corrupted the stand reference that
+  // the gait preview's IK measures every leg against, so the legs crept into
+  // a splayed crouch.
+  return current.map((angle, channel) => {
     const next = Number(target[channel]);
-    if (Number.isFinite(next)) current[channel] = THREE.MathUtils.lerp(angle, next, blend);
+    return Number.isFinite(next) ? THREE.MathUtils.lerp(angle, next, blend) : angle;
   });
-  return current;
 }
 
 // Robot frame on the floor from the rendered feet: origin under the body,
@@ -12079,19 +12076,9 @@ function updateGaitTreadmill(delta, telemetry) {
   const forward = moving ? (telemetry.bodyVelocity?.forwardMmPerSec || 0) / 1000 : 0;
   // Clockwise-positive yaw rate; turning right lowers the heading.
   const yawRate = moving ? -(telemetry.bodyVelocity?.yawDegPerSec || 0) * Math.PI / 180 : 0;
-  gaitTreadmill.heading += yawRate * delta;
-  gaitTreadmill.x += forward * Math.cos(gaitTreadmill.heading) * delta;
-  gaitTreadmill.z -= forward * Math.sin(gaitTreadmill.heading) * delta;
-  // The pivot sits under the robot facing its forward direction. The grid is
-  // turned back by the robot's own heading and shifted by its travel, wrapped
-  // to one cell so it stays centred.
+  // The path starts under the robot and faces its forward direction.
   gaitTreadmillPivot.position.copy(frame.centre);
   gaitTreadmillPivot.rotation.set(0, frame.heading, 0);
-  const wrap = (value) => value - Math.round(value / GAIT_TREADMILL_CELL_M) * GAIT_TREADMILL_CELL_M;
-  const local = new THREE.Vector3(-wrap(gaitTreadmill.x), 0, -wrap(gaitTreadmill.z))
-    .applyAxisAngle(new THREE.Vector3(0, 1, 0), -gaitTreadmill.heading);
-  gaitTreadmillGrid.position.copy(local);
-  gaitTreadmillGrid.rotation.set(0, -gaitTreadmill.heading, 0);
 
   // Path for the next few seconds at the current speed and turn rate, in the
   // robot frame (+X forward, +Z right), drawn as a ribbon on the floor.
@@ -12275,7 +12262,7 @@ function updateLiveTwinPose(delta) {
   const connectedFrame = liveConnectionIsReady(liveConnectionState) ? expectedFrame : null;
   canvas.dataset.liveExpectedPose = connectedFrame ? "fresh" : "reference";
   if (linkageRuntimesReady()) {
-    liveExpectedServoAngles = connectedFrame?.servoAngleDeg || standServoReference;
+    liveExpectedServoAngles = [...(connectedFrame?.servoAngleDeg || standServoReference)];
     applyServoAnglesToRuntimes(linkageRuntimes, liveExpectedServoAngles);
     applyLiveBodyPose(
       robotWorld,

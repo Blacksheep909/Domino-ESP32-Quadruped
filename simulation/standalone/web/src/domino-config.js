@@ -8,12 +8,13 @@ const translatedFront = [0.335, 0, 0];
 // Centered, high-ride STAND output captured from the production firmware SIL.
 // The source CAD is authored in this pose, so all rendered motion is measured
 // against this fixed reference instead of cancelling each frame's servo delta.
-export const standServoReference = [
+// Frozen: a write into it once bent every leg in the Gaits preview.
+export const standServoReference = Object.freeze([
   129.87, 171.59, 113.53, 105.44,
   78.30, 0.0, 0.0, 151.60,
   98.55, 115.42, 78.30, 136.35,
   0.0, 0.0, 119.88, 128.38,
-];
+]);
 
 // Two CNHL Black Series 1500 mAh 4S packs are mounted across the front and
 // rear electronics bays. Coordinates use the centered Domino CAD frame.

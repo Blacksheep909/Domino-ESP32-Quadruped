@@ -107,51 +107,56 @@ function crawlBodyShift(settings, cycle, swingFraction, amplitude) {
 
 export const GAIT_LAB_STORAGE_KEY = "domino-gait-lab-v1";
 
+// Tuned with gait-quality.mjs (physics with the display assists off, so the
+// legs carry the robot): higher foot lift so the swing foot clears the floor,
+// a wider stance so the body does not roll onto the swing side and drift, and
+// a slightly lower body. Old Balanced reached 30% of its commanded speed and
+// drifted 61 mm sideways per metre; this one reaches 60% with ~4 mm/m.
 export const gaitLabPresets = Object.freeze({
   stable: {
-    cadenceHz: 0.78,
-    strideMm: 50,
-    liftMm: 25,
-    dutyFactor: 0.72,
-    bodyHeightMm: 255,
-    stanceWidthMm: 42,
-    turnGain: 0.72,
-    responseMs: 360,
-    swingShape: 2.0,
+    cadenceHz: 1.0,
+    strideMm: 70,
+    liftMm: 42,
+    dutyFactor: 0.68,
+    bodyHeightMm: 250,
+    stanceWidthMm: 60,
+    turnGain: 0.8,
+    responseMs: 280,
+    swingShape: 1.8,
     diagonalPhase: 0.5,
     touchdownXMm: -15.75,
-    maxForwardScale: 0.55,
-    maxTurnScale: 0.45,
+    maxForwardScale: 0.75,
+    maxTurnScale: 0.6,
   },
   balanced: {
-    cadenceHz: 1.25,
-    strideMm: 72,
-    liftMm: 34,
-    dutyFactor: 0.64,
-    bodyHeightMm: 260,
-    stanceWidthMm: 40,
+    cadenceHz: 1.3,
+    strideMm: 88,
+    liftMm: 45,
+    dutyFactor: 0.62,
+    bodyHeightMm: 245,
+    stanceWidthMm: 60,
     turnGain: 0.9,
-    responseMs: 220,
+    responseMs: 180,
     swingShape: 1.7,
     diagonalPhase: 0.5,
     touchdownXMm: -15.75,
-    maxForwardScale: 0.8,
-    maxTurnScale: 0.7,
+    maxForwardScale: 1,
+    maxTurnScale: 0.75,
   },
   fast: {
-    cadenceHz: 1.85,
-    strideMm: 92,
-    liftMm: 39,
-    dutyFactor: 0.58,
-    bodyHeightMm: 250,
-    stanceWidthMm: 42,
-    turnGain: 1.05,
-    responseMs: 130,
-    swingShape: 1.45,
+    cadenceHz: 1.4,
+    strideMm: 104,
+    liftMm: 46,
+    dutyFactor: 0.62,
+    bodyHeightMm: 245,
+    stanceWidthMm: 60,
+    turnGain: 1.0,
+    responseMs: 150,
+    swingShape: 1.7,
     diagonalPhase: 0.5,
     touchdownXMm: -15.75,
     maxForwardScale: 1,
-    maxTurnScale: 0.9,
+    maxTurnScale: 0.85,
   },
 });
 
@@ -385,18 +390,47 @@ function solveCadEndpoint(leg, command, seed) {
   };
 }
 
+function smootherstep01(value) {
+  const t = clamp(value, 0, 1);
+  return t * t * t * (t * (6 * t - 15) + 10);
+}
+
+// Swing foot path for the trot (keep in step with sampleGaitFootPath in
+// src/main.cpp). `swing` runs 0..1 over the airborne part of the cycle.
+//  - Height: the foot leaves the floor fast, holds its height through the
+//    middle of the step and comes down over the last part. The old sin^shape
+//    curve crept off the floor, so feet scraped at the start and end of every
+//    step. `swingShape` sets how much of the step the rise and fall take.
+//  - Fore/aft: the foot leaves and lands moving rearward at the stance speed,
+//    i.e. standing still over the ground (cubic Hermite with matched end
+//    velocities). The old curve stopped the foot relative to the body at both
+//    ends, so it hit the floor moving forward at walking speed and skidded.
+export function trotSwingPath(swing, halfStride, lift, dutyFactor, swingShape) {
+  const s = clamp(swing, 0, 1);
+  const rise = clamp(0.18 * swingShape, 0.15, 0.45);
+  const height = Math.min(smootherstep01(s / rise), smootherstep01((1 - s) / rise));
+  const duty = clamp(dutyFactor, 0.3, 0.95);
+  // Stance travel per unit of swing time, in half strides (rearward).
+  const groundSpeed = -2 * (1 - duty) / duty;
+  const s2 = s * s;
+  const s3 = s2 * s;
+  const h00 = 2 * s3 - 3 * s2 + 1;
+  const h10 = s3 - 2 * s2 + s;
+  const h01 = -2 * s3 + 3 * s2;
+  const h11 = s3 - s2;
+  return {
+    x: halfStride * (-h00 + groundSpeed * h10 + h01 + groundSpeed * h11),
+    z: -lift * height,
+  };
+}
+
 function sampleTrot(cycle, halfStride, lift, dutyFactor, swingShape) {
   if (cycle < dutyFactor) {
     const stance = cycle / dutyFactor;
     return { x: halfStride * (1 - 2 * stance), z: 0, stance: true };
   }
   const swing = (cycle - dutyFactor) / (1 - dutyFactor);
-  const liftWave = Math.sin(Math.PI * swing);
-  return {
-    x: halfStride * (-1 + 2 * smooth01(swing)),
-    z: -lift * Math.pow(Math.max(0, liftWave), swingShape),
-    stance: false,
-  };
+  return { ...trotSwingPath(swing, halfStride, lift, dutyFactor, swingShape), stance: false };
 }
 
 function sampleCareful(cycle, halfStride, lift, dutyFactor, swingShape) {

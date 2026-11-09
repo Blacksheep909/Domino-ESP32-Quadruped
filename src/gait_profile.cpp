@@ -18,22 +18,25 @@ bool terminated(const char *value, size_t capacity) {
 GaitProfile defaultGaitProfile() {
   GaitProfile profile{};
   profile.schemaVersion = DOMINO_GAIT_SCHEMA_VERSION;
-  strcpy(profile.name, "Firmware safe");
+  // Used until a profile is applied from Studio. Same as Studio's Balanced
+  // preset (gait-lab.js). The old fallback (0.7 Hz, 30 mm lift, 650 ms
+  // response, 55% stick) barely moved: its swing feet dragged on the floor.
+  strcpy(profile.name, "Firmware default");
   profile.settings.enabled = true;
-  strcpy(profile.settings.preset, "stable");
-  profile.settings.cadenceHz = 0.70f;
-  profile.settings.strideMm = 66.0f;
-  profile.settings.liftMm = 30.0f;
-  profile.settings.dutyFactor = 0.68f;
-  profile.settings.bodyHeightMm = 265.0f;
-  profile.settings.stanceWidthMm = 38.0f;
-  profile.settings.turnGain = 0.67f;
-  profile.settings.responseMs = 650.0f;
-  profile.settings.swingShape = 2.0f;
+  strcpy(profile.settings.preset, "balanced");
+  profile.settings.cadenceHz = 1.30f;
+  profile.settings.strideMm = 88.0f;
+  profile.settings.liftMm = 45.0f;
+  profile.settings.dutyFactor = 0.62f;
+  profile.settings.bodyHeightMm = 245.0f;
+  profile.settings.stanceWidthMm = 60.0f;
+  profile.settings.turnGain = 0.90f;
+  profile.settings.responseMs = 180.0f;
+  profile.settings.swingShape = 1.7f;
   profile.settings.diagonalPhase = 0.50f;
   profile.settings.touchdownXMm = -15.75f;
-  profile.settings.maxForwardScale = 0.55f;
-  profile.settings.maxTurnScale = 0.45f;
+  profile.settings.maxForwardScale = 1.0f;
+  profile.settings.maxTurnScale = 0.75f;
   return profile;
 }
 

@@ -212,6 +212,11 @@ export async function createDominoPhysics(options = {}) {
     console.warn = originalWarn;
   }
 
+  // The Studio view holds the body up and planted feet in place with
+  // assist forces, so the robot looks steady. `assists: false` turns those
+  // off: the legs carry the full weight and feet can slip, which is what gait
+  // evaluation needs (see gait-quality.test.mjs).
+  const assistsEnabled = options.assists !== false;
   const initialBasePosition = Array.isArray(options.initialBasePosition)
     ? new THREE.Vector3(...options.initialBasePosition)
     : new THREE.Vector3(0, INITIAL_BASE_HEIGHT, 0);
@@ -950,11 +955,13 @@ export async function createDominoPhysics(options = {}) {
     accumulator = Math.min(accumulator + deltaSeconds, FIXED_TIMESTEP * 8);
     while (accumulator >= FIXED_TIMESTEP) {
       driveMotors();
-      driveBodyHeight(firmwareState);
-      driveBodyPlanarPosition(firmwareState);
-      driveFootPlanarAnchors(firmwareState);
-      driveGaitStanceAnchors(firmwareState);
-      driveBodyAttitude(firmwareState);
+      if (assistsEnabled) {
+        driveBodyHeight(firmwareState);
+        driveBodyPlanarPosition(firmwareState);
+        driveFootPlanarAnchors(firmwareState);
+        driveGaitStanceAnchors(firmwareState);
+        driveBodyAttitude(firmwareState);
+      }
       world.step();
       environmentBalls.forEach((ball) => {
         const position = ball.body.translation();

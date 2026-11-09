@@ -61,11 +61,12 @@ constexpr uint32_t kTelemetryIntervalMs = 20;
 // finishes. The timeline leaves room for each one with the sticks centred.
 constexpr uint32_t kCarefulMotionMs = 11000;  // forward command once careful walk is active
 constexpr uint32_t kTrotRequestMs = 12000;    // SC high: careful -> trot handoff begins
-constexpr uint32_t kTrotMotionMs = 14800;     // sticks move once the handoff has finished
-// (the crawl lands from a weight-shifted stance, so its handoff takes ~2.3 s)
-constexpr uint32_t kLinkDropMs = 16300;       // link lost: failsafe stow follows
-constexpr uint32_t kScenarioDurationMs = 21300;  // failsafe stow takes ~3.5 s after the link drop
-constexpr uint32_t kLoopPeriodMs = 21800;
+constexpr uint32_t kTrotMotionMs = 16300;     // sticks move once the handoff has finished
+// (the crawl lands from a weight-shifted stance, then the feet move out to the
+// wider, lower trot stance (60 mm, 245 mm since firmware 0.8.30): ~3.6 s)
+constexpr uint32_t kLinkDropMs = 17800;       // link lost: failsafe stow follows
+constexpr uint32_t kScenarioDurationMs = 22800;  // failsafe stow takes ~3.5 s after the link drop
+constexpr uint32_t kLoopPeriodMs = 23300;
 constexpr int kRideHeightChannelIndex = 2;  // Boxer left-stick vertical / CRSF CH3.
 #if defined(_WIN32) && !defined(CREATE_WAITABLE_TIMER_HIGH_RESOLUTION)
 constexpr DWORD CREATE_WAITABLE_TIMER_HIGH_RESOLUTION = 0x00000002;

@@ -111,7 +111,8 @@ test("versioned and raw simulation JSON both import safely", () => {
   }));
   assert.equal(migrated.schemaVersion, 2);
   assert.equal(migrated.settings.touchdownXMm, -15.75);
-  assert.equal(migrated.settings.maxForwardScale, 0.8);
+  // Fields a v1 profile lacks come from the current default (Balanced).
+  assert.equal(migrated.settings.maxForwardScale, gaitLabPresets.balanced.maxForwardScale);
   assert.throws(() => parseLiveGaitProfileJson('{"schemaVersion":9,"robot":"domino-esp32-quadruped"}'));
 });
 

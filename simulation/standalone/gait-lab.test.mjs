@@ -106,13 +106,21 @@ test("expert gait limits bound command axes and shift nominal foot X", () => {
     maxTurnScale: 0.25,
   });
   let output;
-  for (let frame = 0; frame < 180; frame += 1) {
+  let targetXSum = 0;
+  let targetXSamples = 0;
+  for (let frame = 0; frame < 480; frame += 1) {
     output = lab.update(1 / 120, state(), { forward: 1, turn: 1 });
+    // Average over whole strides: the swing foot overshoots briefly so it
+    // lands moving with the ground, so one frame is not the nominal point.
+    if (frame >= 180) {
+      targetXSum += output.leg_command_xyz_mm.reduce((sum, command) => sum + command[0], 0) / 4;
+      targetXSamples += 1;
+    }
   }
   assert.ok(Math.abs(output.gait_command[0]) <= 0.3501);
   assert.ok(Math.abs(output.gait_command[1]) <= 0.2501);
-  const meanTargetX = output.leg_command_xyz_mm.reduce((sum, command) => sum + command[0], 0) / 4;
-  assert.ok(meanTargetX < -25);
+  const meanTargetX = targetXSum / targetXSamples;
+  assert.ok(meanTargetX < -25 && meanTargetX > -35, `mean foot X was ${meanTargetX}`);
 });
 
 test("careful gait keeps at least three feet in support", () => {

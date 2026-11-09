@@ -1004,6 +1004,11 @@ float halfCosine01(float value) {
   return 0.5f - 0.5f * cosf(kPi * t);
 }
 
+float smootherstep01(float value) {
+  const float t = constrain(value, 0.0f, 1.0f);
+  return t * t * t * (t * (6.0f * t - 15.0f) + 10.0f);
+}
+
 void sampleGaitFootPath(float cycle,
                         float halfStrideMm,
                         float liftMm,
@@ -1023,14 +1028,28 @@ void sampleGaitFootPath(float cycle,
     return;
   }
 
-  // Return the unloaded foot from rear to front. The smooth swing curve keeps
-  // touchdown and lift-off gentle; only the unloaded leg uses this variable
-  // speed profile.
-  const float swing = (cycle - stanceFraction) / (1.0f - stanceFraction);
-  const float swingPosition = halfCosine01(swing);
-  const float liftWave = sinf(kPi * swing);
-  *xOffsetMm = halfStrideMm * (-1.0f + 2.0f * swingPosition);
-  *zOffsetMm = -liftMm * powf(fmaxf(0.0f, liftWave), swingShape);
+  // Return the unloaded foot from rear to front (keep in step with
+  // trotSwingPath in simulation/standalone/web/src/gait-lab.js).
+  //  - Height: lift fast, hold through the middle, come down over the last
+  //    part. The old sin^shape curve crept off the floor, so feet scraped at
+  //    the start and end of every step. swingShape sets the rise/fall share.
+  //  - Fore/aft: the foot leaves and lands moving rearward at the stance speed
+  //    (standing still over the ground), via a cubic Hermite with matched end
+  //    velocities. The old curve stopped the foot relative to the body at both
+  //    ends, so it touched down moving forward at walking speed and skidded.
+  const float swing = constrain((cycle - stanceFraction) / (1.0f - stanceFraction), 0.0f, 1.0f);
+  const float rise = constrain(0.18f * swingShape, 0.15f, 0.45f);
+  const float height = fminf(smootherstep01(swing / rise), smootherstep01((1.0f - swing) / rise));
+  const float duty = constrain(stanceFraction, 0.30f, 0.95f);
+  const float groundSpeed = -2.0f * (1.0f - duty) / duty;  // half strides per unit swing
+  const float s2 = swing * swing;
+  const float s3 = s2 * swing;
+  const float h00 = 2.0f * s3 - 3.0f * s2 + 1.0f;
+  const float h10 = s3 - 2.0f * s2 + swing;
+  const float h01 = -2.0f * s3 + 3.0f * s2;
+  const float h11 = s3 - s2;
+  *xOffsetMm = halfStrideMm * (-h00 + groundSpeed * h10 + h01 + groundSpeed * h11);
+  *zOffsetMm = -liftMm * height;
 }
 
 void applySinusoidalGait(Adafruit_PWMServoDriver &driver, float baseZ) {

@@ -1,0 +1,75 @@
+/* Flat controls and cards.
+ *
+ * Loaded last. Studio's older styles gave buttons, tabs and cards a raised,
+ * "3D" look: bevel highlights, a darker 2px lip along the bottom of selected
+ * tabs, drop shadows under buttons, press-down movement, and thick rounded
+ * accent edges down the left of cards. Everything here is flat: a 1px border
+ * and a fill. Selection and state are shown by colour, not depth.
+ *
+ * Dialogs, menus and floating panels keep their drop shadow, since that
+ * separates them from the page behind; it is not a button effect.
+ */
+
+/* Buttons, tabs and form controls: no bevels, lips, glows or drop shadows. */
+:root :is(button, [role="tab"], select, input, textarea, kbd, .app-update-chip),
+:root :is(button, [role="tab"], select, input, textarea):is(:hover, :active, :focus, [aria-pressed="true"], [aria-selected="true"], [aria-current], .active) {
+  box-shadow: none !important;
+}
+
+/* No press-down movement. */
+:root :is(button, [role="tab"]):active {
+  transform: none !important;
+  translate: none !important;
+}
+
+/* With the old focus glow gone, keyboard focus uses a plain outline. */
+:root :is(button, [role="tab"], select, input, textarea, a):focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 1px;
+}
+
+/* Cards and list rows: no inner highlight lines or side accent bars. */
+:root :is(
+  .live-view-page :is(.live-data-card, .live-gait-card, .calibration-panel, .live-page-status),
+  .live-adapter-card, .live-waypoint-row, .live-sensor-guide li, .firmware-file-item,
+  .policy-run, .gait-setting-info, .live-compare-page-heading,
+  #live-view-sensors :is(.live-planner-map-shell, .live-autonomy-hud),
+  .camera-gizmo
+) {
+  box-shadow: none !important;
+}
+
+/* Cards and banners that had a thick rounded accent edge on the left: an
+ * even 1px border instead. Their border colour still carries the state. */
+:root :is(
+  .live-gait-card, .live-gait-apply-card, .live-gait-risk p, .live-gait-ik-warning,
+  .live-session-current, .live-safety-dock, .real-safety-banner,
+  .live-activity-log-list article, .live-connection-safety-note,
+  .calibration-origin-banner, .calibration-change-summary > div, .calibration-send-blocked,
+  .calibration-selection-summary, .calibration-limit-summary, .calibration-sync-status,
+  .diagnostics-first-break, .studio-action-feedback, .app-toast, #toast-region .app-toast,
+  .app-update-banner
+) {
+  border-left-width: 1px !important;
+  box-shadow: none !important;
+}
+
+/* Page cards (dark mode had an embossed top highlight and a heavy drop
+ * shadow under each card): flat. */
+:root :is(
+  .live-panel-section, .live-error-scope, .live-empty-state, .diagnostics-card,
+  .live-session-comparison, .live-session-list
+) {
+  box-shadow: none !important;
+}
+
+/* Panels that float over the 3D view keep a plain shadow so they stay
+ * readable over the scene, without the embossed highlight. */
+:root :is(#gait-lab-panel, #loading) {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .28) !important;
+}
+
+/* Page chrome: no embossed highlight lines. */
+:root :is(header, nav, aside) {
+  box-shadow: none !important;
+}

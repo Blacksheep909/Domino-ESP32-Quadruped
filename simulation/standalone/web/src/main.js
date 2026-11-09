@@ -353,6 +353,8 @@ import "./studio-help.css";
 import "./joint-inspection-overlay.css";
 import "./studio-chrome.css";
 import "./policy-lab.css";
+// Last on purpose: removes the raised/bevelled look from every control and card.
+import "./flat.css";
 import { initAppUpdateBanner } from "./app-update-banner.js";
 import { initUpdatedNotice } from "./app-updated-notice.js";
 

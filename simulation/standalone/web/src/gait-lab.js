@@ -45,11 +45,34 @@ export const GAIT_STEER_FULL_AT_FORWARD = 0.4;
 // hands over to steering, by `steerBlend`: 1 = full hand-over (steer when
 // moving, sidestep when not), 0 = always sidestep (Spot-style: turn with the
 // left stick). Positive is to the right for both.
-export function splitRightStickX(forward, rightX, steerBlend = 1) {
+export function splitRightStickX(forward, rightX, steerBlend = 1, strafeWeight = 1) {
   const speed = clamp(Math.abs(Number(forward) || 0), 0, 1);
   const x = clamp(Number(rightX) || 0, -1, 1);
   const share = clamp(Number(steerBlend), 0, 1) * smooth01(clamp(speed / GAIT_STEER_FULL_AT_FORWARD, 0, 1));
-  return { steer: x * speed * share, strafe: x * (1 - share) };
+  return { steer: x * speed * share, strafe: x * (1 - share) * clamp(Number(strafeWeight), 0, 1) };
+}
+
+// Direction intent on the right stick (keep in step with rightStickIntent in
+// src/main.cpp). Angles are measured from straight sideways (0 deg) to
+// straight forward/back (90 deg).
+//  - Within ~15 deg of sideways the forward part is dropped, so a push that is
+//    "mostly left" is a clean sidestep; it fades back in by 30 deg.
+//  - Within ~10 deg of straight forward the sidestep part is dropped (70-80
+//    deg fade), so walking forward does not crab. Steering is not affected:
+//    a small sideways nudge while walking still steers.
+export const STICK_SIDEWAYS_INTENT_DEG = Object.freeze([15, 30]);
+export const STICK_FORWARD_INTENT_DEG = Object.freeze([70, 80]);
+
+export function rightStickIntent(forward, rightX) {
+  const y = clamp(Number(forward) || 0, -1, 1);
+  const x = clamp(Number(rightX) || 0, -1, 1);
+  if (y === 0 || x === 0) return { forward: y, rightX: x, strafeWeight: 1 };
+  const angle = Math.atan2(Math.abs(y), Math.abs(x)) / DEG;
+  const [sideLow, sideHigh] = STICK_SIDEWAYS_INTENT_DEG;
+  const [forwardLow, forwardHigh] = STICK_FORWARD_INTENT_DEG;
+  const forwardWeight = smooth01(clamp((angle - sideLow) / (sideHigh - sideLow), 0, 1));
+  const strafeWeight = 1 - smooth01(clamp((angle - forwardLow) / (forwardHigh - forwardLow), 0, 1));
+  return { forward: y * forwardWeight, rightX: x, strafeWeight };
 }
 
 export function gaitStrides(settings, forward, turn, strafe = 0) {
@@ -147,7 +170,7 @@ export const gaitLabPresets = Object.freeze({
     responseMs: 280,
     swingShape: 1.8,
     diagonalPhase: 0.5,
-    touchdownXMm: -15.75,
+    touchdownXMm: -20,
     maxForwardScale: 0.75,
     maxTurnScale: 0.8,
   },
@@ -162,7 +185,7 @@ export const gaitLabPresets = Object.freeze({
     responseMs: 180,
     swingShape: 1.7,
     diagonalPhase: 0.5,
-    touchdownXMm: -15.75,
+    touchdownXMm: -20,
     maxForwardScale: 1,
     maxTurnScale: 1,
   },
@@ -177,7 +200,7 @@ export const gaitLabPresets = Object.freeze({
     responseMs: 150,
     swingShape: 1.7,
     diagonalPhase: 0.5,
-    touchdownXMm: -15.75,
+    touchdownXMm: -20,
     maxForwardScale: 1,
     maxTurnScale: 1,
   },
@@ -653,16 +676,22 @@ export function createGaitLab(initialSettings = {}) {
     const blend = 1 - Math.exp(-delta / responseSeconds);
     const motionAllowed = sourceState.motion_input_armed !== false &&
       sourceState.link_alive !== false && !sourceState.transition_active && transitionProgress >= 1;
-    filteredForward = approach(filteredForward, motionAllowed
-      ? clamp(Number(input.forward) || 0, -1, 1) * motionSettings.maxForwardScale : 0, blend);
     // Left stick X spins on the spot. Right stick X sidesteps at a standstill
     // and hands over to steering as forward stick grows (splitRightStickX).
-    // The careful crawl keeps plain speed-scaled steering.
+    // The trot reads the right stick's direction (rightStickIntent): a mostly
+    // sideways push is a pure sidestep. The careful crawl keeps plain
+    // speed-scaled steering.
     const careful = sourceState.mode === "CAREFUL";
-    const forwardInput = clamp(Number(input.forward) || 0, -1, 1);
+    const rawForward = clamp(Number(input.forward) || 0, -1, 1);
+    const intent = careful
+      ? { forward: rawForward, rightX: clamp(Number(input.steer) || 0, -1, 1), strafeWeight: 1 }
+      : rightStickIntent(rawForward, input.steer);
+    const forwardInput = intent.forward;
+    filteredForward = approach(filteredForward, motionAllowed
+      ? forwardInput * motionSettings.maxForwardScale : 0, blend);
     const rightStick = careful
-      ? { steer: (Number(input.steer) || 0) * Math.abs(forwardInput), strafe: 0 }
-      : splitRightStickX(forwardInput, input.steer, input.steerBlend ?? 1);
+      ? { steer: intent.rightX * Math.abs(forwardInput), strafe: 0 }
+      : splitRightStickX(forwardInput, intent.rightX, input.steerBlend ?? 1, intent.strafeWeight);
     const turnInput = clamp((Number(input.turn) || 0) + rightStick.steer, -1, 1);
     filteredTurn = approach(filteredTurn, motionAllowed ? turnInput * motionSettings.maxTurnScale : 0, blend);
     filteredStrafe = approach(filteredStrafe,

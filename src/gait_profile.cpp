@@ -34,7 +34,7 @@ GaitProfile defaultGaitProfile() {
   profile.settings.responseMs = 180.0f;
   profile.settings.swingShape = 1.7f;
   profile.settings.diagonalPhase = 0.50f;
-  profile.settings.touchdownXMm = -15.75f;
+  profile.settings.touchdownXMm = -20.0f;
   profile.settings.maxForwardScale = 1.0f;
   profile.settings.maxTurnScale = 1.0f;
   return profile;

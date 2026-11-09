@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { gaitLabPresets, splitRightStickX, trotSwingPath } from "./web/src/gait-lab.js";
+import { gaitLabPresets, rightStickIntent, splitRightStickX, trotSwingPath } from "./web/src/gait-lab.js";
 import { measureGait, measureSpin } from "./gait-quality.mjs";
 
 // The swing foot must leave and land moving with the ground (rearward at the
@@ -77,4 +77,21 @@ test("Balanced sidesteps both ways at a useful speed", async () => {
     assert.ok(Math.abs(result.speedMmPerSec) < 30, `${name} sidestep drifted ${result.speedMmPerSec} mm/s fore/aft`);
     assert.ok(Math.sign(result.commandedRightMmPerSec) === sign, `${name} commanded the right way`);
   }
+});
+
+// The right stick does not have to be pushed perfectly sideways or forward.
+test("a mostly sideways push is a pure sidestep; a mostly forward push does not crab", () => {
+  assert.equal(rightStickIntent(0.25, 1).forward, 0, "15 deg off sideways drops the forward part");
+  assert.ok(rightStickIntent(0.7, 0.7).forward > 0.69, "a real diagonal keeps its forward part");
+  assert.equal(rightStickIntent(1, 0.1).strafeWeight, 0, "6 deg off forward drops the sidestep part");
+  assert.ok(rightStickIntent(0.7, 0.7).strafeWeight > 0.99, "a real diagonal keeps its sidestep part");
+  const steering = splitRightStickX(1, 0.1, 1, rightStickIntent(1, 0.1).strafeWeight);
+  assert.equal(steering.steer, 0.1, "a small nudge while walking still steers");
+});
+
+test("an imperfect sideways push still sidesteps without walking forward", async () => {
+  const result = await measureGait({ settings: gaitLabPresets.balanced, forward: 0.25, steer: 1, seconds: 6 });
+  assert.equal(result.fell, false);
+  assert.ok(result.sidewaysSignedMm / 6 > 50, `sidestep ${result.sidewaysSignedMm / 6} mm/s`);
+  assert.ok(Math.abs(result.speedMmPerSec) < 15, `walked ${result.speedMmPerSec} mm/s fore/aft`);
 });

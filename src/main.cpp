@@ -977,7 +977,32 @@ void splitRightStickX(float speed, float rightX, float steerBlend, float *steer,
 
 // Trot commands: turn (spin + right-stick steering) and strafe, both scaled
 // by the profile. `forward` is readGaitForwardInput()'s result.
-void readGaitTrotInputs(const GaitProfileSettings &profile, float forward, float *turn, float *strafe) {
+// Direction intent on the right stick (keep in step with rightStickIntent in
+// gait-lab.js). The angle runs from straight sideways (0 deg) to straight
+// forward/back (90 deg). Within ~15 deg of sideways the forward part is
+// dropped (fading back in by 30 deg), so a push that is "mostly left" is a
+// clean sidestep. Within ~10 deg of straight forward the sidestep part is
+// dropped (70-80 deg fade), so walking forward does not crab. Steering is
+// unaffected: a small sideways nudge while walking still steers.
+constexpr float kStickSidewaysIntentLowDeg = 15.0f;
+constexpr float kStickSidewaysIntentHighDeg = 30.0f;
+constexpr float kStickForwardIntentLowDeg = 70.0f;
+constexpr float kStickForwardIntentHighDeg = 80.0f;
+
+void rightStickIntent(float *forward, float rightX, float *strafeWeight) {
+  *strafeWeight = 1.0f;
+  if (*forward == 0.0f || rightX == 0.0f) return;
+  const float angleDeg = atan2f(fabsf(*forward), fabsf(rightX)) * (180.0f / kPi);
+  *forward *= halfCosine01((angleDeg - kStickSidewaysIntentLowDeg) /
+                           (kStickSidewaysIntentHighDeg - kStickSidewaysIntentLowDeg));
+  *strafeWeight = 1.0f - halfCosine01((angleDeg - kStickForwardIntentLowDeg) /
+                                      (kStickForwardIntentHighDeg - kStickForwardIntentLowDeg));
+}
+
+// Trot commands from the sticks: forward (in/out: readGaitForwardInput()'s
+// result, cleared when the right stick is pushed mostly sideways), turn (spin
+// + right-stick steering) and strafe, all scaled by the profile.
+void readGaitTrotInputs(const GaitProfileSettings &profile, float *forward, float *turn, float *strafe) {
   *turn = 0.0f;
   *strafe = 0.0f;
   if (!profile.enabled) return;
@@ -990,13 +1015,16 @@ void readGaitTrotInputs(const GaitProfileSettings &profile, float forward, float
   {
     rightX = applyGaitDeadband(readMotionChannelNormalized(ROLL_CH_INDEX));
   }
-  const float speed = profile.maxForwardScale > 0.0f
-      ? constrain(fabsf(forward) / profile.maxForwardScale, 0.0f, 1.0f) : 0.0f;
+  float forwardStick = profile.maxForwardScale > 0.0f
+      ? constrain(*forward / profile.maxForwardScale, -1.0f, 1.0f) : 0.0f;
+  float strafeWeight = 1.0f;
+  rightStickIntent(&forwardStick, rightX, &strafeWeight);
+  *forward = forwardStick * profile.maxForwardScale;
   float steer = 0.0f;
   float strafeShare = 0.0f;
-  splitRightStickX(speed, rightX, rightStickSteerBlend(), &steer, &strafeShare);
+  splitRightStickX(fabsf(forwardStick), rightX, rightStickSteerBlend(), &steer, &strafeShare);
   *turn = constrain(spin + steer, -1.0f, 1.0f) * profile.maxTurnScale;
-  *strafe = constrain(strafeShare, -1.0f, 1.0f) * profile.maxForwardScale;
+  *strafe = constrain(strafeShare * strafeWeight, -1.0f, 1.0f) * profile.maxForwardScale;
 }
 
 // Per-leg stride vector (full stance travel, mm) in the leg command frame.
@@ -1139,10 +1167,10 @@ void applySinusoidalGait(Adafruit_PWMServoDriver &driver, float baseZ) {
       gaitBodyZ,
       gaitBodyTargetZ,
       bodySlewMmPerSec * kControlStepSeconds);
-  const float targetForward = readGaitForwardInput(profile);
+  float targetForward = readGaitForwardInput(profile);
   float targetTurn = 0.0f;
   float targetStrafe = 0.0f;
-  readGaitTrotInputs(profile, targetForward, &targetTurn, &targetStrafe);
+  readGaitTrotInputs(profile, &targetForward, &targetTurn, &targetStrafe);
   const float maximumCommandStep = commandSlewPerSec * kControlStepSeconds;
   gaitForwardCommand = approachGaitCommand(gaitForwardCommand, targetForward, maximumCommandStep);
   gaitTurnCommand = approachGaitCommand(gaitTurnCommand, targetTurn, maximumCommandStep);

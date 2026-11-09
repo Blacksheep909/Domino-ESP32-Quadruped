@@ -41,7 +41,7 @@ function rollPitchDeg(quaternion) {
   return { roll: THREE.MathUtils.radToDeg(euler.x), pitch: THREE.MathUtils.radToDeg(euler.z), yaw: euler.y };
 }
 
-export async function measureGait({ settings = {}, forward = 1, turn = 0, seconds = 8, warmup = 2 } = {}) {
+export async function measureGait({ settings = {}, forward = 1, turn = 0, steer = 0, steerBlend = 1, seconds = 8, warmup = 2 } = {}) {
   const physics = await createDominoPhysics({ assists: false });
   const lab = createGaitLab({ ...settings, enabled: true });
   const stand = standState();
@@ -66,9 +66,10 @@ export async function measureGait({ settings = {}, forward = 1, turn = 0, second
   const heights = [];
   let commandedSpeedSum = 0;
   let commandedSamples = 0;
+  let commandedRightSum = 0;
 
   for (let frame = 0; frame < frames; frame += 1) {
-    const output = lab.update(STEP, gaitSource, { forward, turn, steer: 0 });
+    const output = lab.update(STEP, gaitSource, { forward, turn, steer, steerBlend });
     state = physics.update(STEP, output, legs, standServoReference);
     if (state.bodyHeight < 0.12 || state.baseTiltDegrees > 45) {
       fell = true;
@@ -91,6 +92,7 @@ export async function measureGait({ settings = {}, forward = 1, turn = 0, second
     const telemetry = lab.getTelemetry();
     if (telemetry.active) {
       commandedSpeedSum += Math.abs(telemetry.bodyVelocity?.forwardMmPerSec || 0);
+      commandedRightSum += telemetry.bodyVelocity?.rightMmPerSec || 0;
       commandedSamples += 1;
     }
     if (previous) {
@@ -126,6 +128,7 @@ export async function measureGait({ settings = {}, forward = 1, turn = 0, second
     fell,
     speedMmPerSec: (forwardM / seconds) * 1000,
     commandedMmPerSec: commandedSamples ? commandedSpeedSum / commandedSamples : 0,
+    commandedRightMmPerSec: commandedSamples ? commandedRightSum / commandedSamples : 0,
     sidewaysMmPerMetre: forwardM > 0.01 ? (Math.abs(sidewaysM) / forwardM) * 1000 : NaN,
     sidewaysSignedMm: sidewaysM * 1000,
     yawSignedDeg: yawChangeDeg,

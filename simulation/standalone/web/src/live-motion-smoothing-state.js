@@ -3,7 +3,11 @@ export const MOTION_SMOOTHING_FIELDS = Object.freeze([
   Object.freeze({ key: "rollRateDegPerSec", label: "Tilt roll", min: 40, max: 360, step: 10, unit: "°/s" }),
   Object.freeze({ key: "pitchRateDegPerSec", label: "Tilt pitch", min: 30, max: 240, step: 10, unit: "°/s" }),
   Object.freeze({ key: "yawRateDegPerSec", label: "Tilt yaw", min: 40, max: 450, step: 5, unit: "°/s" }),
-  Object.freeze({ key: "tiltInputDeadband", label: "Tilt center deadband", min: 0, max: 0.08, step: 0.005, unit: "%" }),
+  Object.freeze({ key: "tiltInputDeadband", label: "Tilt center deadband", min: 0, max: 0.08, step: 0.005, unit: "%", percent: true }),
+  // Right stick X while trotting: how much it steers once forward stick is
+  // pushed (100% = sidestep only when standing still, 0% = always sidestep,
+  // Spot-style). Optional: firmware before 0.8.30 does not report it.
+  Object.freeze({ key: "rightStickSteerBlend", label: "Right-stick steering while walking", min: 0, max: 1, step: 0.05, unit: "%", percent: true, optional: true }),
 ]);
 
 // The preview uses the same 20 ms control interval and rate-limit rule as the
@@ -26,13 +30,15 @@ export const DEFAULT_MOTION_SMOOTHING = Object.freeze({
   pitchRateDegPerSec: 120,
   yawRateDegPerSec: 225,
   tiltInputDeadband: 0.02,
+  rightStickSteerBlend: 1,
 });
 
 function validMotionSmoothingCore(candidate) {
   return candidate &&
     candidate.robot === "domino-esp32-quadruped" &&
     Number.isSafeInteger(candidate.updatedAt) && candidate.updatedAt >= 0 &&
-    MOTION_SMOOTHING_FIELDS.every(({ key, min, max }) =>
+    MOTION_SMOOTHING_FIELDS.every(({ key, min, max, optional }) =>
+      (optional && candidate[key] === undefined) ||
       typeof candidate[key] === "number" && Number.isFinite(candidate[key]) &&
       candidate[key] >= min && candidate[key] <= max);
 }
@@ -52,7 +58,7 @@ export function motionSmoothingDraft(candidate = DEFAULT_MOTION_SMOOTHING) {
   if (!validMotionSmoothingDraft(candidate)) return { ...DEFAULT_MOTION_SMOOTHING };
   return Object.fromEntries(Object.keys(DEFAULT_MOTION_SMOOTHING)
     .map((key) => [key, candidate.schemaVersion === 1 && key === "schemaVersion" ? 2 :
-      candidate.schemaVersion === 1 && key === "enabled" ? true : candidate[key]]));
+      candidate.schemaVersion === 1 && key === "enabled" ? true : candidate[key] ?? DEFAULT_MOTION_SMOOTHING[key]]));
 }
 
 export function motionSmoothingRampPreview(settings, axisKey, target) {
@@ -88,4 +94,14 @@ export function motionSmoothingDeadbandPreview(deadband, enabled = true) {
     }),
     tenPercentOutput: shaped(0.1),
   };
+}
+
+// Field value with the default filled in for an optional field the robot did
+// not report.
+export function motionSmoothingValue(settings, key) {
+  return settings?.[key] ?? DEFAULT_MOTION_SMOOTHING[key];
+}
+
+export function motionSmoothingFieldIsPercent(key) {
+  return MOTION_SMOOTHING_FIELDS.find((field) => field.key === key)?.percent === true;
 }

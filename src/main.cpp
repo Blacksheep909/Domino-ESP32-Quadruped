@@ -346,6 +346,8 @@ float gaitTurnCommand = 0.0f;
 float gaitAmplitude = 0.0f;
 float gaitForwardStride = 0.0f;
 float gaitTurnStride = 0.0f;
+float gaitStrafeCommand = 0.0f;  // trot sidestep, right positive
+float gaitStrafeStride = 0.0f;
 float gaitBodyZ = 265.0f;
 float gaitSupportZ[kLegCount] = {};
 rampFloat tiltRollRamp;
@@ -353,6 +355,13 @@ rampFloat tiltPitchRamp;
 rampFloat tiltYawRamp;
 bool motionInputAwaitingCenter = false;
 uint32_t motionInputCenteredSinceMs = 0;
+// Soft takeover into tilt: instead of waiting for centred sticks, the stick
+// command is faded in from zero over kTiltTakeoverMs once the mode change has
+// finished, so the body glides to a held stick rather than snapping to it.
+constexpr uint32_t kTiltTakeoverMs = 700;
+MotionInputProfile activeMotionProfile = MOTION_INPUT_NONE;
+uint32_t tiltTakeoverStartedMs = 0;  // 0 = not started yet
+float halfCosine01(float value);
 
 float normalizeChannel(float chValueUs) {
   const float normalized = (chValueUs - kStickCenterUs) / kStickHalfRangeUs;
@@ -401,14 +410,21 @@ bool motionInputsAreCentered() {
 }
 
 // Which newly entered input profiles wait for centred sticks before acting.
-// Tilt maps the sticks straight to a body angle, so a held stick must be
-// released and re-centred first or the body would snap to it. Walking starts
-// from a zeroed gait command that only ramps toward the stick at the profile's
-// response rate, so a stick already held when the walk begins is ramped in
-// instead of ignored. (Firmware <= 0.8.26 made walking wait for a re-centre
-// too, which felt like the robot ignoring the forward stick.)
-bool motionProfileNeedsCentredSticks(MotionInputProfile profile) {
-  return profile == MOTION_INPUT_TILT;
+// None do any more. Tilt maps the sticks straight to a body angle, so a held
+// stick would snap the body; it now fades in instead (tiltTakeoverGain), which
+// is as safe and not finicky. (Firmware <= 0.8.29 made tilt wait until every
+// stick was within 14% of centre.) Walking starts from a zeroed gait command
+// that ramps toward the stick at the profile's response rate.
+bool motionProfileNeedsCentredSticks(MotionInputProfile) {
+  return false;
+}
+
+// 0..1 multiplier on the motion sticks: 1 except while tilt is taking over.
+float tiltTakeoverGain(uint32_t now) {
+  if (activeMotionProfile != MOTION_INPUT_TILT) return 1.0f;
+  if (tiltTakeoverStartedMs == 0) return 0.0f;
+  return halfCosine01(static_cast<float>(now - tiltTakeoverStartedMs) /
+                      static_cast<float>(kTiltTakeoverMs));
 }
 
 void updateMotionInputInterlock(BodyMode previousMode, BodyMode nextMode, uint32_t now) {
@@ -417,6 +433,15 @@ void updateMotionInputInterlock(BodyMode previousMode, BodyMode nextMode, uint32
   if (previousProfile != nextProfile) {
     motionInputAwaitingCenter = motionProfileNeedsCentredSticks(nextProfile);
     motionInputCenteredSinceMs = 0;
+    tiltTakeoverStartedMs = 0;
+  }
+  activeMotionProfile = nextProfile;
+  // The fade starts once the mode change has finished (sticks read zero until
+  // then). With the sticks already centred there is nothing to snap to, so
+  // control is immediate; only a held stick is faded in.
+  if (nextProfile == MOTION_INPUT_TILT && tiltTakeoverStartedMs == 0 && !modeTransitionActive()) {
+    const uint32_t started = motionInputsAreCentered() ? now - kTiltTakeoverMs : now;
+    tiltTakeoverStartedMs = started == 0 ? 1 : started;
   }
 
   if (!motionInputAwaitingCenter) {
@@ -443,9 +468,10 @@ float readMotionChannelNormalized(int channelIndex) {
 #ifndef DOMINO_SIL
   if (activeManualControl.active) {
     if (motionInputAwaitingCenter) return 0.0f;
-    if (channelIndex == PITCH_CH_INDEX) return activeManualControl.forward;
-    if (channelIndex == YAW_CH_INDEX) return activeManualControl.turn;
-    if (channelIndex == ROLL_CH_INDEX) return activeManualControl.roll;
+    const float gain = tiltTakeoverGain(millis());
+    if (channelIndex == PITCH_CH_INDEX) return activeManualControl.forward * gain;
+    if (channelIndex == YAW_CH_INDEX) return activeManualControl.turn * gain;
+    if (channelIndex == ROLL_CH_INDEX) return activeManualControl.roll * gain;
   }
 #endif
   // Switches still use the more heavily filtered integer channels. Motion
@@ -453,7 +479,7 @@ float readMotionChannelNormalized(int channelIndex) {
   const bool commandsFresh = crsfHasReceivedFrame() &&
       millis() - lastCrsfMs < kMotionCommandTimeoutMs;
   return motionInputAwaitingCenter || modeTransitionActive() || !commandsFresh
-      ? 0.0f : normalizeChannel(ch_us_filt[channelIndex]);
+      ? 0.0f : normalizeChannel(ch_us_filt[channelIndex]) * tiltTakeoverGain(millis());
 }
 
 float manualRollFootZOffset(float lateralMm) {
@@ -904,9 +930,11 @@ float applyGaitDeadband(float value) {
 // Walking commands from the sticks (Boxer, mode 2):
 //  - right stick Y (CH2) drives forward/back;
 //  - left stick X (CH4) spins the body on the spot about Z;
-//  - right stick X (CH1) steers while walking: its turn is scaled by how fast
-//    the robot is moving, so it bends the path instead of spinning.
-// Positive turn is clockwise (to the right), matching the operator's stick.
+//  - right stick X (CH1), trot: sidesteps when there is no forward stick and
+//    hands over to steering as forward stick grows (splitRightStickX); the
+//    careful crawl only steers with it, scaled by speed.
+// Positive turn is clockwise (to the right) and positive strafe is to the
+// right, matching the operator's stick.
 float readGaitForwardInput(const GaitProfileSettings &profile) {
   return profile.enabled
       ? applyGaitDeadband(readMotionChannelNormalized(PITCH_CH_INDEX)) * profile.maxForwardScale : 0.0f;
@@ -928,6 +956,49 @@ float readGaitTurnInput(const GaitProfileSettings &profile, float forward) {
   return constrain(spin + steer, -1.0f, 1.0f) * profile.maxTurnScale;
 }
 
+// A full sidestep travels this share of the forward stride: the legs reach
+// less far sideways than fore/aft (keep in step with GAIT_LATERAL_STRIDE_SCALE
+// in simulation/standalone/web/src/gait-lab.js).
+constexpr float kGaitLateralStrideScale = 0.6f;
+// Below this much forward stick (as a share of full), right-stick X is mostly
+// a sidestep.
+constexpr float kGaitSteerFullAtForward = 0.4f;
+
+// Right stick X while trotting (keep in step with splitRightStickX in
+// gait-lab.js). `speed` is the forward stick, 0..1. With no forward stick it
+// sidesteps; as forward stick grows it hands over to steering by `steerBlend`
+// (1 = full hand-over, 0 = always sidestep, Spot-style).
+void splitRightStickX(float speed, float rightX, float steerBlend, float *steer, float *strafe) {
+  const float share = constrain(steerBlend, 0.0f, 1.0f) *
+      halfCosine01(constrain(speed / kGaitSteerFullAtForward, 0.0f, 1.0f));
+  *steer = rightX * speed * share;
+  *strafe = rightX * (1.0f - share);
+}
+
+// Trot commands: turn (spin + right-stick steering) and strafe, both scaled
+// by the profile. `forward` is readGaitForwardInput()'s result.
+void readGaitTrotInputs(const GaitProfileSettings &profile, float forward, float *turn, float *strafe) {
+  *turn = 0.0f;
+  *strafe = 0.0f;
+  if (!profile.enabled) return;
+  const float spin = applyGaitDeadband(readMotionChannelNormalized(YAW_CH_INDEX));
+  float rightX = 0.0f;
+#ifndef DOMINO_SIL
+  // LIVE manual control uses its roll axis for body roll while walking.
+  if (!activeManualControl.active)
+#endif
+  {
+    rightX = applyGaitDeadband(readMotionChannelNormalized(ROLL_CH_INDEX));
+  }
+  const float speed = profile.maxForwardScale > 0.0f
+      ? constrain(fabsf(forward) / profile.maxForwardScale, 0.0f, 1.0f) : 0.0f;
+  float steer = 0.0f;
+  float strafeShare = 0.0f;
+  splitRightStickX(speed, rightX, rightStickSteerBlend(), &steer, &strafeShare);
+  *turn = constrain(spin + steer, -1.0f, 1.0f) * profile.maxTurnScale;
+  *strafe = constrain(strafeShare, -1.0f, 1.0f) * profile.maxForwardScale;
+}
+
 // Per-leg stride vector (full stance travel, mm) in the leg command frame.
 // Forward motion moves every foot straight back; turning moves each planted
 // foot along the circle around the body centre (tangent to its radius), so a
@@ -939,7 +1010,7 @@ float readGaitTurnInput(const GaitProfileSettings &profile, float forward) {
 struct GaitStride { float x; float y; };
 
 void computeGaitStrides(const GaitProfileSettings &profile, float forward, float turn,
-                        GaitStride strides[kLegCount]) {
+                        float strafe, GaitStride strides[kLegCount]) {
   float px[kLegCount];
   float py[kLegCount];
   float radiusSum = 0.0f;
@@ -959,7 +1030,9 @@ void computeGaitStrides(const GaitProfileSettings &profile, float forward, float
   for (int i = 0; i < kLegCount; ++i) {
     // Clockwise (positive) turn: the body point at (px, py) moves along (py, -px).
     strides[i].x = profile.strideMm * (forward + turn * profile.turnGain * py[i] / referenceRadius);
-    strides[i].y = profile.strideMm * (turn * profile.turnGain * -px[i] / referenceRadius);
+    // Strafe right (positive) moves every planted foot left relative to the body.
+    strides[i].y = profile.strideMm * (turn * profile.turnGain * -px[i] / referenceRadius -
+                                       strafe * kGaitLateralStrideScale);
     largest = fmaxf(largest, sqrtf(strides[i].x * strides[i].x + strides[i].y * strides[i].y));
   }
   const float limit = profile.strideMm * 1.05f;
@@ -983,8 +1056,9 @@ void resetGaitState() {
   gaitPhaseRad = 0.0f;
   gaitForwardCommand = 0.0f;
   gaitTurnCommand = 0.0f;
+  gaitStrafeCommand = 0.0f;
   gaitAmplitude = 0.0f;
-  gaitForwardStride = gaitTurnStride = 0.0f;
+  gaitForwardStride = gaitTurnStride = gaitStrafeStride = 0.0f;
   gaitBodyZ = lastPoseZ;
 }
 
@@ -997,6 +1071,8 @@ void updateGaitStride(float activity, float maximumStep) {
       gaitForwardStride, gaitForwardCommand * scale, maximumStep);
   gaitTurnStride = approachGaitCommand(
       gaitTurnStride, gaitTurnCommand * scale, maximumStep);
+  gaitStrafeStride = approachGaitCommand(
+      gaitStrafeStride, gaitStrafeCommand * scale, maximumStep);
 }
 
 float halfCosine01(float value) {
@@ -1064,14 +1140,18 @@ void applySinusoidalGait(Adafruit_PWMServoDriver &driver, float baseZ) {
       gaitBodyTargetZ,
       bodySlewMmPerSec * kControlStepSeconds);
   const float targetForward = readGaitForwardInput(profile);
-  const float targetTurn = readGaitTurnInput(profile, targetForward);
+  float targetTurn = 0.0f;
+  float targetStrafe = 0.0f;
+  readGaitTrotInputs(profile, targetForward, &targetTurn, &targetStrafe);
   const float maximumCommandStep = commandSlewPerSec * kControlStepSeconds;
   gaitForwardCommand = approachGaitCommand(gaitForwardCommand, targetForward, maximumCommandStep);
   gaitTurnCommand = approachGaitCommand(gaitTurnCommand, targetTurn, maximumCommandStep);
+  gaitStrafeCommand = approachGaitCommand(gaitStrafeCommand, targetStrafe, maximumCommandStep);
 
   const float activity = constrain(
       sqrtf(gaitForwardCommand * gaitForwardCommand +
-            gaitTurnCommand * gaitTurnCommand),
+            gaitTurnCommand * gaitTurnCommand +
+            gaitStrafeCommand * gaitStrafeCommand),
       0.0f,
       1.0f);
   const float startupBlend = halfCosine01(activity / 0.25f);
@@ -1096,7 +1176,7 @@ void applySinusoidalGait(Adafruit_PWMServoDriver &driver, float baseZ) {
   outputBodyX = outputBodyY = 0.0f;
   outputUsesBodyPose = false;
   GaitStride strides[kLegCount];
-  computeGaitStrides(profile, gaitForwardStride, gaitTurnStride, strides);
+  computeGaitStrides(profile, gaitForwardStride, gaitTurnStride, gaitStrafeStride, strides);
   for (int i = 0; i < kLegCount; ++i) {
     const bool diagonalA = (i == LEG_FL || i == LEG_BR);
     const bool leftLeg = (i == LEG_FL || i == LEG_BL);
@@ -1210,7 +1290,7 @@ void applyCarefulWalk(Adafruit_PWMServoDriver &driver, float baseZ) {
   const float swingFraction = fminf(kCrawlMaxSwingFraction, 1.0f - profile.dutyFactor);
   const float gap = kCrawlSlot - swingFraction;
   GaitStride strides[kLegCount];
-  computeGaitStrides(profile, gaitForwardStride, gaitTurnStride, strides);
+  computeGaitStrides(profile, gaitForwardStride, gaitTurnStride, 0.0f, strides);
   float shiftX = 0.0f;
   float shiftY = 0.0f;
   crawlBodyShift(profile, normalizedCycle, swingFraction, gaitAmplitude, &shiftX, &shiftY);
@@ -1389,8 +1469,8 @@ void beginTransitionStage(TransitionStage stage, const LegTarget targets[kLegCou
             1.875f * angle / kTransitionAngleSpeedDegPerSec));
   motionInputAwaitingCenter = true;
   motionInputCenteredSinceMs = 0;
-  gaitForwardCommand = gaitTurnCommand = gaitAmplitude = 0.0f;
-  gaitForwardStride = gaitTurnStride = 0.0f;
+  gaitForwardCommand = gaitTurnCommand = gaitStrafeCommand = gaitAmplitude = 0.0f;
+  gaitForwardStride = gaitTurnStride = gaitStrafeStride = 0.0f;
 }
 
 void beginNeutralTransition(BodyMode requestedMode, float rideHeight) {
@@ -2040,11 +2120,13 @@ void loop() {
 #ifndef DOMINO_SIL
       if (activeManualControl.active && activeManualControl.deadman && !motionIkFault &&
           inputs.motionCommandsFresh && !motionInputAwaitingCenter) {
-        rollDeg = activeManualControl.roll * kMaxRollDeg;
-        pitchDeg = activeManualControl.pitch * kManualMaxPitchDeg;
-        yawDeg = activeManualControl.yaw * kManualMaxYawDeg;
-        bodyX = activeManualControl.bodyX * kManualMaxBodyXMm;
-        bodyY = activeManualControl.bodyY * kManualMaxBodyYMm;
+        // Studio's manual pose fades in on entry, like the radio sticks.
+        const float gain = tiltTakeoverGain(now);
+        rollDeg = activeManualControl.roll * kMaxRollDeg * gain;
+        pitchDeg = activeManualControl.pitch * kManualMaxPitchDeg * gain;
+        yawDeg = activeManualControl.yaw * kManualMaxYawDeg * gain;
+        bodyX = activeManualControl.bodyX * kManualMaxBodyXMm * gain;
+        bodyY = activeManualControl.bodyY * kManualMaxBodyYMm * gain;
       }
 #endif
       bool useBalanceZOffsets = false;

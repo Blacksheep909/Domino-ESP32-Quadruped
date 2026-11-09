@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { gaitLabPresets, trotSwingPath } from "./web/src/gait-lab.js";
+import { gaitLabPresets, splitRightStickX, trotSwingPath } from "./web/src/gait-lab.js";
 import { measureGait, measureSpin } from "./gait-quality.mjs";
 
 // The swing foot must leave and land moving with the ground (rearward at the
@@ -48,5 +48,33 @@ test("Balanced spins on the spot quickly without wandering off it", async () => 
     assert.ok(result.yawDegPerSec > 0.55 * result.commandedYawDegPerSec,
       `reached ${result.yawDegPerSec} of ${result.commandedYawDegPerSec} deg/s (turn ${turn})`);
     assert.ok(result.wanderMm < 60, `wandered ${result.wanderMm} mm off the spot (turn ${turn})`);
+  }
+});
+
+// Right stick X: sidestep at a standstill, handing over to steering as the
+// forward stick grows (blend 1), or always sidestep (blend 0, Spot-style).
+test("right stick X sidesteps when standing and steers when walking", () => {
+  const standing = splitRightStickX(0, 1, 1);
+  assert.equal(standing.steer, 0);
+  assert.equal(standing.strafe, 1);
+  const walking = splitRightStickX(1, 1, 1);
+  assert.equal(walking.strafe, 0);
+  assert.equal(walking.steer, 1);
+  const halfway = splitRightStickX(0.2, -1, 1);
+  assert.ok(halfway.steer < 0 && halfway.strafe < 0, "both shares follow the stick direction");
+  const spot = splitRightStickX(1, 0.7, 0);
+  assert.equal(spot.steer, 0);
+  assert.equal(spot.strafe, 0.7);
+});
+
+test("Balanced sidesteps both ways at a useful speed", async () => {
+  const right = await measureGait({ settings: gaitLabPresets.balanced, forward: 0, steer: 1, seconds: 6 });
+  const left = await measureGait({ settings: gaitLabPresets.balanced, forward: 0, steer: -1, seconds: 6 });
+  for (const [name, result, sign] of [["right", right, 1], ["left", left, -1]]) {
+    assert.equal(result.fell, false, name);
+    const sideways = sign * result.sidewaysSignedMm / 6;
+    assert.ok(sideways > 50, `${name} sidestep ${sideways} mm/s`);
+    assert.ok(Math.abs(result.speedMmPerSec) < 30, `${name} sidestep drifted ${result.speedMmPerSec} mm/s fore/aft`);
+    assert.ok(Math.sign(result.commandedRightMmPerSec) === sign, `${name} commanded the right way`);
   }
 });

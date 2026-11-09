@@ -43,3 +43,17 @@ float commandWithMotionSmoothing(rampFloat &ramp, float target, float rate, bool
   ramp.setSpeed(rate);
   return ramp.update();
 }
+
+namespace {
+float activeRightStickSteerBlend = kDefaultRightStickSteerBlend;
+}  // namespace
+
+float rightStickSteerBlend() { return activeRightStickSteerBlend; }
+
+bool validRightStickSteerBlend(float value) { return bounded(value, 0.0f, 1.0f); }
+
+bool setRightStickSteerBlend(float value) {
+  if (!validRightStickSteerBlend(value)) return false;
+  activeRightStickSteerBlend = value;
+  return true;
+}

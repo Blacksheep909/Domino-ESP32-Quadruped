@@ -33,7 +33,26 @@ function footOffsetFromCentre(label, settings) {
 // centre, so a pure turn spins the robot on the spot. Positive turn is
 // clockwise (to the right). Combined commands longer than the stride are
 // scaled down evenly to keep the path's curvature.
-export function gaitStrides(settings, forward, turn) {
+// A full sidestep travels this share of the forward stride: the legs reach
+// less far sideways than fore/aft (keep in step with kGaitLateralStrideScale
+// in src/main.cpp).
+export const GAIT_LATERAL_STRIDE_SCALE = 0.6;
+// Below this much forward stick, right-stick X is mostly a sidestep.
+export const GAIT_STEER_FULL_AT_FORWARD = 0.4;
+
+// Right stick X while walking (keep in step with readGaitCommands in
+// src/main.cpp). With no forward stick it sidesteps. As forward stick grows it
+// hands over to steering, by `steerBlend`: 1 = full hand-over (steer when
+// moving, sidestep when not), 0 = always sidestep (Spot-style: turn with the
+// left stick). Positive is to the right for both.
+export function splitRightStickX(forward, rightX, steerBlend = 1) {
+  const speed = clamp(Math.abs(Number(forward) || 0), 0, 1);
+  const x = clamp(Number(rightX) || 0, -1, 1);
+  const share = clamp(Number(steerBlend), 0, 1) * smooth01(clamp(speed / GAIT_STEER_FULL_AT_FORWARD, 0, 1));
+  return { steer: x * speed * share, strafe: x * (1 - share) };
+}
+
+export function gaitStrides(settings, forward, turn, strafe = 0) {
   const strides = {};
   let largest = 0;
   const labels = ["FL", "FR", "BL", "BR"];
@@ -44,9 +63,10 @@ export function gaitStrides(settings, forward, turn) {
   }, 0) / labels.length);
   for (const label of labels) {
     const { x, y } = footOffsetFromCentre(label, settings);
+    // Strafe right (positive) moves every planted foot left relative to the body.
     const stride = {
       x: settings.strideMm * (forward + turn * settings.turnGain * y / radius),
-      y: settings.strideMm * (turn * settings.turnGain * -x / radius),
+      y: settings.strideMm * (turn * settings.turnGain * -x / radius - strafe * GAIT_LATERAL_STRIDE_SCALE),
     };
     strides[label] = stride;
     largest = Math.max(largest, Math.hypot(stride.x, stride.y));
@@ -67,11 +87,14 @@ export function gaitBodyVelocity(settings, strides, stanceFraction) {
   const fl = footOffsetFromCentre("FL", settings);
   const average = (key) => ["FL", "FR", "BL", "BR"].reduce((sum, label) => sum + strides[label][key], 0) / 4;
   const forwardMmPerSec = average("x") / stanceSeconds;
+  // Sideways: turning moves front and rear feet opposite ways, so the average
+  // is the sidestep alone. Positive is to the right.
+  const rightMmPerSec = -average("y") / stanceSeconds;
   // The left-minus-right forward difference is the turning part of the stride;
   // it equals the turn rate times the feet's lateral offset.
   const turnMm = ((strides.FL.x + strides.BL.x) - (strides.FR.x + strides.BR.x)) / 4;
   const yawRadPerSec = (turnMm / stanceSeconds) / Math.abs(fl.y);
-  return { forwardMmPerSec, yawDegPerSec: yawRadPerSec / DEG };
+  return { forwardMmPerSec, rightMmPerSec, yawDegPerSec: yawRadPerSec / DEG };
 }
 
 // Foot offset (leg frame) that moves the body away from the lifting leg during
@@ -473,6 +496,7 @@ export function createGaitLab(initialSettings = {}) {
   let phase = 0;
   let filteredForward = 0;
   let filteredTurn = 0;
+  let filteredStrafe = 0;
   let transitionProgress = 1;
   let transitionFromState = null;
   let lastGaitState = null;
@@ -524,7 +548,7 @@ export function createGaitLab(initialSettings = {}) {
       const from = lastOutputState || sourceState;
       beginRecovery(activeMode !== null ? "land" : "neutral", from);
       activeMode = null;
-      phase = filteredForward = filteredTurn = 0;
+      phase = filteredForward = filteredTurn = filteredStrafe = 0;
       transitionFromState = null;
       transitionProgress = 0;
       handoffMode = null;
@@ -631,12 +655,19 @@ export function createGaitLab(initialSettings = {}) {
       sourceState.link_alive !== false && !sourceState.transition_active && transitionProgress >= 1;
     filteredForward = approach(filteredForward, motionAllowed
       ? clamp(Number(input.forward) || 0, -1, 1) * motionSettings.maxForwardScale : 0, blend);
-    // Left stick X spins on the spot; right stick X steers, scaled by speed.
+    // Left stick X spins on the spot. Right stick X sidesteps at a standstill
+    // and hands over to steering as forward stick grows (splitRightStickX).
+    // The careful crawl keeps plain speed-scaled steering.
+    const careful = sourceState.mode === "CAREFUL";
     const forwardInput = clamp(Number(input.forward) || 0, -1, 1);
-    const turnInput = clamp(
-      (Number(input.turn) || 0) + (Number(input.steer) || 0) * Math.abs(forwardInput), -1, 1);
+    const rightStick = careful
+      ? { steer: (Number(input.steer) || 0) * Math.abs(forwardInput), strafe: 0 }
+      : splitRightStickX(forwardInput, input.steer, input.steerBlend ?? 1);
+    const turnInput = clamp((Number(input.turn) || 0) + rightStick.steer, -1, 1);
     filteredTurn = approach(filteredTurn, motionAllowed ? turnInput * motionSettings.maxTurnScale : 0, blend);
-    const activity = clamp(Math.hypot(filteredForward, filteredTurn), 0, 1);
+    filteredStrafe = approach(filteredStrafe,
+      motionAllowed ? clamp(rightStick.strafe, -1, 1) * motionSettings.maxForwardScale : 0, blend);
+    const activity = clamp(Math.hypot(filteredForward, filteredTurn, filteredStrafe), 0, 1);
     if (activity > 0.02) {
       phase = wrap01(
         phase + motionSettings.cadenceHz * (0.35 + 0.65 * activity) * delta,
@@ -646,6 +677,7 @@ export function createGaitLab(initialSettings = {}) {
     const directionScale = activity > 0.001 ? 1 / activity : 0;
     const forwardDirection = filteredForward * directionScale;
     const turnDirection = filteredTurn * directionScale;
+    const strafeDirection = filteredStrafe * directionScale;
     const amplitude = smooth01(clamp(activity / 0.22, 0, 1)) * (0.62 + 0.38 * activity);
     const commands = Array.from(
       { length: 4 },
@@ -658,8 +690,8 @@ export function createGaitLab(initialSettings = {}) {
     let reachableCount = 0;
     const legDetails = [];
     const bodyHeight = Math.min(Number(sourceState.ride_height_mm ?? sourceState.pose_z_mm), motionSettings.bodyHeightMm);
-    const careful = sourceState.mode === "CAREFUL";
-    const strides = gaitStrides(motionSettings, amplitude * forwardDirection, amplitude * turnDirection);
+    const strides = gaitStrides(motionSettings, amplitude * forwardDirection, amplitude * turnDirection,
+      amplitude * strafeDirection);
     const swingFraction = Math.min(CRAWL_MAX_SWING_FRACTION, 1 - motionSettings.dutyFactor);
     const crawlGap = CRAWL_SLOT - swingFraction;
     const shift = careful ? crawlBodyShift(motionSettings, phase, swingFraction, amplitude) : { x: 0, y: 0 };
@@ -723,6 +755,7 @@ export function createGaitLab(initialSettings = {}) {
       // motion the same way so the floor and path match the feet.
       bodyVelocity: {
         forwardMmPerSec: bodyVelocity.forwardMmPerSec * cycleSpeed,
+        rightMmPerSec: bodyVelocity.rightMmPerSec * cycleSpeed,
         yawDegPerSec: bodyVelocity.yawDegPerSec * cycleSpeed,
       },
       stanceCount,
@@ -770,6 +803,7 @@ export function createGaitLab(initialSettings = {}) {
       phase = 0;
       filteredForward = 0;
       filteredTurn = 0;
+      filteredStrafe = 0;
       motionSettings = { ...settings };
       transitionProgress = 1;
       transitionFromState = null;

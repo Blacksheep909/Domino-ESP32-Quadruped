@@ -298,6 +298,8 @@ import {
 import {
   DEFAULT_MOTION_SMOOTHING,
   MOTION_SMOOTHING_FIELDS,
+  motionSmoothingFieldIsPercent,
+  motionSmoothingValue,
   MOTION_SMOOTHING_PREVIEW_AXES,
   motionSmoothingDeadbandPreview,
   motionSmoothingDraft,
@@ -7676,9 +7678,9 @@ function renderMotionSmoothingUi() {
       input.type = "number";
       input.id = name.htmlFor;
       input.dataset.smoothingKey = key;
-      input.min = String(key === "tiltInputDeadband" ? min * 100 : min);
-      input.max = String(key === "tiltInputDeadband" ? max * 100 : max);
-      input.step = String(key === "tiltInputDeadband" ? step * 100 : step);
+      input.min = String(motionSmoothingFieldIsPercent(key) ? min * 100 : min);
+      input.max = String(motionSmoothingFieldIsPercent(key) ? max * 100 : max);
+      input.step = String(motionSmoothingFieldIsPercent(key) ? step * 100 : step);
       input.setAttribute("aria-label", `${label} in ${unit === "%" ? "percent" : unit}`);
       slider.type = "range";
       slider.dataset.smoothingKey = key;
@@ -7695,8 +7697,8 @@ function renderMotionSmoothingUi() {
   fields.querySelectorAll("input[data-smoothing-key]").forEach((input) => {
     input.disabled = !enabled || calibrationPendingAction === "save-smoothing";
     if (document.activeElement === input) return;
-    const value = motionSmoothingLocal[input.dataset.smoothingKey];
-    input.value = String(input.dataset.smoothingKey === "tiltInputDeadband"
+    const value = motionSmoothingValue(motionSmoothingLocal, input.dataset.smoothingKey);
+    input.value = String(motionSmoothingFieldIsPercent(input.dataset.smoothingKey)
       ? Math.round(value * 1000) / 10 : value);
   });
   const connection = liveConnectionEnvelope(liveConnectionState);
@@ -8491,14 +8493,14 @@ function acceptCalibrationAcknowledgement(message) {
         const matches = active.updatedAt === motionSmoothingVerify.updatedAt &&
           active.enabled === motionSmoothingVerify.enabled &&
           MOTION_SMOOTHING_FIELDS.every(({ key }) =>
-            Math.abs(active[key] - motionSmoothingVerify[key]) < 0.0001);
+            Math.abs(motionSmoothingValue(active, key) - motionSmoothingValue(motionSmoothingVerify, key)) < 0.0001);
         motionSmoothingStatus = matches
           ? "Robot readback matches the saved smoothing settings."
           : "Robot readback differs from the requested smoothing settings. Review before motion.";
         if (matches) {
           const draftUnchanged = motionSmoothingLocal.enabled === motionSmoothingVerify.enabled &&
             MOTION_SMOOTHING_FIELDS.every(({ key }) =>
-              Math.abs(motionSmoothingLocal[key] - motionSmoothingVerify[key]) < 0.0001);
+              Math.abs(motionSmoothingValue(motionSmoothingLocal, key) - motionSmoothingValue(motionSmoothingVerify, key)) < 0.0001);
           if (draftUnchanged) {
             motionSmoothingLocal = active;
             motionSmoothingDirty = false;
@@ -10204,18 +10206,18 @@ function acceptMotionSmoothingFieldInput(input) {
   const field = MOTION_SMOOTHING_FIELDS.find((item) => item.key === key);
   if (!field) return;
   const displayed = input.value.trim() === "" ? NaN : Number(input.value);
-  const value = key === "tiltInputDeadband" ? displayed / 100 : displayed;
+  const value = motionSmoothingFieldIsPercent(key) ? displayed / 100 : displayed;
   if (!Number.isFinite(value) || value < field.min || value > field.max) {
-    const previous = motionSmoothingLocal[key];
-    input.value = String(key === "tiltInputDeadband"
+    const previous = motionSmoothingValue(motionSmoothingLocal, key);
+    input.value = String(motionSmoothingFieldIsPercent(key)
       ? Math.round(previous * 1000) / 10 : previous);
-    const low = key === "tiltInputDeadband" ? field.min * 100 : field.min;
-    const high = key === "tiltInputDeadband" ? field.max * 100 : field.max;
+    const low = field.percent ? field.min * 100 : field.min;
+    const high = field.percent ? field.max * 100 : field.max;
     motionSmoothingStatus = `${field.label} must stay between ${low} and ${high} ${field.unit}. Previous value restored.`;
     renderMotionSmoothingUi();
     return;
   }
-  if (value === motionSmoothingLocal[key]) return;
+  if (value === motionSmoothingValue(motionSmoothingLocal, key)) return;
   motionSmoothingLocal = { ...motionSmoothingLocal, [key]: value };
   motionSmoothingDirty = true;
   localStorage.setItem(MOTION_SMOOTHING_STORAGE_KEY, JSON.stringify(motionSmoothingLocal));
@@ -12228,6 +12230,7 @@ function updateLiveTwinPose(delta) {
           forward: liveGaitState.previewForward,
           turn: liveGaitState.previewTurn,
           steer: liveGaitState.previewSteer,
+          steerBlend: motionSmoothingValue(motionSmoothingLocal, "rightStickSteerBlend"),
         })
       : source;
     liveExpectedServoAngles = smoothLiveServoAngles(
@@ -12688,8 +12691,10 @@ function updateGaitLabState(delta) {
   effectiveFirmwareState = gaitLab.update(delta, firmwareState, {
     forward: forwardInput,
     turn: turnInput,
-    // Right stick X (CH1) steers while walking, as in the firmware.
+    // Right stick X (CH1): sidestep at a standstill, steering as forward
+    // stick grows, by the steering setting (as in the firmware).
     steer: rollInput,
+    steerBlend: motionSmoothingValue(motionSmoothingLocal, "rightStickSteerBlend"),
   });
   const telemetry = gaitLab.getTelemetry();
   if (!telemetryDatasetDue) return;

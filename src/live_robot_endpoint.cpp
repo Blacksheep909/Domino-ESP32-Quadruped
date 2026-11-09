@@ -371,6 +371,10 @@ bool migrateStoredSmoothingV1(const StoredMotionSmoothingSettingsV1 &stored,
 bool loadMotionSmoothingSettings() {
   Preferences preferences;
   if (!preferences.begin(kSmoothingNamespace, true)) return false;
+  // Saved under its own key so the smoothing record's layout is unchanged.
+  if (!setRightStickSteerBlend(preferences.getFloat("steerBlend", kDefaultRightStickSteerBlend))) {
+    setRightStickSteerBlend(kDefaultRightStickSteerBlend);
+  }
   const size_t length = preferences.getBytesLength("active");
   StoredMotionSmoothingSettings stored{};
   if (length == sizeof(stored) &&
@@ -388,12 +392,13 @@ bool loadMotionSmoothingSettings() {
   return read && setMotionSmoothingSettings(migrated);
 }
 
-bool persistMotionSmoothingSettings(const MotionSmoothingSettings &settings) {
-  if (!validateMotionSmoothingSettings(settings)) return false;
+bool persistMotionSmoothingSettings(const MotionSmoothingSettings &settings, float steerBlend) {
+  if (!validateMotionSmoothingSettings(settings) || !validRightStickSteerBlend(steerBlend)) return false;
   const StoredMotionSmoothingSettings candidate = storedSmoothingFor(settings);
   Preferences writer;
   if (!writer.begin(kSmoothingNamespace, false)) return false;
-  const bool written = writer.putBytes("active", &candidate, sizeof(candidate)) == sizeof(candidate);
+  const bool written = writer.putBytes("active", &candidate, sizeof(candidate)) == sizeof(candidate) &&
+      writer.putFloat("steerBlend", steerBlend) == sizeof(float);
   writer.end();
   if (!written) return false;
 
@@ -401,10 +406,12 @@ bool persistMotionSmoothingSettings(const MotionSmoothingSettings &settings) {
   if (!verifier.begin(kSmoothingNamespace, true)) return false;
   StoredMotionSmoothingSettings verified{};
   const bool read = verifier.getBytes("active", &verified, sizeof(verified)) == sizeof(verified);
+  const float verifiedBlend = verifier.getFloat("steerBlend", NAN);
   verifier.end();
   return read && storedSmoothingValid(verified) &&
          memcmp(&candidate, &verified, sizeof(candidate)) == 0 &&
-         setMotionSmoothingSettings(settings);
+         verifiedBlend == steerBlend &&
+         setMotionSmoothingSettings(settings) && setRightStickSteerBlend(steerBlend);
 }
 
 StoredGaitProfile storedGaitFor(const GaitProfile &profile) {
@@ -652,6 +659,17 @@ void addCalibrationOrigin(JsonObject target) {
   if (calibrationLoadDetail[0]) target["detail"] = calibrationLoadDetail;
 }
 
+// Optional field: absent keeps the current value (older Studio does not send it).
+bool parseRightStickSteerBlend(JsonObjectConst source, float *steerBlend) {
+  if (!steerBlend) return false;
+  *steerBlend = rightStickSteerBlend();
+  if (source.isNull() || source["rightStickSteerBlend"].isNull()) return true;
+  const float value = source["rightStickSteerBlend"] | NAN;
+  if (!validRightStickSteerBlend(value)) return false;
+  *steerBlend = value;
+  return true;
+}
+
 bool parseMotionSmoothingSettings(JsonObjectConst source, MotionSmoothingSettings *settings) {
   if (!settings || source.isNull() ||
       (source["schemaVersion"] | 0) != DOMINO_MOTION_SMOOTHING_SCHEMA_VERSION ||
@@ -681,6 +699,7 @@ void addMotionSmoothingSettings(JsonObject target, const MotionSmoothingSettings
   target["yawRateDegPerSec"] = settings.yawRateDegPerSec;
   target["tiltInputDeadband"] = settings.tiltInputDeadband;
   target["enabled"] = settings.enabled;
+  target["rightStickSteerBlend"] = rightStickSteerBlend();
 }
 
 const char* stateName() {
@@ -1235,6 +1254,7 @@ void handleCalibration(JsonObjectConst command, JsonObjectConst payload,
   }
   if (!strcmp(action, "save-smoothing")) {
     MotionSmoothingSettings candidate{};
+    float steerBlend = rightStickSteerBlend();
     // Firmware <= 0.8.23 also required every servo output off, which a powered
     // robot under radio control never has, so smoothing could never be saved.
     // The ramp rates only shape how fast the pose follows the sticks, so a
@@ -1244,14 +1264,15 @@ void handleCalibration(JsonObjectConst command, JsonObjectConst payload,
           ? "End the calibration jog session before saving smoothing."
           : "Stop walking first: set the walk switch to stand, then save smoothing.");
     } else if (!parseMotionSmoothingSettings(payload["smoothing"].as<JsonObjectConst>(),
-                                             &candidate)) {
+                                             &candidate) ||
+               !parseRightStickSteerBlend(payload["smoothing"].as<JsonObjectConst>(), &steerBlend)) {
       acknowledgeCalibration(action, requestId, false, "Smoothing settings are outside safe bounds.");
     } else if (payload["baseUpdatedAt"].isNull() ||
                payload["baseUpdatedAt"].as<uint64_t>() != motionSmoothingSettings().updatedAt ||
                candidate.updatedAt <= motionSmoothingSettings().updatedAt) {
       acknowledgeCalibration(action, requestId, false,
                              "Robot smoothing changed. Read the active settings before saving.");
-    } else if (!persistMotionSmoothingSettings(candidate)) {
+    } else if (!persistMotionSmoothingSettings(candidate, steerBlend)) {
       acknowledgeCalibration(action, requestId, false, "NVS verification failed; previous smoothing remains active.");
     } else {
       acknowledgeCalibration(action, requestId, true, nullptr, true);

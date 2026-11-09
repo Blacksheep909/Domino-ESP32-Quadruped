@@ -5,6 +5,8 @@ import {
   DEFAULT_MOTION_SMOOTHING,
   motionSmoothingDeadbandPreview,
   motionSmoothingDraft,
+  motionSmoothingFieldIsPercent,
+  motionSmoothingValue,
   motionSmoothingRampPreview,
   validMotionSmoothingDraft,
   validMotionSmoothingSettings,
@@ -54,4 +56,16 @@ test("older browser drafts retain tuned rates and migrate with smoothing on", ()
   assert.equal(migrated.schemaVersion, 2);
   assert.equal(migrated.enabled, true);
   assert.equal(migrated.rollRateDegPerSec, 140);
+});
+
+test("right-stick steering is optional: older firmware settings stay valid", () => {
+  const fromOldFirmware = { ...DEFAULT_MOTION_SMOOTHING };
+  delete fromOldFirmware.rightStickSteerBlend;
+  assert.equal(validMotionSmoothingSettings(fromOldFirmware), true);
+  assert.equal(motionSmoothingDraft(fromOldFirmware).rightStickSteerBlend, 1);
+  assert.equal(motionSmoothingValue(fromOldFirmware, "rightStickSteerBlend"), 1);
+  assert.equal(validMotionSmoothingSettings({ ...DEFAULT_MOTION_SMOOTHING, rightStickSteerBlend: 0 }), true);
+  assert.equal(validMotionSmoothingSettings({ ...DEFAULT_MOTION_SMOOTHING, rightStickSteerBlend: 1.5 }), false);
+  assert.equal(motionSmoothingFieldIsPercent("rightStickSteerBlend"), true);
+  assert.equal(motionSmoothingFieldIsPercent("rollRateDegPerSec"), false);
 });

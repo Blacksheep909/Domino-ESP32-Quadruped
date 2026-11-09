@@ -87,6 +87,8 @@ export function sanitizeDiagnostics(diagnostics) {
     crsfPendingBytes: finite(diagnostics.crsfPendingBytes),
     crsfMaxPendingBytes: finite(diagnostics.crsfMaxPendingBytes),
     crsfLastPassBytes: finite(diagnostics.crsfLastPassBytes),
+    crsfBacklogDrops: finite(diagnostics.crsfBacklogDrops),
+    crsfBacklogDroppedBytes: finite(diagnostics.crsfBacklogDroppedBytes),
     manualOverrideActive: bool(diagnostics.manualOverrideActive),
     manualFrameAgeMs: finite(diagnostics.manualFrameAgeMs),
     faultReason: typeof diagnostics.faultReason === "string" ? diagnostics.faultReason.slice(0, 120) : null,
@@ -185,6 +187,14 @@ export function observeLiveDiagnosticPacket(state, packet, accepted, receivedAt 
   if (previous && current && current.crsfBudgetHits !== null &&
       current.crsfBudgetHits > (previous.crsfBudgetHits ?? 0)) {
     addEvent(state, "warning", `CRSF receive reached its work limit; ${current.crsfPendingBytes ?? "?"} bytes remain queued.`, receivedAt, "firmware");
+  }
+  if (previous && current && current.crsfBacklogDrops !== null &&
+      current.crsfBacklogDrops > (previous.crsfBacklogDrops ?? 0)) {
+    const dropped = current.crsfBacklogDroppedBytes !== null && previous.crsfBacklogDroppedBytes !== null
+      ? current.crsfBacklogDroppedBytes - previous.crsfBacklogDroppedBytes : null;
+    addEvent(state, "warning",
+      `Radio backlog after a firmware stall was dropped${dropped !== null ? ` (${dropped} bytes)` : ""}; the newest stick position applied at once.`,
+      receivedAt, "firmware");
   }
   conditionEvent(state, "imu-stale", current?.imuOnline === false && current?.imuSampleAgeMs !== null &&
     current?.imuQuarantined !== true,

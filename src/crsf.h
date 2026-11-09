@@ -11,6 +11,12 @@ constexpr size_t CRSF_RX_BUFFER_BYTES = 4096;
 // At 250 Hz the receiver sends about 6.5 kB/s of channel frames. This cap
 // bounds one pass while leaving enough headroom for a normal 40 Hz loop.
 constexpr size_t CRSF_RX_MAX_BYTES_PER_PASS = 384;
+// After a stall (for example a ~1 s I2C hang on the shared bus) the ring can
+// hold seconds of old frames. Working through them a pass at a time kept the
+// link "stale" long enough to trip failsafe. Only the newest frame matters, so
+// a backlog larger than one pass is cut to its newest bytes (several whole
+// frames, so the parser can resynchronise) and the newest frame applies at once.
+constexpr size_t CRSF_RX_KEEP_NEWEST_BYTES = 192;
 constexpr float CH_FILTER_ALPHA = 0.25f;
 constexpr uint8_t CRSF_ADDR_FC = 0xC8;
 constexpr uint8_t CRSF_TYPE_RC_CHANNELS = 0x16;
@@ -45,6 +51,9 @@ uint32_t crsfAcceptedFrameCount();
 uint32_t crsfCrcErrorCount();
 uint32_t crsfUartOverflowCount();
 uint32_t crsfReceiveBudgetHitCount();
+// Times an old backlog was dropped, and the total bytes dropped.
+uint32_t crsfBacklogDropCount();
+uint32_t crsfBacklogDroppedBytes();
 uint32_t crsfLastBudgetHitAtMs();
 uint16_t crsfPendingBytes();
 uint16_t crsfMaxPendingBytes();

@@ -456,20 +456,24 @@ bool validateCrsfBurstRecovery() {
   std::vector<uint8_t> damaged = makeRcFrame(channels);
   damaged.back() ^= 0x80;
   Serial2.inject(damaged);
+  processCrsfFrames(90);
+  const bool damagedRejected = crsfCrcErrorCount() == 1 && crsfAcceptedFrameCount() == 0 &&
+      ch_us[0] == 1500 && !crsfLinkAlive(90);
+  // A 64-frame burst (what queues up behind a ~1 s stall) is not worked through
+  // a pass at a time: the old frames are dropped in bulk and the newest stick
+  // position applies in the same pass. Old commands are never published.
+  int staleChannels[16];
+  std::fill(staleChannels, staleChannels + 16, 1500);
+  staleChannels[0] = 1100;
+  for (int index = 0; index < 60; ++index) Serial2.inject(makeRcFrame(staleChannels));
   channels[0] = 2000;
-  // A 64-frame burst must be drained over several bounded passes without
-  // publishing an old command from the middle of the queued data.
-  for (int index = 0; index < 64; ++index) Serial2.inject(makeRcFrame(channels));
+  for (int index = 0; index < 4; ++index) Serial2.inject(makeRcFrame(channels));
   processCrsfFrames(100);
-  const bool firstPassBounded = crsfLastPassBytes() <= CRSF_RX_MAX_BYTES_PER_PASS &&
-      crsfReceiveBudgetHitCount() == 1 && Serial2.available() > 0 &&
-      ch_us[0] == 1500;
-  for (int pass = 1; pass <= 8 && Serial2.available() > 0; ++pass) {
-    processCrsfFrames(100 + pass * 5);
-  }
-  const bool recovered = crsfCrcErrorCount() == 1 &&
-      crsfAcceptedFrameCount() == 64 && Serial2.available() == 0 &&
-      ch_us[0] > 1500 && crsfLinkAlive(140);
+  const bool firstPassBounded = crsfLastPassBytes() <= CRSF_RX_KEEP_NEWEST_BYTES &&
+      crsfBacklogDropCount() == 1 && crsfBacklogDroppedBytes() > 1000 &&
+      Serial2.available() == 0 && ch_us[0] > 1500 && crsfLinkAlive(100);
+  const bool recovered = damagedRejected && crsfCrcErrorCount() == 1 &&
+      crsfAcceptedFrameCount() > 0 && crsfAcceptedFrameCount() < 64 && crsfLinkAlive(140);
   // Fresh frames after the backlog should regain the current stick position.
   for (int index = 0; index < 8; ++index) Serial2.inject(makeRcFrame(channels));
   processCrsfFrames(145);

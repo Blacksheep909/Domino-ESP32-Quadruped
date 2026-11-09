@@ -47,7 +47,8 @@ uint32_t imuI2cErrorCount();
 bool imuQuarantined();
 // Times the IMU was re-initialised after a pause.
 uint32_t imuReinitCount();
-// True when the IMU runs on its own I2C bus (DOMINO_IMU_SDA_PIN/SCL_PIN).
+// True when the IMU was found on its own I2C bus at boot (GPIO 32/33 by
+// default) and is read by a background task instead of the control loop.
 bool imuOwnBus();
 uint8_t imuAddress();
 uint32_t imuLastErrorAtMs();

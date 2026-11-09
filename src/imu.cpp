@@ -6,24 +6,36 @@
 #include "loop_diagnostics.h"
 #endif
 
-// IMU bus wiring.
+// IMU bus wiring, chosen at boot.
 //
-// Default: the MPU6050 shares the PCA9685 servo bus (GPIO 21/22). Servo current
-// spikes on the shared wiring can interrupt an IMU read and leave the IMU holding
-// SDA low, which stalls the servo driver as well.
+// Recommended: the MPU6050 on its own bus, SDA on GPIO 32 and SCL on GPIO 33
+// (3.3 V and GND from the ESP32). At boot the firmware looks for it there
+// first. If it answers, the IMU runs on the ESP32's second I2C controller
+// (Wire1) at 400 kHz and is read by a background task on core 0, so even a
+// hung IMU read (the ESP32 I2C driver can block for ~1 s) never stalls the
+// control loop, the radio or the servo bus.
 //
-// Recommended: give the IMU its own bus by moving its SDA/SCL wires to two free
-// pins and building with -DDOMINO_IMU_SDA_PIN=32 -DDOMINO_IMU_SCL_PIN=33. The IMU
-// then runs on the ESP32's second I2C controller (Wire1) at 400 kHz and is read
-// by a background task on core 0, so an IMU fault can never block the servo bus
-// or the control loop.
+// Otherwise: the MPU6050 on the shared PCA9685 servo bus (GPIO 21/22). Servo
+// current spikes on the shared wiring can interrupt an IMU read and leave the
+// IMU holding SDA low, which stalls the servo driver as well.
 //
-// Optional: -DDOMINO_IMU_POWER_PIN=<gpio> feeds the MPU6050's VCC from a GPIO
-// (it draws ~4 mA) so a wedged IMU can be power-cycled during recovery.
-#if !defined(DOMINO_SIL) && defined(DOMINO_IMU_SDA_PIN) && defined(DOMINO_IMU_SCL_PIN)
-#define DOMINO_IMU_OWN_BUS 1
+// Build options: -DDOMINO_IMU_SDA_PIN / -DDOMINO_IMU_SCL_PIN move the own-bus
+// pins; -DDOMINO_IMU_OWN_BUS_PROBE=0 skips the own-bus probe (shared bus only).
+// -DDOMINO_IMU_POWER_PIN=<gpio> feeds the MPU6050's VCC from a GPIO (it draws
+// ~4 mA) so a wedged IMU can be power-cycled during recovery.
+#ifndef DOMINO_IMU_SDA_PIN
+#define DOMINO_IMU_SDA_PIN 32
+#endif
+#ifndef DOMINO_IMU_SCL_PIN
+#define DOMINO_IMU_SCL_PIN 33
+#endif
+#ifndef DOMINO_IMU_OWN_BUS_PROBE
+#define DOMINO_IMU_OWN_BUS_PROBE 1
+#endif
+#if !defined(DOMINO_SIL) && DOMINO_IMU_OWN_BUS_PROBE
+#define DOMINO_IMU_OWN_BUS_SUPPORTED 1
 #else
-#define DOMINO_IMU_OWN_BUS 0
+#define DOMINO_IMU_OWN_BUS_SUPPORTED 0
 #endif
 #ifndef DOMINO_IMU_I2C_HZ
 #define DOMINO_IMU_I2C_HZ 400000
@@ -44,9 +56,14 @@ constexpr uint32_t kImuSampleIntervalMs = 10;
 // it (never "off until reboot": the learned policy needs the IMU). The pause
 // doubles on each failed attempt up to kImuCooldownMaxMs and resets after a
 // long clean run.
-constexpr uint32_t kImuQuarantineErrors = DOMINO_IMU_OWN_BUS ? 5 : 25;
-constexpr uint32_t kImuQuarantineWindowMs = DOMINO_IMU_OWN_BUS ? 1000 : 10000;
-constexpr uint32_t kImuCooldownBaseMs = DOMINO_IMU_OWN_BUS ? 300 : 3000;
+// On its own bus an IMU fault costs the control loop nothing, so it is paused
+// and recovered quickly; on the shared bus each failed read can stall the
+// servos, so it backs off for longer.
+bool ownBus = false;  // decided once in imuInit()
+uint32_t quarantineErrors() { return ownBus ? 5 : 25; }
+uint32_t quarantineWindowMs() { return ownBus ? 1000 : 10000; }
+uint32_t cooldownBaseMs() { return ownBus ? 300 : 3000; }
+uint32_t retryDelayMs() { return ownBus ? 20 : 100; }
 constexpr uint32_t kImuCooldownMaxMs = 30000;
 constexpr uint32_t kImuCleanSamplesToResetCooldown = 1000;  // ~10 s at 100 Hz
 #ifdef DOMINO_IMU_POWER_PIN
@@ -60,7 +77,6 @@ constexpr float kImuFilterAlpha = 0.1f;                // Low-pass filter coeffi
 constexpr float kYawStationaryThresholdDps = 0.5f;
 constexpr float kYawDeadbandDps = 0.08f;
 constexpr float kYawBiasAdaptation = 0.002f;
-constexpr uint32_t kImuRetryDelayMs = DOMINO_IMU_OWN_BUS ? 20 : 100;
 
 float wrapDegrees(float degrees) {
   while (degrees >= 180.0f) degrees -= 360.0f;
@@ -69,11 +85,10 @@ float wrapDegrees(float degrees) {
 }
 
 TwoWire &imuBus() {
-#if DOMINO_IMU_OWN_BUS
-  return Wire1;
-#else
-  return Wire;
+#if DOMINO_IMU_OWN_BUS_SUPPORTED
+  if (ownBus) return Wire1;
 #endif
+  return Wire;
 }
 }  // namespace
 
@@ -89,7 +104,7 @@ uint32_t windowErrorCount = 0;
 bool fitted = false;  // found at boot; an absent IMU is never retried
 volatile bool quarantined = false;
 uint32_t resumeAtMs = 0;
-uint32_t cooldownMs = kImuCooldownBaseMs;
+uint32_t cooldownMs = 3000;
 uint32_t cleanSamples = 0;
 uint32_t reinitCount = 0;
 uint32_t lastErrorAtMs = 0;
@@ -103,9 +118,9 @@ uint32_t maxRequestUs = 0;
 bool powerOff = false;
 uint32_t powerOnAtMs = 0;
 #endif
-#if DOMINO_IMU_OWN_BUS
-// The task samples into taskState; the control loop copies the newest sample
-// into gImuState under this lock, so it never waits on the IMU bus.
+#if DOMINO_IMU_OWN_BUS_SUPPORTED
+// Own bus: the task samples into taskState; the control loop copies the newest
+// sample into gImuState under this lock, so it never waits on the IMU bus.
 ImuState taskState{};
 ImuState latestState{};
 volatile bool latestFresh = false;
@@ -154,11 +169,15 @@ bool configureDevice(uint8_t address) {
 
 // Free the IMU's bus if a transaction left SDA held low.
 void freeImuBus() {
-#if DOMINO_IMU_OWN_BUS
-  if (!i2cLinesIdle(DOMINO_IMU_SDA_PIN, DOMINO_IMU_SCL_PIN)) {
-    i2cRecoverBus(Wire1, DOMINO_IMU_SDA_PIN, DOMINO_IMU_SCL_PIN, DOMINO_IMU_I2C_HZ, 5);
+#if DOMINO_IMU_OWN_BUS_SUPPORTED
+  if (ownBus) {
+    if (!i2cLinesIdle(DOMINO_IMU_SDA_PIN, DOMINO_IMU_SCL_PIN)) {
+      i2cRecoverBus(Wire1, DOMINO_IMU_SDA_PIN, DOMINO_IMU_SCL_PIN, DOMINO_IMU_I2C_HZ, 5);
+    }
+    return;
   }
-#elif !defined(DOMINO_SIL)
+#endif
+#ifndef DOMINO_SIL
   i2cBusEnsureIdle();
 #endif
 }
@@ -170,14 +189,14 @@ void noteReadError(ImuState &st, uint32_t nowMs) {
   ++consecutiveErrorCount;
   cleanSamples = 0;
   lastErrorAtMs = nowMs;
-  nextReadAttemptMs = nowMs + kImuRetryDelayMs;
-  if (windowErrorCount == 0 || nowMs - windowStartedMs > kImuQuarantineWindowMs) {
+  nextReadAttemptMs = nowMs + retryDelayMs();
+  if (windowErrorCount == 0 || nowMs - windowStartedMs > quarantineWindowMs()) {
     windowStartedMs = nowMs;
     windowErrorCount = 0;
   }
   ++windowErrorCount;
   freeImuBus();
-  if (windowErrorCount >= kImuQuarantineErrors && !quarantined) {
+  if (windowErrorCount >= quarantineErrors() && !quarantined) {
     quarantined = true;
     st.online = false;
     resumeAtMs = nowMs + cooldownMs;
@@ -250,8 +269,8 @@ bool readSampleInto(ImuState &st) {
   bus.write(0x3B);  // ACCEL_XOUT_H
   if (bus.endTransmission(false) != 0) {
     noteReadError(st, millis());
-#if !defined(DOMINO_SIL) && !DOMINO_IMU_OWN_BUS
-    loopBlackboxRecord(BlackboxEventKind::ImuError, 1,
+#ifndef DOMINO_SIL
+    if (!ownBus) loopBlackboxRecord(BlackboxEventKind::ImuError, 1,
                        micros() - startedUs, bus.getTimeOut());
 #endif
     return false;
@@ -270,8 +289,8 @@ bool readSampleInto(ImuState &st) {
     // Drain whatever arrived so the next burst starts aligned.
     while (bus.available()) (void)bus.read();
     noteReadError(st, millis());
-#if !defined(DOMINO_SIL) && !DOMINO_IMU_OWN_BUS
-    loopBlackboxRecord(BlackboxEventKind::ImuError, 2,
+#ifndef DOMINO_SIL
+    if (!ownBus) loopBlackboxRecord(BlackboxEventKind::ImuError, 2,
                        micros() - startedUs, readCount);
 #endif
     return false;
@@ -294,7 +313,7 @@ bool readSampleInto(ImuState &st) {
   lastValidSampleMs = millis();
   consecutiveErrorCount = 0;
   nextReadAttemptMs = 0;
-  if (++cleanSamples >= kImuCleanSamplesToResetCooldown) cooldownMs = kImuCooldownBaseMs;
+  if (++cleanSamples >= kImuCleanSamplesToResetCooldown) cooldownMs = cooldownBaseMs();
 
   st.ax_g = static_cast<float>(st.ax_raw) * kMpuAccelScaleInv;
   st.ay_g = static_cast<float>(st.ay_raw) * kMpuAccelScaleInv;
@@ -348,7 +367,7 @@ bool readSampleInto(ImuState &st) {
   return true;
 }
 
-#if DOMINO_IMU_OWN_BUS
+#if DOMINO_IMU_OWN_BUS_SUPPORTED
 void imuTask(void *) {
   for (;;) {
     if (readSampleInto(taskState)) {
@@ -372,7 +391,7 @@ void imuTask(void *) {
 uint32_t imuI2cErrorCount() { return i2cErrorCount; }
 bool imuQuarantined() { return quarantined; }
 uint32_t imuReinitCount() { return reinitCount; }
-bool imuOwnBus() { return DOMINO_IMU_OWN_BUS; }
+bool imuOwnBus() { return ownBus; }
 uint8_t imuAddress() { return mpu6050Addr; }
 uint32_t imuLastErrorAtMs() { return lastErrorAtMs; }
 uint32_t imuConsecutiveErrorCount() { return consecutiveErrorCount; }
@@ -389,6 +408,36 @@ bool imuSampleFresh(uint32_t now) {
       imuSampleAgeMs(now) <= IMU_SAMPLE_FRESH_MS;
 }
 
+#if DOMINO_IMU_OWN_BUS_SUPPORTED
+namespace {
+// True when an MPU6050 answers on the own-bus pins (GPIO 32/33 by default).
+// Leaves Wire1 running and ownBus set if so; otherwise releases the pins.
+bool probeOwnBus() {
+  // Unwired pins float. With the pull-ups on, a real I2C bus idles high; a line
+  // held low means something else is connected, so leave the pins alone.
+  pinMode(DOMINO_IMU_SDA_PIN, INPUT_PULLUP);
+  pinMode(DOMINO_IMU_SCL_PIN, INPUT_PULLUP);
+  delayMicroseconds(50);
+  if (!i2cLinesIdle(DOMINO_IMU_SDA_PIN, DOMINO_IMU_SCL_PIN)) {
+    pinMode(DOMINO_IMU_SDA_PIN, INPUT);
+    pinMode(DOMINO_IMU_SCL_PIN, INPUT);
+    return false;
+  }
+  Wire1.begin(DOMINO_IMU_SDA_PIN, DOMINO_IMU_SCL_PIN, DOMINO_IMU_I2C_HZ);
+  Wire1.setTimeOut(5);
+  ownBus = true;
+  for (uint8_t candidate : {kMpu6050AddrPrimary, kMpu6050AddrSecondary}) {
+    if (identifyDevice(candidate)) return true;
+  }
+  ownBus = false;
+  Wire1.end();
+  pinMode(DOMINO_IMU_SDA_PIN, INPUT);
+  pinMode(DOMINO_IMU_SCL_PIN, INPUT);
+  return false;
+}
+}  // namespace
+#endif
+
 void imuInit() {
   gImuState = ImuState{};
   i2cErrorCount = 0;
@@ -400,7 +449,6 @@ void imuInit() {
   windowStartedMs = 0;
   windowErrorCount = 0;
   quarantined = false;
-  cooldownMs = kImuCooldownBaseMs;
   cleanSamples = 0;
   reinitCount = 0;
   lastRequestBytes = 0;
@@ -409,16 +457,18 @@ void imuInit() {
   lastFailedRequestUs = 0;
   maxRequestUs = 0;
   mpu6050Addr = kMpu6050AddrPrimary;
+  ownBus = false;
 
 #ifdef DOMINO_IMU_POWER_PIN
   pinMode(DOMINO_IMU_POWER_PIN, OUTPUT);
   digitalWrite(DOMINO_IMU_POWER_PIN, HIGH);
   delay(kImuPowerOnSettleMs);
 #endif
-#if DOMINO_IMU_OWN_BUS
-  Wire1.begin(DOMINO_IMU_SDA_PIN, DOMINO_IMU_SCL_PIN, DOMINO_IMU_I2C_HZ);
-  Wire1.setTimeOut(5);
+#if DOMINO_IMU_OWN_BUS_SUPPORTED
+  // Prefer the IMU's own bus; fall back to the shared servo bus.
+  (void)probeOwnBus();
 #endif
+  cooldownMs = cooldownBaseMs();
   freeImuBus();
 
   bool configured = false;
@@ -431,21 +481,22 @@ void imuInit() {
     break;
   }
   gImuState.online = configured;
+  const char *busName = ownBus ? "its own I2C bus (GPIO 32/33 by default)" : "the shared servo I2C bus";
   if (configured) {
-    Serial.printf("MPU6050 detected and configured at 0x%02X on %s.\n", mpu6050Addr,
-                  DOMINO_IMU_OWN_BUS ? "its own I2C bus" : "the shared servo I2C bus");
+    Serial.printf("MPU6050 detected and configured at 0x%02X on %s.\n", mpu6050Addr, busName);
   } else if (fitted) {
     // Found but not accepting its configuration: let the recovery path retry.
-    Serial.printf("MPU6050 at 0x%02X did not accept its configuration; retrying.\n", mpu6050Addr);
+    Serial.printf("MPU6050 at 0x%02X on %s did not accept its configuration; retrying.\n",
+                  mpu6050Addr, busName);
     quarantined = true;
     resumeAtMs = millis() + cooldownMs;
   } else {
-    Serial.println("MPU6050 not found at 0x68 or 0x69; IMU disabled.");
+    Serial.println("MPU6050 not found on its own bus or the shared bus; IMU disabled.");
   }
   // Probing an absent or misbehaving device must not leave the bus stuck.
   freeImuBus();
-#if DOMINO_IMU_OWN_BUS
-  if (fitted) {
+#if DOMINO_IMU_OWN_BUS_SUPPORTED
+  if (ownBus && fitted) {
     taskState = gImuState;
     latestState = gImuState;
     xTaskCreatePinnedToCore(imuTask, "imu", 4096, nullptr, 3, nullptr, 0);
@@ -454,15 +505,16 @@ void imuInit() {
 }
 
 bool imuReadSample() {
-#if DOMINO_IMU_OWN_BUS
-  if (!latestFresh) return false;
-  portENTER_CRITICAL(&stateMux);
-  const bool hadSample = latestState.has_sample;
-  gImuState = latestState;
-  latestFresh = false;
-  portEXIT_CRITICAL(&stateMux);
-  return hadSample && gImuState.online;
-#else
-  return readSampleInto(gImuState);
+#if DOMINO_IMU_OWN_BUS_SUPPORTED
+  if (ownBus) {
+    if (!latestFresh) return false;
+    portENTER_CRITICAL(&stateMux);
+    const bool hadSample = latestState.has_sample;
+    gImuState = latestState;
+    latestFresh = false;
+    portEXIT_CRITICAL(&stateMux);
+    return hadSample && gImuState.online;
+  }
 #endif
+  return readSampleInto(gImuState);
 }

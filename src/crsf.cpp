@@ -18,6 +18,8 @@ uint32_t crcErrorCount = 0;
 std::atomic<uint32_t> uartOverflowCount{0};
 uint32_t receiveBudgetHitCount = 0;
 uint32_t lastBudgetHitAtMs = 0;
+uint32_t backlogDropCount = 0;
+uint32_t backlogDroppedBytes = 0;
 uint16_t pendingBytes = 0;
 uint16_t maxPendingBytes = 0;
 uint16_t lastPassBytes = 0;
@@ -119,6 +121,8 @@ void initCrsfState() {
   uartOverflowCount.store(0, std::memory_order_relaxed);
   receiveBudgetHitCount = 0;
   lastBudgetHitAtMs = 0;
+  backlogDropCount = 0;
+  backlogDroppedBytes = 0;
   pendingBytes = 0;
   maxPendingBytes = 0;
   lastPassBytes = 0;
@@ -145,14 +149,38 @@ void processCrsfFrames(unsigned long now) {
   uint8_t payload[CRSF_MAX_LEN] = {0};
   uint8_t plen = 0;
   bool channelFrameThisPass = false;
+  const int queuedAtStart = Serial2.available();
+  if (queuedAtStart > maxPendingBytes) {
+    maxPendingBytes = static_cast<uint16_t>(queuedAtStart < 65535 ? queuedAtStart : 65535);
+  }
+  if (queuedAtStart > static_cast<int>(CRSF_RX_MAX_BYTES_PER_PASS)) {
+    // Drop the stale backlog in bulk and keep only the newest bytes. Any frame
+    // in the dropped part is older than the ones kept, so nothing current is
+    // lost; the parser restarts at the next frame boundary.
+    size_t toDrop = static_cast<size_t>(queuedAtStart) - CRSF_RX_KEEP_NEWEST_BYTES;
+    size_t dropped = 0;
+#ifndef DOMINO_SIL
+    uint8_t scratch[128];
+    while (dropped < toDrop) {
+      const size_t chunk = toDrop - dropped < sizeof(scratch) ? toDrop - dropped : sizeof(scratch);
+      const size_t got = Serial2.read(scratch, chunk);
+      if (got == 0) break;
+      dropped += got;
+    }
+#else
+    while (dropped < toDrop && Serial2.read() >= 0) ++dropped;
+#endif
+    ++backlogDropCount;
+    backlogDroppedBytes += static_cast<uint32_t>(dropped);
+    frameState = FrameState::WaitAddress;
+    pendingChannelFrames = 0;
+    catchingUp = false;
+  }
   const int availableAtStart = Serial2.available();
   const size_t passBytes = availableAtStart > 0
       ? (static_cast<size_t>(availableAtStart) < CRSF_RX_MAX_BYTES_PER_PASS
           ? static_cast<size_t>(availableAtStart) : CRSF_RX_MAX_BYTES_PER_PASS) : 0;
   lastPassBytes = 0;
-  if (availableAtStart > maxPendingBytes) {
-    maxPendingBytes = static_cast<uint16_t>(availableAtStart < 65535 ? availableAtStart : 65535);
-  }
 
   for (size_t index = 0; index < passBytes; ++index) {
     const int nextByte = Serial2.read();
@@ -240,6 +268,8 @@ uint32_t crsfUartOverflowCount() {
   return uartOverflowCount.load(std::memory_order_relaxed);
 }
 uint32_t crsfReceiveBudgetHitCount() { return receiveBudgetHitCount; }
+uint32_t crsfBacklogDropCount() { return backlogDropCount; }
+uint32_t crsfBacklogDroppedBytes() { return backlogDroppedBytes; }
 uint32_t crsfLastBudgetHitAtMs() { return lastBudgetHitAtMs; }
 uint16_t crsfPendingBytes() { return pendingBytes; }
 uint16_t crsfMaxPendingBytes() { return maxPendingBytes; }

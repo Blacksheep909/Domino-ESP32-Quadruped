@@ -9190,7 +9190,8 @@ function updateLiveDiagnosticsUi(snapshot, liveSnapshot, controllerSnapshot) {
   document.querySelector("#live-diagnostics-imu-errors").textContent = Number.isFinite(trace?.imuI2cErrors)
     ? `${trace.imuI2cErrors}${Number.isFinite(trace?.i2cBusRecoveries) && trace.i2cBusRecoveries > 0
       ? ` / ${trace.i2cBusRecoveries} BUS RESET${trace.i2cBusRecoveries === 1 ? "" : "S"}` : ""}${Number.isFinite(trace?.imuReinits) && trace.imuReinits > 0
-      ? ` / ${trace.imuReinits} RE-INIT${trace.imuReinits === 1 ? "" : "S"}` : ""}${trace?.imuQuarantined ? " / IMU PAUSED" : ""}`
+      ? ` / ${trace.imuReinits} RE-INIT${trace.imuReinits === 1 ? "" : "S"}` : ""}${trace?.imuQuarantined ? " / IMU PAUSED" : ""}${
+      typeof trace?.imuOwnBus === "boolean" ? (trace.imuOwnBus ? " / OWN BUS" : " / SHARED BUS") : ""}`
     : "--";
   document.querySelector("#live-diagnostics-imu-age").textContent =
     `${Number.isFinite(trace?.imuSampleAgeMs) ? trace.imuSampleAgeMs : "--"} ms / ${Number.isFinite(trace?.imuConsecutiveErrors) ? trace.imuConsecutiveErrors : "--"}`;
@@ -9199,7 +9200,10 @@ function updateLiveDiagnosticsUi(snapshot, liveSnapshot, controllerSnapshot) {
   document.querySelector("#live-diagnostics-crsf-backlog").textContent =
     `${Number.isFinite(trace?.crsfLastPassBytes) ? trace.crsfLastPassBytes : "--"} / ${Number.isFinite(trace?.crsfPendingBytes) ? trace.crsfPendingBytes : "--"} B`;
   document.querySelector("#live-diagnostics-crsf-budget").textContent =
-    Number.isFinite(trace?.crsfBudgetHits) ? String(trace.crsfBudgetHits) : "--";
+    Number.isFinite(trace?.crsfBudgetHits)
+      ? `${trace.crsfBudgetHits}${Number.isFinite(trace?.crsfBacklogDrops) && trace.crsfBacklogDrops > 0
+        ? ` / ${trace.crsfBacklogDrops} BACKLOG DROP${trace.crsfBacklogDrops === 1 ? "" : "S"}` : ""}`
+      : "--";
   document.querySelector("#live-diagnostics-usb-skips").textContent = Number.isFinite(trace?.telemetryTxSkipped)
     ? String(trace.telemetryTxSkipped) : "--";
   renderDiagnosticEvents(snapshot);

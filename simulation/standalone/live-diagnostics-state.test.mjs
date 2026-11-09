@@ -114,6 +114,20 @@ test("retains receive backlog and IMU freshness evidence after recovery", () => 
   assert.ok(state.events.some((event) => event.message.includes("IMU sample became stale")));
 });
 
+test("a dropped radio backlog and the IMU's own bus are reported", () => {
+  const state = createLiveDiagnosticsState();
+  observeLiveDiagnosticPacket(state, packet(1, {
+    crsfBacklogDrops: 0, crsfBacklogDroppedBytes: 0, imuOwnBus: true,
+  }), true, 1_000);
+  observeLiveDiagnosticPacket(state, packet(2, {
+    crsfBacklogDrops: 1, crsfBacklogDroppedBytes: 3904, imuOwnBus: true,
+  }), true, 1_100);
+  assert.equal(state.telemetry.imuOwnBus, true);
+  assert.equal(state.telemetry.crsfBacklogDrops, 1);
+  assert.ok(state.events.some((event) =>
+    event.message.includes("Radio backlog after a firmware stall was dropped (3904 bytes)")));
+});
+
 test("does not log USB residual voltage as low battery while disarmed", () => {
   const state = createLiveDiagnosticsState();
   const usbPacket = packet(1, { robotState: "disarmed" });

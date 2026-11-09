@@ -949,6 +949,8 @@ void sendTelemetry(uint32_t now) {
   diagnostics["crsfPendingBytes"] = crsfPendingBytes();
   diagnostics["crsfMaxPendingBytes"] = crsfMaxPendingBytes();
   diagnostics["crsfLastPassBytes"] = crsfLastPassBytes();
+  diagnostics["crsfBacklogDrops"] = crsfBacklogDropCount();
+  diagnostics["crsfBacklogDroppedBytes"] = crsfBacklogDroppedBytes();
   diagnostics["esp32LoopHz"] = measuredLoopRateHz;
   diagnostics["controllerHz"] = crsfPacketRateHz();
   if (crsfHasReceivedFrame() && now >= lastCrsfMs) {

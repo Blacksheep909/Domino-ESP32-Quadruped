@@ -16,7 +16,9 @@ import {
 import {
   getUpdateState,
   installDownloadedUpdate,
+  noteAppQuitting,
   requestUpdateCheck,
+  runInstallerVisibly,
   setupAutoUpdater,
   stopAutoUpdater,
 } from "./updater.mjs";
@@ -72,6 +74,7 @@ registerProjectFileHandlers();
 ipcMain.handle("domino:update:get-state", () => getUpdateState());
 ipcMain.handle("domino:update:check", () => requestUpdateCheck("manual"));
 ipcMain.handle("domino:update:install", () => installDownloadedUpdate());
+ipcMain.handle("domino:update:run-installer", () => runInstallerVisibly());
 ipcMain.handle("domino:window:is-fullscreen", () => mainWindow?.isFullScreen() ?? false);
 ipcMain.handle("domino:window:toggle-fullscreen", () => {
   if (!mainWindow) return false;
@@ -245,12 +248,16 @@ else {
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
   });
-  app.whenReady().then(createApplication).then(() => {
+  app.whenReady().then(() => {
+    // Start the updater before the window and local services. It used to wait
+    // for the page to finish loading, so a slow or stuck load meant no update
+    // check at all. The page reads the current state once it is ready.
     setupAutoUpdater({
       onStateChange: (updateState) => {
         if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("domino:update:state", updateState);
       },
     });
+    return createApplication();
   }).catch(async (error) => {
     console.error(error);
     await dialog.showMessageBox({
@@ -264,6 +271,7 @@ else {
 }
 
 app.on("before-quit", () => {
+  noteAppQuitting();
   stopAutoUpdater();
   stopChildren();
 });

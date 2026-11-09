@@ -22,6 +22,7 @@ const desktopUpdates = Object.freeze({
   getState: () => ipcRenderer.invoke("domino:update:get-state"),
   check: () => ipcRenderer.invoke("domino:update:check"),
   install: () => ipcRenderer.invoke("domino:update:install"),
+  runInstaller: () => ipcRenderer.invoke("domino:update:run-installer"),
   onState: (callback) => {
     const listener = (_event, state) => callback(state);
     ipcRenderer.on("domino:update:state", listener);

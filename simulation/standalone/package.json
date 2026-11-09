@@ -49,6 +49,7 @@
       "desktop/preload.mjs",
       "desktop/project-files.mjs",
       "desktop/updater.mjs",
+      "desktop/update-attempt.mjs",
       "desktop/assets/**/*",
       "server.mjs",
       "boxer-hid.mjs",
@@ -87,7 +88,9 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Domino Quadruped Studio v${version}"
+      "shortcutName": "Domino Quadruped Studio",
+      "uninstallDisplayName": "Domino Quadruped Studio",
+      "include": "desktop/installer.nsh"
     },
     "publish": [
       {

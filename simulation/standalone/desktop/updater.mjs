@@ -1,6 +1,16 @@
+import { spawn } from "node:child_process";
+import { appendFileSync, existsSync, mkdirSync, renameSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
+import path from "node:path";
 
-import { app } from "electron";
+import { app, shell } from "electron";
+
+import {
+  clearUpdateAttempt,
+  readUpdateAttempt,
+  updateAttemptOutcome,
+  writeUpdateAttempt,
+} from "./update-attempt.mjs";
 
 const require = createRequire(import.meta.url);
 
@@ -8,16 +18,20 @@ const APP_NAME = "Domino Quadruped Studio";
 // Check as soon as the window is up, so every launch shows whether an update exists.
 const INITIAL_CHECK_DELAY_MS = 3_000;
 const PERIODIC_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1_000;
+const RELEASES_URL = "https://github.com/Blacksheep909/Domino-ESP32-Quadruped/releases/tag/v";
+const LOG_LIMIT_BYTES = 512 * 1024;
 
 let checkTimer = null;
 let periodicCheckTimer = null;
 let checkInFlight = false;
 let updater = null;
 let notifyState = () => {};
+let downloadedInstallerPath = "";
 
 // What Studio shows in its update banner. `status` is one of:
 // unsupported (development build, or updates disabled), idle, checking,
-// downloading, ready, up-to-date, error.
+// downloading, ready, manual (macOS download), install-failed (the last
+// install did not take; offer the visible installer), up-to-date, error.
 let state = {
   status: "idle",
   currentVersion: app.getVersion(),
@@ -26,9 +40,29 @@ let state = {
   message: "",
 };
 
+function logFilePath() {
+  try {
+    return path.join(app.getPath("userData"), "logs", "updater.log");
+  } catch {
+    return "";
+  }
+}
+
+// Updater messages go to <userData>/logs/updater.log as well as the console,
+// so a failed check or install can be diagnosed after the fact.
 function log(level, ...args) {
   const logger = console[level] || console.log;
   logger(`[${APP_NAME} updater]`, ...args);
+  const file = logFilePath();
+  if (!file) return;
+  try {
+    mkdirSync(path.dirname(file), { recursive: true });
+    if (existsSync(file) && statSync(file).size > LOG_LIMIT_BYTES) renameSync(file, `${file}.old`);
+    const text = args.map((value) => (value instanceof Error ? value.message : String(value))).join(" ");
+    appendFileSync(file, `${new Date().toISOString()} ${level.toUpperCase()} ${text}\n`, "utf8");
+  } catch {
+    // Logging must never stop Studio or the updater.
+  }
 }
 
 function setState(patch) {
@@ -76,6 +110,9 @@ function errorText(error) {
 
 async function checkForUpdates(activeUpdater, reason = "scheduled") {
   if (checkInFlight || ["ready", "downloading", "manual"].includes(state.status)) return;
+  // After a failed install keep that message up; only an explicit check
+  // (TRY AGAIN / focus refresh from the banner) replaces it.
+  if (state.status === "install-failed" && reason !== "manual") return;
   checkInFlight = true;
   setState({ status: "checking", message: "" });
   try {
@@ -104,10 +141,55 @@ export function requestUpdateCheck(reason = "manual") {
 
 // Closes Studio, installs the downloaded version silently in place, and opens
 // the new version. Settings and runtime data are kept.
+function recordInstallAttempt(how) {
+  try {
+    writeUpdateAttempt(app.getPath("userData"), {
+      version: state.version,
+      fromVersion: app.getVersion(),
+      installerPath: downloadedInstallerPath,
+      how,
+      attemptedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    log("warn", "Could not record the update attempt:", error);
+  }
+}
+
 export function installDownloadedUpdate() {
   if (state.status !== "ready" || !updater) return false;
-  log("info", `Installing ${state.version} and restarting.`);
+  log("info", `Installing ${state.version} and restarting (installer ${downloadedInstallerPath || "unknown"}).`);
+  recordInstallAttempt("restart");
   setImmediate(() => updater.quitAndInstall(true, true));
+  return true;
+}
+
+// Called as Studio quits. A downloaded update is installed silently on quit
+// (autoInstallOnAppQuit); remember it so the next launch can check it worked.
+export function noteAppQuitting() {
+  if (state.status === "ready" && !manualInstall && updater) {
+    log("info", `Studio is quitting; installing ${state.version} silently.`);
+    recordInstallAttempt("quit");
+  }
+}
+
+// After a silent install failed: run the installer with its window showing,
+// so it either completes or shows why it cannot. Falls back to the release page.
+export function runInstallerVisibly() {
+  if (state.status !== "install-failed") return false;
+  const installer = state.installerPath;
+  if (process.platform === "win32" && installer && existsSync(installer)) {
+    log("info", `Running the ${state.version} installer visibly: ${installer}`);
+    downloadedInstallerPath = installer;
+    recordInstallAttempt("visible-installer");
+    const child = spawn(installer, [], { detached: true, stdio: "ignore", windowsHide: false });
+    child.unref();
+    setTimeout(() => app.quit(), 500);
+    return true;
+  }
+  const url = state.version ? `${RELEASES_URL}${state.version}` : "";
+  if (!url) return false;
+  log("info", `Installer not available; opening ${url}`);
+  void shell.openExternal(url);
   return true;
 }
 
@@ -152,15 +234,34 @@ export function setupAutoUpdater({ onStateChange } = {}) {
     setState({ status: "downloading", percent: Math.max(0, Math.min(100, Math.round(progress.percent || 0))) });
   });
   activeUpdater.on("update-downloaded", (info) => {
-    log("info", `Update ${info.version} downloaded and ready to install.`);
+    downloadedInstallerPath = typeof info.downloadedFile === "string" ? info.downloadedFile : "";
+    log("info", `Update ${info.version} downloaded and ready to install (${downloadedInstallerPath || "path unknown"}).`);
     setState({ status: "ready", version: info.version, percent: 100, message: "" });
   });
   activeUpdater.on("error", (error) => {
     // Keep this quiet for users without network access; the app is designed to work offline.
     log("warn", "Updater error:", error instanceof Error ? error.message : error);
-    if (state.status !== "ready") setState({ status: "error", message: errorText(error) });
+    if (!["ready", "install-failed"].includes(state.status)) setState({ status: "error", message: errorText(error) });
   });
 
+  // Did the update started last time actually install?
+  const userData = app.getPath("userData");
+  const outcome = updateAttemptOutcome(readUpdateAttempt(userData), app.getVersion());
+  if (outcome.status === "installed") {
+    log("info", `Update to ${outcome.version} installed; running ${app.getVersion()}.`);
+    clearUpdateAttempt(userData);
+  } else if (outcome.status === "failed") {
+    log("warn", `The update to ${outcome.version} (started ${outcome.attemptedAt}) did not install; still running ${app.getVersion()}.`);
+    setState({
+      status: "install-failed",
+      version: outcome.version,
+      installerPath: outcome.installerPath,
+      percent: 0,
+      message: "",
+    });
+  }
+
+  log("info", `Studio ${app.getVersion()} started; checking for updates in ${INITIAL_CHECK_DELAY_MS / 1000} s.`);
   checkTimer = setTimeout(() => void checkForUpdates(activeUpdater, "startup"), INITIAL_CHECK_DELAY_MS);
   periodicCheckTimer = setInterval(() => void checkForUpdates(activeUpdater, "periodic"), PERIODIC_CHECK_INTERVAL_MS);
   checkTimer.unref?.();

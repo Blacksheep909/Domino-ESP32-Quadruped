@@ -53,6 +53,18 @@ export function appUpdateBannerView(state, blockReason = "", dismissed = false) 
       downloadUrl: url,
     };
   }
+  if (status === "install-failed") {
+    // The silent install last time did not take; Studio is still on the old
+    // version. Running the installer with its window shows any error.
+    return {
+      visible: !dismissed, tone: "warning",
+      text: `The update to ${version} didn't install.`,
+      detail: `Studio is still ${current || "on the old version"}. Run the installer to finish updating; it shows any problem. Settings and calibration are kept.`,
+      action: { id: "run-installer", label: "RUN INSTALLER", disabled: Boolean(blockReason) },
+      dismissLabel: "LATER",
+      notesUrl: version ? `${RELEASES_URL}${version}` : "",
+    };
+  }
   if (status === "error") {
     return {
       visible: !dismissed, tone: "warning",
@@ -75,6 +87,9 @@ export function appUpdateChipView(state) {
   }
   if (status === "manual") {
     return { visible: true, label: `UPDATE ${version}`.trim(), title: `Version ${version} is available to download.` };
+  }
+  if (status === "install-failed") {
+    return { visible: true, label: "UPDATE FAILED", title: `Version ${version} didn't install. Click to run the installer.` };
   }
   if (status === "downloading") {
     const percent = Math.max(0, Math.min(100, Math.round(Number(state?.percent) || 0)));
@@ -173,6 +188,15 @@ export function initAppUpdateBanner(updates, {
       installing = true;
       render();
       const started = await updates.install().catch(() => false);
+      if (!started) {
+        installing = false;
+        render();
+      }
+    } else if (actionButton.dataset.action === "run-installer") {
+      if (getBlockReason()) return render();
+      installing = true;
+      render();
+      const started = await updates.runInstaller?.().catch(() => false);
       if (!started) {
         installing = false;
         render();

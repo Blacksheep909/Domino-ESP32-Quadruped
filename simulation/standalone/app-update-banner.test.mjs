@@ -75,6 +75,33 @@ test("the Mac updater only checks for updates and never downloads or installs th
   assert.match(updater, /\["win32", "darwin"\]\.includes\(process\.platform\)/);
 });
 
+test("an update that didn't install says so and offers the visible installer", () => {
+  const view = appUpdateBannerView({ status: "install-failed", version: "0.5.5", currentVersion: "0.5.2" });
+  assert.equal(view.visible, true);
+  assert.equal(view.tone, "warning");
+  assert.match(view.text, /0\.5\.5 didn't install/);
+  assert.match(view.detail, /still 0\.5\.2/);
+  assert.equal(view.action.id, "run-installer");
+  assert.equal(view.action.disabled, false);
+  assert.equal(appUpdateBannerView({ status: "install-failed", version: "0.5.5" }, "Disarm the robot before updating.").action.disabled, true);
+  assert.equal(appUpdateChipView({ status: "install-failed", version: "0.5.5" }).label, "UPDATE FAILED");
+  const preload = readFileSync(new URL("./desktop/preload.mjs", import.meta.url), "utf8");
+  assert.ok(preload.includes("domino:update:run-installer"));
+  const main = readFileSync(new URL("./desktop/main.mjs", import.meta.url), "utf8");
+  assert.ok(main.includes("domino:update:run-installer"));
+});
+
+test("the updater starts before the window loads and keeps a log file", () => {
+  const main = readFileSync(new URL("./desktop/main.mjs", import.meta.url), "utf8");
+  const ready = main.indexOf("app.whenReady()");
+  assert.ok(ready > 0);
+  // setupAutoUpdater runs inside whenReady, before createApplication is awaited.
+  assert.ok(main.indexOf("setupAutoUpdater(", ready) < main.indexOf("createApplication()", ready));
+  assert.match(main, /noteAppQuitting\(\)/);
+  const updater = readFileSync(new URL("./desktop/updater.mjs", import.meta.url), "utf8");
+  assert.match(updater, /"updater\.log"/);
+});
+
 test("a waiting update keeps a header button, so LATER never loses it", () => {
   assert.equal(appUpdateChipView({ status: "ready", version: "0.5.3" }).label, "UPDATE READY");
   assert.equal(appUpdateChipView({ status: "manual", version: "0.5.3" }).label, "UPDATE 0.5.3");

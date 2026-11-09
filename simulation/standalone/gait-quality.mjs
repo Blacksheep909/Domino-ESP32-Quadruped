@@ -140,6 +140,62 @@ export async function measureGait({ settings = {}, forward = 1, turn = 0, second
   };
 }
 
+// Turning on the spot (left stick X): how fast the body actually rotates,
+// how far its centre wanders off the spot, and how much planted feet slide.
+export async function measureSpin({ settings = {}, turn = 1, seconds = 8, warmup = 2 } = {}) {
+  const physics = await createDominoPhysics({ assists: false });
+  const lab = createGaitLab({ ...settings, enabled: true });
+  const stand = standState();
+  let state;
+  for (let i = 0; i < 240; i += 1) state = physics.update(STEP, stand, legs, standServoReference);
+  const gaitSource = { ...stand, mode: "GAIT" };
+  let yawTotal = 0;
+  let previousYaw = null;
+  let start = null;
+  let wander = 0;
+  let previous = null;
+  let slip = 0;
+  let plantedTime = 0;
+  let commandedSum = 0;
+  let commandedSamples = 0;
+  for (let frame = 0; frame < Math.round((warmup + seconds) * 120); frame += 1) {
+    const output = lab.update(STEP, gaitSource, { forward: 0, turn, steer: 0 });
+    state = physics.update(STEP, output, legs, standServoReference);
+    if (state.bodyHeight < 0.12 || state.baseTiltDegrees > 45) return { fell: true };
+    if (frame < warmup * 120) continue;
+    const { yaw } = rollPitchDeg(state.baseQuaternion);
+    if (previousYaw !== null) {
+      let delta = yaw - previousYaw;
+      if (delta > Math.PI) delta -= 2 * Math.PI;
+      if (delta < -Math.PI) delta += 2 * Math.PI;
+      yawTotal += delta;
+    }
+    previousYaw = yaw;
+    if (!start) start = [...state.basePosition];
+    wander = Math.max(wander, Math.hypot(state.basePosition[0] - start[0], state.basePosition[2] - start[2]));
+    const telemetry = lab.getTelemetry();
+    if (telemetry.active) {
+      commandedSum += Math.abs(telemetry.bodyVelocity?.yawDegPerSec || 0);
+      commandedSamples += 1;
+    }
+    if (previous) {
+      state.footPositions.forEach((position, index) => {
+        if (!state.footContacts[index] || !previous.footContacts[index]) return;
+        slip += Math.hypot(position[0] - previous.footPositions[index][0], position[2] - previous.footPositions[index][2]);
+        plantedTime += STEP;
+      });
+    }
+    previous = state;
+  }
+  return {
+    fell: false,
+    yawDegPerSec: Math.abs(THREE.MathUtils.radToDeg(yawTotal)) / seconds,
+    commandedYawDegPerSec: commandedSamples ? commandedSum / commandedSamples : 0,
+    wanderMm: wander * 1000,
+    slipMmPerSec: (slip / Math.max(plantedTime, 1e-6)) * 1000,
+  };
+}
+
 function format(result) {
   const f = (v, d = 1) => (Number.isFinite(v) ? v.toFixed(d) : "n/a");
   return [
@@ -155,7 +211,7 @@ function format(result) {
   ].join(" | ");
 }
 
-if (import.meta.url === `file:///${process.argv[1].replace(/\\/g, "/")}` || process.argv[1]?.endsWith("gait-quality.mjs")) {
+if (process.argv[1]?.endsWith("gait-quality.mjs")) {
   const forward = Number(process.argv[2] ?? 1);
   const seconds = Number(process.argv[3] ?? 8);
   const spec = process.argv[4] ?? "balanced";

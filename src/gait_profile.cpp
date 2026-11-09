@@ -30,13 +30,13 @@ GaitProfile defaultGaitProfile() {
   profile.settings.dutyFactor = 0.62f;
   profile.settings.bodyHeightMm = 245.0f;
   profile.settings.stanceWidthMm = 60.0f;
-  profile.settings.turnGain = 0.90f;
+  profile.settings.turnGain = 1.20f;
   profile.settings.responseMs = 180.0f;
   profile.settings.swingShape = 1.7f;
   profile.settings.diagonalPhase = 0.50f;
   profile.settings.touchdownXMm = -15.75f;
   profile.settings.maxForwardScale = 1.0f;
-  profile.settings.maxTurnScale = 0.75f;
+  profile.settings.maxTurnScale = 1.0f;
   return profile;
 }
 

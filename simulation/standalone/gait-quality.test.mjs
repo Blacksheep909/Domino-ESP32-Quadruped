@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { gaitLabPresets, trotSwingPath } from "./web/src/gait-lab.js";
-import { measureGait } from "./gait-quality.mjs";
+import { measureGait, measureSpin } from "./gait-quality.mjs";
 
 // The swing foot must leave and land moving with the ground (rearward at the
 // stance speed), not stopped relative to the body: that mismatch is what
@@ -36,4 +36,17 @@ test("Balanced walks forward at speed, straight, without the feet skating", asyn
   assert.ok(Math.abs(result.yawSignedDeg) / metres < 6, `turned ${result.yawSignedDeg} deg over ${metres} m`);
   assert.ok(result.slipSidewaysMmPerSec < 15, `planted feet slid sideways ${result.slipSidewaysMmPerSec} mm/s`);
   assert.ok(result.rollSwingDeg < 8, `body rolled ${result.rollSwingDeg} deg`);
+});
+
+// Left-stick spin on the spot. The old Balanced turned at ~10 deg/s (40% of
+// what it commanded) and wandered ~100 mm off its spot.
+test("Balanced spins on the spot quickly without wandering off it", async () => {
+  for (const turn of [1, -1]) {
+    const result = await measureSpin({ settings: gaitLabPresets.balanced, turn, seconds: 6 });
+    assert.equal(result.fell, false);
+    assert.ok(result.yawDegPerSec > 28, `spun ${result.yawDegPerSec} deg/s (turn ${turn})`);
+    assert.ok(result.yawDegPerSec > 0.55 * result.commandedYawDegPerSec,
+      `reached ${result.yawDegPerSec} of ${result.commandedYawDegPerSec} deg/s (turn ${turn})`);
+    assert.ok(result.wanderMm < 60, `wandered ${result.wanderMm} mm off the spot (turn ${turn})`);
+  }
 });

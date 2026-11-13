@@ -41,7 +41,17 @@ function rollPitchDeg(quaternion) {
   return { roll: THREE.MathUtils.radToDeg(euler.x), pitch: THREE.MathUtils.radToDeg(euler.z), yaw: euler.y };
 }
 
-export async function measureGait({ settings = {}, forward = 1, turn = 0, steer = 0, steerBlend = 1, seconds = 8, warmup = 2 } = {}) {
+// What the robot's gyro would report, from the physics body: yaw (counter-
+// clockwise positive, degrees) and yaw rate (deg/s). Feeds heading hold.
+export function measuredHeading(state) {
+  if (!state?.baseQuaternion || !state?.angularVelocity) return {};
+  return {
+    measuredYawDeg: THREE.MathUtils.radToDeg(rollPitchDeg(state.baseQuaternion).yaw),
+    measuredYawRateDps: THREE.MathUtils.radToDeg(state.angularVelocity[1]),
+  };
+}
+
+export async function measureGait({ settings = {}, forward = 1, turn = 0, steer = 0, steerBlend = 1, headingHold = false, seconds = 8, warmup = 2 } = {}) {
   const physics = await createDominoPhysics({ assists: false });
   const lab = createGaitLab({ ...settings, enabled: true });
   const stand = standState();
@@ -69,7 +79,7 @@ export async function measureGait({ settings = {}, forward = 1, turn = 0, steer 
   let commandedRightSum = 0;
 
   for (let frame = 0; frame < frames; frame += 1) {
-    const output = lab.update(STEP, gaitSource, { forward, turn, steer, steerBlend });
+    const output = lab.update(STEP, gaitSource, { forward, turn, steer, steerBlend, ...(headingHold ? measuredHeading(state) : {}) });
     state = physics.update(STEP, output, legs, standServoReference);
     if (state.bodyHeight < 0.12 || state.baseTiltDegrees > 45) {
       fell = true;
@@ -145,7 +155,7 @@ export async function measureGait({ settings = {}, forward = 1, turn = 0, steer 
 
 // Turning on the spot (left stick X): how fast the body actually rotates,
 // how far its centre wanders off the spot, and how much planted feet slide.
-export async function measureSpin({ settings = {}, turn = 1, seconds = 8, warmup = 2 } = {}) {
+export async function measureSpin({ settings = {}, turn = 1, headingHold = false, seconds = 8, warmup = 2 } = {}) {
   const physics = await createDominoPhysics({ assists: false });
   const lab = createGaitLab({ ...settings, enabled: true });
   const stand = standState();
@@ -162,7 +172,7 @@ export async function measureSpin({ settings = {}, turn = 1, seconds = 8, warmup
   let commandedSum = 0;
   let commandedSamples = 0;
   for (let frame = 0; frame < Math.round((warmup + seconds) * 120); frame += 1) {
-    const output = lab.update(STEP, gaitSource, { forward: 0, turn, steer: 0 });
+    const output = lab.update(STEP, gaitSource, { forward: 0, turn, steer: 0, ...(headingHold ? measuredHeading(state) : {}) });
     state = physics.update(STEP, output, legs, standServoReference);
     if (state.bodyHeight < 0.12 || state.baseTiltDegrees > 45) return { fell: true };
     if (frame < warmup * 120) continue;
@@ -196,6 +206,44 @@ export async function measureSpin({ settings = {}, turn = 1, seconds = 8, warmup
     commandedYawDegPerSec: commandedSamples ? commandedSum / commandedSamples : 0,
     wanderMm: wander * 1000,
     slipMmPerSec: (slip / Math.max(plantedTime, 1e-6)) * 1000,
+  };
+}
+
+// Sidestep right then left from a standing start (the case that traced a V).
+// Reports how far the body ends behind its start line, the worst point, how
+// far it reached sideways, and the largest rotation, along the starting heading.
+export async function measureSidestepSequence({ settings = {}, seconds = 12, headingHold = true } = {}) {
+  const physics = await createDominoPhysics({ assists: false });
+  const lab = createGaitLab({ ...settings, enabled: true });
+  const stand = standState();
+  let state;
+  for (let i = 0; i < 240; i += 1) state = physics.update(STEP, stand, legs, standServoReference);
+  const start = [...state.basePosition];
+  const startYaw = rollPitchDeg(state.baseQuaternion).yaw;
+  const heading = new THREE.Vector3(Math.cos(startYaw), 0, -Math.sin(startYaw));
+  const side = new THREE.Vector3(-heading.z, 0, heading.x);
+  const gaitSource = { ...stand, mode: "GAIT" };
+  const frames = Math.round(seconds * 120);
+  let worstBehind = 0;
+  let reach = 0;
+  let maxYawDeg = 0;
+  for (let frame = 0; frame < frames; frame += 1) {
+    const steer = frame < frames / 2 ? 1 : -1;
+    const output = lab.update(STEP, gaitSource, { forward: 0, turn: 0, steer, ...(headingHold ? measuredHeading(state) : {}) });
+    state = physics.update(STEP, output, legs, standServoReference);
+    if (state.bodyHeight < 0.12 || state.baseTiltDegrees > 45) return { fell: true };
+    const travel = new THREE.Vector3(state.basePosition[0] - start[0], 0, state.basePosition[2] - start[2]);
+    worstBehind = Math.min(worstBehind, travel.dot(heading));
+    reach = Math.max(reach, Math.abs(travel.dot(side)));
+    maxYawDeg = Math.max(maxYawDeg, Math.abs(THREE.MathUtils.radToDeg(rollPitchDeg(state.baseQuaternion).yaw - startYaw)));
+  }
+  const travel = new THREE.Vector3(state.basePosition[0] - start[0], 0, state.basePosition[2] - start[2]);
+  return {
+    fell: false,
+    endForeAftMm: travel.dot(heading) * 1000,
+    worstBehindMm: worstBehind * 1000,
+    sidewaysReachMm: reach * 1000,
+    maxYawDeg,
   };
 }
 

@@ -39,6 +39,9 @@ function footOffsetFromCentre(label, settings) {
 export const GAIT_LATERAL_STRIDE_SCALE = 0.6;
 // Below this much forward stick, right-stick X is mostly a sidestep.
 export const GAIT_STEER_FULL_AT_FORWARD = 0.4;
+// Extra rearward foot landing at a full sidestep, blended by the sidestep share
+// of the motion (keep in step with kGaitSidestepTouchdownShiftMm in main.cpp).
+export const GAIT_SIDESTEP_TOUCHDOWN_SHIFT_MM = -12;
 
 // Right stick X while walking (keep in step with readGaitCommands in
 // src/main.cpp). With no forward stick it sidesteps. As forward stick grows it
@@ -50,6 +53,63 @@ export function splitRightStickX(forward, rightX, steerBlend = 1, strafeWeight =
   const x = clamp(Number(rightX) || 0, -1, 1);
   const share = clamp(Number(steerBlend), 0, 1) * smooth01(clamp(speed / GAIT_STEER_FULL_AT_FORWARD, 0, 1));
   return { steer: x * speed * share, strafe: x * (1 - share) * clamp(Number(strafeWeight), 0, 1) };
+}
+
+// Gyro heading hold (keep in step with HeadingHold in src/main.cpp).
+// Uneven front/rear foot grip makes the body slowly rotate while sidestepping,
+// so a sidestep right then left traced a V that drifted backwards. While the
+// operator gives no turn command and the robot is sidestepping, this holds the
+// heading captured when the turn stick was released, using measured yaw
+// (counter-clockwise positive, degrees). It is scaled by the sidestep share of
+// the motion: a forward trot wags its nose every step and barely drifts, and
+// correcting that only pushed the path sideways. Output is a turn command
+// (clockwise positive, -1..1, before maxTurnScale), capped so it can never
+// out-steer the operator. Without a fresh measurement it does nothing.
+export const HEADING_HOLD = Object.freeze({
+  kpPerDeg: 0.02,          // 10 deg off -> 0.2 turn: corrects slow drift only
+  kdPerDegPerSec: 0,       // no rate term: the trot wags the nose every step
+  maxCorrection: 0.2,
+  releaseTurn: 0.04,       // operator turn above this releases the hold
+  recaptureMs: 250,        // after a turn, wait for the body to settle
+});
+
+function wrapDegrees(value) {
+  let wrapped = value % 360;
+  if (wrapped > 180) wrapped -= 360;
+  if (wrapped < -180) wrapped += 360;
+  return wrapped;
+}
+
+export function createHeadingHold(gains = HEADING_HOLD) {
+  let heldYawDeg = null;
+  let settleSeconds = 0;
+  return {
+    reset() { heldYawDeg = null; settleSeconds = 0; },
+    heldYawDeg: () => heldYawDeg,
+    update({ yawDeg, yawRateDps, operatorTurn = 0, translating = false, weight = 1, delta = 0 }) {
+      const yaw = Number(yawDeg);
+      const rate = Number(yawRateDps);
+      if (!Number.isFinite(yaw) || !Number.isFinite(rate)) {
+        heldYawDeg = null;
+        return 0;
+      }
+      if (Math.abs(operatorTurn) > gains.releaseTurn || !translating) {
+        // Turning, or standing still: follow the body and re-capture later.
+        heldYawDeg = null;
+        settleSeconds = gains.recaptureMs / 1000;
+        return 0;
+      }
+      if (settleSeconds > 0) {
+        settleSeconds = Math.max(0, settleSeconds - Math.max(0, Number(delta) || 0));
+        return 0;
+      }
+      if (heldYawDeg === null) heldYawDeg = yaw;
+      // Turned counter-clockwise (positive error) -> turn clockwise (positive).
+      const error = wrapDegrees(yaw - heldYawDeg);
+      const correction = gains.kpPerDeg * error + gains.kdPerDegPerSec * rate;
+      return clamp(correction, -gains.maxCorrection, gains.maxCorrection) * clamp(Number(weight), 0, 1);
+    },
+  };
 }
 
 // Direction intent on the right stick (keep in step with rightStickIntent in
@@ -200,7 +260,7 @@ export const gaitLabPresets = Object.freeze({
     responseMs: 150,
     swingShape: 1.7,
     diagonalPhase: 0.5,
-    touchdownXMm: -20,
+    touchdownXMm: -15.75,  // Fast slips at -20
     maxForwardScale: 1,
     maxTurnScale: 1,
   },
@@ -520,6 +580,7 @@ export function createGaitLab(initialSettings = {}) {
   let filteredForward = 0;
   let filteredTurn = 0;
   let filteredStrafe = 0;
+  const headingHold = createHeadingHold();
   let transitionProgress = 1;
   let transitionFromState = null;
   let lastGaitState = null;
@@ -572,6 +633,7 @@ export function createGaitLab(initialSettings = {}) {
       beginRecovery(activeMode !== null ? "land" : "neutral", from);
       activeMode = null;
       phase = filteredForward = filteredTurn = filteredStrafe = 0;
+      headingHold.reset();
       transitionFromState = null;
       transitionProgress = 0;
       handoffMode = null;
@@ -692,7 +754,20 @@ export function createGaitLab(initialSettings = {}) {
     const rightStick = careful
       ? { steer: intent.rightX * Math.abs(forwardInput), strafe: 0 }
       : splitRightStickX(forwardInput, intent.rightX, input.steerBlend ?? 1, intent.strafeWeight);
-    const turnInput = clamp((Number(input.turn) || 0) + rightStick.steer, -1, 1);
+    const operatorTurn = clamp((Number(input.turn) || 0) + rightStick.steer, -1, 1);
+    // Gyro heading hold: while walking or sidestepping without a turn command,
+    // steer back to the heading held when the turn stick was released.
+    const headingCorrection = headingHold.update({
+      yawDeg: input.measuredYawDeg,
+      yawRateDps: input.measuredYawRateDps,
+      operatorTurn,
+      // Held only while sidestepping: a forward trot wags its nose every step
+      // and barely drifts, so correcting it only pushed the path sideways.
+      translating: motionAllowed && Math.abs(rightStick.strafe) > 0.02,
+      weight: Math.abs(rightStick.strafe) / (Math.abs(forwardInput) + Math.abs(rightStick.strafe) + 1e-6),
+      delta,
+    });
+    const turnInput = clamp(operatorTurn + headingCorrection, -1, 1);
     filteredTurn = approach(filteredTurn, motionAllowed ? turnInput * motionSettings.maxTurnScale : 0, blend);
     filteredStrafe = approach(filteredStrafe,
       motionAllowed ? clamp(rightStick.strafe, -1, 1) * motionSettings.maxForwardScale : 0, blend);
@@ -707,6 +782,10 @@ export function createGaitLab(initialSettings = {}) {
     const forwardDirection = filteredForward * directionScale;
     const turnDirection = filteredTurn * directionScale;
     const strafeDirection = filteredStrafe * directionScale;
+    // Sidestepping loads the feet differently from walking forward: landing
+    // them further back while sidestepping stops the body creeping backwards.
+    const touchdownXMm = motionSettings.touchdownXMm +
+      (careful ? 0 : GAIT_SIDESTEP_TOUCHDOWN_SHIFT_MM * Math.abs(strafeDirection));
     const amplitude = smooth01(clamp(activity / 0.22, 0, 1)) * (0.62 + 0.38 * activity);
     const commands = Array.from(
       { length: 4 },
@@ -747,7 +826,7 @@ export function createGaitLab(initialSettings = {}) {
       if (foot.stance) stanceCount += 1;
       const stride = strides[leg.label];
       const command = [
-        motionSettings.touchdownXMm + stride.x / 2 * foot.x + shift.x,
+        touchdownXMm + stride.x / 2 * foot.x + shift.x,
         side * motionSettings.stanceWidthMm + stride.y / 2 * foot.x + shift.y,
         bodyHeight + foot.z,
       ];
@@ -833,6 +912,7 @@ export function createGaitLab(initialSettings = {}) {
       filteredForward = 0;
       filteredTurn = 0;
       filteredStrafe = 0;
+      headingHold.reset();
       motionSettings = { ...settings };
       transitionProgress = 1;
       transitionFromState = null;

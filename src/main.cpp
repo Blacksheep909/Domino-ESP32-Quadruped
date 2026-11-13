@@ -963,6 +963,64 @@ constexpr float kGaitLateralStrideScale = 0.6f;
 // Below this much forward stick (as a share of full), right-stick X is mostly
 // a sidestep.
 constexpr float kGaitSteerFullAtForward = 0.4f;
+// Extra rearward foot landing at a full sidestep, blended by the sidestep share
+// of the motion (keep in step with GAIT_SIDESTEP_TOUCHDOWN_SHIFT_MM).
+constexpr float kGaitSidestepTouchdownShiftMm = -12.0f;
+
+// Gyro heading hold (keep in step with createHeadingHold in gait-lab.js).
+// Uneven front/rear foot grip makes the body slowly rotate while sidestepping,
+// so a sidestep right then left traced a V that drifted backwards. While the
+// operator gives no turn command and the robot is sidestepping, this holds the
+// heading captured when the turn stick was released, using the IMU's yaw
+// (counter-clockwise positive). It is scaled by the sidestep share of the
+// motion: a forward trot wags its nose every step and barely drifts, and
+// correcting that only pushed the path sideways. Output is a turn command
+// (clockwise positive, -1..1, before maxTurnScale), capped so it can never
+// out-steer the operator. Without a fresh IMU sample it does nothing.
+// If it ever turns the robot away from its heading instead of back, the IMU
+// yaw sign is reversed.
+struct HeadingHold {
+  static constexpr float kKpPerDeg = 0.02f;
+  static constexpr float kMaxCorrection = 0.2f;
+  static constexpr float kReleaseTurn = 0.04f;
+  static constexpr float kRecaptureSeconds = 0.25f;
+  bool held = false;
+  float heldYawDeg = 0.0f;
+  float settleSeconds = 0.0f;
+
+  void reset() {
+    held = false;
+    settleSeconds = 0.0f;
+  }
+
+  float update(bool measurementFresh, float yawDeg, float operatorTurn, bool sidestepping,
+               float sidestepShare, float deltaSeconds) {
+    if (!measurementFresh || !isfinite(yawDeg)) {
+      held = false;
+      return 0.0f;
+    }
+    if (fabsf(operatorTurn) > kReleaseTurn || !sidestepping) {
+      held = false;
+      settleSeconds = kRecaptureSeconds;
+      return 0.0f;
+    }
+    if (settleSeconds > 0.0f) {
+      settleSeconds = fmaxf(0.0f, settleSeconds - deltaSeconds);
+      return 0.0f;
+    }
+    if (!held) {
+      held = true;
+      heldYawDeg = yawDeg;
+    }
+    float error = fmodf(yawDeg - heldYawDeg, 360.0f);
+    if (error > 180.0f) error -= 360.0f;
+    if (error < -180.0f) error += 360.0f;
+    // Turned counter-clockwise (positive error) -> turn clockwise (positive).
+    const float correction = constrain(kKpPerDeg * error, -kMaxCorrection, kMaxCorrection);
+    return correction * constrain(sidestepShare, 0.0f, 1.0f);
+  }
+};
+HeadingHold gaitHeadingHold;
 
 // Right stick X while trotting (keep in step with splitRightStickX in
 // gait-lab.js). `speed` is the forward stick, 0..1. With no forward stick it
@@ -1081,6 +1139,7 @@ float approachGaitCommand(float current, float target, float maximumStep) {
 }
 
 void resetGaitState() {
+  gaitHeadingHold.reset();
   gaitPhaseRad = 0.0f;
   gaitForwardCommand = 0.0f;
   gaitTurnCommand = 0.0f;
@@ -1171,6 +1230,18 @@ void applySinusoidalGait(Adafruit_PWMServoDriver &driver, float baseZ) {
   float targetTurn = 0.0f;
   float targetStrafe = 0.0f;
   readGaitTrotInputs(profile, &targetForward, &targetTurn, &targetStrafe);
+  {
+    // Gyro heading hold while sidestepping (see HeadingHold).
+    const uint32_t nowMs = millis();
+    const bool imuFresh = imuSampleFresh(nowMs) && gImuState.yaw_initialized;
+    const float operatorTurn = profile.maxTurnScale > 0.0f ? targetTurn / profile.maxTurnScale : 0.0f;
+    const float strafeMagnitude = fabsf(targetStrafe);
+    const float sidestepShare = strafeMagnitude / (fabsf(targetForward) + strafeMagnitude + 1e-6f);
+    const float correction = gaitHeadingHold.update(
+        imuFresh, gImuState.yaw_deg, operatorTurn,
+        strafeMagnitude > 0.02f * profile.maxForwardScale, sidestepShare, kControlStepSeconds);
+    targetTurn = constrain(operatorTurn + correction, -1.0f, 1.0f) * profile.maxTurnScale;
+  }
   const float maximumCommandStep = commandSlewPerSec * kControlStepSeconds;
   gaitForwardCommand = approachGaitCommand(gaitForwardCommand, targetForward, maximumCommandStep);
   gaitTurnCommand = approachGaitCommand(gaitTurnCommand, targetTurn, maximumCommandStep);
@@ -1205,6 +1276,12 @@ void applySinusoidalGait(Adafruit_PWMServoDriver &driver, float baseZ) {
   outputUsesBodyPose = false;
   GaitStride strides[kLegCount];
   computeGaitStrides(profile, gaitForwardStride, gaitTurnStride, gaitStrafeStride, strides);
+  // Sidestepping loads the feet differently from walking forward: landing them
+  // further back while sidestepping stops the body creeping backwards.
+  const float sidestepShareOfMotion = activity > 0.001f
+      ? constrain(fabsf(gaitStrafeCommand) / activity, 0.0f, 1.0f) : 0.0f;
+  const float touchdownXMm = profile.touchdownXMm +
+      kGaitSidestepTouchdownShiftMm * sidestepShareOfMotion;
   for (int i = 0; i < kLegCount; ++i) {
     const bool diagonalA = (i == LEG_FL || i == LEG_BR);
     const bool leftLeg = (i == LEG_FL || i == LEG_BL);
@@ -1220,7 +1297,7 @@ void applySinusoidalGait(Adafruit_PWMServoDriver &driver, float baseZ) {
                        profile.swingShape,
                        &progress,
                        &zOffsetMm);
-    const float x = profile.touchdownXMm + 0.5f * strides[i].x * progress;
+    const float x = touchdownXMm + 0.5f * strides[i].x * progress;
     const float y = sideSign * profile.stanceWidthMm + 0.5f * strides[i].y * progress;
     gaitSupportZ[i] = gaitBodyZ + manualRollFootZOffset(y);
     const float z = gaitSupportZ[i] + zOffsetMm;

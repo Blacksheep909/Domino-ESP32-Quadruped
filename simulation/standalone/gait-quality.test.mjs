@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { gaitLabPresets, rightStickIntent, splitRightStickX, trotSwingPath } from "./web/src/gait-lab.js";
-import { measureGait, measureSpin } from "./gait-quality.mjs";
+import { createHeadingHold, gaitLabPresets, rightStickIntent, splitRightStickX, trotSwingPath } from "./web/src/gait-lab.js";
+import { measureGait, measureSidestepSequence, measureSpin } from "./gait-quality.mjs";
 
 // The swing foot must leave and land moving with the ground (rearward at the
 // stance speed), not stopped relative to the body: that mismatch is what
@@ -94,4 +94,30 @@ test("an imperfect sideways push still sidesteps without walking forward", async
   assert.equal(result.fell, false);
   assert.ok(result.sidewaysSignedMm / 6 > 50, `sidestep ${result.sidewaysSignedMm / 6} mm/s`);
   assert.ok(Math.abs(result.speedMmPerSec) < 15, `walked ${result.speedMmPerSec} mm/s fore/aft`);
+});
+
+// Heading hold: steers back toward the held heading, lets go while the
+// operator turns, and does nothing without a measurement or when not sidestepping.
+test("heading hold steers back, releases on a turn command, and needs a measurement", () => {
+  const hold = createHeadingHold();
+  const step = (yawDeg, extra = {}) => hold.update({ yawDeg, yawRateDps: 0, operatorTurn: 0, translating: true, delta: 0.02, ...extra });
+  assert.equal(step(0, { yawDeg: undefined }), 0, "no measurement, no correction");
+  for (let i = 0; i < 20; i += 1) step(0);  // settle and capture 0 deg
+  assert.ok(step(10) > 0, "rotated counter-clockwise -> turn clockwise");
+  assert.ok(step(-10) < 0, "rotated clockwise -> turn counter-clockwise");
+  assert.ok(step(90) <= 0.2 + 1e-9, "capped");
+  assert.ok(Math.abs(step(10, { weight: 0.25 }) - 0.05) < 1e-6, "scaled by sidestep share");
+  assert.equal(step(10, { operatorTurn: 0.5 }), 0, "released while the operator turns");
+  assert.equal(step(10, { translating: false }), 0, "off when not sidestepping");
+});
+
+// The case from the bench video: sidestep right then left. Before the fix the
+// body ended ~200 mm behind its start line.
+test("sidestepping right then left comes back to the start line", async () => {
+  const result = await measureSidestepSequence({ settings: gaitLabPresets.balanced });
+  assert.equal(result.fell, false);
+  assert.ok(result.sidewaysReachMm > 180, `only reached ${result.sidewaysReachMm} mm sideways`);
+  assert.ok(Math.abs(result.endForeAftMm) < 40, `ended ${result.endForeAftMm} mm off the start line`);
+  assert.ok(result.worstBehindMm > -40, `fell back ${result.worstBehindMm} mm`);
+  assert.ok(result.maxYawDeg < 14, `rotated ${result.maxYawDeg} deg`);
 });

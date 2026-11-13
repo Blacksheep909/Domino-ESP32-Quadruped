@@ -2638,6 +2638,17 @@ let physics = null;
 const walkModeFromChannel = (value) => value < 1250 ? 0 : value > 1750 ? 2 : 1;
 const channelFromWalkMode = (mode) => [1000, 1500, 2000][THREE.MathUtils.clamp(mode, 0, 2)];
 let physicsState = null;
+
+// What the robot's gyro would report, from the physics body: yaw (counter-
+// clockwise positive, degrees) and yaw rate (deg/s). Feeds gait heading hold.
+function simulatedGyroHeading(state) {
+  if (!state?.baseQuaternion || !state?.angularVelocity) return {};
+  const euler = new THREE.Euler().setFromQuaternion(new THREE.Quaternion(...state.baseQuaternion), "YXZ");
+  return {
+    measuredYawDeg: THREE.MathUtils.radToDeg(euler.y),
+    measuredYawRateDps: THREE.MathUtils.radToDeg(state.angularVelocity[1]),
+  };
+}
 const visualBasePosition = new THREE.Vector3();
 const visualBaseQuaternion = new THREE.Quaternion();
 let visualBaseInitialized = false;
@@ -12695,6 +12706,8 @@ function updateGaitLabState(delta) {
     // stick grows, by the steering setting (as in the firmware).
     steer: rollInput,
     steerBlend: motionSmoothingValue(motionSmoothingLocal, "rightStickSteerBlend"),
+    // The robot holds its heading with the IMU; the SIM uses the physics body.
+    ...simulatedGyroHeading(physicsState),
   });
   const telemetry = gaitLab.getTelemetry();
   if (!telemetryDatasetDue) return;

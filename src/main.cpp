@@ -1759,6 +1759,16 @@ void updatePolicyMode(BodyMode previousMode, const MenuInputs &inputs, bool stan
 // policyHeightSlewMmPerSec() (the CH3 stick can jump; the trainer never saw
 // instant height steps).
 float policyHeightMm = kRideHeightMaxMm;
+// Likewise the stick velocity command: the trainer ramped it (policyLinSlewMps2,
+// policyYawSlewRadps2) instead of jumping, so the sticks ramp here too.
+PolicyCommand policySlewedCmd{};
+
+// Move `cur` toward `target` by at most rate * dt (rate <= 0: jump).
+float slewToward(float cur, float target, float rate, float dt) {
+  if (rate <= 0.0f) return target;
+  const float step = rate * dt;
+  return cur + fminf(step, fmaxf(-step, target - cur));
+}
 
 void applyPolicyStep(Adafruit_PWMServoDriver &driver, float heightMm, uint32_t now) {
   const PolicyImu imu = readPolicyImu(now);
@@ -1766,11 +1776,18 @@ void applyPolicyStep(Adafruit_PWMServoDriver &driver, float heightMm, uint32_t n
     policyReset(imu);
     policyInferMaxUs = 0;
     policyHeightMm = heightMm;  // entered from a stand at this height
+    policySlewedCmd = PolicyCommand{};  // and from a standstill
   }
   const float maxStep = policyHeightSlewMmPerSec() * static_cast<float>(kControlIntervalMs) / 1000.0f;
   policyHeightMm += fminf(maxStep, fmaxf(-maxStep, heightMm - policyHeightMm));
   heightMm = policyHeightMm;
-  const PolicyCommand cmd = readPolicyCommand(heightMm);
+  const PolicyCommand raw = readPolicyCommand(heightMm);
+  const float cdt = static_cast<float>(kControlIntervalMs) / 1000.0f;
+  policySlewedCmd.vxMps = slewToward(policySlewedCmd.vxMps, raw.vxMps, policyLinSlewMps2(), cdt);
+  policySlewedCmd.vyMps = slewToward(policySlewedCmd.vyMps, raw.vyMps, policyLinSlewMps2(), cdt);
+  policySlewedCmd.wzRadps = slewToward(policySlewedCmd.wzRadps, raw.wzRadps, policyYawSlewRadps2(), cdt);
+  policySlewedCmd.heightMm = raw.heightMm;
+  const PolicyCommand cmd = policySlewedCmd;
   PolicyFeet feet{};
   const uint32_t t0 = micros();
   const bool ok = policyStep(cmd, imu, static_cast<float>(kControlIntervalMs) / 1000.0f, &feet);

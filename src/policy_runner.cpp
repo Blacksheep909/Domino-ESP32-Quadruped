@@ -13,6 +13,13 @@
 #ifndef DOMINO_POLICY_HEIGHT_SLEW_MM_S
 #define DOMINO_POLICY_HEIGHT_SLEW_MM_S 80.0f
 #endif
+// Velocity-command ramp the policy was trained with (0 = commands jumped).
+#ifndef DOMINO_POLICY_LIN_SLEW_M_S2
+#define DOMINO_POLICY_LIN_SLEW_M_S2 0.0f
+#endif
+#ifndef DOMINO_POLICY_YAW_SLEW_RAD_S2
+#define DOMINO_POLICY_YAW_SLEW_RAD_S2 0.0f
+#endif
 
 namespace {
 
@@ -185,6 +192,8 @@ bool policySelfTest() {
 int policyObsDim() { return kObsDim; }
 
 float policyHeightSlewMmPerSec() { return DOMINO_POLICY_HEIGHT_SLEW_MM_S; }
+float policyLinSlewMps2() { return DOMINO_POLICY_LIN_SLEW_M_S2; }
+float policyYawSlewRadps2() { return DOMINO_POLICY_YAW_SLEW_RAD_S2; }
 
 const char *policyFaultName(PolicyFault fault) {
   switch (fault) {

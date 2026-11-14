@@ -73,6 +73,9 @@ int policyObsDim();
 
 // Ride-height command slew the policy was trained with (mm/s).
 float policyHeightSlewMmPerSec();
+// Velocity-command ramp the policy was trained with (m/s^2, rad/s^2; 0 = none).
+float policyLinSlewMps2();
+float policyYawSlewRadps2();
 const char *policyFaultName(PolicyFault fault);
 
 // Runs the exported self-test vector through the network. Call once at boot.

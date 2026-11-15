@@ -1133,12 +1133,14 @@
         </div>
       </section>
 
-      <section id="live-view-emotes" class="live-view-page live-emotes-page" aria-labelledby="live-emotes-title" hidden>
+      <section id="live-view-emotes" class="live-view-page live-gaits-page live-emotes-page" aria-labelledby="live-emotes-title" hidden>
         <header class="live-page-heading">
           <div><span>LIVE / EMOTES</span><h1 id="live-emotes-title">Emotes &amp; sounds</h1><p>Personality on the robot: emotes on the Boxer switch, reaction sounds and the odd idle sound. Settings are saved on the robot, separate from calibration. Turn it off and Domino stays silent and still.</p></div>
           <div class="live-page-status"><span id="live-emotes-link-state" data-state="offline">ROBOT SETTINGS UNKNOWN</span><strong id="live-emotes-saved-state">NOT READ</strong></div>
         </header>
-        <div class="live-emotes-layout">
+        <div id="live-emotes-preview-caption" class="live-gait-preview-caption"><span>3D EMOTE PREVIEW</span><strong id="live-emotes-preview-state">IDLE</strong><small>Local preview only / never drives hardware. Press PREVIEW on an emote: the robot plays its ride-height motion and the antennas as they will mount on the new face, with the sound.</small></div>
+        <div class="live-gaits-layout">
+          <div class="live-gaits-editor">
           <section class="live-gait-card live-emotes-card">
             <header><div><span>PERSONALITY</span><strong id="live-emotes-summary">Read the robot to see its settings.</strong></div></header>
             <div class="live-emotes-settings">
@@ -1168,10 +1170,11 @@
             <p id="live-emotes-status" class="live-emotes-status" role="status">Connect a robot with emote support to read its settings.</p>
           </section>
           <section class="live-gait-card live-emotes-card">
-            <header><div><span>EMOTES</span><strong>PREVIEW ON THE ROBOT</strong></div><small id="live-emotes-hardware">Antennas and speaker: unknown</small></header>
+            <header><div><span>EMOTES</span><strong>PREVIEW</strong></div><small id="live-emotes-hardware">Antennas and speaker: unknown</small></header>
             <div id="live-emotes-list" class="live-emotes-list"></div>
-            <p class="live-emotes-hint">A preview plays the full emote on the robot: sound, antennas and a small ride-height nudge, layered over whatever the legs are doing. Body tilt and bow motions come with the next policy, which learns body-pose commands.</p>
+            <p class="live-emotes-hint"><b>PREVIEW</b> plays the emote in the 3D view with its sound (at the volume set above). <b>ON ROBOT</b> plays it on Domino: sound, antennas and a small ride-height nudge over whatever the legs are doing. Body tilt and bow motions come with the next policy, which learns body-pose commands.</p>
           </section>
+          </div>
         </div>
       </section>
       <section id="live-view-diagnostics" class="live-view-page live-diagnostics-page" aria-labelledby="live-diagnostics-title" hidden>

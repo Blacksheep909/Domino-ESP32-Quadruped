@@ -68,3 +68,22 @@ test("companion forwards emote commands only to firmware that reports the capabi
   assert.equal(out.robot[0]?.kind, "personality");
   assert.equal(out.robot[0]?.action, "request-settings");
 });
+
+test("Studio's emote preview timelines match the firmware keyframes exactly", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { EMOTE_TIMELINES, ANTENNA_REST_DEG, emotePose } = await import("./web/src/emote-timelines.js");
+  assert.equal(Object.keys(EMOTE_TIMELINES).length, 5);
+  assert.equal(emotePose("bow", 1400).height, -24);
+  const cpp = readFileSync(new URL("../../src/personality.cpp", import.meta.url), "utf8");
+  const table = { curious: "kCurious", happy: "kHappy", bow: "kBow", look: "kLook", shy: "kShy" };
+  for (const [id, name] of Object.entries(table)) {
+    const body = cpp.match(new RegExp(String.raw`constexpr Key ${name}\[\] = \{([\s\S]*?)\};`))[1];
+    const keys = [...body.matchAll(/\{([^{}]+)\}/g)].map((m) => m[1].split(",").map((v) => {
+      const t = v.trim();
+      return t === "R" ? ANTENNA_REST_DEG : Number(t);
+    }));
+    assert.deepEqual(EMOTE_TIMELINES[id].keys, keys, id);
+  }
+  const voices = [...cpp.matchAll(/\{"(\w+)", "(\w+)", k\w+,/g)].map((m) => [m[1], m[2]]);
+  assert.deepEqual(voices, Object.entries(EMOTE_TIMELINES).map(([id, e]) => [id, e.voice]));
+});

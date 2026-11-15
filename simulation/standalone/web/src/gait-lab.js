@@ -929,3 +929,20 @@ export function createGaitLab(initialSettings = {}) {
     },
   };
 }
+
+// Servo angles for Domino standing still with its hips at `heightMm` (feet
+// under the hips, as in the stand pose). Used by the LIVE / EMOTES 3D preview
+// to show an emote's ride-height nudge with correctly bent legs.
+export function standServoAnglesForHeight(heightMm) {
+  const angles = [...standServoReference];
+  for (const leg of legs) {
+    const side = leg.label.endsWith("L") ? 1 : -1;
+    const solved = solveCadEndpoint(leg, [-15.75, side * 38, heightMm], { upper: 0, lower: 0 });
+    if (!solved.reachable) continue;
+    for (const joint of ["shoulder", "upper", "lower"]) {
+      const channel = leg.channels[joint];
+      angles[channel] = standServoReference[channel] + leg.directions[joint] * solved[joint];
+    }
+  }
+  return angles;
+}

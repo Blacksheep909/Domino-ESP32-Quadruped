@@ -19,6 +19,7 @@ import {
 } from "./live-float-state.js";
 import {
   createGaitLab,
+  standServoAnglesForHeight,
   defaultGaitLabSettings,
   GAIT_LAB_STORAGE_KEY,
   gaitLabControls,
@@ -327,6 +328,7 @@ import {
   sanitizePersonalitySettings,
   validLivePersonalityAcknowledgement,
 } from "./live-personality-protocol.js";
+import { ANTENNA_REST_DEG, emotePose, playEmoteSound } from "./emote-preview.js";
 import {
   captureLiveSensorLevel,
   createLiveSensorAttitudeFilterState,
@@ -1359,6 +1361,7 @@ function persistPresentationPreferences() {
 }
 
 function applyWorkspace(workspace) {
+  if (workspace === WORKSPACE_REAL_ROBOT && liveViewState.selected === LIVE_VIEW_EMOTES) emoteCameraPending = true;
   if (workspace !== WORKSPACE_REAL_ROBOT &&
       (liveCalibrationState.benchModeAcknowledged || calibrationPendingAction === "enter")) {
     releaseCalibrationBench("Leaving LIVE ended the jog session. Unsaved calibration changes were kept.");
@@ -1408,6 +1411,9 @@ function applyLiveView(view) {
   const enteringCalibration = liveViewState.selected !== LIVE_VIEW_CALIBRATION && view === LIVE_VIEW_CALIBRATION;
   const leavingGaits = liveViewState.selected === LIVE_VIEW_GAITS && view !== LIVE_VIEW_GAITS;
   const enteringGaits = liveViewState.selected !== LIVE_VIEW_GAITS && view === LIVE_VIEW_GAITS;
+  const enteringEmotes = liveViewState.selected !== LIVE_VIEW_EMOTES && view === LIVE_VIEW_EMOTES;
+  if (view === LIVE_VIEW_EMOTES) emoteCameraPending = true;
+  if (view !== LIVE_VIEW_EMOTES) hideEmoteAntennas();
   const enteringSensors = liveViewState.selected !== LIVE_VIEW_SENSORS && view === LIVE_VIEW_SENSORS;
   if (!selectLiveView(liveViewState, view)) return false;
   if (view !== LIVE_VIEW_SENSORS && document.body.dataset.livePlannerFocus === "true") {
@@ -1482,7 +1488,7 @@ function applyLiveView(view) {
   }
   requestAnimationFrame(() => {
     resize();
-    if (enteringCalibration || enteringGaits || enteringSensors) {
+    if (enteringCalibration || enteringGaits || enteringEmotes || enteringSensors) {
       resetCameraForActiveView();
       if (enteringCalibration) focusCalibrationJoint();
     }
@@ -1521,6 +1527,11 @@ const LIVE_PREVIEW_LANES = Object.freeze({
     header: ":scope > .live-page-heading",
     column: ".live-gaits-layout",
     caption: ".live-gait-preview-caption",
+  },
+  emotes: {
+    header: ":scope > .live-page-heading",
+    column: ".live-gaits-layout",
+    caption: "#live-emotes-preview-caption",
   },
 });
 let livePreviewLaneFrame = 0;
@@ -11100,22 +11111,38 @@ function resetCameraView() {
 function resetCameraForActiveView() {
   resetCameraView();
   if (applicationState.workspace !== WORKSPACE_REAL_ROBOT) return;
-  const compactView = [LIVE_VIEW_CALIBRATION, LIVE_VIEW_GAITS, LIVE_VIEW_SENSORS].includes(liveViewState.selected);
+  const compactView = [LIVE_VIEW_CALIBRATION, LIVE_VIEW_GAITS, LIVE_VIEW_EMOTES, LIVE_VIEW_SENSORS].includes(liveViewState.selected);
   if (!compactView) return;
   perspectiveCamera.position.copy(robotCameraAnchor).addScaledVector(defaultCameraOffset, 0.58);
   perspectiveCamera.zoom = liveViewState.selected === LIVE_VIEW_SENSORS
     ? 1.2
-    : liveViewState.selected === LIVE_VIEW_GAITS ? 1.35 : 1;
-  if (liveViewState.selected === LIVE_VIEW_GAITS) {
+    : [LIVE_VIEW_GAITS, LIVE_VIEW_EMOTES].includes(liveViewState.selected) ? 1.35 : 1;
+  if ([LIVE_VIEW_GAITS, LIVE_VIEW_EMOTES].includes(liveViewState.selected)) {
     // Aim at the robot itself (found from its feet), half way up its body, so
     // the taller preview lane does not leave it clipped at the bottom.
     const frame = robotFloorFrame();
     if (frame) {
       const aim = frame.centre.clone();
-      aim.y = (liveGaitState.draft.settings.bodyHeightMm || 260) / 1000 * 0.45;
+      aim.y = (liveViewState.selected === LIVE_VIEW_EMOTES ? EMOTE_PREVIEW_HEIGHT_MM
+        : liveGaitState.draft.settings.bodyHeightMm || 260) / 1000 * 0.45;
       const shift = aim.sub(controls.target);
       controls.target.add(shift);
       perspectiveCamera.position.add(shift);
+      if (liveViewState.selected === LIVE_VIEW_EMOTES) {
+        // Emotes happen at the face: look at the nose from the front quarter,
+        // a little above, so the antennas and the ride-height dip both read.
+        const forward = new THREE.Vector3(Math.cos(frame.heading), 0, -Math.sin(frame.heading));
+        const left = new THREE.Vector3(-forward.z, 0, forward.x);
+        controls.target.copy(frame.centre).addScaledVector(forward, 0.2);
+        controls.target.y = EMOTE_PREVIEW_HEIGHT_MM / 1000 * 0.95;
+        perspectiveCamera.position.copy(controls.target)
+          .addScaledVector(forward, 0.78).addScaledVector(left, 0.36).add(new THREE.Vector3(0, 0.2, 0));
+        perspectiveCamera.zoom = 1.3;
+        // The frame loop eases the target back to robotCameraAnchor +
+        // cameraTargetOffset; store the nose aim as that offset so it sticks.
+        robotCameraAnchor.set(robotWorld.position.x, cameraAnchorY(), robotWorld.position.z);
+        cameraTargetOffset.copy(controls.target).sub(robotCameraAnchor);
+      }
     }
   }
   perspectiveCamera.updateProjectionMatrix();
@@ -12238,6 +12265,25 @@ function updateLiveTwinPose(delta) {
     canvas.dataset.liveMeasuredPose = "unavailable";
     return;
   }
+  if (liveViewState.selected === LIVE_VIEW_EMOTES && linkageRuntimesReady()) {
+    const pose = livePersonalityPreviewPose();
+    const height = EMOTE_PREVIEW_HEIGHT_MM + pose.height;
+    liveExpectedServoAngles = smoothLiveServoAngles(liveExpectedServoAngles, standServoAnglesForHeight(height), delta);
+    applyServoAnglesToRuntimes(linkageRuntimes, liveExpectedServoAngles);
+    applyLiveBodyPose(robotWorld, livePreviewBodyPose({ rollDeg: 0, pitchDeg: 0, yawDeg: 0, heightMm: height },
+      floatModeEnabled, floatAnchorPosition.y * 1_000));
+    if (!floatModeEnabled) groundLivePreviewFromFeet();
+    if (measuredRobotWorld) measuredRobotWorld.visible = false;
+    updateEmoteAntennas(pose);
+    // Frame the face once per visit, as soon as the robot model is ready.
+    if (emoteCameraPending && robotFloorFrame()) {
+      emoteCameraPending = false;
+      resetCameraForActiveView();
+    }
+    canvas.dataset.liveExpectedPose = "emote-preview";
+    canvas.dataset.liveMeasuredPose = "unavailable";
+    return;
+  }
   if (liveViewState.selected === LIVE_VIEW_GAITS && linkageRuntimesReady()) {
     const height = liveGaitState.draft.settings.bodyHeightMm;
     const source = {
@@ -13025,6 +13071,120 @@ function renderLivePersonalityUi() {
   document.querySelector("#live-emotes-status").textContent = livePersonalityState.status;
 }
 
+// 3D preview: the stand height the emote nudges, the emote playing, and the
+// two antennas (not on the robot model yet) attached to the body at the nose.
+const EMOTE_PREVIEW_HEIGHT_MM = 260;
+let livePersonalityPreviewEmote = null;
+let emoteCameraPending = false;
+let emoteAntennas = null;
+
+function livePersonalityPreviewPose() {
+  if (!livePersonalityPreviewEmote) return { left: ANTENNA_REST_DEG, right: ANTENNA_REST_DEG, height: 0 };
+  const pose = emotePose(livePersonalityPreviewEmote.id, performance.now() - livePersonalityPreviewEmote.startMs);
+  if (!pose.playing) {
+    livePersonalityPreviewEmote = null;
+    const state = document.querySelector("#live-emotes-preview-state");
+    if (state) state.textContent = "IDLE";
+  }
+  return pose;
+}
+
+// body_v7 face (OLED eyes, VL53L5CX, MG90S antennas, speaker) exported from
+// the Fusion "body_v7" assembly into the CAD mesh folder (meshes/v7/). The
+// files share base_link's frame, so they load in place under cadRoot. Shown
+// on LIVE / EMOTES only: the robot model elsewhere is still the body_v6 build.
+const V7_FACE_PARTS = [
+  ["v7_end_plate_face_mount__end_plate_v7", "printed"],
+  ["v7_face_plate__face_plate", "printed"],
+  ["v7_face_bezel__face_bezel", "dark"],
+  ["v7_tof_cradle__tof_cradle_20deg", "dark"],
+  ["v7_audio_saddle__speaker_amp_saddle", "dark"],
+  ["v7_ref_hardware__OLED_2_42in_SSD1309_L", "screen"],
+  ["v7_ref_hardware__OLED_2_42in_SSD1309_R", "screen"],
+  ["v7_ref_hardware__VL53L5CX_breakout", "pcb"],
+  ["v7_ref_hardware__MG90S_L", "servo"],
+  ["v7_ref_hardware__MG90S_R", "servo"],
+  ["v7_ref_hardware__Speaker_2831_4ohm_3W", "dark"],
+  ["v7_ref_hardware__MAX98357A_breakout", "pcb"],
+];
+// Antenna pivot: the MG90S output shaft (cad/fusion/body_v7_generate.py),
+// mm in the CAD frame. Rotation is about CAD +Y; + leans toward the nose.
+const V7_ANTENNA_PIVOT_MM = [389.8, 0, 42.9];
+const V7_ANTENNA_REST_DEG = -45;
+
+function v7FaceMaterial(kind) {
+  const spec = {
+    printed: { color: 0xd9d4c7, roughness: 0.7, metalness: 0.02 },
+    dark: { color: 0x26282b, roughness: 0.6, metalness: 0.05 },
+    screen: { color: 0x0c0d0f, roughness: 0.2, metalness: 0.3 },
+    pcb: { color: 0x2b3a6b, roughness: 0.5, metalness: 0.2 },
+    servo: { color: 0x2f5fb0, roughness: 0.45, metalness: 0.05 },
+    antenna: { color: 0x17181a, roughness: 0.55, metalness: 0.05 },
+  }[kind];
+  return new THREE.MeshStandardMaterial(spec);
+}
+
+async function loadV7Part(name, material, parent, offsetMm = [0, 0, 0]) {
+  const geometry = await loader.loadAsync(`/cad/v7/${name}.stl`);
+  geometry.scale(0.001, 0.001, 0.001);
+  geometry.translate(
+    -assemblyOrigin[0] - offsetMm[0] / 1000,
+    -assemblyOrigin[1] - offsetMm[1] / 1000,
+    -assemblyOrigin[2] - offsetMm[2] / 1000,
+  );
+  geometry.computeVertexNormals();
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  parent.add(mesh);
+  return mesh;
+}
+
+function buildV7Face() {
+  const group = new THREE.Group();
+  group.name = "body_v7_face";
+  cadRoot.add(group);
+  const antennas = {};
+  const pivotAt = [
+    V7_ANTENNA_PIVOT_MM[0] / 1000 - assemblyOrigin[0],
+    -assemblyOrigin[1],
+    V7_ANTENNA_PIVOT_MM[2] / 1000 - assemblyOrigin[2],
+  ];
+  for (const side of ["L", "R"]) {
+    const pivot = new THREE.Group();
+    pivot.position.set(...pivotAt);
+    group.add(pivot);
+    antennas[side] = pivot;
+  }
+  const loads = V7_FACE_PARTS.map(([name, kind]) => loadV7Part(name, v7FaceMaterial(kind), group));
+  const antennaMaterial = v7FaceMaterial("antenna");
+  // Antenna meshes are placed relative to the pivot so the pivot group can swing them.
+  // loadV7Part subtracts the assembly origin; take it back out of the offset so
+  // the mesh sits at (CAD point - pivot) inside the pivot group.
+  const pivotMm = [
+    V7_ANTENNA_PIVOT_MM[0] - assemblyOrigin[0] * 1000,
+    -assemblyOrigin[1] * 1000,
+    V7_ANTENNA_PIVOT_MM[2] - assemblyOrigin[2] * 1000,
+  ];
+  for (const side of ["L", "R"]) {
+    loads.push(loadV7Part(`v7_antennas__antenna_${side}`, antennaMaterial, antennas[side], pivotMm));
+  }
+  Promise.all(loads).catch((error) => console.warn("body_v7 face meshes did not load", error));
+  return { group, left: antennas.L, right: antennas.R };
+}
+
+function updateEmoteAntennas(pose) {
+  if (!emoteAntennas) emoteAntennas = buildV7Face();
+  emoteAntennas.group.visible = true;
+  // Meshes were exported at the rest pose, so rotate by the change from rest.
+  emoteAntennas.left.rotation.y = (pose.left - V7_ANTENNA_REST_DEG) * Math.PI / 180;
+  emoteAntennas.right.rotation.y = (pose.right - V7_ANTENNA_REST_DEG) * Math.PI / 180;
+}
+
+function hideEmoteAntennas() {
+  if (emoteAntennas) emoteAntennas.group.visible = false;
+}
+
 function setupLivePersonalityUi() {
   const channel = document.querySelector("#live-emotes-channel");
   if (!channel) return;
@@ -13051,12 +13211,25 @@ function setupLivePersonalityUi() {
     name.textContent = emote.label;
     const detail = document.createElement("small");
     detail.textContent = emote.detail;
+    const buttons = document.createElement("div");
+    const local = document.createElement("button");
+    local.type = "button";
+    local.dataset.emoteLocal = emote.id;
+    local.textContent = "PREVIEW";
+    local.addEventListener("click", () => {
+      const s = livePersonalityState.draft;
+      livePersonalityPreviewEmote = { id: emote.id, startMs: performance.now() };
+      if (s.enabled && s.soundEnabled) playEmoteSound(emote.id, s.volumePercent);
+      document.querySelector("#live-emotes-preview-state").textContent = emote.label.toUpperCase();
+    });
     const play = document.createElement("button");
     play.type = "button";
     play.dataset.emotePreview = emote.id;
-    play.textContent = "PLAY";
+    play.textContent = "ON ROBOT";
+    play.title = "Play this emote on the connected robot";
     play.addEventListener("click", () => sendLivePersonalityCommand("preview-emote", { emote: emote.id }));
-    row.append(name, detail, play);
+    buttons.append(local, play);
+    row.append(name, detail, buttons);
     list.append(row);
   }
   const onEdit = () => {

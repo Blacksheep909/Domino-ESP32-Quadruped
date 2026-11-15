@@ -3430,7 +3430,7 @@ body[data-workspace="real-robot"] .simulation-only {
    placed it inside the title banner, directly over the page status card. */
 body[data-workspace="real-robot"]:is(
   [data-live-view="sensors"],
-  [data-live-view="gaits"]
+  [data-live-view="gaits"], [data-live-view="emotes"]
 ) .camera-gizmo {
   top: calc(var(--live-preview-top) + 12px);
 }
@@ -4728,7 +4728,7 @@ body[data-workspace="real-robot"][data-live-view="calibration"] #scene {
   z-index: 8;
 }
 
-body[data-workspace="real-robot"]:is([data-live-view="calibration"], [data-live-view="gaits"], [data-live-view="sensors"]) .camera-gizmo {
+body[data-workspace="real-robot"]:is([data-live-view="calibration"], [data-live-view="gaits"], [data-live-view="emotes"], [data-live-view="sensors"]) .camera-gizmo {
   top: 156px;
   right: calc(2.5vw + 12px);
   bottom: auto;
@@ -4738,7 +4738,7 @@ body[data-workspace="real-robot"]:is([data-live-view="calibration"], [data-live-
   transform-origin: top right;
 }
 
-body[data-workspace="real-robot"]:is([data-live-view="data"], [data-live-view="diagnostics"], [data-live-view="sessions"], [data-live-view="emotes"]) :is(#scene, .camera-gizmo, .camera-home-button) {
+body[data-workspace="real-robot"]:is([data-live-view="data"], [data-live-view="diagnostics"], [data-live-view="sessions"]) :is(#scene, .camera-gizmo, .camera-home-button) {
   visibility: hidden;
   pointer-events: none;
 }
@@ -4787,7 +4787,9 @@ body[data-workspace="real-robot"]:not(:is([data-live-view="compare"], [data-live
 .live-gait-preview-caption strong[data-state="fault"] { color: #ef9182; }
 .live-gait-preview-caption small { grid-column: 1 / -1; color: #8f8f95; font-size: 8px; }
 
-body[data-workspace="real-robot"][data-live-view="gaits"] #scene {
+body[data-workspace="real-robot"][data-live-view="gaits"] #scene ,
+
+body[data-workspace="real-robot"][data-live-view="emotes"] #scene {
   inset: 144px 2.5vw 54px auto;
   width: 36vw;
   height: auto;
@@ -4831,7 +4833,7 @@ body[data-workspace="real-robot"][data-live-view="sensors"] #scene {
   z-index: 8;
 }
 
-body[data-workspace="real-robot"]:is([data-live-view="sensors"], [data-live-view="gaits"]) #telemetry-panel#telemetry-panel:has(#joint-legend) {
+body[data-workspace="real-robot"]:is([data-live-view="sensors"], [data-live-view="gaits"], [data-live-view="emotes"]) #telemetry-panel#telemetry-panel:has(#joint-legend) {
   display: none !important;
 }
 
@@ -4891,7 +4893,10 @@ body[data-workspace="real-robot"]:is([data-live-view="sensors"], [data-live-view
 .live-gait-card > header button,
 .live-gait-presets button,
 .live-gait-preview-row button,
-.live-gait-apply-card button {
+.live-gait-apply-card button,
+.live-emotes-actions button,
+.live-emotes-list button,
+.live-emotes-field select {
   height: 32px;
   min-width: 0;
   padding: 0 9px;
@@ -4907,7 +4912,9 @@ body[data-workspace="real-robot"]:is([data-live-view="sensors"], [data-live-view
 .live-gait-card > header button:not(:disabled),
 .live-gait-preview-row button[aria-pressed="true"],
 .live-gait-presets button[aria-pressed="true"],
-.live-gait-apply-card button:not(:disabled) {
+.live-gait-apply-card button:not(:disabled),
+.live-emotes-actions button:not(:disabled),
+.live-emotes-list button:not(:disabled) {
   color: #223b5c;
   background: #e9eaeb;
   border-color: #afb1b6;
@@ -4975,12 +4982,17 @@ body[data-workspace="real-robot"]:is([data-live-view="sensors"], [data-live-view
 :root[data-theme="dark"] .live-gait-card > header button,
 :root[data-theme="dark"] .live-gait-presets button,
 :root[data-theme="dark"] .live-gait-preview-row button,
-:root[data-theme="dark"] .live-gait-apply-card button { color: #85858b; background: #202023; border-color: #343438; }
+:root[data-theme="dark"] .live-gait-apply-card button,
+:root[data-theme="dark"] .live-emotes-actions button,
+:root[data-theme="dark"] .live-emotes-list button,
+:root[data-theme="dark"] .live-emotes-field select { color: #85858b; background: #202023; border-color: #343438; }
 :root[data-theme="dark"] .live-gait-library-controls button:not(:disabled),
 :root[data-theme="dark"] .live-gait-card > header button:not(:disabled),
 :root[data-theme="dark"] .live-gait-preview-row button[aria-pressed="true"],
 :root[data-theme="dark"] .live-gait-presets button[aria-pressed="true"],
-:root[data-theme="dark"] .live-gait-apply-card button:not(:disabled) { color: #bccfe8; background: rgba(61, 100, 151, 0.14); border-color: rgba(80, 122, 177, 0.35); }
+:root[data-theme="dark"] .live-gait-apply-card button:not(:disabled),
+:root[data-theme="dark"] .live-emotes-actions button:not(:disabled),
+:root[data-theme="dark"] .live-emotes-list button:not(:disabled) { color: #bccfe8; background: rgba(61, 100, 151, 0.14); border-color: rgba(80, 122, 177, 0.35); }
 :root[data-theme="dark"] .live-gait-settings label { background: #18181a; }
 :root[data-theme="dark"] .live-gait-preview-row label output { color: #bccfe8; }
 :root[data-theme="dark"] .live-gait-compare-table-wrap th,
@@ -4995,7 +5007,8 @@ body[data-workspace="real-robot"]:is([data-live-view="sensors"], [data-live-view
 :root[data-theme="dark"] .live-gait-ik-warning[data-state="fault"] { color: #ef9182; background: rgba(185, 72, 58, 0.12); }
 
 @media (max-width: 1000px) {
-  body[data-workspace="real-robot"][data-live-view="gaits"] #scene { z-index: 0; inset: 0; width: 100%; height: 100%; border: 0; }
+  body[data-workspace="real-robot"][data-live-view="gaits"] #scene ,
+  body[data-workspace="real-robot"][data-live-view="emotes"] #scene { z-index: 0; inset: 0; width: 100%; height: 100%; border: 0; }
   .live-gaits-page { padding-right: clamp(22px, 4vw, 58px); }
   .live-gait-preview-caption { display: none; }
   .live-gait-preview-row { grid-template-columns: 1fr 1fr; }
@@ -5722,7 +5735,7 @@ body[data-workspace="real-robot"]:is([data-live-view="sensors"], [data-live-view
 
 @media (max-width: 1000px) {
   body[data-workspace="real-robot"][data-live-view="calibration"] #scene { z-index: 0; inset: 0; width: 100%; height: 100%; border: 0; }
-  body[data-workspace="real-robot"]:is([data-live-view="calibration"], [data-live-view="gaits"]) :is(.camera-gizmo, .camera-home-button) { display: none; }
+  body[data-workspace="real-robot"]:is([data-live-view="calibration"], [data-live-view="gaits"], [data-live-view="emotes"]) :is(.camera-gizmo, .camera-home-button) { display: none; }
   .live-calibration-page { padding-right: clamp(22px, 4vw, 58px); }
   .calibration-preview-caption { display: none; }
   .live-calibration-layout { grid-template-columns: 1fr; }
@@ -9169,7 +9182,7 @@ body[data-workspace="real-robot"]:not(:is([data-live-view="compare"], [data-live
 
   /* Sensors and Gaits retain both the inspection controls and the manual
      control button. Keep all three items on the toolbar's single row. */
-  body[data-workspace="real-robot"]:is([data-live-view="sensors"], [data-live-view="gaits"]) #real-workspace .live-toolbar {
+  body[data-workspace="real-robot"]:is([data-live-view="sensors"], [data-live-view="gaits"], [data-live-view="emotes"]) #real-workspace .live-toolbar {
     grid-template-columns: minmax(0, 1fr) auto auto;
   }
 
@@ -9191,7 +9204,7 @@ body[data-workspace="real-robot"]:not(:is([data-live-view="compare"], [data-live
     grid-template-columns: minmax(0, 1fr);
   }
 
-  body[data-workspace="real-robot"]:is([data-live-view="sensors"], [data-live-view="gaits"]) #real-workspace .live-toolbar {
+  body[data-workspace="real-robot"]:is([data-live-view="sensors"], [data-live-view="gaits"], [data-live-view="emotes"]) #real-workspace .live-toolbar {
     grid-template-columns: minmax(0, 1fr) auto;
   }
 }
@@ -9331,7 +9344,7 @@ body[data-workspace="real-robot"]:not(:is([data-live-view="compare"], [data-live
 body[data-workspace="real-robot"]:is(
   [data-live-view="sensors"],
   [data-live-view="calibration"],
-  [data-live-view="gaits"]
+  [data-live-view="gaits"], [data-live-view="emotes"]
 ) {
   /* Keep a deliberate gap after the title/status lane. The preview is fixed
      above the scrolling page, so a small buffer prevents a wrapped heading
@@ -9351,7 +9364,7 @@ body[data-workspace="real-robot"][data-live-view="calibration"] {
    the preview lane. */
 body[data-workspace="real-robot"]:is(
   [data-live-view="sensors"],
-  [data-live-view="gaits"]
+  [data-live-view="gaits"], [data-live-view="emotes"]
 ) {
   --live-preview-top: 262px;
 }
@@ -9359,7 +9372,7 @@ body[data-workspace="real-robot"]:is(
 body[data-workspace="real-robot"]:is(
   [data-live-view="sensors"],
   [data-live-view="calibration"],
-  [data-live-view="gaits"]
+  [data-live-view="gaits"], [data-live-view="emotes"]
 ) #scene {
   inset: var(--live-preview-top) var(--live-preview-right) auto auto;
   width: var(--live-preview-width);
@@ -9398,7 +9411,9 @@ body[data-workspace="real-robot"][data-live-view="calibration"] .camera-gizmo {
   overflow-x: hidden;
 }
 
-#live-view-gaits .live-page-heading {
+#live-view-gaits .live-page-heading ,
+
+#live-view-emotes .live-page-heading {
   /* The page reserves a right-hand preview lane. Expand the banner by that
      exact amount so its border reaches the same content edge as the preview
      without changing the editor's usable width. */
@@ -9407,7 +9422,9 @@ body[data-workspace="real-robot"][data-live-view="calibration"] .camera-gizmo {
   margin-right: calc(-1 * clamp(430px, calc(38.5vw + 16px), 776px));
 }
 
-#live-view-gaits {
+#live-view-gaits ,
+
+#live-view-emotes {
   overflow-x: hidden;
 }
 
@@ -9475,7 +9492,8 @@ body[data-workspace="real-robot"][data-live-view="calibration"] .camera-gizmo {
   }
 
   #live-view-sensors .live-page-heading,
-  #live-view-gaits .live-page-heading {
+  #live-view-gaits .live-page-heading ,
+  #live-view-emotes .live-page-heading {
     width: 100%;
     margin-right: 0;
   }
@@ -9533,15 +9551,6 @@ body[data-workspace="real-robot"][data-live-view="calibration"] .camera-gizmo {
   background: transparent;
   border-color: transparent;
   box-shadow: none;
-}
-
-:root[data-theme="dark"] #real-workspace .live-view-page .live-page-heading::before {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 3px;
-  background: var(--live-accent);
-  opacity: 0.9;
 }
 
 :root[data-theme="dark"] #real-workspace .live-view-page .live-page-heading > div:first-child {
@@ -9668,12 +9677,16 @@ body[data-workspace="real-robot"][data-live-view="calibration"] .camera-gizmo {
   font-size: 10px !important;
 }
 
-:root[data-theme="dark"] #real-workspace .live-view-page#live-view-gaits .live-gait-preview-row > label {
+:root[data-theme="dark"] #real-workspace .live-view-page#live-view-gaits .live-gait-preview-row > label ,
+
+:root[data-theme="dark"] #real-workspace .live-view-page#live-view-emotes .live-gait-preview-row > label {
   min-width: 0;
   overflow: hidden;
 }
 
-:root[data-theme="dark"] #real-workspace .live-view-page#live-view-gaits .live-gait-preview-row > label input {
+:root[data-theme="dark"] #real-workspace .live-view-page#live-view-gaits .live-gait-preview-row > label input ,
+
+:root[data-theme="dark"] #real-workspace .live-view-page#live-view-emotes .live-gait-preview-row > label input {
   width: 100%;
   margin: 0;
   box-sizing: border-box;
@@ -9739,11 +9752,15 @@ body[data-workspace="real-robot"][data-live-view="calibration"] .camera-gizmo {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  #live-view-gaits .live-gait-library-controls {
+  #live-view-gaits .live-gait-library-controls ,
+
+  #live-view-emotes .live-gait-library-controls {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  #live-view-gaits .live-gait-library-controls > * {
+  #live-view-gaits .live-gait-library-controls > * ,
+
+  #live-view-emotes .live-gait-library-controls > * {
     width: 100%;
     box-sizing: border-box;
   }
@@ -9801,7 +9818,7 @@ body[data-workspace="real-robot"][data-live-view="sensors"][data-live-planner-fo
 
 body[data-workspace="real-robot"]:is(
   [data-live-view="sensors"],
-  [data-live-view="gaits"]
+  [data-live-view="gaits"], [data-live-view="emotes"]
 ) .camera-gizmo {
   top: calc(var(--live-preview-top) + 12px);
 }
@@ -9849,7 +9866,7 @@ body[data-workspace="real-robot"]:is(
   body[data-workspace="real-robot"]:is(
     [data-live-view="sensors"],
     [data-live-view="calibration"],
-    [data-live-view="gaits"]
+    [data-live-view="gaits"], [data-live-view="emotes"]
   ) #scene {
     inset: calc(var(--live-content-top, 118px) + 250px) 22px auto;
     width: calc(100vw - 44px);
@@ -9859,7 +9876,7 @@ body[data-workspace="real-robot"]:is(
   body[data-workspace="real-robot"]:is(
     [data-live-view="sensors"],
     [data-live-view="calibration"],
-    [data-live-view="gaits"]
+    [data-live-view="gaits"], [data-live-view="emotes"]
   ) .camera-gizmo {
     top: calc(var(--live-content-top, 118px) + 247px);
     right: 34px;
@@ -9867,7 +9884,8 @@ body[data-workspace="real-robot"]:is(
 
   #live-view-sensors .live-sensor-grid,
   #live-view-calibration .live-calibration-layout,
-  #live-view-gaits .live-gaits-layout {
+  #live-view-gaits .live-gaits-layout ,
+  #live-view-emotes .live-gaits-layout {
     padding-top: 255px;
   }
 
@@ -9881,7 +9899,8 @@ body[data-workspace="real-robot"]:is(
   }
 
   body[data-workspace="real-robot"][data-live-preview-collapsed="true"] #live-view-sensors .live-sensor-grid,
-  body[data-workspace="real-robot"][data-live-preview-collapsed="true"] #live-view-gaits .live-gaits-layout {
+  body[data-workspace="real-robot"][data-live-preview-collapsed="true"] #live-view-gaits .live-gaits-layout ,
+  body[data-workspace="real-robot"][data-live-preview-collapsed="true"] #live-view-emotes .live-gaits-layout {
     padding-top: 0;
   }
 }
@@ -9952,7 +9971,8 @@ body[data-workspace="real-robot"]:is(
      preview or read as a separate floating banner. */
   #live-view-sensors .live-page-heading,
   #live-view-calibration .live-page-heading,
-  #live-view-gaits .live-page-heading {
+  #live-view-gaits .live-page-heading ,
+  #live-view-emotes .live-page-heading {
     width: 100%;
     max-width: none;
     margin-right: 0;
@@ -9961,7 +9981,7 @@ body[data-workspace="real-robot"]:is(
   body[data-workspace="real-robot"]:is(
     [data-live-view="sensors"],
     [data-live-view="calibration"],
-    [data-live-view="gaits"]
+    [data-live-view="gaits"], [data-live-view="emotes"]
   ) {
     --live-preview-top: 226px;
   }
@@ -10053,9 +10073,11 @@ body[data-workspace="real-robot"]:is(
   #live-view-sensors .live-page-heading,
   #live-view-calibration .live-page-heading,
   #live-view-gaits .live-page-heading,
+  #live-view-emotes .live-page-heading,
   :root[data-theme="dark"] #live-view-sensors .live-page-heading,
   :root[data-theme="dark"] #live-view-calibration .live-page-heading,
-  :root[data-theme="dark"] #live-view-gaits .live-page-heading {
+  :root[data-theme="dark"] #live-view-gaits .live-page-heading ,
+  :root[data-theme="dark"] #live-view-emotes .live-page-heading {
     width: calc(100vw - var(--app-gutter) - var(--app-gutter));
     max-width: none;
     margin-right: 0;
@@ -10074,6 +10096,7 @@ body[data-workspace="real-robot"]:is(
   #live-view-sensors .live-sensor-grid,
   #live-view-calibration .live-calibration-layout,
   #live-view-gaits .live-gaits-layout,
+  #live-view-emotes .live-gaits-layout,
   #live-view-sensors .live-navigation-grid {
     gap: var(--panel-gap);
   }
@@ -10125,7 +10148,8 @@ body[data-workspace="real-robot"]:is(
   #live-view-sensors .live-sensor-grid,
   #live-view-sensors .live-navigation-grid,
   #live-view-calibration .live-calibration-layout,
-  #live-view-gaits .live-gaits-layout {
+  #live-view-gaits .live-gaits-layout ,
+  #live-view-emotes .live-gaits-layout {
     box-sizing: border-box;
     width: var(--live-editor-width);
     max-width: var(--live-editor-width);
@@ -10135,12 +10159,16 @@ body[data-workspace="real-robot"]:is(
   }
 
   #live-view-calibration.live-calibration-page,
-  #live-view-gaits.live-gaits-page { padding-right: var(--live-shell-gutter); }
+  #live-view-gaits.live-gaits-page ,
+  #live-view-emotes.live-gaits-page { padding-right: var(--live-shell-gutter); }
 
   #live-view-calibration .live-calibration-layout { grid-template-columns: 160px minmax(0, 1fr); }
 
   #live-view-gaits .live-gaits-editor,
+
+  #live-view-emotes .live-gaits-editor,
   #live-view-gaits .live-gait-card,
+  #live-view-emotes .live-gait-card,
   #live-view-calibration .live-calibration-workspace {
     width: 100%;
     min-width: 0;
@@ -10148,7 +10176,7 @@ body[data-workspace="real-robot"]:is(
     box-sizing: border-box;
   }
 
-  body[data-workspace="real-robot"]:is([data-live-view="sensors"], [data-live-view="calibration"], [data-live-view="gaits"]) #scene {
+  body[data-workspace="real-robot"]:is([data-live-view="sensors"], [data-live-view="calibration"], [data-live-view="gaits"], [data-live-view="emotes"]) #scene {
     right: var(--live-preview-right);
     width: var(--live-preview-width);
   }
@@ -10342,7 +10370,7 @@ body[data-workspace="real-robot"][data-live-view="sensors"][data-live-planner-fo
   body[data-workspace="real-robot"]:is(
     [data-live-view="sensors"],
     [data-live-view="calibration"],
-    [data-live-view="gaits"]
+    [data-live-view="gaits"], [data-live-view="emotes"]
   ) {
     --live-preview-top: calc(
       var(--live-content-top, 118px) + var(--live-page-pad) +
@@ -10690,13 +10718,13 @@ body[data-workspace="real-robot"][data-live-view="sensors"][data-live-planner-fo
    --live-preview-gap and --live-preview-caption-max on <body>. Every part of
    the lane uses those values and one gap, so no page can slide under it. */
 @media (min-width: 1001px) {
-  body[data-workspace="real-robot"]:is([data-live-view="calibration"], [data-live-view="gaits"]) #scene {
+  body[data-workspace="real-robot"]:is([data-live-view="calibration"], [data-live-view="gaits"], [data-live-view="emotes"]) #scene {
     inset: var(--live-preview-top) var(--live-preview-right) auto auto;
     width: var(--live-preview-width);
     height: var(--live-preview-height);
   }
 
-  body[data-workspace="real-robot"]:is([data-live-view="calibration"], [data-live-view="gaits"]) .camera-gizmo {
+  body[data-workspace="real-robot"]:is([data-live-view="calibration"], [data-live-view="gaits"], [data-live-view="emotes"]) .camera-gizmo {
     top: calc(var(--live-preview-top) + var(--live-preview-gap, 12px) * 0.75);
     right: calc(var(--live-preview-right) + var(--live-preview-gap, 12px) * 0.75);
   }
@@ -10712,7 +10740,7 @@ body[data-workspace="real-robot"][data-live-view="sensors"][data-live-planner-fo
 
   /* The lane ends on the same page edge as the titles above it (the older
      clamp(20px, 2.5vw, 54px) left it short of the title on every width). */
-  body[data-workspace="real-robot"]:is([data-live-view="calibration"], [data-live-view="gaits"]) {
+  body[data-workspace="real-robot"]:is([data-live-view="calibration"], [data-live-view="gaits"], [data-live-view="emotes"]) {
     --live-preview-right: var(--live-shell-gutter, var(--app-gutter));
   }
 
@@ -10733,14 +10761,6 @@ body[data-workspace="real-robot"][data-live-view="sensors"][data-live-planner-fo
 
 
 /* LIVE / EMOTES ----------------------------------------------------------- */
-.live-emotes-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 16px;
-  max-width: 1240px;
-  margin: 0 auto;
-}
-@media (max-width: 1000px) { .live-emotes-layout { grid-template-columns: minmax(0, 1fr); } }
 .live-emotes-settings { display: grid; gap: 12px; margin-top: 12px; }
 .live-emotes-toggle { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
 .live-emotes-toggle input { margin-top: 3px; width: 16px; height: 16px; flex: none; }
@@ -10756,6 +10776,6 @@ body[data-workspace="real-robot"][data-live-view="sensors"][data-live-planner-fo
 .live-emotes-list article { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; padding: 10px 12px; border: 1px solid #d2d2cd; border-radius: 6px; }
 .live-emotes-list article strong { font-size: 13px; }
 .live-emotes-list article small { grid-column: 1; opacity: 0.72; font-size: 12px; }
-.live-emotes-list article button { grid-row: 1 / 3; grid-column: 2; }
+.live-emotes-list article > div { grid-row: 1 / 3; grid-column: 2; display: flex; gap: 6px; }
 .live-emotes-settings[data-disabled="true"] > :not(.live-emotes-toggle:first-child) { opacity: 0.45; }
 :root[data-theme="dark"] .live-emotes-list article { border-color: #303034; }

@@ -1,0 +1,1130 @@
+{
+  "sampleRate": 22050,
+  "version": "v2",
+  "notes": "Domino droid voice v2 (2026-11-15): v1 plus a spoken voice and a post pass. The owner's favourites (whistle, cuckoo, purr) work because they copy sounds a mouth makes, so v2 gives the droid a mouth: wave 'vox' sings a vowel (vowel: oo | oh | ah | uh | eh | ee | mm, or 'oo>ah' to glide between two), and each emote is a small spoken gesture (hello, uh-oh, hmm?, aww, wow) with a quiet whistle on top. fx is the post pass applied to every sound: drive = soft distortion (1 = none), echoMs/echoGain and echo2Ms/echo2Gain = two short echoes, lowpassHz = treble roll-off. v1 is frozen in sounds/wav/v1. Segment fields: wave: sine | tri | sq | fm | hop | vox. f0->f1 is a glide in Hz over ms, then gap ms of silence. curve: lin | exp. vib/vibDepth: vibrato rate (Hz) and depth. sub: 0..1 mix of a second sine voice at subRatio times the pitch (0.5 = octave down, 2 = whistle an octave up). atk/rel: fade in/out in ms. amp 0..1. phrases string emotes together (name, pause in ms, or {emote, pitch, tempo}). babble makes a long seeded sentence at build time. Edit, then run: node sounds/build.mjs",
+  "fx": {
+    "drive": 1.6,
+    "echoMs": 55,
+    "echoGain": 0.22,
+    "echo2Ms": 120,
+    "echo2Gain": 0.09,
+    "lowpassHz": 6000
+  },
+  "emotes": {
+    "whistle": [
+      {
+        "wave": "sine",
+        "f0": 1300,
+        "f1": 2400,
+        "ms": 170,
+        "gap": 0,
+        "curve": "exp",
+        "sub": 0.2
+      },
+      {
+        "wave": "sine",
+        "f0": 2400,
+        "f1": 1700,
+        "ms": 210,
+        "gap": 0,
+        "vib": 9,
+        "vibDepth": 0.015,
+        "sub": 0.2
+      }
+    ],
+    "cuckoo": [
+      {
+        "wave": "sine",
+        "f0": 1660,
+        "f1": 1760,
+        "ms": 28,
+        "gap": 0,
+        "sub": 0.25,
+        "atk": 14
+      },
+      {
+        "wave": "sine",
+        "f0": 1760,
+        "f1": 1750,
+        "ms": 150,
+        "gap": 70,
+        "sub": 0.25,
+        "rel": 45
+      },
+      {
+        "wave": "sine",
+        "f0": 1320,
+        "f1": 1397,
+        "ms": 28,
+        "gap": 0,
+        "sub": 0.25,
+        "atk": 14
+      },
+      {
+        "wave": "sine",
+        "f0": 1397,
+        "f1": 1375,
+        "ms": 270,
+        "gap": 0,
+        "sub": 0.25,
+        "rel": 70,
+        "vib": 6,
+        "vibDepth": 0.006
+      }
+    ],
+    "purr": [
+      {
+        "wave": "sine",
+        "f0": 1500,
+        "f1": 1650,
+        "ms": 700,
+        "gap": 0,
+        "vib": 22,
+        "vibDepth": 0.06,
+        "amp": 0.7,
+        "sub": 0.3,
+        "atk": 50,
+        "rel": 220
+      }
+    ],
+    "hello": [
+      {
+        "wave": "vox",
+        "vowel": "eh",
+        "f0": 650,
+        "f1": 700,
+        "ms": 110,
+        "gap": 0,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25
+      },
+      {
+        "wave": "vox",
+        "vowel": "eh>oh",
+        "f0": 700,
+        "f1": 560,
+        "ms": 90,
+        "gap": 0,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25
+      },
+      {
+        "wave": "vox",
+        "vowel": "oh>oo",
+        "f0": 560,
+        "f1": 820,
+        "ms": 280,
+        "gap": 0,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25,
+        "vib": 7,
+        "vibDepth": 0.015
+      }
+    ],
+    "happy": [
+      {
+        "wave": "vox",
+        "vowel": "oo",
+        "f0": 600,
+        "f1": 900,
+        "ms": 180,
+        "gap": 50,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25,
+        "curve": "exp"
+      },
+      {
+        "wave": "vox",
+        "vowel": "oo",
+        "f0": 850,
+        "f1": 1100,
+        "ms": 140,
+        "gap": 0,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25
+      },
+      {
+        "wave": "vox",
+        "vowel": "oo>oh",
+        "f0": 1100,
+        "f1": 800,
+        "ms": 260,
+        "gap": 0,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25,
+        "vib": 8,
+        "vibDepth": 0.015
+      }
+    ],
+    "curious": [
+      {
+        "wave": "vox",
+        "vowel": "mm",
+        "f0": 520,
+        "f1": 500,
+        "ms": 220,
+        "gap": 0,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25,
+        "amp": 0.75
+      },
+      {
+        "wave": "vox",
+        "vowel": "mm>oo",
+        "f0": 500,
+        "f1": 900,
+        "ms": 340,
+        "gap": 0,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25,
+        "curve": "exp"
+      }
+    ],
+    "sad": [
+      {
+        "wave": "vox",
+        "vowel": "ah>oh",
+        "f0": 900,
+        "f1": 620,
+        "ms": 440,
+        "gap": 0,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25,
+        "vib": 6,
+        "vibDepth": 0.02
+      },
+      {
+        "wave": "vox",
+        "vowel": "oh>oo",
+        "f0": 620,
+        "f1": 450,
+        "ms": 440,
+        "gap": 0,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25,
+        "curve": "exp",
+        "amp": 0.8
+      }
+    ],
+    "yes": [
+      {
+        "wave": "vox",
+        "vowel": "mm",
+        "f0": 600,
+        "f1": 600,
+        "ms": 120,
+        "gap": 60,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25
+      },
+      {
+        "wave": "vox",
+        "vowel": "mm>uh",
+        "f0": 650,
+        "f1": 850,
+        "ms": 210,
+        "gap": 0,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25
+      }
+    ],
+    "no": [
+      {
+        "wave": "vox",
+        "vowel": "uh",
+        "f0": 800,
+        "f1": 700,
+        "ms": 150,
+        "gap": 70,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25
+      },
+      {
+        "wave": "vox",
+        "vowel": "uh>oh",
+        "f0": 650,
+        "f1": 520,
+        "ms": 270,
+        "gap": 0,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25
+      }
+    ],
+    "alert": [
+      {
+        "wave": "vox",
+        "vowel": "eh>ee",
+        "f0": 800,
+        "f1": 1000,
+        "ms": 120,
+        "gap": 80,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25,
+        "curve": "exp"
+      },
+      {
+        "wave": "vox",
+        "vowel": "eh>ee",
+        "f0": 800,
+        "f1": 1000,
+        "ms": 120,
+        "gap": 80,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25,
+        "curve": "exp"
+      },
+      {
+        "wave": "vox",
+        "vowel": "eh>ee",
+        "f0": 850,
+        "f1": 1150,
+        "ms": 240,
+        "gap": 0,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25,
+        "vib": 10,
+        "vibDepth": 0.02
+      }
+    ],
+    "excited": [
+      {
+        "wave": "vox",
+        "vowel": "oo>ah",
+        "f0": 550,
+        "f1": 950,
+        "ms": 130,
+        "gap": 0,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25,
+        "curve": "exp"
+      },
+      {
+        "wave": "vox",
+        "vowel": "ah>oo",
+        "f0": 950,
+        "f1": 700,
+        "ms": 100,
+        "gap": 0,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25
+      },
+      {
+        "wave": "vox",
+        "vowel": "oo>ah",
+        "f0": 600,
+        "f1": 1000,
+        "ms": 130,
+        "gap": 0,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25,
+        "curve": "exp"
+      },
+      {
+        "wave": "vox",
+        "vowel": "ah>oo",
+        "f0": 1000,
+        "f1": 750,
+        "ms": 100,
+        "gap": 40,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25
+      },
+      {
+        "wave": "sine",
+        "f0": 1500,
+        "f1": 2800,
+        "ms": 180,
+        "gap": 0,
+        "sub": 0.2,
+        "curve": "exp"
+      },
+      {
+        "wave": "sine",
+        "f0": 2800,
+        "f1": 2300,
+        "ms": 170,
+        "gap": 0,
+        "sub": 0.2,
+        "vib": 9,
+        "vibDepth": 0.015
+      }
+    ],
+    "sleepy": [
+      {
+        "wave": "vox",
+        "vowel": "oh>ah",
+        "f0": 600,
+        "f1": 900,
+        "ms": 360,
+        "gap": 0,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 40,
+        "rel": 25
+      },
+      {
+        "wave": "vox",
+        "vowel": "ah>oo",
+        "f0": 900,
+        "f1": 480,
+        "ms": 660,
+        "gap": 130,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25,
+        "curve": "exp",
+        "vib": 5,
+        "vibDepth": 0.03,
+        "amp": 0.8
+      },
+      {
+        "wave": "vox",
+        "vowel": "mm",
+        "f0": 450,
+        "f1": 420,
+        "ms": 360,
+        "gap": 0,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 80,
+        "amp": 0.6
+      }
+    ],
+    "startup": [
+      {
+        "wave": "vox",
+        "vowel": "ah",
+        "f0": 650,
+        "f1": 650,
+        "ms": 90,
+        "gap": 50,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25
+      },
+      {
+        "wave": "vox",
+        "vowel": "ah",
+        "f0": 700,
+        "f1": 1000,
+        "ms": 150,
+        "gap": 0,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25,
+        "curve": "exp"
+      },
+      {
+        "wave": "vox",
+        "vowel": "ah",
+        "f0": 1000,
+        "f1": 900,
+        "ms": 300,
+        "gap": 60,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25,
+        "vib": 7,
+        "vibDepth": 0.015
+      },
+      {
+        "wave": "sine",
+        "f0": 1500,
+        "f1": 2500,
+        "ms": 170,
+        "gap": 0,
+        "sub": 0.2,
+        "curve": "exp"
+      },
+      {
+        "wave": "sine",
+        "f0": 2500,
+        "f1": 2000,
+        "ms": 210,
+        "gap": 0,
+        "sub": 0.2,
+        "vib": 9,
+        "vibDepth": 0.015
+      }
+    ],
+    "low_battery": [
+      {
+        "wave": "vox",
+        "vowel": "uh",
+        "f0": 700,
+        "f1": 620,
+        "ms": 220,
+        "gap": 120,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25
+      },
+      {
+        "wave": "vox",
+        "vowel": "oh",
+        "f0": 620,
+        "f1": 540,
+        "ms": 240,
+        "gap": 120,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25
+      },
+      {
+        "wave": "vox",
+        "vowel": "oh>oo",
+        "f0": 540,
+        "f1": 380,
+        "ms": 520,
+        "gap": 0,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 60,
+        "curve": "exp",
+        "vib": 6,
+        "vibDepth": 0.02
+      }
+    ],
+    "thinking": [
+      {
+        "wave": "vox",
+        "vowel": "mm",
+        "f0": 520,
+        "f1": 560,
+        "ms": 280,
+        "gap": 100,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25,
+        "amp": 0.8
+      },
+      {
+        "wave": "vox",
+        "vowel": "mm",
+        "f0": 540,
+        "f1": 500,
+        "ms": 220,
+        "gap": 100,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25,
+        "amp": 0.8
+      },
+      {
+        "wave": "vox",
+        "vowel": "mm>uh",
+        "f0": 500,
+        "f1": 700,
+        "ms": 270,
+        "gap": 0,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25
+      }
+    ],
+    "laugh": [
+      {
+        "wave": "vox",
+        "vowel": "ah",
+        "f0": 900,
+        "f1": 800,
+        "ms": 80,
+        "gap": 50,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25
+      },
+      {
+        "wave": "vox",
+        "vowel": "ah",
+        "f0": 950,
+        "f1": 850,
+        "ms": 80,
+        "gap": 50,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25
+      },
+      {
+        "wave": "vox",
+        "vowel": "ah",
+        "f0": 1000,
+        "f1": 900,
+        "ms": 80,
+        "gap": 50,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25
+      },
+      {
+        "wave": "vox",
+        "vowel": "ah>oh",
+        "f0": 1050,
+        "f1": 700,
+        "ms": 280,
+        "gap": 0,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25,
+        "vib": 9,
+        "vibDepth": 0.02
+      }
+    ],
+    "surprised": [
+      {
+        "wave": "vox",
+        "vowel": "oh>ah",
+        "f0": 600,
+        "f1": 1200,
+        "ms": 140,
+        "gap": 0,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25,
+        "curve": "exp"
+      },
+      {
+        "wave": "vox",
+        "vowel": "ah",
+        "f0": 1200,
+        "f1": 1000,
+        "ms": 240,
+        "gap": 0,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25,
+        "vib": 10,
+        "vibDepth": 0.02
+      }
+    ],
+    "wow": [
+      {
+        "wave": "vox",
+        "vowel": "oo>ah",
+        "f0": 500,
+        "f1": 950,
+        "ms": 210,
+        "gap": 0,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25,
+        "curve": "exp"
+      },
+      {
+        "wave": "vox",
+        "vowel": "ah>oo",
+        "f0": 950,
+        "f1": 600,
+        "ms": 280,
+        "gap": 0,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25
+      }
+    ],
+    "pushed": [
+      {
+        "wave": "vox",
+        "vowel": "oh>ah",
+        "f0": 700,
+        "f1": 1300,
+        "ms": 150,
+        "gap": 0,
+        "sub": 0.45,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25,
+        "curve": "exp"
+      },
+      {
+        "wave": "vox",
+        "vowel": "ah",
+        "f0": 1300,
+        "f1": 1250,
+        "ms": 280,
+        "gap": 0,
+        "sub": 0.45,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25,
+        "vib": 13,
+        "vibDepth": 0.035
+      },
+      {
+        "wave": "vox",
+        "vowel": "ah>oh",
+        "f0": 1250,
+        "f1": 800,
+        "ms": 260,
+        "gap": 90,
+        "sub": 0.45,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25,
+        "vib": 13,
+        "vibDepth": 0.03
+      },
+      {
+        "wave": "vox",
+        "vowel": "mm>uh",
+        "f0": 650,
+        "f1": 850,
+        "ms": 190,
+        "gap": 0,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25
+      }
+    ],
+    "fallen": [
+      {
+        "wave": "vox",
+        "vowel": "ah",
+        "f0": 900,
+        "f1": 1400,
+        "ms": 130,
+        "gap": 0,
+        "sub": 0.45,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25,
+        "curve": "exp"
+      },
+      {
+        "wave": "vox",
+        "vowel": "ah",
+        "f0": 1400,
+        "f1": 1350,
+        "ms": 320,
+        "gap": 0,
+        "sub": 0.45,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 25,
+        "vib": 13,
+        "vibDepth": 0.04
+      },
+      {
+        "wave": "vox",
+        "vowel": "ah>oo",
+        "f0": 1350,
+        "f1": 450,
+        "ms": 1000,
+        "gap": 200,
+        "sub": 0.45,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 50,
+        "curve": "exp",
+        "vib": 12,
+        "vibDepth": 0.04
+      },
+      {
+        "wave": "vox",
+        "vowel": "uh",
+        "f0": 700,
+        "f1": 700,
+        "ms": 170,
+        "gap": 100,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 14,
+        "rel": 50
+      },
+      {
+        "wave": "vox",
+        "vowel": "oh",
+        "f0": 560,
+        "f1": 540,
+        "ms": 340,
+        "gap": 0,
+        "sub": 0.3,
+        "subRatio": 2,
+        "atk": 10,
+        "rel": 80,
+        "vib": 8,
+        "vibDepth": 0.012
+      }
+    ],
+    "cuckoo_ask": [
+      {
+        "wave": "sine",
+        "f0": 1320,
+        "f1": 1397,
+        "ms": 28,
+        "gap": 0,
+        "sub": 0.25,
+        "atk": 14
+      },
+      {
+        "wave": "sine",
+        "f0": 1397,
+        "f1": 1390,
+        "ms": 150,
+        "gap": 70,
+        "sub": 0.25,
+        "rel": 45
+      },
+      {
+        "wave": "sine",
+        "f0": 1680,
+        "f1": 1760,
+        "ms": 28,
+        "gap": 0,
+        "sub": 0.25,
+        "atk": 14
+      },
+      {
+        "wave": "sine",
+        "f0": 1760,
+        "f1": 1900,
+        "ms": 240,
+        "gap": 0,
+        "sub": 0.25,
+        "rel": 60,
+        "curve": "exp"
+      }
+    ],
+    "cuckoo_slide": [
+      {
+        "wave": "sine",
+        "f0": 1660,
+        "f1": 1760,
+        "ms": 28,
+        "gap": 0,
+        "sub": 0.25,
+        "atk": 14
+      },
+      {
+        "wave": "sine",
+        "f0": 1760,
+        "f1": 1760,
+        "ms": 120,
+        "gap": 0,
+        "sub": 0.25
+      },
+      {
+        "wave": "sine",
+        "f0": 1760,
+        "f1": 1397,
+        "ms": 90,
+        "gap": 0,
+        "sub": 0.25,
+        "curve": "exp"
+      },
+      {
+        "wave": "sine",
+        "f0": 1397,
+        "f1": 1380,
+        "ms": 260,
+        "gap": 0,
+        "sub": 0.25,
+        "rel": 70,
+        "vib": 7,
+        "vibDepth": 0.01
+      }
+    ],
+    "coo": [
+      {
+        "wave": "sine",
+        "f0": 1100,
+        "f1": 1250,
+        "ms": 160,
+        "gap": 0,
+        "sub": 0.35,
+        "atk": 25
+      },
+      {
+        "wave": "sine",
+        "f0": 1250,
+        "f1": 1050,
+        "ms": 320,
+        "gap": 0,
+        "sub": 0.35,
+        "vib": 6,
+        "vibDepth": 0.012,
+        "rel": 80
+      }
+    ],
+    "chirrup": [
+      {
+        "wave": "sine",
+        "f0": 1800,
+        "f1": 2500,
+        "ms": 55,
+        "gap": 45,
+        "sub": 0.2,
+        "curve": "exp"
+      },
+      {
+        "wave": "sine",
+        "f0": 1900,
+        "f1": 2600,
+        "ms": 55,
+        "gap": 45,
+        "sub": 0.2,
+        "curve": "exp"
+      },
+      {
+        "wave": "sine",
+        "f0": 2000,
+        "f1": 2800,
+        "ms": 90,
+        "gap": 0,
+        "sub": 0.2,
+        "curve": "exp"
+      },
+      {
+        "wave": "sine",
+        "f0": 2800,
+        "f1": 2100,
+        "ms": 180,
+        "gap": 0,
+        "sub": 0.2,
+        "vib": 9,
+        "vibDepth": 0.015,
+        "rel": 30
+      }
+    ],
+    "trill": [
+      {
+        "wave": "sine",
+        "f0": 2000,
+        "f1": 2300,
+        "ms": 45,
+        "gap": 0,
+        "sub": 0.2
+      },
+      {
+        "wave": "sine",
+        "f0": 2300,
+        "f1": 2000,
+        "ms": 45,
+        "gap": 0,
+        "sub": 0.2
+      },
+      {
+        "wave": "sine",
+        "f0": 2000,
+        "f1": 2300,
+        "ms": 45,
+        "gap": 0,
+        "sub": 0.2
+      },
+      {
+        "wave": "sine",
+        "f0": 2300,
+        "f1": 2000,
+        "ms": 45,
+        "gap": 0,
+        "sub": 0.2
+      },
+      {
+        "wave": "sine",
+        "f0": 2000,
+        "f1": 2300,
+        "ms": 45,
+        "gap": 0,
+        "sub": 0.2
+      },
+      {
+        "wave": "sine",
+        "f0": 2300,
+        "f1": 2000,
+        "ms": 45,
+        "gap": 0,
+        "sub": 0.2
+      },
+      {
+        "wave": "sine",
+        "f0": 2000,
+        "f1": 2500,
+        "ms": 80,
+        "gap": 0,
+        "sub": 0.2,
+        "curve": "exp"
+      },
+      {
+        "wave": "sine",
+        "f0": 2500,
+        "f1": 1800,
+        "ms": 200,
+        "gap": 0,
+        "sub": 0.2,
+        "vib": 9,
+        "vibDepth": 0.015,
+        "rel": 40
+      }
+    ],
+    "warble": [
+      {
+        "wave": "sine",
+        "f0": 1300,
+        "f1": 2300,
+        "ms": 170,
+        "gap": 0,
+        "sub": 0.2,
+        "curve": "exp"
+      },
+      {
+        "wave": "sine",
+        "f0": 2300,
+        "f1": 2200,
+        "ms": 260,
+        "gap": 0,
+        "sub": 0.2,
+        "vib": 12,
+        "vibDepth": 0.04
+      },
+      {
+        "wave": "sine",
+        "f0": 2200,
+        "f1": 1600,
+        "ms": 200,
+        "gap": 0,
+        "sub": 0.2,
+        "rel": 40
+      }
+    ],
+    "peep": [
+      {
+        "wave": "sine",
+        "f0": 2200,
+        "f1": 2700,
+        "ms": 70,
+        "gap": 0,
+        "sub": 0.2,
+        "curve": "exp",
+        "rel": 20
+      }
+    ]
+  },
+  "phrases": {
+    "chat_greeting": [
+      "hello",
+      180,
+      "whistle",
+      200,
+      "happy"
+    ],
+    "chat_story": [
+      "thinking",
+      160,
+      "yes",
+      140,
+      "excited",
+      220,
+      "laugh",
+      180,
+      "whistle"
+    ],
+    "chat_gentle": [
+      "curious",
+      220,
+      "purr",
+      180,
+      "wow",
+      220,
+      "sleepy"
+    ],
+    "chat_alarm": [
+      "surprised",
+      140,
+      "alert",
+      180,
+      "no",
+      160,
+      "curious"
+    ],
+    "chat_cuckoo_clock": [
+      "cuckoo",
+      320,
+      "cuckoo",
+      320,
+      "cuckoo_ask"
+    ],
+    "chat_oops": [
+      "pushed",
+      260,
+      "no",
+      200,
+      "sad"
+    ]
+  },
+  "babble": {
+    "babble_a": {
+      "seed": 11,
+      "notes": 7
+    },
+    "babble_b": {
+      "seed": 42,
+      "notes": 10
+    },
+    "babble_c": {
+      "seed": 77,
+      "notes": 13
+    }
+  }
+}

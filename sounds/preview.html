@@ -1,0 +1,196 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Domino droid voice</title>
+<style>
+  body { font: 15px system-ui, sans-serif; margin: 24px; background: #14161a; color: #e8e8e8; }
+  button { font: inherit; padding: 10px 14px; margin: 4px; border: 1px solid #444; border-radius: 8px; background: #23262d; color: inherit; cursor: pointer; }
+  button:hover { background: #2f343d; }
+  label { display: inline-block; margin: 0 18px 14px 0; }
+</style>
+<h2>Domino droid voice</h2>
+<label>Volume <input id="vol" type="range" min="0" max="1" step="0.01" value="0.5"></label>
+<label>Pitch <input id="pitch" type="range" min="0.6" max="1.6" step="0.01" value="1"> <span id="pv">1.00</span>x</label>
+<label><input id="fx" type="checkbox" checked> Effects</label>
+<label>Tempo <input id="tempo" type="range" min="0.6" max="1.6" step="0.01" value="1"> <span id="tv">1.00</span>x</label>
+<div id="emotes"></div>
+<script>
+// Domino droid voice synth. The firmware (src/droid_voice.cpp) runs the same
+// maths, so what you hear in the preview page is what the robot plays.
+// Keep this file free of imports: build.mjs inlines it into preview.html.
+
+const WAVES = ["sine", "tri", "sq", "fm", "hop", "vox"];
+
+// Vowel shapes for the "vox" wave: the two resonances (Hz) that make a mouth
+// sound like that vowel, pitched up a little for a small creature.
+const VOWELS = {
+  oo: [380, 950],
+  oh: [560, 1050],
+  ah: [900, 1500],
+  uh: [650, 1300],
+  eh: [650, 2100],
+  ee: [380, 2700],
+  mm: [300, 1100],
+};
+
+function hopRandom(seed, index) {
+  let x = (seed + Math.imul(index, 2654435761)) >>> 0;
+  x ^= x >>> 15;
+  x = Math.imul(x, 2246822519) >>> 0;
+  x ^= x >>> 13;
+  return (x >>> 0) / 4294967296;
+}
+
+// "oo>ah" glides from one vowel to another across the segment; "ah" holds one.
+function formants(vowel) {
+  const [a, b] = String(vowel ?? "ah").split(">");
+  const from = VOWELS[a] ?? VOWELS.ah;
+  const to = VOWELS[b ?? a] ?? from;
+  return { fa0: from[0], fb0: from[1], fa1: to[0], fb1: to[1] };
+}
+
+// Fill in defaults and round to what the firmware table can store.
+function normaliseSegment(seg) {
+  return {
+    wave: WAVES.includes(seg.wave) ? seg.wave : "sine",
+    f0: Math.round(seg.f0),
+    f1: Math.round(seg.f1 ?? seg.f0),
+    ms: Math.round(seg.ms),
+    gap: Math.round(seg.gap ?? 0),
+    curve: seg.curve === "exp" ? "exp" : "lin",
+    amp: Math.round(Math.min(1, Math.max(0, seg.amp ?? 1)) * 255) / 255,
+    vib: Math.round(seg.vib ?? 0),
+    vibDepth: Math.round((seg.vibDepth ?? 0) * 1000) / 1000,
+    step: Math.round(seg.step ?? 40),
+    seed: (seg.seed ?? 1) >>> 0,
+    fmRatio: Math.round((seg.fmRatio ?? 0.5) * 100) / 100,
+    fmIndex: Math.round((seg.fmIndex ?? 1) * 100) / 100,
+    sub: Math.round(Math.min(1, Math.max(0, seg.sub ?? 0)) * 255) / 255,
+    subRatio: Math.round((seg.subRatio ?? 0.5) * 100) / 100,
+    atk: Math.min(255, Math.max(1, Math.round(seg.atk ?? 4))),
+    rel: Math.min(255, Math.max(1, Math.round(seg.rel ?? 8))),
+    ...formants(seg.vowel),
+  };
+}
+
+// Fill in defaults for the effects chain. Returns null when there is none.
+function normaliseFx(fx) {
+  if (!fx) return null;
+  return {
+    drive: Math.round((fx.drive ?? 1) * 100) / 100,
+    echoMs: Math.round(fx.echoMs ?? 0),
+    echoGain: Math.round((fx.echoGain ?? 0) * 100) / 100,
+    echo2Ms: Math.round(fx.echo2Ms ?? 0),
+    echo2Gain: Math.round((fx.echo2Gain ?? 0) * 100) / 100,
+    lowpassHz: Math.round(fx.lowpassHz ?? 0),
+  };
+}
+
+// Soft clipper (a cheap tanh). The firmware uses the same formula.
+function saturate(x) {
+  if (x > 3) return 1;
+  if (x < -3) return -1;
+  return (x * (27 + x * x)) / (27 + 9 * x * x);
+}
+
+// The "post" pass: a little distortion, two short echoes (a small metal body),
+// and a gentle treble roll-off. Adds a tail so the echoes can ring out.
+function applyFx(dry, sampleRate, fxIn) {
+  const fx = normaliseFx(fxIn);
+  if (!fx) return dry;
+  const d1 = Math.round((fx.echoMs * sampleRate) / 1000);
+  const d2 = Math.round((fx.echo2Ms * sampleRate) / 1000);
+  const tail = Math.max(d1, d2) + Math.round(0.04 * sampleRate);
+  const out = new Float32Array(dry.length + tail);
+  const sat = new Float32Array(out.length);
+  const norm = 1 / saturate(fx.drive);
+  const mix = 1 / (1 + fx.echoGain + fx.echo2Gain);
+  const lp = fx.lowpassHz > 0 ? 1 - Math.exp((-2 * Math.PI * fx.lowpassHz) / sampleRate) : 1;
+  let y = 0;
+  for (let i = 0; i < out.length; i++) {
+    sat[i] = i < dry.length ? saturate(dry[i] * fx.drive) * norm : 0;
+    let v = sat[i];
+    if (d1 > 0 && i >= d1) v += fx.echoGain * sat[i - d1];
+    if (d2 > 0 && i >= d2) v += fx.echo2Gain * sat[i - d2];
+    y += lp * (v * mix - y);
+    out[i] = y;
+  }
+  return out;
+}
+
+// Returns Float32Array samples in -1..1. pitch and tempo are global multipliers
+// (pitch 1.2 = 20 % higher, tempo 1.2 = 20 % faster). fx is the optional
+// effects chain from the presets file.
+function renderEmote(segments, sampleRate, { pitch = 1, tempo = 1, fx = null } = {}) {
+  const segs = segments.map(normaliseSegment);
+  const lengths = segs.map((s) => [
+    Math.max(1, Math.round((s.ms / tempo) * sampleRate / 1000)),
+    Math.round((s.gap / tempo) * sampleRate / 1000),
+  ]);
+  const total = lengths.reduce((n, [a, b]) => n + a + b, 0);
+  const out = new Float32Array(total);
+  let pos = 0;
+  let phase = 0;
+  let subPhase = 0;
+  segs.forEach((s, k) => {
+    const [n, gap] = lengths[k];
+    const f0 = s.f0 * pitch;
+    const f1 = s.f1 * pitch;
+    const stepSamples = Math.max(1, Math.round((s.step / tempo) * sampleRate / 1000));
+    const attack = Math.max(1, Math.round((s.atk * sampleRate) / 1000));
+    const release = Math.max(1, Math.round((s.rel * sampleRate) / 1000));
+    for (let i = 0; i < n; i++) {
+      const u = i / n;
+      let f;
+      if (s.wave === "hop") f = f0 + (f1 - f0) * hopRandom(s.seed, Math.floor(i / stepSamples));
+      else if (s.curve === "exp") f = f0 * Math.pow(f1 / f0, u);
+      else f = f0 + (f1 - f0) * u;
+      if (s.vib > 0) f *= 1 + s.vibDepth * Math.sin((2 * Math.PI * s.vib * i) / sampleRate);
+      phase += f / sampleRate;
+      phase -= Math.floor(phase);
+      let v;
+      if (s.wave === "tri") v = 4 * Math.abs(phase - 0.5) - 1;
+      else if (s.wave === "sq") v = phase < 0.5 ? 0.6 : -0.6;
+      else if (s.wave === "fm") v = Math.sin(2 * Math.PI * phase + s.fmIndex * Math.sin(2 * Math.PI * phase * s.fmRatio));
+      else if (s.wave === "vox") {
+        // A voice: once per pitch period, a short burst that rings at the two vowel resonances.
+        const fa = s.fa0 + (s.fa1 - s.fa0) * u;
+        const fb = s.fb0 + (s.fb1 - s.fb0) * u;
+        const window = 0.5 - 0.5 * Math.cos(2 * Math.PI * phase);
+        v = 2.0 * window * (0.65 * Math.sin((2 * Math.PI * phase * fa) / f) + 0.35 * Math.sin((2 * Math.PI * phase * fb) / f));
+      } else v = Math.sin(2 * Math.PI * phase);
+      // second voice: a sine at subRatio times the pitch, mixed in and renormalised
+      subPhase += (f * s.subRatio) / sampleRate;
+      subPhase -= Math.floor(subPhase);
+      if (s.sub > 0) v = (v + s.sub * Math.sin(2 * Math.PI * subPhase)) / (1 + s.sub);
+      const env = Math.min(1, (i + 1) / attack, (n - i) / release);
+      out[pos++] = v * env * s.amp;
+    }
+    pos += gap;
+  });
+  return applyFx(out, sampleRate, fx);
+}
+
+const PRESETS = {"sampleRate":22050,"version":"v2","notes":"Domino droid voice v2 (2026-11-15): v1 plus a spoken voice and a post pass. The owner's favourites (whistle, cuckoo, purr) work because they copy sounds a mouth makes, so v2 gives the droid a mouth: wave 'vox' sings a vowel (vowel: oo | oh | ah | uh | eh | ee | mm, or 'oo>ah' to glide between two), and each emote is a small spoken gesture (hello, uh-oh, hmm?, aww, wow) with a quiet whistle on top. fx is the post pass applied to every sound: drive = soft distortion (1 = none), echoMs/echoGain and echo2Ms/echo2Gain = two short echoes, lowpassHz = treble roll-off. v1 is frozen in sounds/wav/v1. Segment fields: wave: sine | tri | sq | fm | hop | vox. f0->f1 is a glide in Hz over ms, then gap ms of silence. curve: lin | exp. vib/vibDepth: vibrato rate (Hz) and depth. sub: 0..1 mix of a second sine voice at subRatio times the pitch (0.5 = octave down, 2 = whistle an octave up). atk/rel: fade in/out in ms. amp 0..1. phrases string emotes together (name, pause in ms, or {emote, pitch, tempo}). babble makes a long seeded sentence at build time. Edit, then run: node sounds/build.mjs","fx":{"drive":1.6,"echoMs":55,"echoGain":0.22,"echo2Ms":120,"echo2Gain":0.09,"lowpassHz":6000},"emotes":{"whistle":[{"wave":"sine","f0":1300,"f1":2400,"ms":170,"gap":0,"curve":"exp","sub":0.2},{"wave":"sine","f0":2400,"f1":1700,"ms":210,"gap":0,"vib":9,"vibDepth":0.015,"sub":0.2}],"cuckoo":[{"wave":"sine","f0":1660,"f1":1760,"ms":28,"gap":0,"sub":0.25,"atk":14},{"wave":"sine","f0":1760,"f1":1750,"ms":150,"gap":70,"sub":0.25,"rel":45},{"wave":"sine","f0":1320,"f1":1397,"ms":28,"gap":0,"sub":0.25,"atk":14},{"wave":"sine","f0":1397,"f1":1375,"ms":270,"gap":0,"sub":0.25,"rel":70,"vib":6,"vibDepth":0.006}],"purr":[{"wave":"sine","f0":1500,"f1":1650,"ms":700,"gap":0,"vib":22,"vibDepth":0.06,"amp":0.7,"sub":0.3,"atk":50,"rel":220}],"hello":[{"wave":"vox","vowel":"eh","f0":650,"f1":700,"ms":110,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"eh>oh","f0":700,"f1":560,"ms":90,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"oh>oo","f0":560,"f1":820,"ms":280,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"vib":7,"vibDepth":0.015}],"happy":[{"wave":"vox","vowel":"oo","f0":600,"f1":900,"ms":180,"gap":50,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"curve":"exp"},{"wave":"vox","vowel":"oo","f0":850,"f1":1100,"ms":140,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"oo>oh","f0":1100,"f1":800,"ms":260,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"vib":8,"vibDepth":0.015}],"curious":[{"wave":"vox","vowel":"mm","f0":520,"f1":500,"ms":220,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"amp":0.75},{"wave":"vox","vowel":"mm>oo","f0":500,"f1":900,"ms":340,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"curve":"exp"}],"sad":[{"wave":"vox","vowel":"ah>oh","f0":900,"f1":620,"ms":440,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"vib":6,"vibDepth":0.02},{"wave":"vox","vowel":"oh>oo","f0":620,"f1":450,"ms":440,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"curve":"exp","amp":0.8}],"yes":[{"wave":"vox","vowel":"mm","f0":600,"f1":600,"ms":120,"gap":60,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"mm>uh","f0":650,"f1":850,"ms":210,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25}],"no":[{"wave":"vox","vowel":"uh","f0":800,"f1":700,"ms":150,"gap":70,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"uh>oh","f0":650,"f1":520,"ms":270,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25}],"alert":[{"wave":"vox","vowel":"eh>ee","f0":800,"f1":1000,"ms":120,"gap":80,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"curve":"exp"},{"wave":"vox","vowel":"eh>ee","f0":800,"f1":1000,"ms":120,"gap":80,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"curve":"exp"},{"wave":"vox","vowel":"eh>ee","f0":850,"f1":1150,"ms":240,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"vib":10,"vibDepth":0.02}],"excited":[{"wave":"vox","vowel":"oo>ah","f0":550,"f1":950,"ms":130,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"curve":"exp"},{"wave":"vox","vowel":"ah>oo","f0":950,"f1":700,"ms":100,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"oo>ah","f0":600,"f1":1000,"ms":130,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"curve":"exp"},{"wave":"vox","vowel":"ah>oo","f0":1000,"f1":750,"ms":100,"gap":40,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"sine","f0":1500,"f1":2800,"ms":180,"gap":0,"sub":0.2,"curve":"exp"},{"wave":"sine","f0":2800,"f1":2300,"ms":170,"gap":0,"sub":0.2,"vib":9,"vibDepth":0.015}],"sleepy":[{"wave":"vox","vowel":"oh>ah","f0":600,"f1":900,"ms":360,"gap":0,"sub":0.3,"subRatio":2,"atk":40,"rel":25},{"wave":"vox","vowel":"ah>oo","f0":900,"f1":480,"ms":660,"gap":130,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"curve":"exp","vib":5,"vibDepth":0.03,"amp":0.8},{"wave":"vox","vowel":"mm","f0":450,"f1":420,"ms":360,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":80,"amp":0.6}],"startup":[{"wave":"vox","vowel":"ah","f0":650,"f1":650,"ms":90,"gap":50,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"ah","f0":700,"f1":1000,"ms":150,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"curve":"exp"},{"wave":"vox","vowel":"ah","f0":1000,"f1":900,"ms":300,"gap":60,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"vib":7,"vibDepth":0.015},{"wave":"sine","f0":1500,"f1":2500,"ms":170,"gap":0,"sub":0.2,"curve":"exp"},{"wave":"sine","f0":2500,"f1":2000,"ms":210,"gap":0,"sub":0.2,"vib":9,"vibDepth":0.015}],"low_battery":[{"wave":"vox","vowel":"uh","f0":700,"f1":620,"ms":220,"gap":120,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"oh","f0":620,"f1":540,"ms":240,"gap":120,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"oh>oo","f0":540,"f1":380,"ms":520,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":60,"curve":"exp","vib":6,"vibDepth":0.02}],"thinking":[{"wave":"vox","vowel":"mm","f0":520,"f1":560,"ms":280,"gap":100,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"amp":0.8},{"wave":"vox","vowel":"mm","f0":540,"f1":500,"ms":220,"gap":100,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"amp":0.8},{"wave":"vox","vowel":"mm>uh","f0":500,"f1":700,"ms":270,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25}],"laugh":[{"wave":"vox","vowel":"ah","f0":900,"f1":800,"ms":80,"gap":50,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"ah","f0":950,"f1":850,"ms":80,"gap":50,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"ah","f0":1000,"f1":900,"ms":80,"gap":50,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"ah>oh","f0":1050,"f1":700,"ms":280,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"vib":9,"vibDepth":0.02}],"surprised":[{"wave":"vox","vowel":"oh>ah","f0":600,"f1":1200,"ms":140,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"curve":"exp"},{"wave":"vox","vowel":"ah","f0":1200,"f1":1000,"ms":240,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"vib":10,"vibDepth":0.02}],"wow":[{"wave":"vox","vowel":"oo>ah","f0":500,"f1":950,"ms":210,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"curve":"exp"},{"wave":"vox","vowel":"ah>oo","f0":950,"f1":600,"ms":280,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25}],"pushed":[{"wave":"vox","vowel":"oh>ah","f0":700,"f1":1300,"ms":150,"gap":0,"sub":0.45,"subRatio":2,"atk":10,"rel":25,"curve":"exp"},{"wave":"vox","vowel":"ah","f0":1300,"f1":1250,"ms":280,"gap":0,"sub":0.45,"subRatio":2,"atk":10,"rel":25,"vib":13,"vibDepth":0.035},{"wave":"vox","vowel":"ah>oh","f0":1250,"f1":800,"ms":260,"gap":90,"sub":0.45,"subRatio":2,"atk":10,"rel":25,"vib":13,"vibDepth":0.03},{"wave":"vox","vowel":"mm>uh","f0":650,"f1":850,"ms":190,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25}],"fallen":[{"wave":"vox","vowel":"ah","f0":900,"f1":1400,"ms":130,"gap":0,"sub":0.45,"subRatio":2,"atk":10,"rel":25,"curve":"exp"},{"wave":"vox","vowel":"ah","f0":1400,"f1":1350,"ms":320,"gap":0,"sub":0.45,"subRatio":2,"atk":10,"rel":25,"vib":13,"vibDepth":0.04},{"wave":"vox","vowel":"ah>oo","f0":1350,"f1":450,"ms":1000,"gap":200,"sub":0.45,"subRatio":2,"atk":10,"rel":50,"curve":"exp","vib":12,"vibDepth":0.04},{"wave":"vox","vowel":"uh","f0":700,"f1":700,"ms":170,"gap":100,"sub":0.3,"subRatio":2,"atk":14,"rel":50},{"wave":"vox","vowel":"oh","f0":560,"f1":540,"ms":340,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":80,"vib":8,"vibDepth":0.012}],"cuckoo_ask":[{"wave":"sine","f0":1320,"f1":1397,"ms":28,"gap":0,"sub":0.25,"atk":14},{"wave":"sine","f0":1397,"f1":1390,"ms":150,"gap":70,"sub":0.25,"rel":45},{"wave":"sine","f0":1680,"f1":1760,"ms":28,"gap":0,"sub":0.25,"atk":14},{"wave":"sine","f0":1760,"f1":1900,"ms":240,"gap":0,"sub":0.25,"rel":60,"curve":"exp"}],"cuckoo_slide":[{"wave":"sine","f0":1660,"f1":1760,"ms":28,"gap":0,"sub":0.25,"atk":14},{"wave":"sine","f0":1760,"f1":1760,"ms":120,"gap":0,"sub":0.25},{"wave":"sine","f0":1760,"f1":1397,"ms":90,"gap":0,"sub":0.25,"curve":"exp"},{"wave":"sine","f0":1397,"f1":1380,"ms":260,"gap":0,"sub":0.25,"rel":70,"vib":7,"vibDepth":0.01}],"coo":[{"wave":"sine","f0":1100,"f1":1250,"ms":160,"gap":0,"sub":0.35,"atk":25},{"wave":"sine","f0":1250,"f1":1050,"ms":320,"gap":0,"sub":0.35,"vib":6,"vibDepth":0.012,"rel":80}],"chirrup":[{"wave":"sine","f0":1800,"f1":2500,"ms":55,"gap":45,"sub":0.2,"curve":"exp"},{"wave":"sine","f0":1900,"f1":2600,"ms":55,"gap":45,"sub":0.2,"curve":"exp"},{"wave":"sine","f0":2000,"f1":2800,"ms":90,"gap":0,"sub":0.2,"curve":"exp"},{"wave":"sine","f0":2800,"f1":2100,"ms":180,"gap":0,"sub":0.2,"vib":9,"vibDepth":0.015,"rel":30}],"trill":[{"wave":"sine","f0":2000,"f1":2300,"ms":45,"gap":0,"sub":0.2},{"wave":"sine","f0":2300,"f1":2000,"ms":45,"gap":0,"sub":0.2},{"wave":"sine","f0":2000,"f1":2300,"ms":45,"gap":0,"sub":0.2},{"wave":"sine","f0":2300,"f1":2000,"ms":45,"gap":0,"sub":0.2},{"wave":"sine","f0":2000,"f1":2300,"ms":45,"gap":0,"sub":0.2},{"wave":"sine","f0":2300,"f1":2000,"ms":45,"gap":0,"sub":0.2},{"wave":"sine","f0":2000,"f1":2500,"ms":80,"gap":0,"sub":0.2,"curve":"exp"},{"wave":"sine","f0":2500,"f1":1800,"ms":200,"gap":0,"sub":0.2,"vib":9,"vibDepth":0.015,"rel":40}],"warble":[{"wave":"sine","f0":1300,"f1":2300,"ms":170,"gap":0,"sub":0.2,"curve":"exp"},{"wave":"sine","f0":2300,"f1":2200,"ms":260,"gap":0,"sub":0.2,"vib":12,"vibDepth":0.04},{"wave":"sine","f0":2200,"f1":1600,"ms":200,"gap":0,"sub":0.2,"rel":40}],"peep":[{"wave":"sine","f0":2200,"f1":2700,"ms":70,"gap":0,"sub":0.2,"curve":"exp","rel":20}],"chat_greeting":[{"wave":"vox","vowel":"eh","f0":650,"f1":700,"ms":110,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"eh>oh","f0":700,"f1":560,"ms":90,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"oh>oo","f0":560,"f1":820,"ms":280,"gap":180,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"vib":7,"vibDepth":0.015},{"wave":"sine","f0":1300,"f1":2400,"ms":170,"gap":0,"curve":"exp","sub":0.2},{"wave":"sine","f0":2400,"f1":1700,"ms":210,"gap":200,"vib":9,"vibDepth":0.015,"sub":0.2},{"wave":"vox","vowel":"oo","f0":600,"f1":900,"ms":180,"gap":50,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"curve":"exp"},{"wave":"vox","vowel":"oo","f0":850,"f1":1100,"ms":140,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"oo>oh","f0":1100,"f1":800,"ms":260,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"vib":8,"vibDepth":0.015}],"chat_story":[{"wave":"vox","vowel":"mm","f0":520,"f1":560,"ms":280,"gap":100,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"amp":0.8},{"wave":"vox","vowel":"mm","f0":540,"f1":500,"ms":220,"gap":100,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"amp":0.8},{"wave":"vox","vowel":"mm>uh","f0":500,"f1":700,"ms":270,"gap":160,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"mm","f0":600,"f1":600,"ms":120,"gap":60,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"mm>uh","f0":650,"f1":850,"ms":210,"gap":140,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"oo>ah","f0":550,"f1":950,"ms":130,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"curve":"exp"},{"wave":"vox","vowel":"ah>oo","f0":950,"f1":700,"ms":100,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"oo>ah","f0":600,"f1":1000,"ms":130,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"curve":"exp"},{"wave":"vox","vowel":"ah>oo","f0":1000,"f1":750,"ms":100,"gap":40,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"sine","f0":1500,"f1":2800,"ms":180,"gap":0,"sub":0.2,"curve":"exp"},{"wave":"sine","f0":2800,"f1":2300,"ms":170,"gap":220,"sub":0.2,"vib":9,"vibDepth":0.015},{"wave":"vox","vowel":"ah","f0":900,"f1":800,"ms":80,"gap":50,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"ah","f0":950,"f1":850,"ms":80,"gap":50,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"ah","f0":1000,"f1":900,"ms":80,"gap":50,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"ah>oh","f0":1050,"f1":700,"ms":280,"gap":180,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"vib":9,"vibDepth":0.02},{"wave":"sine","f0":1300,"f1":2400,"ms":170,"gap":0,"curve":"exp","sub":0.2},{"wave":"sine","f0":2400,"f1":1700,"ms":210,"gap":0,"vib":9,"vibDepth":0.015,"sub":0.2}],"chat_gentle":[{"wave":"vox","vowel":"mm","f0":520,"f1":500,"ms":220,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"amp":0.75},{"wave":"vox","vowel":"mm>oo","f0":500,"f1":900,"ms":340,"gap":220,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"curve":"exp"},{"wave":"sine","f0":1500,"f1":1650,"ms":700,"gap":180,"vib":22,"vibDepth":0.06,"amp":0.7,"sub":0.3,"atk":50,"rel":220},{"wave":"vox","vowel":"oo>ah","f0":500,"f1":950,"ms":210,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"curve":"exp"},{"wave":"vox","vowel":"ah>oo","f0":950,"f1":600,"ms":280,"gap":220,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"oh>ah","f0":600,"f1":900,"ms":360,"gap":0,"sub":0.3,"subRatio":2,"atk":40,"rel":25},{"wave":"vox","vowel":"ah>oo","f0":900,"f1":480,"ms":660,"gap":130,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"curve":"exp","vib":5,"vibDepth":0.03,"amp":0.8},{"wave":"vox","vowel":"mm","f0":450,"f1":420,"ms":360,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":80,"amp":0.6}],"chat_alarm":[{"wave":"vox","vowel":"oh>ah","f0":600,"f1":1200,"ms":140,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"curve":"exp"},{"wave":"vox","vowel":"ah","f0":1200,"f1":1000,"ms":240,"gap":140,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"vib":10,"vibDepth":0.02},{"wave":"vox","vowel":"eh>ee","f0":800,"f1":1000,"ms":120,"gap":80,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"curve":"exp"},{"wave":"vox","vowel":"eh>ee","f0":800,"f1":1000,"ms":120,"gap":80,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"curve":"exp"},{"wave":"vox","vowel":"eh>ee","f0":850,"f1":1150,"ms":240,"gap":180,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"vib":10,"vibDepth":0.02},{"wave":"vox","vowel":"uh","f0":800,"f1":700,"ms":150,"gap":70,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"uh>oh","f0":650,"f1":520,"ms":270,"gap":160,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"mm","f0":520,"f1":500,"ms":220,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"amp":0.75},{"wave":"vox","vowel":"mm>oo","f0":500,"f1":900,"ms":340,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"curve":"exp"}],"chat_cuckoo_clock":[{"wave":"sine","f0":1660,"f1":1760,"ms":28,"gap":0,"sub":0.25,"atk":14},{"wave":"sine","f0":1760,"f1":1750,"ms":150,"gap":70,"sub":0.25,"rel":45},{"wave":"sine","f0":1320,"f1":1397,"ms":28,"gap":0,"sub":0.25,"atk":14},{"wave":"sine","f0":1397,"f1":1375,"ms":270,"gap":320,"sub":0.25,"rel":70,"vib":6,"vibDepth":0.006},{"wave":"sine","f0":1660,"f1":1760,"ms":28,"gap":0,"sub":0.25,"atk":14},{"wave":"sine","f0":1760,"f1":1750,"ms":150,"gap":70,"sub":0.25,"rel":45},{"wave":"sine","f0":1320,"f1":1397,"ms":28,"gap":0,"sub":0.25,"atk":14},{"wave":"sine","f0":1397,"f1":1375,"ms":270,"gap":320,"sub":0.25,"rel":70,"vib":6,"vibDepth":0.006},{"wave":"sine","f0":1320,"f1":1397,"ms":28,"gap":0,"sub":0.25,"atk":14},{"wave":"sine","f0":1397,"f1":1390,"ms":150,"gap":70,"sub":0.25,"rel":45},{"wave":"sine","f0":1680,"f1":1760,"ms":28,"gap":0,"sub":0.25,"atk":14},{"wave":"sine","f0":1760,"f1":1900,"ms":240,"gap":0,"sub":0.25,"rel":60,"curve":"exp"}],"chat_oops":[{"wave":"vox","vowel":"oh>ah","f0":700,"f1":1300,"ms":150,"gap":0,"sub":0.45,"subRatio":2,"atk":10,"rel":25,"curve":"exp"},{"wave":"vox","vowel":"ah","f0":1300,"f1":1250,"ms":280,"gap":0,"sub":0.45,"subRatio":2,"atk":10,"rel":25,"vib":13,"vibDepth":0.035},{"wave":"vox","vowel":"ah>oh","f0":1250,"f1":800,"ms":260,"gap":90,"sub":0.45,"subRatio":2,"atk":10,"rel":25,"vib":13,"vibDepth":0.03},{"wave":"vox","vowel":"mm>uh","f0":650,"f1":850,"ms":190,"gap":260,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"uh","f0":800,"f1":700,"ms":150,"gap":70,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"uh>oh","f0":650,"f1":520,"ms":270,"gap":200,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"ah>oh","f0":900,"f1":620,"ms":440,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"vib":6,"vibDepth":0.02},{"wave":"vox","vowel":"oh>oo","f0":620,"f1":450,"ms":440,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25,"curve":"exp","amp":0.8}],"babble_a":[{"wave":"vox","vowel":"oo>oo","f0":854.0967514085471,"f1":1170.5015038023653,"ms":176.51662080548704,"gap":102.21523810178041,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"oo>ah","f0":929.0195143315941,"f1":670.0607699582083,"ms":127.35591639298946,"gap":76.81370484875515,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"oo>eh","f0":1008.2932572648045,"f1":1268.8860179433984,"ms":170.10136615950614,"gap":40.17585089895874,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"oh>eh","f0":963.6860208853709,"f1":726.0911810192976,"ms":132.70901252049953,"gap":114.44518248783424,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"eh>ah","f0":1020.6150669167002,"f1":865.8384527819062,"ms":205.0162195134908,"gap":218.31721015274525,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"oo>eh","f0":748.3439404111638,"f1":562.403202006645,"ms":114.61891777813435,"gap":60.182450676802546,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"sine","f0":1563.7961116619408,"f1":2729.9911282046646,"ms":162.65257708961144,"gap":0,"curve":"exp","sub":0.2},{"wave":"sine","f0":2729.9911282046646,"f1":2011.2502645795935,"ms":164.4784445874393,"gap":87.82355984440073,"vib":9,"vibDepth":0.015,"sub":0.2},{"wave":"vox","vowel":"ah>ee","f0":707.4509177780906,"f1":779.6703562694149,"ms":129.7250055614859,"gap":40.34102809848264,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"eh>uh","f0":681.3760540958891,"f1":939.48206649874,"ms":184.15939557831734,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25}],"babble_b":[{"wave":"vox","vowel":"oh>uh","f0":786.8153224180821,"f1":1018.5789717562611,"ms":159.4459355948493,"gap":26.276310617104173,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"uh>uh","f0":770.211433936117,"f1":691.552290222664,"ms":202.80069298110902,"gap":109.90756197599694,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"oo>eh","f0":939.1572288951658,"f1":1105.1938873784288,"ms":174.25162917003036,"gap":45.17448354046792,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"oh>ee","f0":939.2505466721955,"f1":706.854677835166,"ms":149.68761349096894,"gap":48.082913912367076,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"ee>uh","f0":825.5055270959701,"f1":917.9453801295667,"ms":153.72659099753946,"gap":314.66526351869106,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"sine","f0":1275.235236552544,"f1":2205.216992106118,"ms":160.8101058541797,"gap":0,"curve":"exp","sub":0.2},{"wave":"sine","f0":2205.216992106118,"f1":1776.5667398281732,"ms":219.22390727326274,"gap":92.34784971224144,"vib":9,"vibDepth":0.015,"sub":0.2},{"wave":"vox","vowel":"oo>ah","f0":807.6795404124804,"f1":661.9857333841276,"ms":140.94800342805684,"gap":23.947017996106297,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"ah>oh","f0":776.8608196059081,"f1":1118.0244019227682,"ms":189.10329008009285,"gap":21.28260099561885,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"eh>eh","f0":827.3096579974379,"f1":921.026574308244,"ms":172.67068898305297,"gap":221.19701331481338,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"sine","f0":1673.3870243653655,"f1":3077.8028978685265,"ms":139.03873190516606,"gap":0,"curve":"exp","sub":0.2},{"wave":"sine","f0":3077.8028978685265,"f1":1902.9153735160396,"ms":218.1906179152429,"gap":80.80285398988053,"vib":9,"vibDepth":0.015,"sub":0.2},{"wave":"vox","vowel":"oh>oh","f0":648.9840795364003,"f1":750.3964850395779,"ms":123.77840845379978,"gap":46.796521914657205,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"oo>oo","f0":614.8739529818577,"f1":484.6975756263161,"ms":149.9567713495344,"gap":63.805502799805254,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"ee>oo","f0":837.4943277409732,"f1":985.0529045562793,"ms":127.50996073242277,"gap":46.80038903141394,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"eh>oh","f0":804.4640939217153,"f1":942.2692753860173,"ms":169.63268645573407,"gap":98.85165461571887,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"sine","f0":1629.5952883549035,"f1":2679.394949294751,"ms":114.60265405476093,"gap":0,"curve":"exp","sub":0.2},{"wave":"sine","f0":2679.394949294751,"f1":1814.9744071456607,"ms":217.07470037043095,"gap":112.43701070081443,"vib":9,"vibDepth":0.015,"sub":0.2},{"wave":"vox","vowel":"oh>ah","f0":964.4088835140716,"f1":1100.5004906799568,"ms":141.98794082272798,"gap":33.25367199955508,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"uh>oh","f0":911.8902942584285,"f1":802.7858989614034,"ms":127.80364539008588,"gap":25.680453113745898,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"eh>eh","f0":858.4142666909297,"f1":1031.2642458515822,"ms":118.34062669891864,"gap":124.94303898187354,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"uh>oh","f0":691.0702893074891,"f1":946.8626459887946,"ms":172.8760549472645,"gap":41.54400291386992,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"ee>ee","f0":689.0038445904964,"f1":511.17411923248915,"ms":162.21766270697117,"gap":0,"sub":0.3,"subRatio":2,"atk":10,"rel":25}],"babble_c":[{"wave":"sine","f0":1475.5483826622367,"f1":2436.953184354302,"ms":163.23883812176064,"gap":0,"curve":"exp","sub":0.2},{"wave":"sine","f0":2436.953184354302,"f1":1848.1550261036393,"ms":184.22796653583646,"gap":77.23988528829068,"vib":9,"vibDepth":0.015,"sub":0.2},{"wave":"sine","f0":1436.2650387221947,"f1":2357.8609223589656,"ms":148.67312028538436,"gap":0,"curve":"exp","sub":0.2},{"wave":"sine","f0":2357.8609223589656,"f1":1754.3773299958086,"ms":201.2429816275835,"gap":274.23636028543115,"vib":9,"vibDepth":0.015,"sub":0.2},{"wave":"vox","vowel":"ee>ah","f0":864.3548347710696,"f1":751.6214509828034,"ms":112.40159060340375,"gap":37.05393635202199,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"oh>oo","f0":855.596136528223,"f1":786.3183617826834,"ms":124.60622022859752,"gap":73.06592918233946,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"oh>uh","f0":672.7076553962266,"f1":602.8252619884493,"ms":176.63771013263613,"gap":32.223118701949716,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"ee>oo","f0":666.505739853957,"f1":881.1560261935301,"ms":165.28183511924,"gap":32.04669182188809,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"eh>oo","f0":724.1126490114199,"f1":585.4636372624609,"ms":176.04385562241077,"gap":229.76059504784644,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"oo>oh","f0":760.8501116210234,"f1":974.6196744403734,"ms":160.18785574939102,"gap":295.0464609544724,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"oo>oh","f0":830.7090453111296,"f1":611.4032427625108,"ms":163.88035469222814,"gap":22.95576934237033,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"ee>ee","f0":810.1225222380099,"f1":922.9268407541751,"ms":140.76720398385078,"gap":25.241885019931942,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"uh>oo","f0":900.9590394933523,"f1":1095.5971526239484,"ms":132.28037004824728,"gap":87.16060598380864,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"eh>ee","f0":761.1000044105994,"f1":1013.4571005679949,"ms":141.91069778986275,"gap":73.20336316013709,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"oh>oh","f0":627.4792129049778,"f1":795.8282387865131,"ms":169.68744757119566,"gap":42.31740799266845,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"ee>ee","f0":662.9027945877539,"f1":477.51000634193514,"ms":112.99544672016054,"gap":35.735567526426166,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"oo>ee","f0":698.5037513599009,"f1":898.4381158939965,"ms":172.55184181500226,"gap":87.67455328721553,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"sine","f0":1391.8619627831504,"f1":2308.972837814958,"ms":164.58252205047756,"gap":0,"curve":"exp","sub":0.2},{"wave":"sine","f0":2308.972837814958,"f1":1907.0278377489244,"ms":175.10436469689012,"gap":71.58903358737007,"vib":9,"vibDepth":0.015,"sub":0.2},{"wave":"sine","f0":1576.1137953260913,"f1":2583.6271804055486,"ms":158.66485669277608,"gap":0,"curve":"exp","sub":0.2},{"wave":"sine","f0":2583.6271804055486,"f1":1737.16486078878,"ms":171.96581879630685,"gap":103.19862270262092,"vib":9,"vibDepth":0.015,"sub":0.2},{"wave":"sine","f0":1373.516663722694,"f1":2251.82566382095,"ms":177.12456887355074,"gap":0,"curve":"exp","sub":0.2},{"wave":"sine","f0":2251.82566382095,"f1":1556.0464677664002,"ms":144.72953466698527,"gap":112.64712032396346,"vib":9,"vibDepth":0.015,"sub":0.2},{"wave":"vox","vowel":"ee>oh","f0":552.8965493601203,"f1":766.4790391302928,"ms":128.78403387963772,"gap":33.82172288140282,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"ah>oo","f0":576.389406442096,"f1":494.658406504321,"ms":191.8301564315334,"gap":33.64251428516582,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"vox","vowel":"oh>oh","f0":538.2572486244728,"f1":678.3687238103734,"ms":132.05032815691084,"gap":293.0013500340283,"sub":0.3,"subRatio":2,"atk":10,"rel":25},{"wave":"sine","f0":1320.9221907192841,"f1":2256.5682672743296,"ms":152.793191105593,"gap":0,"curve":"exp","sub":0.2},{"wave":"sine","f0":2256.5682672743296,"f1":1515.9292243965597,"ms":218.69680255651474,"gap":0,"vib":9,"vibDepth":0.015,"sub":0.2}]}};
+let ctx;
+const $ = (id) => document.getElementById(id);
+function play(name) {
+  ctx ??= new AudioContext();
+  const s = renderEmote(PRESETS.emotes[name], PRESETS.sampleRate, { pitch: +$("pitch").value, tempo: +$("tempo").value, fx: $("fx").checked ? PRESETS.fx : null });
+  const b = ctx.createBuffer(1, s.length, PRESETS.sampleRate);
+  b.copyToChannel(s, 0);
+  const src = ctx.createBufferSource();
+  const gain = ctx.createGain();
+  gain.gain.value = +$("vol").value;
+  src.buffer = b;
+  src.connect(gain).connect(ctx.destination);
+  src.start();
+}
+for (const name of Object.keys(PRESETS.emotes)) {
+  const b = document.createElement("button");
+  b.textContent = name;
+  b.onclick = () => play(name);
+  $("emotes").append(b);
+}
+$("pitch").oninput = (e) => ($("pv").textContent = (+e.target.value).toFixed(2));
+$("tempo").oninput = (e) => ($("tv").textContent = (+e.target.value).toFixed(2));
+</script>

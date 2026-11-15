@@ -53,6 +53,8 @@
 
 #include "calibration_storage.h"
 #include "crsf.h"
+#include "droid_voice.h"
+#include "personality.h"
 #include "calibration_lease.h"
 #include "gait_profile.h"
 #include "i2c_bus.h"
@@ -755,6 +757,8 @@ void addCapabilities(JsonObject capabilities) {
   capabilities["persistentGaitProfiles"] = true;
   capabilities["manualControl"] = true;
   capabilities["receiverPassthrough"] = true;
+  capabilities["droidVoice"] = DOMINO_AUDIO_ENABLED ? true : false;
+  capabilities["personality"] = true;
 }
 
 bool boundedManualAxis(JsonVariantConst source, float *value) {
@@ -1504,6 +1508,126 @@ void handleGait(JsonObjectConst command, JsonObjectConst payload) {
   }
 }
 
+// Droid voice. {kind:"voice", action:"play", payload:{emote:"hello"}} queues an emote;
+// {action:"volume", payload:{percent:0..100}} sets the software volume. Allowed in any
+// robot state: sound moves nothing.
+void handleVoice(JsonObjectConst command, JsonObjectConst payload) {
+  const char *action = command["action"] | "";
+  const char *requestId = command["requestId"] | "";
+  if (!DOMINO_AUDIO_ENABLED) {
+    acknowledge("voice", action, requestId, false, "This firmware was built without the droid voice.");
+  } else if (!strcmp(action, "play")) {
+    const bool queued = droidVoicePlayByName(payload["emote"] | "");
+    acknowledge("voice", action, requestId, queued, queued ? nullptr : "Unknown emote, or four are already waiting.");
+  } else if (!strcmp(action, "volume")) {
+    const int percent = payload["percent"] | -1;
+    if (percent < 0 || percent > 100) {
+      acknowledge("voice", action, requestId, false, "Volume must be 0 to 100.");
+    } else {
+      droidVoiceSetVolume(static_cast<uint8_t>(percent));
+      acknowledge("voice", action, requestId, true);
+    }
+  } else {
+    acknowledge("voice", action, requestId, false, "Unknown voice action.");
+  }
+}
+
+// Emotes & sounds (Studio LIVE / EMOTES). Settings are behaviour only, so they
+// may be read and saved in any robot state. A preview moves the antennas and
+// nudges the ride height, so it needs the robot standing under radio control.
+void addPersonalitySettings(JsonObject out, const PersonalitySettings &s) {
+  out["enabled"] = s.enabled;
+  out["soundEnabled"] = s.soundEnabled;
+  out["volumePercent"] = s.volumePercent;
+  out["idleChatter"] = s.idleChatter == PersonalityChatter::Off ? "off"
+                       : s.idleChatter == PersonalityChatter::Normal ? "normal" : "rare";
+  out["emoteChannel"] = s.emoteChannel;
+  out["fixedEmote"] = s.fixedEmote < 0 ? "random" : personalityEmoteName(static_cast<uint8_t>(s.fixedEmote));
+}
+
+bool parsePersonalitySettings(JsonObjectConst in, PersonalitySettings *s) {
+  if (in.isNull() || !in["enabled"].is<bool>() || !in["soundEnabled"].is<bool>() ||
+      !in["volumePercent"].is<int>() || !in["emoteChannel"].is<int>()) return false;
+  PersonalitySettings out;
+  out.enabled = in["enabled"];
+  out.soundEnabled = in["soundEnabled"];
+  const int volume = in["volumePercent"];
+  const int channel = in["emoteChannel"];
+  if (volume < 0 || volume > 100 || channel < 0 || channel > 16) return false;
+  out.volumePercent = static_cast<uint8_t>(volume);
+  out.emoteChannel = static_cast<uint8_t>(channel);
+  const char *chatter = in["idleChatter"] | "rare";
+  if (!strcmp(chatter, "off")) out.idleChatter = PersonalityChatter::Off;
+  else if (!strcmp(chatter, "rare")) out.idleChatter = PersonalityChatter::Rare;
+  else if (!strcmp(chatter, "normal")) out.idleChatter = PersonalityChatter::Normal;
+  else return false;
+  const char *fixed = in["fixedEmote"] | "random";
+  if (!strcmp(fixed, "random")) out.fixedEmote = -1;
+  else {
+    const int index = personalityEmoteIndex(fixed);
+    if (index < 0) return false;
+    out.fixedEmote = static_cast<int8_t>(index);
+  }
+  *s = out;
+  return validatePersonalitySettings(out);
+}
+
+void acknowledgePersonality(const char *action, const char *requestId, bool accepted,
+                            const char *reason = nullptr, bool persisted = false) {
+  JsonDocument document;
+  document["protocol"] = kProtocol;
+  document["type"] = "robot-ack";
+  document["kind"] = "personality";
+  document["action"] = action;
+  document["requestId"] = requestId;
+  document["accepted"] = accepted;
+  document["robotState"] = stateName();
+  document["persisted"] = persisted;
+  document["storedOnRobot"] = personalityPersisted();
+  document["audio"] = DOMINO_AUDIO_ENABLED ? true : false;
+  document["antennas"] = DOMINO_ANTENNAS_ENABLED ? true : false;
+  JsonArray emotes = document["emotes"].to<JsonArray>();
+  for (uint8_t i = 0; i < kPersonalityEmoteCount; ++i) emotes.add(personalityEmoteName(i));
+  addPersonalitySettings(document["settings"].to<JsonObject>(), personalitySettings());
+  if (reason) document["reason"] = reason;
+  writeDocument(document);
+}
+
+void handlePersonality(JsonObjectConst command, JsonObjectConst payload) {
+  const char *action = command["action"] | "";
+  const char *requestId = command["requestId"] | "";
+  if (!strcmp(action, "request-settings")) {
+    acknowledgePersonality(action, requestId, true);
+  } else if (!strcmp(action, "apply-settings")) {
+    PersonalitySettings settings;
+    if (!parsePersonalitySettings(payload["settings"].as<JsonObjectConst>(), &settings)) {
+      acknowledgePersonality(action, requestId, false, "Emote settings are missing or out of range.");
+      return;
+    }
+    bool persisted = false;
+    if (!setPersonalitySettings(settings, true, &persisted)) {
+      acknowledgePersonality(action, requestId, false,
+                             "Applied, but saving to the robot's flash failed; it will revert after a restart.");
+    } else {
+      acknowledgePersonality(action, requestId, true, nullptr, persisted);
+    }
+  } else if (!strcmp(action, "preview-emote")) {
+    const char *name = payload["emote"] | "";
+    const int index = !strcmp(name, "random") ? -1 : personalityEmoteIndex(name);
+    if (index < 0 && strcmp(name, "random")) {
+      acknowledgePersonality(action, requestId, false, "Unknown emote.");
+    } else if (!personalitySettings().enabled) {
+      acknowledgePersonality(action, requestId, false, "Emotes & sounds are turned off.");
+    } else if (!personalityPlayEmote(index, millis())) {
+      acknowledgePersonality(action, requestId, false, "Another emote is still playing.");
+    } else {
+      acknowledgePersonality(action, requestId, true);
+    }
+  } else {
+    acknowledgePersonality(action, requestId, false, "Unsupported emote action.");
+  }
+}
+
 void handleCommand(const String &line, LiveTransport source,
                    Adafruit_PWMServoDriver &driver, uint32_t now) {
   JsonDocument document;
@@ -1539,6 +1663,8 @@ void handleCommand(const String &line, LiveTransport source,
   else if (!strcmp(kind, "manual-control")) handleManualControl(command, now);
   else if (!strcmp(kind, "calibration")) handleCalibration(command, payload, driver, now);
   else if (!strcmp(kind, "gait")) handleGait(command, payload);
+  else if (!strcmp(kind, "voice")) handleVoice(command, payload);
+  else if (!strcmp(kind, "personality")) handlePersonality(command, payload);
   else if (!strcmp(kind, "receiver-passthrough"))
     handleReceiverPassthrough(command, payload, source, driver);
   else if (command["requestId"].is<const char*>())

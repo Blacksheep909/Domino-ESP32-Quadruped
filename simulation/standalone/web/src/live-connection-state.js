@@ -31,6 +31,7 @@ function sanitizeAdapter(message, receivedAt) {
       calibration: message.capabilities?.calibration === true,
       motionSmoothing: message.capabilities?.motionSmoothing === true,
       gaitProfiles: message.capabilities?.gaitProfiles === true,
+      personality: message.capabilities?.personality === true,
       persistentProfiles: message.capabilities?.persistentProfiles === true,
       manualControl: message.capabilities?.manualControl === true,
       nativeNavigation: message.capabilities?.nativeNavigation === true,

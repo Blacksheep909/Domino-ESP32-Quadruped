@@ -409,6 +409,7 @@
           <button type="button" role="tab" data-live-view="sensors" aria-selected="false" aria-controls="live-view-sensors">GPS / LIDAR</button>
           <button type="button" role="tab" data-live-view="calibration" aria-selected="false" aria-controls="live-view-calibration">CALIBRATION</button>
           <button type="button" role="tab" data-live-view="gaits" aria-selected="false" aria-controls="live-view-gaits">GAITS</button>
+          <button type="button" role="tab" data-live-view="emotes" aria-selected="false" aria-controls="live-view-emotes">EMOTES</button>
           <button type="button" role="tab" data-live-view="diagnostics" aria-selected="false" aria-controls="live-view-diagnostics">DIAGNOSTICS</button>
           <button type="button" role="tab" data-live-view="sessions" aria-selected="false" aria-controls="live-view-sessions">SESSIONS</button>
         </div>
@@ -1132,6 +1133,47 @@
         </div>
       </section>
 
+      <section id="live-view-emotes" class="live-view-page live-emotes-page" aria-labelledby="live-emotes-title" hidden>
+        <header class="live-page-heading">
+          <div><span>LIVE / EMOTES</span><h1 id="live-emotes-title">Emotes &amp; sounds</h1><p>Personality on the robot: emotes on the Boxer switch, reaction sounds and the odd idle sound. Settings are saved on the robot, separate from calibration. Turn it off and Domino stays silent and still.</p></div>
+          <div class="live-page-status"><span id="live-emotes-link-state" data-state="offline">ROBOT SETTINGS UNKNOWN</span><strong id="live-emotes-saved-state">NOT READ</strong></div>
+        </header>
+        <div class="live-emotes-layout">
+          <section class="live-gait-card live-emotes-card">
+            <header><div><span>PERSONALITY</span><strong id="live-emotes-summary">Read the robot to see its settings.</strong></div></header>
+            <div class="live-emotes-settings">
+              <label class="live-emotes-toggle"><input id="live-emotes-enabled" type="checkbox" checked> <span><b>Emotes &amp; sounds</b><small>Master switch. Off = no startup sound, no reactions, no idle sounds, the emote switch does nothing.</small></span></label>
+              <label class="live-emotes-toggle"><input id="live-emotes-sound" type="checkbox" checked> <span><b>Sound</b><small>Off keeps the emotes (antennas, body) but mutes the speaker.</small></span></label>
+              <label class="live-emotes-field">VOLUME <input id="live-emotes-volume" type="range" min="0" max="100" step="5" value="45"><output id="live-emotes-volume-value">45%</output></label>
+              <label class="live-emotes-field">IDLE SOUNDS
+                <select id="live-emotes-chatter" aria-label="Idle sounds">
+                  <option value="off">Off</option>
+                  <option value="rare" selected>Rare (every 1.5 to 3 minutes)</option>
+                  <option value="normal">Occasional (every 45 s to 2 minutes)</option>
+                </select>
+              </label>
+              <label class="live-emotes-field">EMOTE SWITCH
+                <select id="live-emotes-channel" aria-label="Radio channel of the emote switch"></select>
+              </label>
+              <label class="live-emotes-field">SWITCH PLAYS
+                <select id="live-emotes-fixed" aria-label="Which emote the switch plays"><option value="random">A random emote (never the same twice)</option></select>
+              </label>
+            </div>
+            <p class="live-emotes-hint">Boxer: in EdgeTX, mix the momentary <b>SH</b> switch to a spare channel (CH8 by default) as -100 / +100. Each press plays one emote; holding it does nothing more.</p>
+            <div class="live-emotes-actions">
+              <button id="live-emotes-read" type="button">READ FROM ROBOT</button>
+              <button id="live-emotes-save" type="button" class="primary">SAVE TO ROBOT</button>
+              <button id="live-emotes-defaults" type="button">DEFAULTS</button>
+            </div>
+            <p id="live-emotes-status" class="live-emotes-status" role="status">Connect a robot with emote support to read its settings.</p>
+          </section>
+          <section class="live-gait-card live-emotes-card">
+            <header><div><span>EMOTES</span><strong>PREVIEW ON THE ROBOT</strong></div><small id="live-emotes-hardware">Antennas and speaker: unknown</small></header>
+            <div id="live-emotes-list" class="live-emotes-list"></div>
+            <p class="live-emotes-hint">A preview plays the full emote on the robot: sound, antennas and a small ride-height nudge, layered over whatever the legs are doing. Body tilt and bow motions come with the next policy, which learns body-pose commands.</p>
+          </section>
+        </div>
+      </section>
       <section id="live-view-diagnostics" class="live-view-page live-diagnostics-page" aria-labelledby="live-diagnostics-title" hidden>
         <header class="live-page-heading">
           <div><span>LIVE / DIAGNOSTICS</span><h1 id="live-diagnostics-title">Command-chain diagnostics</h1><p>Trace the first broken stage from PC command packet to servo output, with counters and timestamped evidence.</p></div>

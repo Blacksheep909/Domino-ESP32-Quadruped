@@ -32,6 +32,10 @@ import {
   validLiveGaitCommand,
 } from "./web/src/live-gait-protocol.js";
 import {
+  validLivePersonalityAcknowledgement,
+  validLivePersonalityCommand,
+} from "./web/src/live-personality-protocol.js";
+import {
   validLiveAdapterAnnouncement,
   validLiveConnectionAcknowledgement,
   validLiveConnectionCommand,
@@ -796,6 +800,26 @@ sockets.on("connection", (socket) => {
           validLiveGaitAcknowledgement(message) &&
           record?.socket === socket &&
           consumeAdapterRequest(socket, message, "gait")
+        ) {
+          broadcast(message);
+        }
+        return;
+      }
+      if (message.type === "live-personality-command") {
+        const record = liveAdapterForSession(message);
+        if (Buffer.byteLength(payload) <= 4 * 1024 && validLivePersonalityCommand(message) && record) {
+          rememberAdapterRequest(record.socket, message, "personality");
+          sendSocket(record.socket, message);
+        }
+        return;
+      }
+      if (message.type === "live-personality-ack") {
+        const record = liveAdapterForSession(message);
+        if (
+          Buffer.byteLength(payload) <= 4 * 1024 &&
+          validLivePersonalityAcknowledgement(message) &&
+          record?.socket === socket &&
+          consumeAdapterRequest(socket, message, "personality")
         ) {
           broadcast(message);
         }

@@ -313,11 +313,20 @@ import {
   LIVE_VIEW_COMPARE,
   LIVE_VIEW_DATA,
   LIVE_VIEW_DIAGNOSTICS,
+  LIVE_VIEW_EMOTES,
   LIVE_VIEW_GAITS,
   LIVE_VIEW_SENSORS,
   LIVE_VIEW_SESSIONS,
   selectLiveView,
 } from "./live-view-state.js";
+import {
+  createLivePersonalityCommand,
+  DEFAULT_PERSONALITY_SETTINGS,
+  describePersonalitySettings,
+  PERSONALITY_EMOTES,
+  sanitizePersonalitySettings,
+  validLivePersonalityAcknowledgement,
+} from "./live-personality-protocol.js";
 import {
   captureLiveSensorLevel,
   createLiveSensorAttitudeFilterState,
@@ -923,6 +932,7 @@ const LIVE_VIEW_SHORTCUTS = [
   LIVE_VIEW_SENSORS,
   LIVE_VIEW_CALIBRATION,
   LIVE_VIEW_GAITS,
+  LIVE_VIEW_EMOTES,
   LIVE_VIEW_DIAGNOSTICS,
   LIVE_VIEW_SESSIONS,
 ];
@@ -932,6 +942,7 @@ const LIVE_VIEW_LABELS = {
   [LIVE_VIEW_SENSORS]: "GPS / LIDAR",
   [LIVE_VIEW_CALIBRATION]: "CALIBRATION",
   [LIVE_VIEW_GAITS]: "GAITS",
+  [LIVE_VIEW_EMOTES]: "EMOTES",
   [LIVE_VIEW_DIAGNOSTICS]: "DIAGNOSTICS",
   [LIVE_VIEW_SESSIONS]: "SESSIONS",
 };
@@ -1449,6 +1460,7 @@ function applyLiveView(view) {
   document.querySelector("#live-view-sensors").hidden = liveViewState.selected !== LIVE_VIEW_SENSORS;
   document.querySelector("#live-view-calibration").hidden = liveViewState.selected !== LIVE_VIEW_CALIBRATION;
   document.querySelector("#live-view-gaits").hidden = liveViewState.selected !== LIVE_VIEW_GAITS;
+  document.querySelector("#live-view-emotes").hidden = liveViewState.selected !== LIVE_VIEW_EMOTES;
   document.querySelector("#live-view-diagnostics").hidden = liveViewState.selected !== LIVE_VIEW_DIAGNOSTICS;
   document.querySelector("#live-view-sessions").hidden = liveViewState.selected !== LIVE_VIEW_SESSIONS;
   updateJointOverlay();
@@ -1464,6 +1476,10 @@ function applyLiveView(view) {
   if (liveViewState.selected === LIVE_VIEW_GAITS) renderLiveGaitUi();
   if (liveViewState.selected === LIVE_VIEW_DIAGNOSTICS) updateLiveComparisonUi();
   if (liveViewState.selected === LIVE_VIEW_SESSIONS) renderLiveSessionArchive();
+  if (liveViewState.selected === LIVE_VIEW_EMOTES) {
+    if (!livePersonalityState.robot && !livePersonalityState.pendingRequestId) sendLivePersonalityCommand("request-settings");
+    renderLivePersonalityUi();
+  }
   requestAnimationFrame(() => {
     resize();
     if (enteringCalibration || enteringGaits || enteringSensors) {
@@ -4073,6 +4089,9 @@ function connectControlBridge() {
       }
       if (message.type === "live-gait-ack") {
         acceptLiveGaitAcknowledgement(message);
+      }
+      if (message.type === "live-personality-ack") {
+        acceptLivePersonalityAcknowledgement(message);
       }
       if (message.type === "live-navigation-ack") {
         acceptLiveNavigationAcknowledgement(message);
@@ -12879,3 +12898,184 @@ createDominoPhysics()
   });
 pollFirmware();
 requestAnimationFrame(animate);
+
+// LIVE / EMOTES ------------------------------------------------------------
+// Personality settings live on the robot (src/personality.*). Studio reads
+// them, edits a local draft, saves it back and previews emotes.
+const livePersonalityState = {
+  draft: { ...DEFAULT_PERSONALITY_SETTINGS },
+  robot: null,           // settings last confirmed by the robot
+  storedOnRobot: null,   // robot has a saved record (else it runs defaults)
+  audio: null,
+  antennas: null,
+  pendingRequestId: "",
+  pendingAction: "",
+  status: "Connect a robot with emote support to read its settings.",
+};
+let livePersonalityPendingTimeout = null;
+
+function livePersonalitySupported() {
+  const adapter = liveConnectionState.adapters[liveConnectionState.selectedAdapterId];
+  return liveConnectionIsReady(liveConnectionState) && adapter?.capabilities?.personality === true;
+}
+
+function sendLivePersonalityCommand(action, extra = {}) {
+  const connection = liveConnectionEnvelope(liveConnectionState);
+  if (socket?.readyState !== WebSocket.OPEN || !connection || !livePersonalitySupported() ||
+      livePersonalityState.pendingRequestId) return false;
+  const requestId = crypto.randomUUID();
+  const command = createLivePersonalityCommand(action, requestId, extra);
+  if (!command) return false;
+  Object.assign(command, connection);
+  livePersonalityState.pendingRequestId = requestId;
+  livePersonalityState.pendingAction = action;
+  livePersonalityState.status = action === "apply-settings" ? "Saving to the robot..."
+    : action === "preview-emote" ? "Asking the robot to play the emote..." : "Reading the robot's settings...";
+  socket.send(JSON.stringify(command));
+  clearTimeout(livePersonalityPendingTimeout);
+  livePersonalityPendingTimeout = setTimeout(() => {
+    if (livePersonalityState.pendingRequestId !== requestId) return;
+    livePersonalityState.pendingRequestId = "";
+    livePersonalityState.pendingAction = "";
+    livePersonalityState.status = action === "apply-settings"
+      ? "No reply from the robot. Read its settings to see whether they were saved."
+      : "No reply from the robot.";
+    renderLivePersonalityUi();
+  }, action === "apply-settings" ? 8_000 : 4_000);
+  renderLivePersonalityUi();
+  return true;
+}
+
+function acceptLivePersonalityAcknowledgement(message) {
+  const connection = liveConnectionEnvelope(liveConnectionState);
+  if (!validLivePersonalityAcknowledgement(message) || !connection ||
+      message.adapterId !== connection.adapterId || message.sessionId !== connection.sessionId ||
+      message.requestId !== livePersonalityState.pendingRequestId) return false;
+  clearTimeout(livePersonalityPendingTimeout);
+  const action = livePersonalityState.pendingAction;
+  livePersonalityState.pendingRequestId = "";
+  livePersonalityState.pendingAction = "";
+  if (message.settings) {
+    livePersonalityState.robot = sanitizePersonalitySettings(message.settings);
+    if (action !== "preview-emote") livePersonalityState.draft = { ...livePersonalityState.robot };
+  }
+  if (typeof message.storedOnRobot === "boolean") livePersonalityState.storedOnRobot = message.storedOnRobot;
+  if (typeof message.audio === "boolean") livePersonalityState.audio = message.audio;
+  if (typeof message.antennas === "boolean") livePersonalityState.antennas = message.antennas;
+  if (!message.accepted) {
+    livePersonalityState.status = `Robot refused: ${message.reason || "no reason given."}`;
+  } else if (action === "apply-settings") {
+    livePersonalityState.status = message.persisted === true
+      ? "Saved on the robot. It keeps these settings after a restart."
+      : "Applied, but the robot did not confirm saving them.";
+  } else if (action === "preview-emote") {
+    livePersonalityState.status = "Playing on the robot.";
+  } else {
+    livePersonalityState.status = livePersonalityState.storedOnRobot
+      ? "Read the robot's saved settings."
+      : "Read the robot's settings (built-in defaults; nothing saved yet).";
+  }
+  renderLivePersonalityUi();
+  return true;
+}
+
+function readLivePersonalityForm() {
+  return sanitizePersonalitySettings({
+    enabled: document.querySelector("#live-emotes-enabled").checked,
+    soundEnabled: document.querySelector("#live-emotes-sound").checked,
+    volumePercent: Number(document.querySelector("#live-emotes-volume").value),
+    idleChatter: document.querySelector("#live-emotes-chatter").value,
+    emoteChannel: Number(document.querySelector("#live-emotes-channel").value),
+    fixedEmote: document.querySelector("#live-emotes-fixed").value,
+  });
+}
+
+function renderLivePersonalityUi() {
+  const page = document.querySelector("#live-view-emotes");
+  if (!page) return;
+  const s = livePersonalityState.draft;
+  const supported = livePersonalitySupported();
+  const busy = Boolean(livePersonalityState.pendingRequestId);
+  document.querySelector("#live-emotes-enabled").checked = s.enabled;
+  document.querySelector("#live-emotes-sound").checked = s.soundEnabled;
+  document.querySelector("#live-emotes-volume").value = String(s.volumePercent);
+  document.querySelector("#live-emotes-volume-value").textContent = `${s.volumePercent}%`;
+  document.querySelector("#live-emotes-chatter").value = s.idleChatter;
+  document.querySelector("#live-emotes-channel").value = String(s.emoteChannel);
+  document.querySelector("#live-emotes-fixed").value = s.fixedEmote;
+  document.querySelector(".live-emotes-settings").dataset.disabled = String(!s.enabled);
+  document.querySelector("#live-emotes-summary").textContent = describePersonalitySettings(s);
+  const changed = livePersonalityState.robot &&
+    JSON.stringify(livePersonalityState.robot) !== JSON.stringify(s);
+  const linkState = document.querySelector("#live-emotes-link-state");
+  linkState.dataset.state = supported ? "online" : "offline";
+  linkState.textContent = !liveConnectionIsReady(liveConnectionState) ? "NO ROBOT CONNECTED"
+    : supported ? "ROBOT SUPPORTS EMOTES" : "FIRMWARE HAS NO EMOTES";
+  document.querySelector("#live-emotes-saved-state").textContent = !livePersonalityState.robot ? "NOT READ"
+    : changed ? "UNSAVED CHANGES" : livePersonalityState.storedOnRobot ? "SAVED ON ROBOT" : "ROBOT DEFAULTS";
+  document.querySelector("#live-emotes-read").disabled = !supported || busy;
+  document.querySelector("#live-emotes-save").disabled = !supported || busy;
+  const hardware = [];
+  if (livePersonalityState.audio !== null) hardware.push(`speaker ${livePersonalityState.audio ? "built in" : "not in this firmware build"}`);
+  if (livePersonalityState.antennas !== null) hardware.push(`antennas ${livePersonalityState.antennas ? "built in" : "not in this firmware build"}`);
+  document.querySelector("#live-emotes-hardware").textContent = hardware.length ? hardware.join(" / ") : "Antennas and speaker: unknown";
+  page.querySelectorAll("[data-emote-preview]").forEach((button) => {
+    button.disabled = !supported || busy || !s.enabled;
+  });
+  document.querySelector("#live-emotes-status").textContent = livePersonalityState.status;
+}
+
+function setupLivePersonalityUi() {
+  const channel = document.querySelector("#live-emotes-channel");
+  if (!channel) return;
+  const none = document.createElement("option");
+  none.value = "0";
+  none.textContent = "None (switch disabled)";
+  channel.append(none);
+  for (let ch = 5; ch <= 16; ch += 1) {
+    const option = document.createElement("option");
+    option.value = String(ch);
+    const taken = { 5: " (SA: arm)", 6: " (SB: policy)", 7: " (SC: walk)" }[ch] || "";
+    option.textContent = `CH${ch}${ch === 8 ? " (Boxer SH, default)" : taken}`;
+    channel.append(option);
+  }
+  const fixed = document.querySelector("#live-emotes-fixed");
+  const list = document.querySelector("#live-emotes-list");
+  for (const emote of PERSONALITY_EMOTES) {
+    const option = document.createElement("option");
+    option.value = emote.id;
+    option.textContent = `Always "${emote.label}"`;
+    fixed.append(option);
+    const row = document.createElement("article");
+    const name = document.createElement("strong");
+    name.textContent = emote.label;
+    const detail = document.createElement("small");
+    detail.textContent = emote.detail;
+    const play = document.createElement("button");
+    play.type = "button";
+    play.dataset.emotePreview = emote.id;
+    play.textContent = "PLAY";
+    play.addEventListener("click", () => sendLivePersonalityCommand("preview-emote", { emote: emote.id }));
+    row.append(name, detail, play);
+    list.append(row);
+  }
+  const onEdit = () => {
+    livePersonalityState.draft = readLivePersonalityForm();
+    renderLivePersonalityUi();
+  };
+  ["#live-emotes-enabled", "#live-emotes-sound", "#live-emotes-volume", "#live-emotes-chatter",
+    "#live-emotes-channel", "#live-emotes-fixed"].forEach((selector) => {
+    document.querySelector(selector).addEventListener("input", onEdit);
+    document.querySelector(selector).addEventListener("change", onEdit);
+  });
+  document.querySelector("#live-emotes-read").addEventListener("click", () => sendLivePersonalityCommand("request-settings"));
+  document.querySelector("#live-emotes-save").addEventListener("click", () =>
+    sendLivePersonalityCommand("apply-settings", { settings: livePersonalityState.draft }));
+  document.querySelector("#live-emotes-defaults").addEventListener("click", () => {
+    livePersonalityState.draft = { ...DEFAULT_PERSONALITY_SETTINGS };
+    livePersonalityState.status = "Defaults loaded locally. Save to send them to the robot.";
+    renderLivePersonalityUi();
+  });
+  renderLivePersonalityUi();
+}
+setupLivePersonalityUi();

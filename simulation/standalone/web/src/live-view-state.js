@@ -3,6 +3,7 @@ export const LIVE_VIEW_DATA = "data";
 export const LIVE_VIEW_SENSORS = "sensors";
 export const LIVE_VIEW_CALIBRATION = "calibration";
 export const LIVE_VIEW_GAITS = "gaits";
+export const LIVE_VIEW_EMOTES = "emotes";
 export const LIVE_VIEW_DIAGNOSTICS = "diagnostics";
 export const LIVE_VIEW_SESSIONS = "sessions";
 export const ENABLED_LIVE_VIEWS = Object.freeze([
@@ -11,6 +12,7 @@ export const ENABLED_LIVE_VIEWS = Object.freeze([
   LIVE_VIEW_SENSORS,
   LIVE_VIEW_CALIBRATION,
   LIVE_VIEW_GAITS,
+  LIVE_VIEW_EMOTES,
   LIVE_VIEW_DIAGNOSTICS,
   LIVE_VIEW_SESSIONS,
 ]);

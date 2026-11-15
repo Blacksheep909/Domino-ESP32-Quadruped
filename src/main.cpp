@@ -46,6 +46,9 @@
 #include "motion_smoothing.h"
 #include "i2c_bus.h"
 #include "imu.h"
+#include "droid_reactions.h"
+#include "droid_voice.h"
+#include "personality.h"
 #include "policy_runner.h"
 #ifndef DOMINO_SIL
 #include "live_robot_endpoint.h"
@@ -1862,6 +1865,13 @@ void setup() {
   liveRobotEndpointBegin(pca);
 #endif
 
+  // Droid voice (no-op unless built with -DDOMINO_AUDIO_ENABLED=1), then the
+  // personality settings saved on the robot (Studio LIVE / EMOTES). With
+  // emotes & sounds turned off the robot stays silent from boot.
+  droidVoiceBegin();
+  personalityBegin(pca);
+  if (personalitySoundAllowed()) droidVoicePlay(DROID_EMOTE_STARTUP);
+
   const MotionSmoothingSettings &smoothing = motionSmoothingSettings();
   zRamp.setSpeed(smoothing.heightRateMmPerSec);
   zRamp.go(kCloserPoseZ);
@@ -1924,6 +1934,8 @@ void loop() {
     (void)imuReadSample();
   }
 #endif
+  // Voice reactions to a shove or a fall (no-op without the IMU or the amplifier).
+  droidReactionsUpdate(millis());
   // A delayed UART or I2C read must not make the remainder of this pass use
   // a timestamp captured before the delay.
   now = millis();
@@ -2015,11 +2027,25 @@ void loop() {
   }
   menuState.rideHeightMm = currentRideHeightMm;
 
+  // Emotes (Boxer emote switch / Studio preview), idle sounds and antennas.
+  // An emote only nudges the ride height here; the legs stay with whichever
+  // controller is active (stand, Studio gait or the learned policy).
+  {
+    auto centred = [](int index) { return abs(ch_us[index] - 1500) < 60; };
+    PersonalityContext personality{};
+    personality.linkFresh = inputs.motionCommandsFresh;
+    personality.robotUpright = menuState.mode != BODY_STOW && menuState.mode != BODY_TRANSITION;
+    personality.sticksIdle = centred(0) && centred(1) && centred(3);
+    personality.walking = !personality.sticksIdle &&
+        (menuState.mode == BODY_GAIT || menuState.mode == BODY_CAREFUL || menuState.mode == BODY_POLICY);
+    personalityUpdate(pca, now, personality);
+  }
+
   // 4) Compute the current Z target from the menu state.
   if (menuState.mode == BODY_STOW) {
     currentTargetZ = kCloserPoseZ;
   } else {
-    currentTargetZ = computeStandTargetZ(menuState.rideHeightMm);
+    currentTargetZ = computeStandTargetZ(menuState.rideHeightMm + personalityHeightOffsetMm());
   }
   zRamp.move(currentTargetZ);
 

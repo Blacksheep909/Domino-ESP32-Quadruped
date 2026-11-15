@@ -1,0 +1,98 @@
+{
+  "sampleRate": 22050,
+  "notes": "Domino droid voice. Each emote is a list of segments. wave: sine | tri | sq | fm | hop. f0->f1 is a glide in Hz over ms, then gap ms of silence. curve: lin | exp. vib/vibDepth: vibrato rate (Hz) and depth (fraction of pitch). sub: 0..1 mix of a second voice one octave down (the body / bass of the sound). hop: pitch jumps to a seeded random value between f0 and f1 every step ms (droid babble). fm: fmRatio/fmIndex set the modulator. amp is 0..1. phrases string emotes together: a name plays that emote, a number is a pause in ms, {emote, pitch, tempo} plays it shifted. babble makes a long seeded sentence at build time. Edit, then run: node sounds/build.mjs",
+  "emotes": {
+    "hello": [
+      { "wave": "sine", "f0": 520, "f1": 1150, "ms": 110, "gap": 30, "curve": "exp", "sub": 0.5 },
+      { "wave": "sine", "f0": 1900, "f1": 1500, "ms": 60, "gap": 25, "sub": 0.25 },
+      { "wave": "sine", "f0": 1300, "f1": 2500, "ms": 130, "gap": 0, "curve": "exp", "vib": 20, "vibDepth": 0.025, "sub": 0.3 }
+    ],
+    "happy": [
+      { "wave": "sine", "f0": 900, "f1": 1400, "ms": 60, "gap": 35, "sub": 0.45 },
+      { "wave": "sine", "f0": 1200, "f1": 1900, "ms": 60, "gap": 35, "sub": 0.4 },
+      { "wave": "sine", "f0": 1700, "f1": 2900, "ms": 100, "gap": 20, "curve": "exp", "sub": 0.3 },
+      { "wave": "fm", "f0": 2300, "f1": 2500, "ms": 150, "gap": 0, "fmRatio": 0.5, "fmIndex": 0.9, "vib": 28, "vibDepth": 0.04, "amp": 0.8, "sub": 0.3 }
+    ],
+    "curious": [
+      { "wave": "sine", "f0": 700, "f1": 820, "ms": 100, "gap": 50, "sub": 0.5 },
+      { "wave": "sine", "f0": 800, "f1": 2300, "ms": 220, "gap": 0, "curve": "exp", "vib": 16, "vibDepth": 0.02, "sub": 0.35 }
+    ],
+    "sad": [
+      { "wave": "sine", "f0": 1300, "f1": 800, "ms": 260, "gap": 70, "vib": 7, "vibDepth": 0.03, "sub": 0.45 },
+      { "wave": "tri", "f0": 800, "f1": 430, "ms": 380, "gap": 0, "curve": "exp", "amp": 0.85, "sub": 0.5 }
+    ],
+    "alert": [
+      { "wave": "sq", "f0": 1900, "f1": 1900, "ms": 60, "gap": 45, "amp": 0.7, "sub": 0.5 },
+      { "wave": "sq", "f0": 1900, "f1": 1900, "ms": 60, "gap": 45, "amp": 0.7, "sub": 0.5 },
+      { "wave": "sq", "f0": 1900, "f1": 2600, "ms": 140, "gap": 0, "amp": 0.7, "sub": 0.5 }
+    ],
+    "yes": [
+      { "wave": "sine", "f0": 800, "f1": 1300, "ms": 80, "gap": 30, "sub": 0.45 },
+      { "wave": "sine", "f0": 1300, "f1": 2200, "ms": 100, "gap": 0, "curve": "exp", "sub": 0.35 }
+    ],
+    "no": [
+      { "wave": "tri", "f0": 1300, "f1": 800, "ms": 120, "gap": 45, "sub": 0.5 },
+      { "wave": "tri", "f0": 800, "f1": 520, "ms": 180, "gap": 0, "sub": 0.5 }
+    ],
+    "excited": [
+      { "wave": "hop", "f0": 900, "f1": 2800, "ms": 440, "gap": 15, "step": 40, "seed": 7, "sub": 0.4 },
+      { "wave": "sine", "f0": 1300, "f1": 3200, "ms": 130, "gap": 0, "curve": "exp", "sub": 0.3 }
+    ],
+    "sleepy": [
+      { "wave": "sine", "f0": 1000, "f1": 480, "ms": 560, "gap": 130, "curve": "exp", "vib": 5, "vibDepth": 0.04, "amp": 0.75, "sub": 0.5 },
+      { "wave": "sine", "f0": 480, "f1": 360, "ms": 400, "gap": 0, "amp": 0.6, "sub": 0.5 }
+    ],
+    "startup": [
+      { "wave": "sine", "f0": 380, "f1": 760, "ms": 140, "gap": 20, "curve": "exp", "sub": 0.5 },
+      { "wave": "sine", "f0": 760, "f1": 1500, "ms": 110, "gap": 20, "curve": "exp", "sub": 0.45 },
+      { "wave": "hop", "f0": 1000, "f1": 2400, "ms": 220, "gap": 20, "step": 36, "seed": 21, "sub": 0.35 },
+      { "wave": "sine", "f0": 1800, "f1": 2700, "ms": 160, "gap": 0, "vib": 22, "vibDepth": 0.02, "sub": 0.3 }
+    ],
+    "low_battery": [
+      { "wave": "tri", "f0": 900, "f1": 650, "ms": 190, "gap": 90, "sub": 0.5 },
+      { "wave": "tri", "f0": 900, "f1": 650, "ms": 190, "gap": 90, "sub": 0.5 },
+      { "wave": "tri", "f0": 650, "f1": 380, "ms": 360, "gap": 0, "curve": "exp", "sub": 0.5 }
+    ],
+    "thinking": [
+      { "wave": "hop", "f0": 600, "f1": 1500, "ms": 660, "gap": 0, "step": 75, "seed": 3, "amp": 0.6, "sub": 0.5 }
+    ],
+    "laugh": [
+      { "wave": "sine", "f0": 1700, "f1": 1300, "ms": 50, "gap": 38, "sub": 0.45 },
+      { "wave": "sine", "f0": 1900, "f1": 1450, "ms": 50, "gap": 38, "sub": 0.45 },
+      { "wave": "sine", "f0": 2100, "f1": 1600, "ms": 50, "gap": 38, "sub": 0.4 },
+      { "wave": "sine", "f0": 2300, "f1": 1750, "ms": 50, "gap": 38, "sub": 0.4 },
+      { "wave": "sine", "f0": 2500, "f1": 1500, "ms": 110, "gap": 0, "sub": 0.4 }
+    ],
+    "surprised": [
+      { "wave": "sine", "f0": 500, "f1": 3000, "ms": 100, "gap": 55, "curve": "exp", "sub": 0.45 },
+      { "wave": "sine", "f0": 2600, "f1": 2200, "ms": 65, "gap": 20, "sub": 0.3 },
+      { "wave": "sine", "f0": 2300, "f1": 2700, "ms": 85, "gap": 0, "sub": 0.3 }
+    ],
+    "purr": [
+      { "wave": "sine", "f0": 620, "f1": 700, "ms": 520, "gap": 0, "vib": 26, "vibDepth": 0.13, "amp": 0.7, "sub": 0.6 }
+    ],
+    "whistle": [
+      { "wave": "sine", "f0": 1300, "f1": 2400, "ms": 170, "gap": 0, "curve": "exp", "sub": 0.2 },
+      { "wave": "sine", "f0": 2400, "f1": 1700, "ms": 210, "gap": 0, "vib": 9, "vibDepth": 0.015, "sub": 0.2 }
+    ],
+    "bwoop": [
+      { "wave": "sine", "f0": 330, "f1": 900, "ms": 150, "gap": 25, "curve": "exp", "sub": 0.6 },
+      { "wave": "sine", "f0": 900, "f1": 620, "ms": 90, "gap": 0, "sub": 0.55 }
+    ],
+    "grumble": [
+      { "wave": "tri", "f0": 520, "f1": 380, "ms": 260, "gap": 50, "vib": 14, "vibDepth": 0.08, "sub": 0.6 },
+      { "wave": "tri", "f0": 440, "f1": 330, "ms": 300, "gap": 0, "vib": 12, "vibDepth": 0.09, "sub": 0.6 }
+    ]
+  },
+  "phrases": {
+    "chat_greeting": ["hello", 160, "bwoop", 120, "curious", 260, "happy", 140, "purr"],
+    "chat_story": ["thinking", 150, "yes", 110, "excited", 220, "laugh", 180, { "emote": "whistle", "pitch": 0.9 }, 120, "bwoop"],
+    "chat_grumpy": ["no", 130, "grumble", 180, "sad", 220, { "emote": "grumble", "pitch": 0.85, "tempo": 0.9 }, 160, "sleepy"],
+    "chat_alarm": ["surprised", 110, "alert", 160, { "emote": "bwoop", "pitch": 1.3, "tempo": 1.3 }, 90, "no", 130, "curious"]
+  },
+  "babble": {
+    "babble_a": { "seed": 11, "notes": 18 },
+    "babble_b": { "seed": 42, "notes": 22 },
+    "babble_c": { "seed": 77, "notes": 26 }
+  }
+}

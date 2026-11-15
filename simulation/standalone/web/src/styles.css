@@ -4738,7 +4738,7 @@ body[data-workspace="real-robot"]:is([data-live-view="calibration"], [data-live-
   transform-origin: top right;
 }
 
-body[data-workspace="real-robot"]:is([data-live-view="data"], [data-live-view="diagnostics"], [data-live-view="sessions"]) :is(#scene, .camera-gizmo, .camera-home-button) {
+body[data-workspace="real-robot"]:is([data-live-view="data"], [data-live-view="diagnostics"], [data-live-view="sessions"], [data-live-view="emotes"]) :is(#scene, .camera-gizmo, .camera-home-button) {
   visibility: hidden;
   pointer-events: none;
 }
@@ -10730,3 +10730,32 @@ body[data-workspace="real-robot"][data-live-view="sensors"][data-live-planner-fo
 /* Gait library: delete spans the row and reads as destructive. */
 .live-gait-library-controls .live-gait-danger { margin-left: auto; }
 .live-gait-library-controls .live-gait-danger:not(:disabled) { color: var(--ui-danger, #b4432f); border-color: currentColor; }
+
+
+/* LIVE / EMOTES ----------------------------------------------------------- */
+.live-emotes-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  max-width: 1240px;
+  margin: 0 auto;
+}
+@media (max-width: 1000px) { .live-emotes-layout { grid-template-columns: minmax(0, 1fr); } }
+.live-emotes-settings { display: grid; gap: 12px; margin-top: 12px; }
+.live-emotes-toggle { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+.live-emotes-toggle input { margin-top: 3px; width: 16px; height: 16px; flex: none; }
+.live-emotes-toggle span { display: grid; gap: 2px; }
+.live-emotes-toggle small, .live-emotes-hint, .live-emotes-card header small { opacity: 0.72; font-size: 12px; line-height: 1.4; }
+.live-emotes-field { display: grid; grid-template-columns: 120px minmax(0, 1fr) auto; align-items: center; gap: 10px; font-size: 12px; letter-spacing: 0.04em; }
+.live-emotes-field select { grid-column: 2 / 4; min-width: 0; }
+.live-emotes-field output { min-width: 40px; text-align: right; font-variant-numeric: tabular-nums; }
+.live-emotes-hint { margin: 12px 0 0; }
+.live-emotes-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.live-emotes-status { margin: 10px 0 0; font-size: 12px; min-height: 1.4em; }
+.live-emotes-list { display: grid; gap: 8px; margin-top: 12px; }
+.live-emotes-list article { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; padding: 10px 12px; border: 1px solid #d2d2cd; border-radius: 6px; }
+.live-emotes-list article strong { font-size: 13px; }
+.live-emotes-list article small { grid-column: 1; opacity: 0.72; font-size: 12px; }
+.live-emotes-list article button { grid-row: 1 / 3; grid-column: 2; }
+.live-emotes-settings[data-disabled="true"] > :not(.live-emotes-toggle:first-child) { opacity: 0.45; }
+:root[data-theme="dark"] .live-emotes-list article { border-color: #303034; }

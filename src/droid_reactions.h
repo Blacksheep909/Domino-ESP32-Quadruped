@@ -38,3 +38,7 @@ DroidReaction droidReactionStep(DroidReactionState &state, const DroidReactionIn
 // Reads the IMU and plays the matching emote. Call once per control loop,
 // after the IMU sample has been refreshed. Does nothing without an IMU.
 void droidReactionsUpdate(uint32_t nowMs);
+
+// The last push / fall event since the previous call (then cleared). The face
+// uses it for wide eyes on a shove and squeezed eyes after a fall.
+DroidReaction droidReactionsTakeEvent();

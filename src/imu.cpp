@@ -1,3 +1,4 @@
+#include "face.h"
 #include "imu.h"
 
 #include <Wire.h>
@@ -382,6 +383,8 @@ void imuTask(void *) {
       latestFresh = true;
       portEXIT_CRITICAL(&stateMux);
     }
+    // OLED face pages share this bus; one changed page per pass (~3 ms).
+    faceServiceBus();
     vTaskDelay(pdMS_TO_TICKS(2));
   }
 }

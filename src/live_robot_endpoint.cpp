@@ -55,6 +55,7 @@
 #include "crsf.h"
 #include "droid_voice.h"
 #include "personality.h"
+#include "face.h"
 #include "calibration_lease.h"
 #include "gait_profile.h"
 #include "i2c_bus.h"
@@ -759,6 +760,7 @@ void addCapabilities(JsonObject capabilities) {
   capabilities["receiverPassthrough"] = true;
   capabilities["droidVoice"] = DOMINO_AUDIO_ENABLED ? true : false;
   capabilities["personality"] = true;
+  capabilities["face"] = true;
 }
 
 bool boundedManualAxis(JsonVariantConst source, float *value) {
@@ -1618,6 +1620,8 @@ void handlePersonality(JsonObjectConst command, JsonObjectConst payload) {
       acknowledgePersonality(action, requestId, false, "Unknown emote.");
     } else if (!personalitySettings().enabled) {
       acknowledgePersonality(action, requestId, false, "Emotes & sounds are turned off.");
+    } else if (!personalityRobotUpright()) {
+      acknowledgePersonality(action, requestId, false, "Domino is lying down. Stand it up to play an emote.");
     } else if (!personalityPlayEmote(index, millis())) {
       acknowledgePersonality(action, requestId, false, "Another emote is still playing.");
     } else {
@@ -1625,6 +1629,109 @@ void handlePersonality(JsonObjectConst command, JsonObjectConst payload) {
     }
   } else {
     acknowledgePersonality(action, requestId, false, "Unsupported emote action.");
+  }
+}
+
+// OLED eyes (Studio LIVE / SCREENS). Settings are display only, so they may be
+// read and saved in any robot state.
+const char *faceModeLabel(FaceMode m) {
+  return m == FaceMode::Telemetry ? "telemetry" : m == FaceMode::Off ? "off" : "eyes";
+}
+
+void addFaceSettings(JsonObject out, const FaceSettings &s) {
+  out["mode"] = faceModeLabel(s.mode);
+  out["style"] = faceStyleName(s.style);
+  out["glow"] = s.glow;
+  out["brightness"] = s.brightness;
+  out["batteryEye"] = s.batteryEye ? "right" : "left";
+  out["lowBatteryPercent"] = s.lowBatteryPercent;
+  out["reminderMinutes"] = s.reminderMinutes;
+  out["blink"] = s.blink;
+  out["sleepWhenLying"] = s.sleepWhenLying;
+  out["followSticks"] = s.followSticks;
+  out["emoteEyes"] = s.emoteEyes;
+}
+
+bool parseFaceSettings(JsonObjectConst in, FaceSettings *s) {
+  if (in.isNull()) return false;
+  FaceSettings out;
+  const char *mode = in["mode"] | "";
+  if (!strcmp(mode, "eyes")) out.mode = FaceMode::Eyes;
+  else if (!strcmp(mode, "telemetry")) out.mode = FaceMode::Telemetry;
+  else if (!strcmp(mode, "off")) out.mode = FaceMode::Off;
+  else return false;
+  const int style = faceStyleIndex(in["style"] | "");
+  if (style < 0) return false;
+  out.style = static_cast<FaceStyle>(style);
+  const char *eye = in["batteryEye"] | "";
+  if (!strcmp(eye, "left")) out.batteryEye = 0;
+  else if (!strcmp(eye, "right")) out.batteryEye = 1;
+  else return false;
+  for (const char *key : {"glow", "blink", "sleepWhenLying", "followSticks", "emoteEyes"}) {
+    if (!in[key].is<bool>()) return false;
+  }
+  for (const char *key : {"brightness", "lowBatteryPercent", "reminderMinutes"}) {
+    if (!in[key].is<int>()) return false;
+  }
+  const int brightness = in["brightness"], low = in["lowBatteryPercent"], minutes = in["reminderMinutes"];
+  if (brightness < 0 || brightness > 100 || low < 0 || low > 50 || minutes < 0 || minutes > 60) return false;
+  out.glow = in["glow"];
+  out.blink = in["blink"];
+  out.sleepWhenLying = in["sleepWhenLying"];
+  out.followSticks = in["followSticks"];
+  out.emoteEyes = in["emoteEyes"];
+  out.brightness = static_cast<uint8_t>(brightness);
+  out.lowBatteryPercent = static_cast<uint8_t>(low);
+  out.reminderMinutes = static_cast<uint8_t>(minutes);
+  *s = out;
+  return validateFaceSettings(out);
+}
+
+void acknowledgeFace(const char *action, const char *requestId, bool accepted,
+                     const char *reason = nullptr, bool persisted = false) {
+  JsonDocument document;
+  document["protocol"] = kProtocol;
+  document["type"] = "robot-ack";
+  document["kind"] = "face";
+  document["action"] = action;
+  document["requestId"] = requestId;
+  document["accepted"] = accepted;
+  document["robotState"] = stateName();
+  document["persisted"] = persisted;
+  document["storedOnRobot"] = facePersisted();
+  document["screensBuilt"] = DOMINO_FACE_ENABLED ? true : false;
+  JsonArray online = document["screensOnline"].to<JsonArray>();
+  online.add(faceScreenOnline(0));
+  online.add(faceScreenOnline(1));
+  document["batteryPercent"] = faceBatteryPercent(millis());
+  addFaceSettings(document["settings"].to<JsonObject>(), faceSettings());
+  if (reason) document["reason"] = reason;
+  writeDocument(document);
+}
+
+void handleFace(JsonObjectConst command, JsonObjectConst payload) {
+  const char *action = command["action"] | "";
+  const char *requestId = command["requestId"] | "";
+  if (!strcmp(action, "request-settings")) {
+    acknowledgeFace(action, requestId, true);
+  } else if (!strcmp(action, "apply-settings")) {
+    FaceSettings settings;
+    if (!parseFaceSettings(payload["settings"].as<JsonObjectConst>(), &settings)) {
+      acknowledgeFace(action, requestId, false, "Screen settings are missing or out of range.");
+      return;
+    }
+    bool persisted = false;
+    if (!setFaceSettings(settings, true, &persisted)) {
+      acknowledgeFace(action, requestId, false,
+                      "Applied, but saving to the robot's flash failed; it will revert after a restart.");
+    } else {
+      acknowledgeFace(action, requestId, true, nullptr, persisted);
+    }
+  } else if (!strcmp(action, "show-battery")) {
+    faceShowBattery(millis(), 5000);
+    acknowledgeFace(action, requestId, true);
+  } else {
+    acknowledgeFace(action, requestId, false, "Unsupported screen action.");
   }
 }
 
@@ -1665,6 +1772,7 @@ void handleCommand(const String &line, LiveTransport source,
   else if (!strcmp(kind, "gait")) handleGait(command, payload);
   else if (!strcmp(kind, "voice")) handleVoice(command, payload);
   else if (!strcmp(kind, "personality")) handlePersonality(command, payload);
+  else if (!strcmp(kind, "face")) handleFace(command, payload);
   else if (!strcmp(kind, "receiver-passthrough"))
     handleReceiverPassthrough(command, payload, source, driver);
   else if (command["requestId"].is<const char*>())

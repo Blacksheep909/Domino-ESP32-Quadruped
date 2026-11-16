@@ -4,6 +4,7 @@ import { firmwareSavesWithoutBench, validCalibrationCommand } from "./web/src/li
 import { validLiveConnectionCommand } from "./web/src/live-connection-protocol.js";
 import { validLiveGaitCommand } from "./web/src/live-gait-protocol.js";
 import { validLivePersonalityCommand } from "./web/src/live-personality-protocol.js";
+import { validLiveFaceCommand } from "./web/src/live-face-protocol.js";
 import {
   LIVE_NAVIGATION_CAPABILITIES,
   validLiveNavigationCommand,
@@ -189,6 +190,8 @@ export class LiveCompanionCore {
       persistentGaitProfiles: false,
       // Emotes & sounds settings, emote preview (firmware with src/personality.*).
       personality: false,
+      // OLED eyes settings (firmware with src/face.*).
+      face: false,
       manualControl: false,
       nativeNavigation: false,
       navigation: false,
@@ -445,6 +448,16 @@ export class LiveCompanionCore {
       return { relay, robot };
     }
 
+    if (message.type === "live-face-command" && validLiveFaceCommand(message)) {
+      if (this.capabilities.face !== true) {
+        relay.push(this.faceAck(message, false, "This robot's firmware has no screen support yet."));
+      } else {
+        this.remember(message, "face", now);
+        robot.push(this.robotCommand("face", message, now));
+      }
+      return { relay, robot };
+    }
+
     if (message.type === "live-navigation-command" && validLiveNavigationCommand(message)) {
       const supportsNavigation = LIVE_NAVIGATION_CAPABILITIES.some(
         (capability) => this.capabilities[capability] === true,
@@ -637,6 +650,8 @@ export class LiveCompanionCore {
         relay.push(this.gaitAck(pending.message, accepted, reason, message.profile, message));
       } else if (message.kind === "personality") {
         relay.push(this.personalityAck(pending.message, accepted, reason, message));
+      } else if (message.kind === "face") {
+        relay.push(this.faceAck(pending.message, accepted, reason, message));
       } else if (message.kind === "navigation") {
         relay.push(this.navigationAck(pending.message, accepted, reason, message));
       }
@@ -685,6 +700,7 @@ export class LiveCompanionCore {
       if (pending.kind === "gait") relay.push(this.gaitAck(pending.message, false, "Physical robot acknowledgement timed out."));
       if (pending.kind === "navigation") relay.push(this.navigationAck(pending.message, false, "Physical robot acknowledgement timed out."));
       if (pending.kind === "personality") relay.push(this.personalityAck(pending.message, false, "Physical robot acknowledgement timed out."));
+      if (pending.kind === "face") relay.push(this.faceAck(pending.message, false, "Physical robot acknowledgement timed out."));
     }
     return { relay, robot };
   }
@@ -751,6 +767,20 @@ export class LiveCompanionCore {
       ...(typeof physical?.storedOnRobot === "boolean" ? { storedOnRobot: physical.storedOnRobot } : {}),
       ...(typeof physical?.audio === "boolean" ? { audio: physical.audio } : {}),
       ...(typeof physical?.antennas === "boolean" ? { antennas: physical.antennas } : {}),
+      ...(physical?.settings && typeof physical.settings === "object" ? { settings: physical.settings } : {}),
+      ...(reason ? { reason } : {}),
+    };
+  }
+
+  faceAck(message, accepted, reason = "", physical = undefined) {
+    return {
+      type: "live-face-ack", action: message.action, requestId: message.requestId, accepted,
+      adapterId: this.adapterId, sessionId: this.sessionId, robotState: this.robotState,
+      ...(typeof physical?.persisted === "boolean" ? { persisted: physical.persisted } : {}),
+      ...(typeof physical?.storedOnRobot === "boolean" ? { storedOnRobot: physical.storedOnRobot } : {}),
+      ...(typeof physical?.screensBuilt === "boolean" ? { screensBuilt: physical.screensBuilt } : {}),
+      ...(Array.isArray(physical?.screensOnline) ? { screensOnline: physical.screensOnline.map((v) => v === true).slice(0, 2) } : {}),
+      ...(Number.isInteger(physical?.batteryPercent) ? { batteryPercent: physical.batteryPercent } : {}),
       ...(physical?.settings && typeof physical.settings === "object" ? { settings: physical.settings } : {}),
       ...(reason ? { reason } : {}),
     };

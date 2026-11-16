@@ -35,6 +35,7 @@ import {
   validLivePersonalityAcknowledgement,
   validLivePersonalityCommand,
 } from "./web/src/live-personality-protocol.js";
+import { validLiveFaceAcknowledgement, validLiveFaceCommand } from "./web/src/live-face-protocol.js";
 import {
   validLiveAdapterAnnouncement,
   validLiveConnectionAcknowledgement,
@@ -820,6 +821,26 @@ sockets.on("connection", (socket) => {
           validLivePersonalityAcknowledgement(message) &&
           record?.socket === socket &&
           consumeAdapterRequest(socket, message, "personality")
+        ) {
+          broadcast(message);
+        }
+        return;
+      }
+      if (message.type === "live-face-command") {
+        const record = liveAdapterForSession(message);
+        if (Buffer.byteLength(payload) <= 4 * 1024 && validLiveFaceCommand(message) && record) {
+          rememberAdapterRequest(record.socket, message, "face");
+          sendSocket(record.socket, message);
+        }
+        return;
+      }
+      if (message.type === "live-face-ack") {
+        const record = liveAdapterForSession(message);
+        if (
+          Buffer.byteLength(payload) <= 4 * 1024 &&
+          validLiveFaceAcknowledgement(message) &&
+          record?.socket === socket &&
+          consumeAdapterRequest(socket, message, "face")
         ) {
           broadcast(message);
         }

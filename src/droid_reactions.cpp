@@ -87,6 +87,14 @@ DroidReaction droidReactionStep(DroidReactionState &state, const DroidReactionIn
 #include "personality.h"
 #include "imu.h"
 
+static DroidReaction gLastEvent = DroidReaction::None;
+
+DroidReaction droidReactionsTakeEvent() {
+  const DroidReaction e = gLastEvent;
+  gLastEvent = DroidReaction::None;
+  return e;
+}
+
 void droidReactionsUpdate(uint32_t nowMs) {
   static DroidReactionState state;
   DroidReactionInput input = {};
@@ -100,6 +108,7 @@ void droidReactionsUpdate(uint32_t nowMs) {
   input.rollRateDps = gImuState.gy_dps;
   input.pitchRateDps = gImuState.gz_dps;
   const DroidReaction reaction = droidReactionStep(state, input);
+  if (reaction != DroidReaction::None) gLastEvent = reaction;
   if (!personalitySoundAllowed()) return;  // owner turned emotes & sounds off
   switch (reaction) {
     case DroidReaction::Pushed: droidVoicePlay(DROID_EMOTE_PUSHED); break;
@@ -111,5 +120,6 @@ void droidReactionsUpdate(uint32_t nowMs) {
 #else
 
 void droidReactionsUpdate(uint32_t) {}
+DroidReaction droidReactionsTakeEvent() { return DroidReaction::None; }
 
 #endif

@@ -29,6 +29,9 @@ mkdir -p "$output_dir"
   "$repo_root/src/policy_runner.cpp" \
   "$repo_root/src/droid_reactions.cpp" \
   "$repo_root/src/personality.cpp" \
+  "$repo_root/src/face.cpp" \
+  "$repo_root/src/face_engine.cpp" \
+  "$repo_root/src/face_renderer.cpp" \
   "$script_dir/src/arduino_sim.cpp" \
   "$script_dir/src/pwm_sim.cpp" \
   "$script_dir/src/imu_sim.cpp" \

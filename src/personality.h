@@ -86,6 +86,9 @@ void personalityUpdate(Adafruit_PWMServoDriver &driver, uint32_t nowMs, const Pe
 // Studio preview / switch press: false while disabled or another emote plays.
 bool personalityPlayEmote(int index, uint32_t nowMs);
 int personalityActiveEmote();  // -1 when none
+// False while stowed / lying down (emotes are refused then).
+bool personalityRobotUpright();
+uint32_t personalityActiveEmoteElapsedMs(uint32_t nowMs);
 // Ride-height nudge from the playing emote (0 when none or disabled).
 float personalityHeightOffsetMm();
 // Whether reaction / startup / idle sounds may play right now.

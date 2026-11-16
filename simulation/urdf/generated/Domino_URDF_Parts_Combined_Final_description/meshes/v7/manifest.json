@@ -1,0 +1,761 @@
+{
+ "source": "Fusion body_v7 (Robot Dog V2 / 01 Master Assembly), visible bodies except legs; mm, base_link frame",
+ "parts": [
+  {
+   "file": "body_frame_v6_1_L0_1__Body1",
+   "component": "L0",
+   "body": "Body1",
+   "appearance": "Carbon Fiber - Plain",
+   "bbox_mm": [
+    -100.5,
+    29.75,
+    -1.75,
+    399.5,
+    38.25,
+    6.75
+   ]
+  },
+  {
+   "file": "body_frame_v6_1_L0_1__Body2",
+   "component": "L0",
+   "body": "Body2",
+   "appearance": "Carbon Fiber - Plain",
+   "bbox_mm": [
+    -100.5,
+    86.5,
+    -1.75,
+    399.5,
+    95.0,
+    6.75
+   ]
+  },
+  {
+   "file": "body_frame_v6_1_L0_1__Body3",
+   "component": "L0",
+   "body": "Body3",
+   "appearance": "Carbon Fiber - Plain",
+   "bbox_mm": [
+    -100.5,
+    1.75,
+    37.25,
+    399.5,
+    10.25,
+    45.75
+   ]
+  },
+  {
+   "file": "body_frame_v6_1_L0_1__Body4",
+   "component": "L0",
+   "body": "Body4",
+   "appearance": "Carbon Fiber - Plain",
+   "bbox_mm": [
+    -100.5,
+    114.5,
+    37.25,
+    399.5,
+    123.0,
+    45.75
+   ]
+  },
+  {
+   "file": "body_frame_v6_1_twist_plate_lower_v1_1__Body1",
+   "component": "twist_plate_lower_v1",
+   "body": "Body1",
+   "appearance": "ABS (White)",
+   "bbox_mm": [
+    44.0,
+    20.87,
+    -11.1,
+    254.5,
+    103.87,
+    -3.6
+   ]
+  },
+  {
+   "file": "body_frame_v6_1_bat_4s_holder_2__Body1",
+   "component": "bat_4s_holder",
+   "body": "Body1",
+   "appearance": "ABS (White)",
+   "bbox_mm": [
+    268.5,
+    27.92,
+    -3.6,
+    363.5,
+    96.83,
+    8.6
+   ]
+  },
+  {
+   "file": "body_frame_v6_1_bat_4s_holder_2_LIPO_1__LIPO",
+   "component": "LIPO",
+   "body": "LIPO",
+   "appearance": "Plastic - Glossy (Black)",
+   "bbox_mm": [
+    285.0,
+    44.75,
+    8.6,
+    347.0,
+    80.0,
+    46.6
+   ]
+  },
+  {
+   "file": "body_frame_v6_1_body_v1_clamp_template_Mirror_1_4__clamp_template",
+   "component": "body_v1_clamp_template(Mirror) (1)",
+   "body": "clamp_template",
+   "appearance": "ABS (White)",
+   "bbox_mm": [
+    -100.5,
+    105.65,
+    35.4,
+    -80.5,
+    124.85,
+    47.6
+   ]
+  },
+  {
+   "file": "body_frame_v6_1_body_v1_clamp_template_Mirror_1_2__clamp_template",
+   "component": "body_v1_clamp_template(Mirror) (1)",
+   "body": "clamp_template",
+   "appearance": "ABS (White)",
+   "bbox_mm": [
+    234.5,
+    105.65,
+    35.4,
+    254.5,
+    124.85,
+    47.6
+   ]
+  },
+  {
+   "file": "body_frame_v6_1_body_v1_clamp_template_Mirror_4__clamp_template",
+   "component": "body_v1_clamp_template(Mirror)",
+   "body": "clamp_template",
+   "appearance": "ABS (White)",
+   "bbox_mm": [
+    -100.5,
+    84.65,
+    -3.6,
+    -80.5,
+    103.85,
+    8.6
+   ]
+  },
+  {
+   "file": "body_frame_v6_1_body_v1_clamp_template_8__clamp_template",
+   "component": "body_v1_clamp_template",
+   "body": "clamp_template",
+   "appearance": "ABS (White)",
+   "bbox_mm": [
+    -100.5,
+    20.9,
+    -3.6,
+    -80.5,
+    40.1,
+    8.6
+   ]
+  },
+  {
+   "file": "body_frame_v6_1_body_v1_clamp_template_7__clamp_template",
+   "component": "body_v1_clamp_template",
+   "body": "clamp_template",
+   "appearance": "ABS (White)",
+   "bbox_mm": [
+    379.5,
+    20.9,
+    -3.6,
+    399.5,
+    40.1,
+    8.6
+   ]
+  },
+  {
+   "file": "body_frame_v6_1_body_v1_clamp_template_6__clamp_template",
+   "component": "body_v1_clamp_template",
+   "body": "clamp_template",
+   "appearance": "ABS (White)",
+   "bbox_mm": [
+    379.5,
+    -0.1,
+    35.4,
+    399.5,
+    19.1,
+    47.6
+   ]
+  },
+  {
+   "file": "body_frame_v6_1_body_v1_clamp_template_Mirror_3__clamp_template",
+   "component": "body_v1_clamp_template(Mirror)",
+   "body": "clamp_template",
+   "appearance": "ABS (White)",
+   "bbox_mm": [
+    379.5,
+    84.65,
+    -3.6,
+    399.5,
+    103.85,
+    8.6
+   ]
+  },
+  {
+   "file": "body_frame_v6_1_body_v1_clamp_template_Mirror_1_3__clamp_template",
+   "component": "body_v1_clamp_template(Mirror) (1)",
+   "body": "clamp_template",
+   "appearance": "ABS (White)",
+   "bbox_mm": [
+    379.5,
+    105.65,
+    35.4,
+    399.5,
+    124.85,
+    47.6
+   ]
+  },
+  {
+   "file": "body_frame_v6_1_bat_4s_holder_1__Body1",
+   "component": "bat_4s_holder",
+   "body": "Body1",
+   "appearance": "ABS (White)",
+   "bbox_mm": [
+    -66.5,
+    27.92,
+    -3.6,
+    28.5,
+    96.83,
+    8.6
+   ]
+  },
+  {
+   "file": "body_frame_v6_1_bat_4s_holder_1_LIPO_1__LIPO",
+   "component": "LIPO",
+   "body": "LIPO",
+   "appearance": "Plastic - Glossy (Black)",
+   "bbox_mm": [
+    -50.0,
+    44.75,
+    8.6,
+    12.0,
+    80.0,
+    46.6
+   ]
+  },
+  {
+   "file": "body_frame_v6_1_body_v1_clamp_template_Mirror_1_1__clamp_template",
+   "component": "body_v1_clamp_template(Mirror) (1)",
+   "body": "clamp_template",
+   "appearance": "ABS (White)",
+   "bbox_mm": [
+    44.0,
+    105.65,
+    35.4,
+    64.0,
+    124.85,
+    47.6
+   ]
+  },
+  {
+   "file": "body_frame_v6_1_body_v1_clamp_template_4__clamp_template",
+   "component": "body_v1_clamp_template",
+   "body": "clamp_template",
+   "appearance": "ABS (White)",
+   "bbox_mm": [
+    44.0,
+    -0.1,
+    35.4,
+    64.0,
+    19.1,
+    47.6
+   ]
+  },
+  {
+   "file": "body_frame_v6_1_body_v1_clamp_template_5__clamp_template",
+   "component": "body_v1_clamp_template",
+   "body": "clamp_template",
+   "appearance": "ABS (White)",
+   "bbox_mm": [
+    234.5,
+    -0.1,
+    35.4,
+    254.5,
+    19.1,
+    47.6
+   ]
+  },
+  {
+   "file": "body_frame_v6_1_body_v1_clamp_template_Mirror_2__clamp_template",
+   "component": "body_v1_clamp_template(Mirror)",
+   "body": "clamp_template",
+   "appearance": "ABS (White)",
+   "bbox_mm": [
+    234.5,
+    84.65,
+    -3.6,
+    254.5,
+    103.85,
+    8.6
+   ]
+  },
+  {
+   "file": "body_frame_v6_1_body_v1_clamp_template_Mirror_1__clamp_template",
+   "component": "body_v1_clamp_template(Mirror)",
+   "body": "clamp_template",
+   "appearance": "ABS (White)",
+   "bbox_mm": [
+    44.0,
+    84.65,
+    -3.6,
+    64.0,
+    103.85,
+    8.6
+   ]
+  },
+  {
+   "file": "body_frame_v6_1_body_v1_clamp_template_3__clamp_template",
+   "component": "body_v1_clamp_template",
+   "body": "clamp_template",
+   "appearance": "ABS (White)",
+   "bbox_mm": [
+    234.5,
+    20.9,
+    -3.6,
+    254.5,
+    40.1,
+    8.6
+   ]
+  },
+  {
+   "file": "body_frame_v6_1_body_v1_clamp_template_2__clamp_template",
+   "component": "body_v1_clamp_template",
+   "body": "clamp_template",
+   "appearance": "ABS (White)",
+   "bbox_mm": [
+    44.0,
+    20.9,
+    -3.6,
+    64.0,
+    40.1,
+    8.6
+   ]
+  },
+  {
+   "file": "body_frame_v6_1_end_plate1_4__Body1",
+   "component": "end_plate1",
+   "body": "Body1",
+   "appearance": "ABS (White)",
+   "bbox_mm": [
+    254.5,
+    -7.5,
+    -5.5,
+    264.5,
+    132.25,
+    49.5
+   ]
+  },
+  {
+   "file": "body_frame_v6_1_end_plate1_2__Body1",
+   "component": "end_plate1",
+   "body": "Body1",
+   "appearance": "ABS (White)",
+   "bbox_mm": [
+    34.0,
+    -7.5,
+    -5.5,
+    44.0,
+    132.25,
+    49.5
+   ]
+  },
+  {
+   "file": "body_frame_v6_1_end_plate1_1__Body1",
+   "component": "end_plate1",
+   "body": "Body1",
+   "appearance": "ABS (White)",
+   "bbox_mm": [
+    -80.5,
+    -7.5,
+    -5.5,
+    -70.5,
+    132.25,
+    49.5
+   ]
+  },
+  {
+   "file": "body_frame_v6_1_body_v1_clamp_template_9__clamp_template",
+   "component": "body_v1_clamp_template",
+   "body": "clamp_template",
+   "appearance": "ABS (White)",
+   "bbox_mm": [
+    -100.5,
+    -0.1,
+    35.4,
+    -80.5,
+    19.1,
+    47.6
+   ]
+  },
+  {
+   "file": "v7_end_plate_face_mount_1__end_plate_v7",
+   "component": "v7_end_plate_face_mount",
+   "body": "end_plate_v7",
+   "appearance": "ABS (White)",
+   "bbox_mm": [
+    369.0,
+    -19.6,
+    -5.5,
+    379.0,
+    144.3,
+    49.5
+   ]
+  },
+  {
+   "file": "v7_face_plate_1__face_plate",
+   "component": "v7_face_plate",
+   "body": "face_plate",
+   "appearance": "ABS (White)",
+   "bbox_mm": [
+    379.0,
+    -25.65,
+    -6.0,
+    405.9,
+    150.35,
+    49.0
+   ]
+  },
+  {
+   "file": "v7_face_bezel_1__face_bezel",
+   "component": "v7_face_bezel",
+   "body": "face_bezel",
+   "appearance": "ABS (White)",
+   "bbox_mm": [
+    405.9,
+    -25.65,
+    -6.0,
+    410.5,
+    150.35,
+    49.0
+   ]
+  },
+  {
+   "file": "v7_tof_cradle_1__tof_cradle_20deg",
+   "component": "v7_tof_cradle",
+   "body": "tof_cradle_20deg",
+   "appearance": "ABS (White)",
+   "bbox_mm": [
+    402.2,
+    51.55,
+    6.2,
+    417.46,
+    73.15,
+    37.8
+   ]
+  },
+  {
+   "file": "v7_antennas_1__antenna_R",
+   "component": "v7_antennas",
+   "body": "antenna_R",
+   "appearance": "Plastic - Matte (Black)",
+   "bbox_mm": [
+    296.28,
+    19.75,
+    37.9,
+    394.75,
+    28.25,
+    136.37
+   ]
+  },
+  {
+   "file": "v7_antennas_1__antenna_L",
+   "component": "v7_antennas",
+   "body": "antenna_L",
+   "appearance": "Plastic - Matte (Black)",
+   "bbox_mm": [
+    296.28,
+    96.45,
+    37.9,
+    394.75,
+    104.95,
+    136.37
+   ]
+  },
+  {
+   "file": "v7_audio_saddle_1__speaker_amp_saddle",
+   "component": "v7_audio_saddle",
+   "body": "speaker_amp_saddle",
+   "appearance": "ABS (White)",
+   "bbox_mm": [
+    177.1,
+    28.0,
+    -3.2,
+    230.8,
+    96.7,
+    9.3
+   ]
+  },
+  {
+   "file": "v7_ref_hardware_1__MG90S_R",
+   "component": "v7_ref_hardware",
+   "body": "MG90S_R",
+   "appearance": "Plastic - Matte (Black)",
+   "bbox_mm": [
+    383.65,
+    22.1,
+    21.45,
+    395.85,
+    53.0,
+    53.75
+   ]
+  },
+  {
+   "file": "v7_ref_hardware_1__OLED_2_42in_SSD1309_R",
+   "component": "v7_ref_hardware",
+   "body": "OLED_2.42in_SSD1309_R",
+   "appearance": "Plastic - Matte (Black)",
+   "bbox_mm": [
+    404.3,
+    -22.35,
+    0.25,
+    407.9,
+    49.65,
+    43.75
+   ]
+  },
+  {
+   "file": "v7_ref_hardware_1__MG90S_L",
+   "component": "v7_ref_hardware",
+   "body": "MG90S_L",
+   "appearance": "Plastic - Matte (Black)",
+   "bbox_mm": [
+    383.65,
+    71.7,
+    21.45,
+    395.85,
+    102.6,
+    53.75
+   ]
+  },
+  {
+   "file": "v7_ref_hardware_1__OLED_2_42in_SSD1309_L",
+   "component": "v7_ref_hardware",
+   "body": "OLED_2.42in_SSD1309_L",
+   "appearance": "Plastic - Matte (Black)",
+   "bbox_mm": [
+    404.3,
+    75.05,
+    0.25,
+    407.9,
+    147.05,
+    43.75
+   ]
+  },
+  {
+   "file": "v7_ref_hardware_1__VL53L5CX_breakout",
+   "component": "v7_ref_hardware",
+   "body": "VL53L5CX_breakout",
+   "appearance": "Plastic - Matte (Black)",
+   "bbox_mm": [
+    405.86,
+    55.85,
+    9.85,
+    416.26,
+    68.85,
+    34.83
+   ]
+  },
+  {
+   "file": "v7_ref_hardware_1__SZBK07_buck",
+   "component": "v7_ref_hardware",
+   "body": "SZBK07_buck",
+   "appearance": "Plastic - Matte (Black)",
+   "bbox_mm": [
+    101.9,
+    18.2,
+    19.6,
+    164.0,
+    63.2,
+    44.6
+   ]
+  },
+  {
+   "file": "v7_ref_hardware_1__XT60PW",
+   "component": "v7_ref_hardware",
+   "body": "XT60PW",
+   "appearance": "Plastic - Matte (Black)",
+   "bbox_mm": [
+    80.0,
+    40.7,
+    28.6,
+    100.2,
+    55.7,
+    44.6
+   ]
+  },
+  {
+   "file": "v7_ref_hardware_1__logic_regulator",
+   "component": "v7_ref_hardware",
+   "body": "logic_regulator",
+   "appearance": "Plastic - Matte (Black)",
+   "bbox_mm": [
+    166.6,
+    23.2,
+    30.6,
+    187.6,
+    65.7,
+    44.6
+   ]
+  },
+  {
+   "file": "v7_ref_hardware_1__ESP32_DevKitC",
+   "component": "v7_ref_hardware",
+   "body": "ESP32_DevKitC",
+   "appearance": "Plastic - Matte (Black)",
+   "bbox_mm": [
+    190.2,
+    23.2,
+    24.6,
+    222.6,
+    72.4,
+    44.6
+   ]
+  },
+  {
+   "file": "v7_ref_hardware_1__relay_KY-019",
+   "component": "v7_ref_hardware",
+   "body": "relay_KY-019",
+   "appearance": "Plastic - Matte (Black)",
+   "bbox_mm": [
+    81.3,
+    73.2,
+    19.6,
+    107.2,
+    102.4,
+    44.6
+   ]
+  },
+  {
+   "file": "v7_ref_hardware_1__PCA9685_module",
+   "component": "v7_ref_hardware",
+   "body": "PCA9685_module",
+   "appearance": "Plastic - Matte (Black)",
+   "bbox_mm": [
+    111.5,
+    81.6,
+    32.6,
+    176.2,
+    106.6,
+    44.6
+   ]
+  },
+  {
+   "file": "v7_ref_hardware_1__servo_plugs",
+   "component": "v7_ref_hardware",
+   "body": "servo_plugs",
+   "appearance": "Plastic - Matte (Black)",
+   "bbox_mm": [
+    113.3,
+    95.4,
+    14.6,
+    174.3,
+    106.6,
+    44.6
+   ]
+  },
+  {
+   "file": "v7_ref_hardware_1__MPU6050",
+   "component": "v7_ref_hardware",
+   "body": "MPU6050",
+   "appearance": "Plastic - Matte (Black)",
+   "bbox_mm": [
+    135.5,
+    64.1,
+    32.6,
+    157.9,
+    79.9,
+    44.6
+   ]
+  },
+  {
+   "file": "v7_ref_hardware_1__voltage_current_headers",
+   "component": "v7_ref_hardware",
+   "body": "voltage_current_headers",
+   "appearance": "Plastic - Matte (Black)",
+   "bbox_mm": [
+    178.5,
+    79.1,
+    30.6,
+    212.1,
+    105.7,
+    44.6
+   ]
+  },
+  {
+   "file": "v7_ref_hardware_1__Speaker_2831_4ohm_3W",
+   "component": "v7_ref_hardware",
+   "body": "Speaker_2831_4ohm_3W",
+   "appearance": "Plastic - Matte (Black)",
+   "bbox_mm": [
+    201.0,
+    46.85,
+    -3.4,
+    229.0,
+    77.85,
+    6.6
+   ]
+  },
+  {
+   "file": "v7_ref_hardware_1__MAX98357A_breakout",
+   "component": "v7_ref_hardware",
+   "body": "MAX98357A_breakout",
+   "appearance": "Plastic - Matte (Black)",
+   "bbox_mm": [
+    178.9,
+    53.5,
+    -1.7,
+    197.6,
+    71.2,
+    -0.1
+   ]
+  },
+  {
+   "file": "v7_top_plate_accessory_1__top_plate_accessory",
+   "component": "v7_top_plate_accessory",
+   "body": "top_plate_accessory",
+   "appearance": "ABS (White)",
+   "bbox_mm": [
+    44.0,
+    6.0,
+    47.6,
+    254.5,
+    118.75,
+    55.1
+   ]
+  },
+  {
+   "file": "v7_top_plate_accessory_1__PCB_V1_1B_ref",
+   "component": "v7_top_plate_accessory",
+   "body": "PCB_V1.1B_ref",
+   "appearance": "Plastic - Matte (Black)",
+   "bbox_mm": [
+    74.25,
+    17.37,
+    44.6,
+    224.25,
+    107.37,
+    47.6
+   ]
+  },
+  {
+   "file": "base_link_hip_mounts",
+   "component": "base_link (hip pivot mounts)",
+   "body": "from the body_v6 base_link mesh",
+   "appearance": "ABS (White)",
+   "bbox_mm": [
+    -70.5,
+    -7.44,
+    3.0,
+    270.5,
+    132.19,
+    38.5
+   ]
+  }
+ ]
+}

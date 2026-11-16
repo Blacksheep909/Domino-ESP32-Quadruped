@@ -49,6 +49,9 @@
 #include "droid_reactions.h"
 #include "droid_voice.h"
 #include "personality.h"
+#include <string.h>
+#include "face.h"
+#include "power_monitor.h"
 #include "policy_runner.h"
 #ifndef DOMINO_SIL
 #include "live_robot_endpoint.h"
@@ -1870,6 +1873,7 @@ void setup() {
   // emotes & sounds turned off the robot stays silent from boot.
   droidVoiceBegin();
   personalityBegin(pca);
+  faceBegin();  // OLED eyes (no-op unless built with -DDOMINO_FACE_ENABLED=1)
   if (personalitySoundAllowed()) droidVoicePlay(DROID_EMOTE_STARTUP);
 
   const MotionSmoothingSettings &smoothing = motionSmoothingSettings();
@@ -1892,6 +1896,57 @@ void setup() {
   Serial.println("All legs initialized at stow pose (waiting for CRSF link).");
   Serial.println("Debug logging ready.");
   logDebugState(millis(), false, false, false, false, false, false, tiltModeActive);
+}
+
+// Telemetry mode for the OLED face: left screen power and link, right screen
+// motion. 21 characters a line, first line drawn twice the size.
+const char *faceModeName(BodyMode mode) {
+  switch (mode) {
+    case BODY_STOW: return "STOW";
+    case BODY_STAND: return "STAND";
+    case BODY_TILT: return "TILT";
+    case BODY_BALANCE: return "BALANCE";
+    case BODY_GAIT: return "TROT";
+    case BODY_CAREFUL: return "CAREFUL";
+    case BODY_TRANSITION: return "MOVING";
+    case BODY_POLICY: return "POLICY";
+  }
+  return "?";
+}
+
+void buildFaceTelemetry(char (*out)[kFaceTextLines][kFaceTextChars + 1], uint32_t now, int8_t battery) {
+  memset(out, 0, sizeof(char) * 2 * kFaceTextLines * (kFaceTextChars + 1));
+#ifdef DOMINO_SIL
+  PowerMonitorSample power{};
+#else
+  const PowerMonitorSample power = powerMonitorSample(now);
+#endif
+  if (battery >= 0 && power.voltageValid) {
+    snprintf(out[0][0], kFaceTextChars + 1, "%.1fV %d%%", power.voltageV, battery);
+  } else {
+    snprintf(out[0][0], kFaceTextChars + 1, "BATT --");
+  }
+  const CrsfLinkStatistics link = crsfLinkStatistics();
+  snprintf(out[0][1], kFaceTextChars + 1, "LINK %s", crsfLinkAlive(now) ? "OK" : "LOST");
+  if (link.valid) {
+    snprintf(out[0][2], kFaceTextChars + 1, "LQ %d%% RSSI %d", link.linkQualityPercent, link.rssi1Dbm);
+  }
+  if (power.currentValid) snprintf(out[0][3], kFaceTextChars + 1, "%.2fA %.1fW", power.currentA, power.powerW);
+  snprintf(out[0][4], kFaceTextChars + 1, "UP %lu:%02lu", static_cast<unsigned long>(now / 60000),
+           static_cast<unsigned long>((now / 1000) % 60));
+
+  snprintf(out[1][0], kFaceTextChars + 1, "%s", faceModeName(menuState.mode));
+  snprintf(out[1][1], kFaceTextChars + 1, "HEIGHT %d MM", static_cast<int>(lroundf(menuState.rideHeightMm)));
+#if DOMINO_IMU_ENABLED
+  if (gImuState.online && gImuState.has_sample) {
+    snprintf(out[1][2], kFaceTextChars + 1, "IMU UP %.2fG", -gImuState.ax_g_filt);
+  } else {
+    snprintf(out[1][2], kFaceTextChars + 1, "IMU OFFLINE");
+  }
+#endif
+  snprintf(out[1][3], kFaceTextChars + 1, "STICK F%+.1f T%+.1f", (ch_us[1] - 1500) / 500.0f,
+           (ch_us[3] - 1500) / 500.0f);
+  if (menuState.mode == BODY_POLICY) snprintf(out[1][4], kFaceTextChars + 1, "POLICY ON");
 }
 
 void loop() {
@@ -2039,6 +2094,32 @@ void loop() {
     personality.walking = !personality.sticksIdle &&
         (menuState.mode == BODY_GAIT || menuState.mode == BODY_CAREFUL || menuState.mode == BODY_POLICY);
     personalityUpdate(pca, now, personality);
+
+    // OLED eyes: sleep when lying, look where the sticks steer, play emote
+    // tracks, react to shoves, battery alerts. Telemetry text twice a second.
+    static char faceTelemetry[2][kFaceTextLines][kFaceTextChars + 1];
+    static uint32_t faceTelemetryAtMs = 0;
+    const int8_t battery = faceBatteryPercent(now);
+    if (faceSettings().mode == FaceMode::Telemetry && now - faceTelemetryAtMs >= 500) {
+      faceTelemetryAtMs = now;
+      buildFaceTelemetry(faceTelemetry, now, battery);
+    }
+    FaceInputs face{};
+    face.nowMs = now;
+    face.lying = menuState.mode == BODY_STOW;
+    face.sticksIdle = personality.sticksIdle;
+    face.turn = -(ch_us[3] - 1500) / 500.0f;
+    face.strafe = -(ch_us[0] - 1500) / 500.0f;
+    face.forward = (ch_us[1] - 1500) / 500.0f;
+    face.batteryPercent = battery;
+    face.emote = static_cast<int8_t>(personalityActiveEmote());
+    face.emoteElapsedMs = personalityActiveEmoteElapsedMs(now);
+    const DroidReaction reaction = droidReactionsTakeEvent();
+    face.reaction = reaction == DroidReaction::Pushed ? FaceReaction::Pushed
+                  : reaction == DroidReaction::Fallen ? FaceReaction::Fallen : FaceReaction::None;
+    face.telemetry[0] = faceTelemetry[0];
+    face.telemetry[1] = faceTelemetry[1];
+    faceUpdate(now, face);
   }
 
   // 4) Compute the current Z target from the menu state.

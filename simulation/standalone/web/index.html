@@ -410,6 +410,7 @@
           <button type="button" role="tab" data-live-view="calibration" aria-selected="false" aria-controls="live-view-calibration">CALIBRATION</button>
           <button type="button" role="tab" data-live-view="gaits" aria-selected="false" aria-controls="live-view-gaits">GAITS</button>
           <button type="button" role="tab" data-live-view="emotes" aria-selected="false" aria-controls="live-view-emotes">EMOTES</button>
+          <button type="button" role="tab" data-live-view="screens" aria-selected="false" aria-controls="live-view-screens">SCREENS</button>
           <button type="button" role="tab" data-live-view="diagnostics" aria-selected="false" aria-controls="live-view-diagnostics">DIAGNOSTICS</button>
           <button type="button" role="tab" data-live-view="sessions" aria-selected="false" aria-controls="live-view-sessions">SESSIONS</button>
         </div>
@@ -1173,6 +1174,56 @@
             <header><div><span>EMOTES</span><strong>PREVIEW</strong></div><small id="live-emotes-hardware">Antennas and speaker: unknown</small></header>
             <div id="live-emotes-list" class="live-emotes-list"></div>
             <p class="live-emotes-hint"><b>PREVIEW</b> plays the emote in the 3D view with its sound (at the volume set above). <b>ON ROBOT</b> plays it on Domino: sound, antennas and a small ride-height nudge over whatever the legs are doing. Body tilt and bow motions come with the next policy, which learns body-pose commands.</p>
+          </section>
+          </div>
+        </div>
+      </section>
+      <section id="live-view-screens" class="live-view-page live-gaits-page live-screens-page" aria-labelledby="live-screens-title" hidden>
+        <header class="live-page-heading">
+          <div><span>LIVE / SCREENS</span><h1 id="live-screens-title">Eyes &amp; screens</h1><p>The two 2.42" OLEDs on the face. Animated eyes by default (they blink, glance, follow the sticks, sleep when Domino lies down and play the emotes), battery alerts on one eye, or raw telemetry. The preview runs the same drawing code as the robot.</p></div>
+          <div class="live-page-status"><span id="live-screens-link-state" data-state="offline">ROBOT SETTINGS UNKNOWN</span><strong id="live-screens-saved-state">NOT READ</strong></div>
+        </header>
+        <div id="live-screens-preview-caption" class="live-gait-preview-caption"><span>3D SCREEN PREVIEW</span><strong id="live-screens-3d-state">STANDING</strong><small>Local preview only / never drives hardware. The eyes on the body_v7 face follow the simulator below: lying down, steering, emotes, events and battery.</small></div>
+        <div class="live-gaits-layout">
+          <div class="live-gaits-editor">
+          <section class="live-gait-card live-screens-preview-card">
+            <header><div><span>PREVIEW</span><strong id="live-screens-preview-state">STANDING</strong></div><label class="live-screens-inline">OLED <select id="live-screens-tint" aria-label="Preview OLED colour"><option value="white">White</option><option value="cyan" selected>Cyan</option><option value="blue">Blue</option><option value="yellow">Yellow</option></select></label></header>
+            <div class="live-screens-faceplate">
+              <figure><canvas id="live-screens-right" width="512" height="256" aria-label="Right eye screen"></canvas><figcaption>RIGHT EYE</figcaption></figure>
+              <figure><canvas id="live-screens-left" width="512" height="256" aria-label="Left eye screen"></canvas><figcaption>LEFT EYE</figcaption></figure>
+            </div>
+            <p class="live-emotes-hint">Seen from the front, so Domino's right eye is on the left.</p>
+            <div class="live-screens-sim">
+              <div role="group" aria-label="Simulated pose"><span>ROBOT</span><button type="button" data-screens-pose="stand" aria-pressed="true">STANDING</button><button type="button" data-screens-pose="lie" aria-pressed="false">LYING DOWN</button></div>
+              <label>BATTERY <input id="live-screens-battery" type="range" min="0" max="100" step="1" value="68"><output id="live-screens-battery-value">68%</output></label>
+              <label title="Simulated left stick: turn">STEER <input id="live-screens-steer" type="range" min="-1" max="1" step="0.05" value="0"><output id="live-screens-steer-value">0.00</output></label>
+              <div role="group" aria-label="Play an emote in the preview"><span>EMOTE</span><button type="button" data-screens-emote="0">CURIOUS</button><button type="button" data-screens-emote="1">HAPPY</button><button type="button" data-screens-emote="2">BOW</button><button type="button" data-screens-emote="3">LOOK</button><button type="button" data-screens-emote="4">SHY</button></div>
+              <div role="group" aria-label="Simulated events"><span>EVENT</span><button type="button" data-screens-react="pushed">SHOVE</button><button type="button" data-screens-react="fallen">FALL</button><button type="button" id="live-screens-sim-battery">SHOW BATTERY</button><button type="button" id="live-screens-sim-idle">SKIP TO IDLE</button></div>
+            </div>
+          </section>
+          <section class="live-gait-card live-screens-settings-card">
+            <header><div><span>SETTINGS</span><strong id="live-screens-summary">Read the robot to see its settings.</strong></div></header>
+            <div class="live-emotes-settings live-screens-settings">
+              <div class="live-screens-mode" role="group" aria-label="Screen mode"><button type="button" data-screens-mode="eyes" aria-pressed="true">EYES</button><button type="button" data-screens-mode="telemetry" aria-pressed="false">TELEMETRY</button><button type="button" data-screens-mode="off" aria-pressed="false">OFF</button></div>
+              <label class="live-emotes-field">EYE STYLE <select id="live-screens-style" aria-label="Eye style"></select></label>
+              <label class="live-emotes-field">BRIGHTNESS <input id="live-screens-brightness" type="range" min="0" max="100" step="5" value="70"><output id="live-screens-brightness-value">70%</output></label>
+              <label class="live-emotes-field">BATTERY EYE <select id="live-screens-battery-eye" aria-label="Eye that shows battery alerts"><option value="right">Right eye</option><option value="left">Left eye</option></select></label>
+              <label class="live-emotes-field">LOW WARNING <input id="live-screens-low" type="range" min="0" max="50" step="5" value="20"><output id="live-screens-low-value">20%</output></label>
+              <label class="live-emotes-field">IDLE REMINDER <select id="live-screens-reminder" aria-label="Show the battery when idle"><option value="0">Never</option><option value="1">Every minute at most</option><option value="5">Every 5 minutes at most</option><option value="10">Every 10 minutes at most</option><option value="30">Every 30 minutes at most</option></select></label>
+              <label class="live-emotes-toggle"><input id="live-screens-glow" type="checkbox" checked> <span><b>Glow</b><small>A soft dithered halo around open eyes.</small></span></label>
+              <label class="live-emotes-toggle"><input id="live-screens-blink" type="checkbox" checked> <span><b>Blink</b><small>Every few seconds, sometimes twice.</small></span></label>
+              <label class="live-emotes-toggle"><input id="live-screens-sleep" type="checkbox" checked> <span><b>Sleepy when lying down</b><small>Eyes narrow to slim lines in stow, open again on standing.</small></span></label>
+              <label class="live-emotes-toggle"><input id="live-screens-follow" type="checkbox" checked> <span><b>Follow the sticks</b><small>Eyes look into turns and sidesteps.</small></span></label>
+              <label class="live-emotes-toggle"><input id="live-screens-emote-eyes" type="checkbox" checked> <span><b>Eyes act out emotes</b><small>Squints, happy ^ ^ eyes, glances with the antennas.</small></span></label>
+            </div>
+            <p class="live-emotes-hint">Low battery flashes on the battery eye for 6 s every 20 s, constantly below half the warning level. The idle reminder shows the battery for 5 s after 15 s of standing still.</p>
+            <div class="live-emotes-actions">
+              <button id="live-screens-read" type="button">READ FROM ROBOT</button>
+              <button id="live-screens-save" type="button">SAVE TO ROBOT</button>
+              <button id="live-screens-show-battery" type="button">SHOW BATTERY ON ROBOT</button>
+              <button id="live-screens-defaults" type="button">DEFAULTS</button>
+            </div>
+            <p id="live-screens-status" class="live-emotes-status" role="status">Connect a robot with screen support to read its settings.</p>
           </section>
           </div>
         </div>

@@ -170,6 +170,7 @@ uint32_t gIdleSinceMs = 0;
 bool gIdle = false;
 uint32_t gNextIdleSoundMs = 0;
 float gHeightOffsetMm = 0.0f;
+bool gUpright = false;  // from the last personalityUpdate(); false until the first one
 [[maybe_unused]] float gLastLeftDeg = 1000.0f;
 [[maybe_unused]] float gLastRightDeg = 1000.0f;
 [[maybe_unused]] uint32_t gLastAntennaWriteMs = 0;
@@ -281,10 +282,14 @@ void personalityBegin(Adafruit_PWMServoDriver &driver) {
 
 bool personalitySoundAllowed() { return gSettings.enabled && gSettings.soundEnabled; }
 int personalityActiveEmote() { return gActive; }
+bool personalityRobotUpright() { return gUpright; }
+uint32_t personalityActiveEmoteElapsedMs(uint32_t nowMs) { return gActive >= 0 ? nowMs - gActiveStartMs : 0; }
 float personalityHeightOffsetMm() { return gHeightOffsetMm; }
 
 bool personalityPlayEmote(int index, uint32_t now) {
-  if (!gSettings.enabled || gActive >= 0 || now < gCooldownUntilMs) return false;
+  // Emotes are for a standing robot: never while stowed / lying down, from
+  // the switch or from Studio.
+  if (!gSettings.enabled || !gUpright || gActive >= 0 || now < gCooldownUntilMs) return false;
   if (index < 0) {
     // Random, but never the same one twice in a row.
     index = static_cast<int>(nextRandom() % kPersonalityEmoteCount);
@@ -300,6 +305,7 @@ bool personalityPlayEmote(int index, uint32_t now) {
 }
 
 void personalityUpdate(Adafruit_PWMServoDriver &driver, uint32_t now, const PersonalityContext &ctx) {
+  gUpright = ctx.robotUpright;
   // Emote switch: momentary, act on the press (rising edge) only.
   if (gSettings.emoteChannel >= 1 && ctx.linkFresh) {
     const int us = ch_us[gSettings.emoteChannel - 1];

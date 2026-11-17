@@ -6,7 +6,7 @@ It brings the Domino CAD, native firmware simulator, local service and robot
 companion tools into one workspace.
 
 **Start here:** [Studio source](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/tree/main/simulation/standalone)
-· [Download Studio 0.3.1 for Windows](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/releases/tag/v0.3.1)
+· [Download the latest Studio](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/releases/latest)
 · [Project home](../README.md)
 
 ![Domino standing on four feet in Quadruped Studio's Simulation workspace](images/studio-simulation-standing.jpg)

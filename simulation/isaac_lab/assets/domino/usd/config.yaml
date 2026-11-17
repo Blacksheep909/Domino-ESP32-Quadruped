@@ -1,5 +1,5 @@
-asset_path: C:\Users\Blacksheep\Documents\dq-sim\simulation\isaac_lab\assets\domino\domino.urdf
-usd_dir: C:\Users\Blacksheep\Documents\dq-sim\simulation\isaac_lab\assets\domino\usd
+asset_path: simulation/isaac_lab/assets/domino/domino.urdf
+usd_dir: simulation/isaac_lab/assets/domino/usd
 usd_file_name: domino.usd
 force_usd_conversion: true
 make_instanceable: false

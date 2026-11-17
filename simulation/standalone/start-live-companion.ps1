@@ -27,12 +27,7 @@ if ($Transport -ne "usb" -and $env:DOMINO_ROBOT_LINK_KEY.Length -lt 16) {
     throw "DOMINO_ROBOT_LINK_KEY must contain at least 16 characters."
 }
 
-$bundledNode = Join-Path $env:USERPROFILE ".cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe"
-$node = if (Test-Path -LiteralPath $bundledNode) {
-    $bundledNode
-} else {
-    (Get-Command node -ErrorAction Stop).Source
-}
+$node = (Get-Command node -ErrorAction Stop).Source
 
 $arguments = @(
     (Join-Path $PSScriptRoot "live-companion-adapter.mjs"),

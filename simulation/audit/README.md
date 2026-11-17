@@ -4,8 +4,9 @@
 peripherals. It never opens a robot connection or sends physical commands.
 
 Requirements: Python with NumPy, Node with the Studio dependencies, and the
-MinGW compiler used by `simulation/sil/build.ps1`. Defaults locate this machine's
-bundled runtimes; `--node`, `--compiler` and `--output` override them.
+MinGW compiler used by `simulation/sil/build.ps1`. By default it uses
+`node` from `PATH` and the PlatformIO MinGW compiler; `--node`, `--compiler` and
+`--output` override them.
 
 ```powershell
 python simulation/audit/run_pose_audit.py --session 'C:/path/to/engineering-session.json'

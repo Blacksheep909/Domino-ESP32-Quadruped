@@ -1,8 +1,0 @@
-Project-level public headers can be placed here if the firmware grows beyond the current `src/` module layout.
-
-At the moment, Domino keeps its firmware headers beside their implementation files in `src/`:
-
-- `src/crsf.h`
-- `src/ik.h`
-- `src/imu.h`
-- `src/leg_controller.h`

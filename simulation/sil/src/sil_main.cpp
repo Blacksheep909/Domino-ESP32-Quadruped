@@ -584,7 +584,7 @@ bool applyScenario(uint32_t scenarioMs, int channelsUs[16]) {
 
   channelsUs[SA_CH_INDEX] = 1000;
   channelsUs[kRideHeightChannelIndex] = 2000;
-  channelsUs[5] = 2000;  // Legacy SB must not control ride height anymore.
+  channelsUs[5] = 1000;  // SB up: no learned policy, so the gait/tilt checks run on the built-in gait.
   channelsUs[SC_CH_INDEX] = 1000;
   channelsUs[7] = 1000;
 

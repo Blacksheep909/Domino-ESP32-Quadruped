@@ -207,7 +207,12 @@ void FaceEngine::step(const FaceInputs &in, FaceFrame out[2]) {
 
   // Where to look: the sticks when steering, otherwise the odd idle glance.
   float targetX = glanceX_, targetY = glanceY_;
-  if (settings_.followSticks && !in.sticksIdle) {
+  if (in.tilt && settings_.followSticks) {
+    // Tilt mode: glance into the lean (yaw and roll sideways, pitch up/down).
+    targetX = clampf(in.yawDeg * 0.55f + in.rollDeg * 0.5f, -18.0f, 18.0f);
+    targetY = clampf(in.pitchDeg * 0.7f, -8.0f, 8.0f);
+    nextGlanceMs_ = now + 1200;
+  } else if (settings_.followSticks && !in.sticksIdle) {
     targetX = clampf(in.turn * 16.0f + in.strafe * 10.0f, -18.0f, 18.0f);
     targetY = clampf(-in.forward * 4.0f, -6.0f, 6.0f);
     nextGlanceMs_ = now + 1200;

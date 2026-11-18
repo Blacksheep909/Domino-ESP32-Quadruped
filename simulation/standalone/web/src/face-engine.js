@@ -175,7 +175,11 @@ export function createFaceEngine(tracks, seed = 1) {
 
     let targetX = st.glanceX;
     let targetY = st.glanceY;
-    if (settings.followSticks && !inputs.sticksIdle) {
+    if (inputs.tilt && settings.followSticks) {
+      targetX = clamp((inputs.yawDeg || 0) * 0.55 + (inputs.rollDeg || 0) * 0.5, -18, 18);
+      targetY = clamp((inputs.pitchDeg || 0) * 0.7, -8, 8);
+      st.nextGlanceMs = now + 1200;
+    } else if (settings.followSticks && !inputs.sticksIdle) {
       targetX = clamp((inputs.turn || 0) * 16 + (inputs.strafe || 0) * 10, -18, 18);
       targetY = clamp(-(inputs.forward || 0) * 4, -6, 6);
       st.nextGlanceMs = now + 1200;

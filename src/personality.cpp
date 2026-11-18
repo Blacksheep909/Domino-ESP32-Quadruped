@@ -128,6 +128,36 @@ bool decodePersonalityRecord(const uint8_t *b, size_t length, PersonalitySetting
   return true;
 }
 
+void personalityEarTargets(bool tilt, bool lying, float rollDeg, float pitchDeg, float yawDeg,
+                           float *leftDeg, float *rightDeg) {
+  if (lying) {
+    *leftDeg = *rightDeg = kEarLyingDeg;
+    return;
+  }
+  if (!tilt) {
+    *leftDeg = *rightDeg = kAntennaRestDeg;
+    return;
+  }
+  const float common = kEarTiltBaseDeg + kEarPitchGain * pitchDeg;
+  const float split = kEarRollGain * rollDeg + kEarYawGain * yawDeg;
+  *leftDeg = fminf(40.0f, fmaxf(-85.0f, common + split));
+  *rightDeg = fminf(40.0f, fmaxf(-85.0f, common - split));
+}
+
+void personalityEarStep(EarSpring &ear, float targetDeg, float dt) {
+  const float w = 2.0f * 3.14159265f * kEarSpringHz;
+  // Small fixed substeps keep the spring stable at any loop rate.
+  while (dt > 0.0f) {
+    const float h = dt > 0.005f ? 0.005f : dt;
+    dt -= h;
+    const float accel = w * w * (targetDeg - ear.angleDeg) - 2.0f * kEarDamping * w * ear.velocityDegPerSec;
+    ear.velocityDegPerSec += accel * h;
+    ear.angleDeg += ear.velocityDegPerSec * h;
+    if (ear.angleDeg > 40.0f) { ear.angleDeg = 40.0f; ear.velocityDegPerSec = 0.0f; }
+    if (ear.angleDeg < -85.0f) { ear.angleDeg = -85.0f; ear.velocityDegPerSec = 0.0f; }
+  }
+}
+
 uint32_t personalityEmoteDurationMs(uint8_t index) {
   if (index >= kPersonalityEmoteCount) return 0;
   const EmoteDef &e = kEmotes[index];
@@ -171,6 +201,8 @@ bool gIdle = false;
 uint32_t gNextIdleSoundMs = 0;
 float gHeightOffsetMm = 0.0f;
 bool gUpright = false;  // from the last personalityUpdate(); false until the first one
+EarSpring gEarL, gEarR;
+uint32_t gEarLastMs = 0;
 [[maybe_unused]] float gLastLeftDeg = 1000.0f;
 [[maybe_unused]] float gLastRightDeg = 1000.0f;
 [[maybe_unused]] uint32_t gLastAntennaWriteMs = 0;
@@ -331,6 +363,24 @@ void personalityUpdate(Adafruit_PWMServoDriver &driver, uint32_t now, const Pers
     }
   }
   gHeightOffsetMm = pose.heightOffsetMm;
+  // Between emotes the ears run on springs (perk up and follow the body in
+  // tilt mode, fold back lying down); an emote drives them directly and the
+  // springs pick up from wherever it left them.
+  const float dt = gEarLastMs ? fminf(0.1f, (now - gEarLastMs) / 1000.0f) : 0.0f;
+  gEarLastMs = now;
+  if (gActive >= 0) {
+    gEarL.angleDeg = pose.leftAntennaDeg;
+    gEarL.velocityDegPerSec = 0.0f;
+    gEarR.angleDeg = pose.rightAntennaDeg;
+    gEarR.velocityDegPerSec = 0.0f;
+  } else if (gSettings.enabled) {
+    float tl, tr;
+    personalityEarTargets(ctx.tiltActive, !ctx.robotUpright, ctx.rollDeg, ctx.pitchDeg, ctx.yawDeg, &tl, &tr);
+    personalityEarStep(gEarL, tl, dt);
+    personalityEarStep(gEarR, tr, dt);
+    pose.leftAntennaDeg = gEarL.angleDeg;
+    pose.rightAntennaDeg = gEarR.angleDeg;
+  }
   writeAntennas(driver, pose.leftAntennaDeg, pose.rightAntennaDeg, now, false);
 
   // Idle sounds: only after a long, genuinely quiet spell, and rarely.

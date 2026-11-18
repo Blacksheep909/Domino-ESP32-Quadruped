@@ -1473,6 +1473,9 @@ bool updateSdCommand(bool sdActive, bool controlsEnabled, uint32_t now) {
   return applySwitchDebounce(sdActive, desiredState, now, &sdDebounce, kSwitchDebounceDefaultMs);
 }
 
+// Last tilt-mode body pose (degrees); zero outside tilt mode.
+float tiltPoseRollDeg = 0.0f, tiltPosePitchDeg = 0.0f, tiltPoseYawDeg = 0.0f;
+
 void applyTiltPose(Adafruit_PWMServoDriver &driver) {
   // Tilt mode: interpret stick inputs as a small body pose (roll, pitch, yaw)
   // about the body center while the feet stay approximately in the nominal
@@ -1517,6 +1520,9 @@ void applyTiltPose(Adafruit_PWMServoDriver &driver) {
   silBodyPitchDeg = pitchDeg;
   silBodyYawDeg = yawDeg;
 #endif
+  tiltPoseRollDeg = rollDeg;   // the ears and eyes react to the pose
+  tiltPosePitchDeg = pitchDeg;
+  tiltPoseYawDeg = yawDeg;
 
   const float bodyX = 0.0f;
   const float bodyY = 0.0f;
@@ -2093,6 +2099,11 @@ void loop() {
     personality.sticksIdle = centred(0) && centred(1) && centred(3);
     personality.walking = !personality.sticksIdle &&
         (menuState.mode == BODY_GAIT || menuState.mode == BODY_CAREFUL || menuState.mode == BODY_POLICY);
+    personality.tiltActive = menuState.mode == BODY_TILT;
+    if (!personality.tiltActive) tiltPoseRollDeg = tiltPosePitchDeg = tiltPoseYawDeg = 0.0f;
+    personality.rollDeg = tiltPoseRollDeg;
+    personality.pitchDeg = tiltPosePitchDeg;
+    personality.yawDeg = tiltPoseYawDeg;
     personalityUpdate(pca, now, personality);
 
     // OLED eyes: sleep when lying, look where the sticks steer, play emote
@@ -2111,6 +2122,10 @@ void loop() {
     face.turn = -(ch_us[3] - 1500) / 500.0f;
     face.strafe = -(ch_us[0] - 1500) / 500.0f;
     face.forward = (ch_us[1] - 1500) / 500.0f;
+    face.tilt = personality.tiltActive;
+    face.rollDeg = tiltPoseRollDeg;
+    face.pitchDeg = tiltPosePitchDeg;
+    face.yawDeg = tiltPoseYawDeg;
     face.batteryPercent = battery;
     face.emote = static_cast<int8_t>(personalityActiveEmote());
     face.emoteElapsedMs = personalityActiveEmoteElapsedMs(now);

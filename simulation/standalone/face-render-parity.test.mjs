@@ -92,3 +92,21 @@ test("eye style sizes match the firmware table", async () => {
   const firmware = [...cpp.matchAll(/\{"(\w+)", (\d+), (\d+), (\d+)\}/g)].map((m) => [m[1], +m[2], +m[3], +m[4]]);
   assert.deepEqual(FACE_STYLES.map((s) => [s.id, s.w, s.h, s.r]), firmware);
 });
+
+test("ear spring constants match the firmware and the ears overshoot then settle", async () => {
+  const { EAR, earTargets, createEarSpring, stepEarSpring } = await import("./web/src/ear-dynamics.js");
+  const h = readFileSync(path.join(repo, "src", "personality.h"), "utf8");
+  const k = (name) => Number(h.match(new RegExp(String.raw`constexpr float ${name} = (-?[\d.]+)f;`))[1]);
+  assert.deepEqual(
+    [EAR.tiltBaseDeg, EAR.pitchGain, EAR.rollGain, EAR.yawGain, EAR.lyingDeg, EAR.springHz, EAR.damping],
+    [k("kEarTiltBaseDeg"), k("kEarPitchGain"), k("kEarRollGain"), k("kEarYawGain"), k("kEarLyingDeg"), k("kEarSpringHz"), k("kEarDamping")],
+  );
+  const [l, r] = earTargets({ tilt: true, rollDeg: 10, pitchDeg: 5 });
+  assert.ok(l > r, "roll lifts one ear and drops the other");
+  const ear = createEarSpring(-45);
+  let peak = -45;
+  for (let i = 0; i < 100; i += 1) { stepEarSpring(ear, -15, 0.01); peak = Math.max(peak, ear.angleDeg); }
+  assert.ok(peak > -15 + 2, "overshoots the target like a floppy ear");
+  for (let i = 0; i < 300; i += 1) stepEarSpring(ear, -15, 0.01);
+  assert.ok(Math.abs(ear.angleDeg + 15) < 0.5, "then settles");
+});

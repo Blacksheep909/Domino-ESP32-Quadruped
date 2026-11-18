@@ -74,7 +74,31 @@ struct PersonalityContext {
   bool robotUpright;   // not fallen / not stowed
   bool sticksIdle;     // no walking command
   bool walking;        // legs stepping (any walking mode)
+  bool tiltActive;     // tilt mode: the sticks pose the body
+  float rollDeg;       // commanded body pose in tilt mode (0 otherwise)
+  float pitchDeg;
+  float yawDeg;
 };
+
+// Ears (antennas) between emotes: a spring-damper chases a target, so they
+// swing past it a little and settle like floppy ears. In tilt mode they perk
+// up and follow the body pose (pitch swings both, roll lifts one and drops
+// the other, yaw adds a small twist). Pure maths, shared with Studio
+// (web/src/ear-dynamics.js).
+struct EarSpring {
+  float angleDeg = kAntennaRestDeg;
+  float velocityDegPerSec = 0.0f;
+};
+constexpr float kEarTiltBaseDeg = -15.0f;
+constexpr float kEarPitchGain = 1.6f;
+constexpr float kEarRollGain = 1.8f;
+constexpr float kEarYawGain = 0.6f;
+constexpr float kEarLyingDeg = -80.0f;
+constexpr float kEarSpringHz = 2.1f;    // natural frequency
+constexpr float kEarDamping = 0.32f;    // ratio (< 1: overshoots)
+void personalityEarTargets(bool tilt, bool lying, float rollDeg, float pitchDeg, float yawDeg,
+                           float *leftDeg, float *rightDeg);
+void personalityEarStep(EarSpring &ear, float targetDeg, float dtSeconds);
 
 const PersonalitySettings &personalitySettings();
 // Applies at once; persist=true also writes NVS and reads it back.

@@ -10862,3 +10862,17 @@ body[data-workspace="real-robot"][data-live-view="sensors"][data-live-planner-fo
 :root:not([data-theme="dark"]) .live-screens-faceplate figcaption { color: #5d5f5b; }
 
 .live-screens-sim button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+
+/* ?demo=playful-tilt&capture=1: only the 3D view, full window (showcase recording). */
+body[data-showcase-capture="1"] * { visibility: hidden !important; }
+body[data-showcase-capture="1"] #scene {
+  visibility: visible !important;
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  z-index: 99999 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+}

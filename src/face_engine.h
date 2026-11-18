@@ -52,6 +52,10 @@ struct FaceInputs {
   float turn = 0.0f;           // -1..1, + = turning to the robot's left
   float strafe = 0.0f;         // -1..1, + = to the robot's left
   float forward = 0.0f;        // -1..1
+  bool tilt = false;           // tilt mode: eyes follow the body pose below
+  float rollDeg = 0.0f;
+  float pitchDeg = 0.0f;
+  float yawDeg = 0.0f;
   int8_t batteryPercent = -1;  // -1 unknown
   int8_t emote = -1;           // personality emote playing, -1 none
   uint32_t emoteElapsedMs = 0;

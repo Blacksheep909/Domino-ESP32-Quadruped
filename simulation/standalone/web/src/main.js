@@ -341,6 +341,7 @@ import {
   validLivePersonalityAcknowledgement,
 } from "./live-personality-protocol.js";
 import { ANTENNA_REST_DEG, emotePose, playEmoteSound } from "./emote-preview.js";
+import { createEarSpring, earTargets, stepEarSpring } from "./ear-dynamics.js";
 import {
   captureLiveSensorLevel,
   createLiveSensorAttitudeFilterState,
@@ -2043,7 +2044,8 @@ document.querySelector("#live-manual-estop").addEventListener("click", () => {
 const demoSelection = new URLSearchParams(window.location.search).get("demo");
 const cadResponsePreview = ["yaw-left", "yaw-left-fault", "pitch-back", "pitch-back-fault", "roll-fault"].includes(demoSelection);
 const crossReversedResponsePreview = cadResponsePreview && demoSelection.endsWith("-fault");
-const demoMode = cadResponsePreview || ["1", "tilt", "roll", "roll-negative", "gait", "gait-reverse"].includes(demoSelection);
+const playfulTiltDemo = demoSelection === "playful-tilt";
+const demoMode = cadResponsePreview || playfulTiltDemo || ["1", "tilt", "roll", "roll-negative", "gait", "gait-reverse"].includes(demoSelection);
 if (cadResponsePreview) {
   const previewLabel = document.createElement("div");
   const commandLabel = demoSelection.startsWith("yaw") ? "CH4 1000 / YAW LEFT"
@@ -2576,25 +2578,27 @@ environmentBallSpecs.forEach((spec) => {
   courseVisuals.add(mesh);
 });
 
+// Colours of the built robot: white printed frame and plates, black legs,
+// servos, carbon tubes and feet.
 const frameMaterial = new THREE.MeshStandardMaterial({
-  color: 0x20282d,
-  roughness: 0.42,
-  metalness: 0.3,
+  color: 0xe8e7e2,
+  roughness: 0.62,
+  metalness: 0.0,
 });
 const legMaterial = new THREE.MeshStandardMaterial({
-  color: 0x303a40,
-  roughness: 0.55,
-  metalness: 0.16,
+  color: 0x1c1e21,
+  roughness: 0.5,
+  metalness: 0.12,
 });
 const drivenLinkMaterial = new THREE.MeshStandardMaterial({
-  color: 0x414c52,
-  roughness: 0.48,
-  metalness: 0.22,
+  color: 0x222428,
+  roughness: 0.55,
+  metalness: 0.08,
 });
 const passiveLinkMaterial = new THREE.MeshStandardMaterial({
-  color: 0x525d62,
-  roughness: 0.58,
-  metalness: 0.1,
+  color: 0x2a2c30,
+  roughness: 0.6,
+  metalness: 0.06,
 });
 const tpuMaterial = new THREE.MeshStandardMaterial({
   color: 0x090d0f,
@@ -11816,7 +11820,19 @@ function updateInput() {
   const gamepad = activeGamepad();
   renderGamepadSignalTrace(gamepad);
 
-  if (demoMode) {
+  if (playfulTiltDemo) {
+    boxerHeartbeat = { connected: false, name: "", updatedAt: 0 };
+    const routine = playfulTiltRoutine(performance.now() / 1000);
+    standRequested = routine.stand;
+    tiltRequested = routine.tilt;
+    walkModeRequested = 0;
+    const ready = firmwareState?.mode === "TILT" && firmwareState?.motion_input_armed !== false;
+    rollInput = ready ? routine.roll : 0;
+    forwardInput = ready ? routine.pitch : 0;
+    turnInput = ready ? routine.yaw : 0;
+    document.querySelector("#gamepad-name").textContent = "PLAYFUL TILT DEMO";
+    clientInputSnapshot = { source: "diagnostic", name: "PLAYFUL TILT DEMO", axes: [] };
+  } else if (demoMode) {
     boxerHeartbeat = { connected: false, name: "", updatedAt: 0 };
     const tiltDiagnostic = demoSelection === "tilt";
     const rollDiagnostic = demoSelection === "roll" || demoSelection === "roll-negative" || demoSelection === "roll-fault";
@@ -12848,6 +12864,7 @@ function animate(now) {
   // hide them every frame so they never linger in SIM or other LIVE pages.
   gaitTreadmillPivot.visible = false;
   if (applicationState.workspace !== WORKSPACE_SIMULATION) {
+    if (![LIVE_VIEW_EMOTES, LIVE_VIEW_SCREENS].includes(liveViewState.selected)) hideEmoteAntennas();
     updateLiveTwinPose(delta);
     // Keep the same glowing foot trails used by the Simulation gait-tune
     // inspector available in LIVE Compare, GPS/LiDAR, and Gaits views.
@@ -12875,6 +12892,7 @@ function animate(now) {
   updateInput();
   updateGaitLabState(delta);
   updateRobot(delta);
+  updateSimFace(delta);
   if (linkageRuntimesReady()) scene.updateMatrixWorld(true);
   updatePinClosureHealth();
   updateFootSymmetryHealth();
@@ -12908,6 +12926,7 @@ function animate(now) {
     cameraGizmoElapsed = 0;
     updateCameraGizmo();
   }
+  if (showcaseCapture) applyShowcaseCamera(now);
   renderer.render(scene, camera);
 
   requestAnimationFrame(animate);
@@ -13631,3 +13650,174 @@ function setupLiveScreensUi() {
   requestAnimationFrame(loop);
 }
 setupLiveScreensUi();
+
+
+// SIMULATION: the body_v7 face on the simulated robot. The ears run on the
+// same springs as the firmware (ear-dynamics.js, perk up and follow the body
+// in tilt mode, fold back when sitting) and the eyes on the face engine, both
+// fed from the simulated firmware's state.
+let simFaceEnabled = true;
+try { simFaceEnabled = localStorage.getItem("domino.sim.v7-face") !== "off"; } catch { /* storage blocked */ }
+const simEars = [createEarSpring(), createEarSpring()];
+const simFaceEngine = createFaceEngine(faceEmoteTracks, 21);
+const simFaceBuffers = [null, null];
+
+function updateSimFace(delta) {
+  const button = document.querySelector("#sim-face-button");
+  if (button && button.getAttribute("aria-pressed") !== String(simFaceEnabled)) {
+    button.setAttribute("aria-pressed", String(simFaceEnabled));
+  }
+  if (!simFaceEnabled) {
+    hideEmoteAntennas();
+    return;
+  }
+  if (!emoteAntennas) emoteAntennas = buildV7Face();
+  emoteAntennas.group.visible = true;
+  if (baseLinkCollisionMesh) baseLinkCollisionMesh.visible = false;
+  const fs = firmwareState || {};
+  const lying = fs.mode === "STOW" || !fs.mode;
+  const tilt = fs.tilt_active === true || fs.mode === "TILT";
+  const [rollDeg, pitchDeg, yawDeg] = Array.isArray(fs.body_pose_rpy_deg) ? fs.body_pose_rpy_deg : [0, 0, 0];
+  const [tl, tr] = earTargets({ tilt, lying, rollDeg, pitchDeg, yawDeg });
+  stepEarSpring(simEars[0], tl, delta);
+  stepEarSpring(simEars[1], tr, delta);
+  emoteAntennas.left.rotation.y = (simEars[0].angleDeg - V7_ANTENNA_REST_DEG) * Math.PI / 180;
+  emoteAntennas.right.rotation.y = (simEars[1].angleDeg - V7_ANTENNA_REST_DEG) * Math.PI / 180;
+
+  simFaceEngine.setSettings({ ...liveFaceState.draft, mode: liveFaceState.draft.mode === "off" ? "off" : "eyes", reminderMinutes: 0 });
+  const idle = Math.abs(turnInput) < 0.05 && Math.abs(forwardInput) < 0.05 && Math.abs(rollInput) < 0.05;
+  const frames = simFaceEngine.step({
+    nowMs: performance.now(), lying, tilt, rollDeg, pitchDeg, yawDeg,
+    sticksIdle: idle, turn: -turnInput, strafe: -rollInput, forward: forwardInput,
+    batteryPercent: 82, emote: -1,
+  });
+  const tint = FACE_TINTS[document.querySelector("#live-screens-tint")?.value] || FACE_TINTS.cyan;
+  [["L", 0], ["R", 1]].forEach(([side, eye]) => {
+    const { canvas, texture } = emoteAntennas.screens[side];
+    simFaceBuffers[eye] = faceRenderer.render(frames[eye], simFaceBuffers[eye] || undefined);
+    drawFaceCanvas(canvas, simFaceBuffers[eye], tint, 1);
+    texture.needsUpdate = true;
+  });
+}
+
+document.querySelector("#sim-face-button")?.addEventListener("click", () => {
+  simFaceEnabled = !simFaceEnabled;
+  try { localStorage.setItem("domino.sim.v7-face", simFaceEnabled ? "on" : "off"); } catch { /* storage blocked */ }
+});
+
+// ?demo=playful-tilt: a choreographed tilt routine for the simulator (and the
+// showcase reel). Every move eases in and out; nothing is a held key.
+// Sits asleep, stands and wakes, curious head tilts both ways, a play bow, a
+// wiggle, a full lean circle, a look left and right, then settles and sits.
+const PLAYFUL_TILT_KEYS = [
+  // [t s, roll, pitch, yaw]   (stick units, -1..1)
+  [0.0, 0, 0, 0],
+  [1.3, 0.85, 0, 0.15],     // curious tilt
+  [2.4, 0.85, 0.15, 0.2],
+  [3.4, -0.85, 0, -0.15],   // and the other way
+  [4.5, -0.85, 0.15, -0.2],
+  [5.4, 0, 0, 0],
+  [6.4, 0, 0.95, 0],        // play bow
+  [7.6, 0, 0.95, 0],
+  [8.4, 0, 0, 0],
+];
+const PLAYFUL_TILT = { asleepS: 2.5, standS: 2.2, keysS: 8.4, wiggleS: 2.6, circleS: 3.2, lookS: 3.6, settleS: 1.6 };
+
+function playfulTiltRoutine(nowS) {
+  playfulTiltRoutine.startS ??= nowS;
+  const p = PLAYFUL_TILT;
+  const t = nowS - playfulTiltRoutine.startS;
+  const smooth = (u) => u * u * (3 - 2 * u);
+  const ease = (u) => smooth(Math.min(1, Math.max(0, u)));
+  const tiltStart = p.asleepS + p.standS;
+  const wiggleStart = tiltStart + p.keysS;
+  const circleStart = wiggleStart + p.wiggleS;
+  const lookStart = circleStart + p.circleS;
+  const settleStart = lookStart + p.lookS;
+  const sitAt = settleStart + p.settleS + 0.6;
+  const loopAt = sitAt + 4.0;
+  if (t >= loopAt) {
+    playfulTiltRoutine.startS = nowS;  // loop forever
+    return playfulTiltRoutine(nowS);
+  }
+  const out = { stand: t >= p.asleepS && t < sitAt, tilt: t >= tiltStart && t < settleStart + p.settleS, roll: 0, pitch: 0, yaw: 0 };
+  if (t >= tiltStart && t < wiggleStart) {
+    const k = t - tiltStart;
+    let i = 0;
+    while (i + 1 < PLAYFUL_TILT_KEYS.length && PLAYFUL_TILT_KEYS[i + 1][0] <= k) i += 1;
+    const a = PLAYFUL_TILT_KEYS[i];
+    const b = PLAYFUL_TILT_KEYS[Math.min(i + 1, PLAYFUL_TILT_KEYS.length - 1)];
+    const u = b[0] > a[0] ? smooth((k - a[0]) / (b[0] - a[0])) : 0;
+    [out.roll, out.pitch, out.yaw] = [1, 2, 3].map((j) => a[j] + (b[j] - a[j]) * u);
+  } else if (t >= wiggleStart && t < circleStart) {
+    // Happy wiggle: quick twist with a little roll, swelling in and out.
+    const k = t - wiggleStart;
+    const env = Math.sin(Math.PI * k / p.wiggleS);
+    out.yaw = 0.75 * env * Math.sin(2 * Math.PI * 1.8 * k);
+    out.roll = 0.35 * env * Math.sin(2 * Math.PI * 1.8 * k + 1.2);
+  } else if (t >= circleStart && t < lookStart) {
+    // One slow lean circle.
+    const k = (t - circleStart) / p.circleS;
+    const env = Math.sin(Math.PI * k) ** 0.6;
+    out.roll = 0.8 * env * Math.cos(2 * Math.PI * k);
+    out.pitch = 0.8 * env * Math.sin(2 * Math.PI * k);
+  } else if (t >= lookStart && t < settleStart) {
+    // Look left, hold, look right, hold, back.
+    const k = t - lookStart;
+    out.yaw = k < 0.8 ? 0.9 * ease(k / 0.8) : k < 1.5 ? 0.9 : k < 2.4 ? 0.9 - 1.8 * ease((k - 1.5) / 0.9)
+      : k < 3.0 ? -0.9 : -0.9 * (1 - ease((k - 3.0) / 0.6));
+  }
+  return out;
+}
+
+
+// ?demo=playful-tilt&capture=1 : showcase recording (dev only). Hides the UI,
+// flies a slow scripted camera around the robot, records one loop of the
+// routine from the canvas and posts the WebM to a local receiver
+// (http://127.0.0.1:8899). Nothing here runs without the URL flag.
+const showcaseCapture = playfulTiltDemo && new URLSearchParams(window.location.search).get("capture") === "1";
+let showcaseRecorder = null;
+let showcaseLoopStart = null;
+if (showcaseCapture) {
+  document.body.dataset.showcaseCapture = "1";
+  controls.enabled = false;
+  requestAnimationFrame(() => resize());
+}
+
+function applyShowcaseCamera(nowMs) {
+  const routineT = playfulTiltRoutine.startS !== undefined ? nowMs / 1000 - playfulTiltRoutine.startS : 0;
+  // Start recording at the top of a fresh loop, stop at the end of it.
+  if (!showcaseRecorder && playfulTiltRoutine.startS !== undefined && routineT < 0.1 &&
+      showcaseLoopStart !== playfulTiltRoutine.startS && linkageRuntimesReady()) {
+    showcaseLoopStart = playfulTiltRoutine.startS;
+    const chunks = [];
+    const stream = canvas.captureStream(60);
+    showcaseRecorder = new MediaRecorder(stream, { mimeType: "video/webm;codecs=vp9", videoBitsPerSecond: 24_000_000 });
+    showcaseRecorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
+    showcaseRecorder.onstop = () => {
+      const blob = new Blob(chunks, { type: "video/webm" });
+      fetch("http://127.0.0.1:8899/upload", { method: "POST", body: blob })
+        .then(() => { document.title = "SHOWCASE UPLOADED"; })
+        .catch(() => { document.title = "SHOWCASE UPLOAD FAILED"; });
+    };
+    showcaseRecorder.start(1000);
+    document.title = "SHOWCASE RECORDING";
+  } else if (showcaseRecorder?.state === "recording" && playfulTiltRoutine.startS !== showcaseLoopStart) {
+    showcaseRecorder.stop();  // the routine looped: one full take recorded
+  }
+  // Slow glide: front-left three-quarter to front-right, a little above the
+  // face, with a gentle push-in during the play bow.
+  const anchor = robotWorld.position;
+  const loop = 28.7;  // one routine loop (see PLAYFUL_TILT)
+  const u = Math.min(1, Math.max(0, routineT / loop));
+  const ease = u * u * (3 - 2 * u);
+  const azimuth = THREE.MathUtils.degToRad(-38 + 76 * ease);
+  const distance = 1.22 - 0.16 * Math.sin(Math.PI * Math.min(1, Math.max(0, (routineT - 10) / 6)));
+  const target = new THREE.Vector3(anchor.x + 0.0, 0.17, anchor.z);
+  camera.position.set(
+    target.x + distance * Math.cos(azimuth),
+    0.40,
+    target.z - distance * Math.sin(azimuth),
+  );
+  camera.lookAt(target);
+}

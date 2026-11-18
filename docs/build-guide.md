@@ -43,8 +43,8 @@ a validated clone without those measurements.
 | Repository-confirmed artifact | Location | Use |
 | --- | --- | --- |
 | ESP32 firmware | [`platformio.ini`](../platformio.ini), [`src`](../src) | Controller behavior and safety limits |
-| Full CAD reference | [`cad/step/combined/Domino_URDF_Parts_Combined_Final.step`](../cad/step/combined/Domino_URDF_Parts_Combined_Final.step) | Assembly inspection and measurement |
-| Leg/body STEP exports | [`cad/step/parts`](../cad/step/parts) | Mirroring, clearance, module inspection |
+| Full CAD reference | [`cad/step/latest/Domino_v6_full_robot.step`](../cad/step/latest/Domino_v6_full_robot.step) | Assembly inspection and measurement |
+| Leg/body STEP exports | [`cad/step/latest`](../cad/step/latest) | Mirroring, clearance, module inspection |
 | Render/simulation meshes | [`simulation/urdf/generated`](../simulation/urdf/generated) | Virtual Lab and kinematics, not slicer-ready manufacturing proof |
 | PCB prototype package | [`hardware/pcb/domino-quadruped-pcb-v1.1b`](../hardware/pcb/domino-quadruped-pcb-v1.1b) | Gerber inspection and prototype manufacture |
 | Virtual Lab | [`simulation/standalone`](../simulation/standalone) | Simulation, LIVE telemetry, calibration, logging |

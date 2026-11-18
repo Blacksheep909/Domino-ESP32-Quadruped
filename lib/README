@@ -1,3 +1,0 @@
-Project-local libraries live here.
-
-The main firmware currently uses source modules in `src/` plus dependencies declared in `platformio.ini`. If additional reusable firmware modules are split out later, they can be placed under this directory using the normal PlatformIO library layout.

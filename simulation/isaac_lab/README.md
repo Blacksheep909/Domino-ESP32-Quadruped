@@ -6,7 +6,7 @@ down** runs the learned policy. The sticks still drive (right stick forward /
 sideways, left stick turn) and the left-stick vertical (CH3) still sets ride
 height, 220-280 mm.
 
-It replaces the older `simulation/isaac` prototype, which modelled every
+It replaces an earlier prototype (last present in the `v0.5.7` tag), which modelled every
 linkage pin as a 29-body closed loop and trained at about 56 samples/s. This
 model trains at **~80,000 samples/s** on the RTX 3080 Ti with 4096 robots.
 

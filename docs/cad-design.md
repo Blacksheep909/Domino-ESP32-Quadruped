@@ -8,20 +8,9 @@ Domino is built around a carbon-and-printed composite structure, modular 3-DoF l
 
 The STEP files live under [`cad/step`](../cad/step).
 
-**Latest robot (v6):** download [`cad/step/latest/Domino_v6_full_robot.step`](../cad/step/latest/Domino_v6_full_robot.step) for the complete current robot. Per-leg and body-frame files are listed in [`cad/README.md`](../cad/README.md). The stress analysis of the generative knee bracket is in [`cad/fea_generative_bracket`](../cad/fea_generative_bracket). The table below lists the older exports used by the URDF and simulation work.
+Download [`cad/step/latest/Domino_v6_full_robot.step`](../cad/step/latest/Domino_v6_full_robot.step) for the complete current robot (v6). The per-leg and body-frame files are listed in [`cad/README.md`](../cad/README.md). The stress analysis of the generative knee bracket is in [`cad/fea_generative_bracket`](../cad/fea_generative_bracket).
 
-| File | Role |
-| --- | --- |
-| [`cad/step/assembly/Domino_URDF_Parts.step`](../cad/step/assembly/Domino_URDF_Parts.step) | Full assembly export for viewing the complete robot. |
-| [`cad/step/combined/Domino_URDF_Parts_Combined.step`](../cad/step/combined/Domino_URDF_Parts_Combined.step) | Combined geometry export from the CAD-to-URDF trail. |
-| [`cad/step/combined/Domino_URDF_Parts_Combined_Final.step`](../cad/step/combined/Domino_URDF_Parts_Combined_Final.step) | Main combined reference export for the current documentation state. |
-| [`cad/step/parts/Body.step`](../cad/step/parts/Body.step) | Central body and electronics cage. |
-| [`cad/step/parts/FL.step`](../cad/step/parts/FL.step) | Front-left leg module. |
-| [`cad/step/parts/FR.step`](../cad/step/parts/FR.step) | Front-right leg module. |
-| [`cad/step/parts/BL.step`](../cad/step/parts/BL.step) | Back-left leg module. |
-| [`cad/step/parts/BR.step`](../cad/step/parts/BR.step) | Back-right leg module. |
-
-Start with the combined final file to inspect the whole robot. Use the individual body and leg files when checking mirrored geometry, servo orientation, linkage clearance, and packaging changes.
+Use the individual body and leg files when checking mirrored geometry, servo orientation, linkage clearance and packaging changes.
 
 ## Design Intent
 
@@ -64,18 +53,11 @@ CAD changes can affect firmware behavior. Changes to link length, servo horn clo
 
 After a mechanical change, repeat the bring-up and calibration process. Do not assume the existing trim values or safety limits still protect the mechanism.
 
-## Simulation And URDF Notes
+## Simulation Models
 
-The current STEP exports came from the same CAD export trail used for the URDF and Isaac Sim experiments. USD/USDZ exports are included under [`simulation/usd`](../simulation/usd).
+Two simulation models are built from this CAD:
 
-The visual CAD import is useful, but it is not automatically a physically correct simulation. URDF-style robots are usually tree-structured, while Domino's lower leg linkage behaves more like a closed chain.
+- Quadruped Studio renders the meshes under [`simulation/urdf/generated`](../simulation/urdf/generated) and solves the closed leg linkage itself.
+- The Isaac Lab training model in [`simulation/isaac_lab`](../simulation/isaac_lab) treats each leg as a serial hip / thigh / knee chain. The leg is a parallelogram, so this gives the same foot position without closed-loop constraints.
 
-A useful simulation path is:
-
-1. Validate one simplified leg first.
-2. Match joint axes and limits to the CAD.
-3. Add rods and linkage members as visual geometry where needed.
-4. Add closed-chain constraints only if the simulator workflow supports them cleanly.
-5. Scale to the full quadruped after one leg is controllable.
-
-More detail is in [simulation-notes.md](simulation-notes.md).
+Re-export both after a CAD change; the steps are in the [Isaac Lab README](../simulation/isaac_lab/README.md).

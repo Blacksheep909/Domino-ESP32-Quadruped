@@ -127,3 +127,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      # Adds the current STEP files to the release as one download. This runs
+      # last and is allowed to fail, so it can never block an installer.
+      - name: Attach the CAD download
+        continue-on-error: true
+        run: |
+          zip -j "Domino-CAD-STEP.zip" cad/step/latest/*.step cad/README.md
+          gh release upload "$GITHUB_REF_NAME" "Domino-CAD-STEP.zip" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

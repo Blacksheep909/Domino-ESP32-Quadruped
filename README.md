@@ -89,7 +89,7 @@ Mechanical design for a closed-linkage leg, PCB design, embedded C++ firmware on
 
 1. Download **Domino Quadruped Studio** for Windows (`.exe`) or Apple-silicon Macs (`.dmg`) from the [releases page](https://github.com/Blacksheep909/Domino-ESP32-Quadruped/releases/latest). Simulation works offline with no robot attached. Mac first-launch steps are in the [Studio guide](docs/quadruped-studio.md#macos-apple-silicon).
 2. To drive hardware, follow the [LIVE hardware bring-up procedure](docs/live-hardware-bring-up.md) and the [calibration guide](docs/calibration-guide.md) before enabling any motion.
-3. To build one, start with the [build guide](docs/build-guide.md) and the [bill of materials](docs/bill-of-materials.md). It is a prototype and not yet a finished kit; the [project overview](docs/project-overview.md#build-and-bring-up-status) lists what is and is not validated.
+3. To build one, start with the [build guide](docs/build-guide.md) and the [bill of materials](docs/bill-of-materials.md). It is a prototype and not yet a finished kit, and there is no step-by-step assembly guide yet.
 
 ### Build from source
 
@@ -115,7 +115,6 @@ npm run desktop:start
 | | |
 | --- | --- |
 | [Engineering overview](docs/engineering-overview.md) | Architecture, data flow, code tour and current boundaries |
-| [Project overview](docs/project-overview.md) | Full tour: tracks, mechanics, electronics, firmware, repository layout and credits |
 | [Bill of materials](docs/bill-of-materials.md) | The parts on the robot: electronics, servos, power, mechanics and the servo channel map |
 | [Build guide](docs/build-guide.md) | Build sequence, wiring architecture and commissioning gates |
 | [As-built record](docs/build-record-template.md) | Identity, servo routing and wiring for this robot, and what is still to record |
@@ -136,4 +135,4 @@ Released under the [MIT License](LICENSE). Third-party libraries keep their own 
 
 ## Related work
 
-Domino is the successor to my earlier [SpotMicro ESP32 Nitro fork](https://github.com/Blacksheep909/SpotMicroESP32-Nitro-Fork). See the [project overview](docs/project-overview.md#credits) for credits.
+Domino is the successor to my earlier [SpotMicro ESP32 Nitro fork](https://github.com/Blacksheep909/SpotMicroESP32-Nitro-Fork). Its mechanical direction is derived from the ESP32 quadruped design published by [Tazer Technical](https://www.youtube.com/@TazerTechnical).

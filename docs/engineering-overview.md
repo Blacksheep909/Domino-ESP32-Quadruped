@@ -261,31 +261,24 @@ This makes the Virtual Lab useful for radio mapping, firmware modes, commanded
 poses, travel limits, and gross contact behavior, but it is not yet a substitute
 for the detailed Isaac mechanism model or a guarantee of physical behavior.
 
-## Isaac Sim / Isaac Lab Track
+## Isaac Lab Track
 
-The Isaac work starts from the actual CAD export path:
+The learned walking policy is trained in NVIDIA Isaac Lab from
+[`simulation/isaac_lab`](../simulation/isaac_lab).
 
-- STEP source geometry under [`cad/step`](../cad/step);
-- generated URDF reference assets under
-  [`simulation/urdf/generated`](../simulation/urdf/generated);
-- USD and USDZ exports under [`simulation/usd`](../simulation/usd); and
-- Isaac import, linkage, environment, and policy experiments under
-  [`simulation/isaac`](../simulation/isaac).
+The real leg is a closed parallelogram linkage, which is not a clean URDF
+tree. Because the thigh and push rod stay parallel, the foot moves exactly as
+it would on a serial hip / thigh / knee chain, so the training model uses that
+chain and needs no closed-loop constraints. Geometry and masses come from the
+Fusion CAD export.
 
-The difficult part is the same mechanical feature that makes Domino
-interesting: the real leg is not a clean URDF tree. The Isaac experiments use
-explicit pin-joint and closure handling where needed, validate one leg before
-scaling to four, and expose all twelve driven channels to the policy path.
+The policy only observes what the ESP32 can measure (IMU, its own previous
+actions and the stick commands), and the trained network is exported to
+[`src/policy_weights.h`](../src/policy_weights.h) and run on the robot by
+[`src/policy_runner.cpp`](../src/policy_runner.cpp).
 
-The current Isaac material demonstrates asset import, linkage calibration,
-actuator sweeps, teacher/reference playback, contact checks, and early PPO
-experiments. It should still be described as research infrastructure rather
-than a finished autonomous walking policy. A policy that reproduces a verified
-mechanism trajectory is a valuable integration checkpoint, but it is not the
-same thing as a policy that has independently learned robust locomotion.
-
-The detailed runbook and current gates are in
-[`simulation/isaac/README.md`](../simulation/isaac/README.md).
+The model, the training commands and the firmware contract are in the
+[Isaac Lab README](../simulation/isaac_lab/README.md).
 
 ## PCB And Electronics
 
@@ -319,7 +312,7 @@ These are the files worth opening when reviewing the project:
 | [`simulation/sil/src/sil_main.cpp`](../simulation/sil/src/sil_main.cpp) | The simulated hardware boundary around the production firmware. |
 | [`simulation/standalone/server.mjs`](../simulation/standalone/server.mjs) | Boxer HID input, firmware process control, state snapshots, and debug recording. |
 | [`simulation/standalone/web/src/physics.js`](../simulation/standalone/web/src/physics.js) | Rapier proxy bodies, contacts, servo motors, and the real-time sandbox loop. |
-| [`simulation/isaac/prototypes/pin_linkage/domino_cad_linkage_builder.py`](../simulation/isaac/prototypes/pin_linkage/domino_cad_linkage_builder.py) | CAD pivot extraction and explicit closed-linkage construction for Isaac experiments. |
+| [`simulation/isaac_lab/tools/build_urdf.py`](../simulation/isaac_lab/tools/build_urdf.py) | Builds the Isaac Lab training URDF from the Fusion CAD export. |
 | [`hardware/pcb/domino-quadruped-pcb-v1.1b`](../hardware/pcb/domino-quadruped-pcb-v1.1b) | The board package that connects the mechanical and firmware architecture to real hardware. |
 
 ## What Is Complete And What Is Not

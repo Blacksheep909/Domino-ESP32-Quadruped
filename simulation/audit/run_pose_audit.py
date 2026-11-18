@@ -9,6 +9,7 @@ import hashlib
 import json
 import math
 import os
+import shutil
 from pathlib import Path
 import struct
 import subprocess
@@ -181,7 +182,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, default=ROOT/'tmp/full-pose-audit')
     parser.add_argument('--session', type=Path)
-    parser.add_argument('--node', type=Path, default=Path.home()/'.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node.exe')
+    parser.add_argument('--node', type=Path, default=Path(shutil.which('node') or 'node'))
     parser.add_argument('--compiler', type=Path, default=Path.home()/'.platformio/packages/toolchain-gccmingw32/bin/g++.exe')
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)

@@ -1,9 +1,0 @@
-Automated firmware tests are not implemented yet.
-
-Good future test targets:
-
-- CRSF frame parsing and CRC rejection.
-- 11-bit channel unpacking.
-- Link-timeout behavior.
-- IK edge cases near the reachable workspace boundary.
-- Servo limit clamping.

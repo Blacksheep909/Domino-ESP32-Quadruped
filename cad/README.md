@@ -23,19 +23,4 @@ Units are millimetres. The pivot's bearing pocket is 6.15 mm for a 6.00 mm MR63Z
 | --- | --- |
 | [`fea_generative_bracket/`](fea_generative_bracket/) | Linear static stress (von Mises) study of the generative knee bracket under the Quadruped Studio pin-reaction load cases, with scripts, inputs and rendered results. |
 
-## Older STEP Files
-
-These earlier exports come from the CAD-to-URDF trail and match the current simulation and URDF assets.
-
-| Path | Purpose |
-| --- | --- |
-| `step/assembly/Domino_URDF_Parts.step` | Full assembly-style STEP export for viewing the complete robot. |
-| `step/combined/Domino_URDF_Parts_Combined.step` | Combined model export from the CAD-to-URDF trail. |
-| `step/combined/Domino_URDF_Parts_Combined_Final.step` | Combined reference export used by the URDF and simulation work. |
-| `step/parts/Body.step` | Central body and electronics cage reference. |
-| `step/parts/FL.step` | Front-left leg module. |
-| `step/parts/FR.step` | Front-right leg module. |
-| `step/parts/BL.step` | Back-left leg module. |
-| `step/parts/BR.step` | Back-right leg module. |
-
 More design context is in [../docs/cad-design.md](../docs/cad-design.md).
